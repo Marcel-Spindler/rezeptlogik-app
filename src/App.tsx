@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { loadData, refreshRampUpDataOnStart } from "./dataSource";
 import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, Station, ShelfLifeInfo, DetailedSubRecipe, RecipeStructure } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, DEFAULT_STATION_DEVICE_COUNTS, DEFAULT_STATION_POOLS, computeWeekLoad, fmtMin, getBaseVerdenVolume, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools, normalizePoolName, saveStationDeviceCounts, saveStationPools, tokenToStation, workflowSteps } from "./equipment";
 import { PlanningView } from "./PlanningView";
-import { RackView } from "./RackView";
 import { formatDateTime, marketToLocale, marketVariantLabel, MARKET_LANGUAGE_LABEL, tl, type UiLocale } from "./i18n";
+
+const RackView = lazy(() => import("./RackView").then((module) => ({ default: module.RackView })));
 
 const MARKETS: Market[] = ["BENL", "DKSE", "DE"];
 const MARKET_LABEL: Record<Market, string> = { BENL: "BENL", DKSE: "DK/SE", DE: "DE" };
@@ -627,7 +628,11 @@ export default function App() {
               }}
             />
           )}
-          {view === "rack" && <RackView week={selectedWeek} locale={locale} />}
+          {view === "rack" && (
+            <Suspense fallback={<div className="card p-6 text-slate-500">{tl(locale, "Rack-Ansicht wird geladen …")}</div>}>
+              <RackView week={selectedWeek} locale={locale} />
+            </Suspense>
+          )}
           {view === "recipe" && (activeRecipe
             ? <RecipeDetail wr={activeRecipe} recipe={data.recipes[activeRecipe.code]} data={data}
                             cookSchedules={data.cookSchedules} processSpecs={data.processSpecs ?? {}}

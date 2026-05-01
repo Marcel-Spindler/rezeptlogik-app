@@ -15,6 +15,7 @@ import {
   type RackBoxSnapshot,
   type RackEntry,
   type RackMarket,
+  type RackValidationIssue,
   type RackValidationResult,
   uniqueRackLines,
   updateRackEntry,
@@ -33,8 +34,23 @@ type LineScenario = {
   note: string;
 };
 
+type StaffingMode = "reduce" | "balanced" | "increase";
+
+type ComparisonSnapshot = {
+  label: string;
+  before: RackEntry[];
+  after: RackEntry[];
+};
+
+type SelectedRackFocus = {
+  line: string;
+  position: string;
+  entryId?: string;
+};
+
 type RackSlotMeta = {
   level: number;
+  layoutColumn: number;
   station: string;
   demand: number;
   type: string;
@@ -173,17 +189,22 @@ function lineAccent(line: string) {
   };
 }
 
-function buildSlotColumns(slots: number[]) {
-  const columns: Array<Array<{ slotNumber: number; position: string; tier: 1 | 2 | 3 }>> = [];
-  for (let index = 0; index < slots.length; index += 3) {
-    const slice = slots.slice(index, index + 3);
-    columns.push(slice.map((slotNumber, tierIndex) => ({
-      slotNumber,
-      position: `F${String(slotNumber).padStart(2, "0")}`,
-      tier: (tierIndex + 1) as 1 | 2 | 3,
-    })));
+function buildSlotColumns(slots: number[], slotMeta: Map<string, RackSlotMeta>) {
+  const bucket = new Map<number, Array<{ slotNumber: number; position: string; tier: 1 | 2 | 3 }>>();
+
+  for (const slotNumber of slots) {
+    const position = `F${String(slotNumber).padStart(2, "0")}`;
+    const meta = slotMeta.get(position);
+    const layoutColumn = meta?.layoutColumn ?? (1000 + slotNumber);
+    const tier = meta?.level && meta.level >= 1 && meta.level <= 3 ? meta.level as 1 | 2 | 3 : 1;
+    const rows = bucket.get(layoutColumn) ?? [];
+    rows.push({ slotNumber, position, tier });
+    bucket.set(layoutColumn, rows);
   }
-  return columns;
+
+  return [...bucket.entries()]
+    .sort((a, b) => Math.min(...a[1].map((slot) => slot.slotNumber)) - Math.min(...b[1].map((slot) => slot.slotNumber)))
+    .map(([, column]) => column.sort((a, b) => a.tier - b.tier || a.slotNumber - b.slotNumber));
 }
 
 function tierTone(tier: 1 | 2 | 3) {
@@ -201,6 +222,22 @@ function moveRackEntry(entries: RackEntry[], entryId: string, line: string, flow
   return updateRackEntry(entries, entryId, { line, flowRackPosition });
 }
 
+function swapRackEntries(entries: RackEntry[], draggedEntryId: string, targetEntryId: string, line: string, flowRackPosition: string): RackEntry[] {
+  const draggedEntry = entries.find((entry) => entry.id === draggedEntryId);
+  const targetEntry = entries.find((entry) => entry.id === targetEntryId);
+  if (!draggedEntry || !targetEntry) return entries;
+
+  const sourceLine = draggedEntry.line;
+  const sourcePosition = draggedEntry.flowRackPosition.toUpperCase();
+  const targetPosition = flowRackPosition.toUpperCase();
+
+  return entries.map((entry) => {
+    if (entry.id === draggedEntryId) return updatedRackEntry(entry, line, targetPosition);
+    if (entry.id === targetEntryId) return updatedRackEntry(entry, sourceLine, sourcePosition);
+    return entry;
+  }).sort((a, b) => a.line.localeCompare(b.line) || a.sort - b.sort || a.recipe.localeCompare(b.recipe));
+}
+
 function visualizationSheetName(market: RackMarket) {
   return market === "de" ? "Visualization Rackplan - DACH" : "Visualization Rackplan - Nordic";
 }
@@ -209,6 +246,280 @@ function parseDemandValue(text: string) {
   const normalized = text.replace(/[^0-9,.-]/g, "").replace(",", ".");
   const value = Number(normalized);
   return Number.isFinite(value) ? value : 0;
+}
+
+function rackPositionNumber(position: string) {
+  const match = /^F(\d+)$/i.exec(position.trim());
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function ergonomicTierRank(meta?: RackSlotMeta) {
+  if (!meta) return 3;
+  if (meta.preferredPick) return 0;
+  if (meta.level === 1) return 1;
+  if (meta.level === 3) return 2;
+  return 3;
+}
+
+function stationPreferenceScore(staffingMode: StaffingMode, stationLoad: number, lineAverageLoad: number) {
+  if (staffingMode === "reduce") return -(stationLoad - lineAverageLoad);
+  if (staffingMode === "increase") return stationLoad - lineAverageLoad;
+  return Math.abs(stationLoad - lineAverageLoad);
+}
+
+function updatedRackEntry(entry: RackEntry, line: string, flowRackPosition: string): RackEntry {
+  const normalizedPosition = flowRackPosition.toUpperCase();
+  const sort = rackPositionNumber(normalizedPosition);
+  const labelPos = `${line}${normalizedPosition}`;
+  const suffix = entry.recipe.includes("_") ? entry.recipe.split("_", 2)[1] : "";
+  return {
+    ...entry,
+    line,
+    flowRackPosition: normalizedPosition,
+    sort,
+    labelPos,
+    uniCode: suffix ? `${labelPos}${suffix}` : labelPos,
+  };
+}
+
+function buildPreferredSlotsByRecipe(entries: RackEntry[], slotMeta: Map<string, RackSlotMeta>) {
+  const bucket = new Map<string, Array<{ position: string; demand: number; highRunner: boolean }>>();
+  for (const entry of entries) {
+    const meta = slotMeta.get(entry.flowRackPosition.toUpperCase());
+    if (!meta?.preferredPick) continue;
+    const rows = bucket.get(entry.recipe) ?? [];
+    rows.push({ position: entry.flowRackPosition.toUpperCase(), demand: meta.demand, highRunner: meta.highRunner });
+    bucket.set(entry.recipe, rows);
+  }
+
+  const ordered = new Map<string, string[]>();
+  for (const [recipe, rows] of bucket.entries()) {
+    ordered.set(recipe, [...new Map(rows
+      .sort((a, b) => Number(b.highRunner) - Number(a.highRunner) || b.demand - a.demand || rackPositionNumber(a.position) - rackPositionNumber(b.position))
+      .map((row) => [row.position, row.position])).values()]);
+  }
+  return ordered;
+}
+
+function rebalanceErgonomicEntries(
+  entries: RackEntry[],
+  highRunnerRecipes: Set<string>,
+  slotMeta: Map<string, RackSlotMeta>,
+  preferredSlotsByRecipe: Map<string, string[]>,
+  staffingMode: StaffingMode,
+) {
+  if (entries.length === 0 || highRunnerRecipes.size === 0 || slotMeta.size === 0) return entries;
+
+  const preferredSlots = [...slotMeta.entries()]
+    .map(([position, meta]) => ({ position, meta }))
+    .sort((a, b) => ergonomicTierRank(a.meta) - ergonomicTierRank(b.meta) || Number(b.meta.highRunner) - Number(a.meta.highRunner) || b.meta.demand - a.meta.demand || rackPositionNumber(a.position) - rackPositionNumber(b.position));
+
+  const occupancy = new Map<string, number>();
+  const stationDemand = new Map<string, number>();
+  const lineDemand = new Map<string, number>();
+  const lineStationCount = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    const key = `${entry.line}:${entry.flowRackPosition.toUpperCase()}`;
+    occupancy.set(key, (occupancy.get(key) ?? 0) + 1);
+    const meta = slotMeta.get(entry.flowRackPosition.toUpperCase());
+    const stationKey = `${entry.line}:${meta?.station ?? "unknown"}`;
+    stationDemand.set(stationKey, (stationDemand.get(stationKey) ?? 0) + (meta?.demand ?? entry.quantity));
+    lineDemand.set(entry.line, (lineDemand.get(entry.line) ?? 0) + (meta?.demand ?? entry.quantity));
+    const stations = lineStationCount.get(entry.line) ?? new Set<string>();
+    stations.add(meta?.station ?? "unknown");
+    lineStationCount.set(entry.line, stations);
+  }
+
+  let changed = false;
+  const nextEntries = entries
+    .map((entry) => ({ ...entry }))
+    .sort((a, b) => a.line.localeCompare(b.line) || Number(highRunnerRecipes.has(b.recipe)) - Number(highRunnerRecipes.has(a.recipe)) || (slotMeta.get(b.flowRackPosition.toUpperCase())?.demand ?? b.quantity) - (slotMeta.get(a.flowRackPosition.toUpperCase())?.demand ?? a.quantity) || b.quantity - a.quantity || a.recipe.localeCompare(b.recipe));
+  for (let index = 0; index < nextEntries.length; index += 1) {
+    const entry = nextEntries[index];
+
+    const currentPosition = entry.flowRackPosition.toUpperCase();
+    const currentMeta = slotMeta.get(currentPosition);
+    const entryIsHighRunner = highRunnerRecipes.has(entry.recipe);
+    const currentScore = ergonomicTierRank(currentMeta);
+
+    const prioritizedPositions = [
+      ...(preferredSlotsByRecipe.get(entry.recipe) ?? []),
+      ...preferredSlots.map((slot) => slot.position),
+    ];
+
+    const candidates = [...new Set(prioritizedPositions)]
+      .map((position) => ({
+        position,
+        meta: slotMeta.get(position),
+        occupancy: occupancy.get(`${entry.line}:${position}`) ?? 0,
+        stationLoad: stationDemand.get(`${entry.line}:${slotMeta.get(position)?.station ?? "unknown"}`) ?? 0,
+        lineAverageLoad: (lineDemand.get(entry.line) ?? 0) / Math.max((lineStationCount.get(entry.line)?.size ?? 1), 1),
+        preferredForRecipe: (preferredSlotsByRecipe.get(entry.recipe) ?? []).includes(position),
+        distance: Math.abs(rackPositionNumber(position) - rackPositionNumber(currentPosition)),
+      }))
+      .filter((candidate) => entryIsHighRunner ? candidate.meta?.preferredPick : true)
+      .sort((a, b) =>
+        Number(b.preferredForRecipe) - Number(a.preferredForRecipe)
+        || ergonomicTierRank(a.meta) - ergonomicTierRank(b.meta)
+        || stationPreferenceScore(staffingMode, a.stationLoad, a.lineAverageLoad) - stationPreferenceScore(staffingMode, b.stationLoad, b.lineAverageLoad)
+        || (staffingMode === "reduce" ? b.occupancy - a.occupancy : a.occupancy - b.occupancy)
+        || Number(b.meta?.highRunner) - Number(a.meta?.highRunner)
+        || (b.meta?.demand ?? 0) - (a.meta?.demand ?? 0)
+        || a.distance - b.distance,
+      );
+
+    const target = candidates[0];
+    if (!target || target.position === currentPosition) continue;
+    const targetScore = ergonomicTierRank(target.meta);
+    const shouldMove = entryIsHighRunner
+      ? !(currentMeta?.preferredPick)
+      : targetScore < currentScore || (targetScore === currentScore && target.occupancy < (occupancy.get(`${entry.line}:${currentPosition}`) ?? 0));
+    if (!shouldMove) continue;
+
+    occupancy.set(`${entry.line}:${currentPosition}`, Math.max((occupancy.get(`${entry.line}:${currentPosition}`) ?? 1) - 1, 0));
+    occupancy.set(`${entry.line}:${target.position}`, (occupancy.get(`${entry.line}:${target.position}`) ?? 0) + 1);
+    const currentStationKey = `${entry.line}:${currentMeta?.station ?? "unknown"}`;
+    const targetStationKey = `${entry.line}:${target.meta?.station ?? "unknown"}`;
+    const weight = currentMeta?.demand ?? entry.quantity;
+    stationDemand.set(currentStationKey, Math.max((stationDemand.get(currentStationKey) ?? weight) - weight, 0));
+    stationDemand.set(targetStationKey, (stationDemand.get(targetStationKey) ?? 0) + (target.meta?.demand ?? entry.quantity));
+    nextEntries[index] = updatedRackEntry(entry, entry.line, target.position);
+    changed = true;
+  }
+
+  return changed ? nextEntries.sort((a, b) => a.line.localeCompare(b.line) || a.sort - b.sort || a.recipe.localeCompare(b.recipe)) : entries;
+}
+
+function buildOperationalValidation(
+  entries: RackEntry[],
+  slotMeta: Map<string, RackSlotMeta>,
+  highRunnerRecipes: Set<string>,
+): RackValidationIssue[] {
+  const issues: RackValidationIssue[] = [];
+  const lines = uniqueRackLines(entries);
+
+  for (const line of lines) {
+    const lineEntries = entries.filter((entry) => entry.line === line);
+    if (lineEntries.length === 0) continue;
+
+    const offMiddleHighRunners = lineEntries.filter((entry) => {
+      if (!highRunnerRecipes.has(entry.recipe)) return false;
+      return !slotMeta.get(entry.flowRackPosition.toUpperCase())?.preferredPick;
+    });
+    if (offMiddleHighRunners.length > 0) {
+      issues.push({
+        severity: "warning",
+        message: `${line}: ${offMiddleHighRunners.length} Highrunner liegen nicht auf der Mittelschiene (${offMiddleHighRunners.map((entry) => `${entry.recipe}@${entry.flowRackPosition}`).join(", ")}).`,
+      });
+    }
+
+    const emptyErgonomicSlots = [...slotMeta.entries()].filter(([, meta]) => meta.preferredPick || meta.level === 1).filter(([position]) => !lineEntries.some((entry) => entry.flowRackPosition.toUpperCase() === position)).length;
+    const topTierEntries = lineEntries.filter((entry) => slotMeta.get(entry.flowRackPosition.toUpperCase())?.level === 3);
+    if (topTierEntries.length > 0 && emptyErgonomicSlots > 0) {
+      issues.push({
+        severity: "info",
+        message: `${line}: ${topTierEntries.length} Einträge liegen auf Etage 3, obwohl ${emptyErgonomicSlots} ergonomisch bessere Plätze frei sind.`,
+      });
+    }
+
+    const stationLoad = lineEntries.reduce((bucket, entry) => {
+      const station = slotMeta.get(entry.flowRackPosition.toUpperCase())?.station || "unknown";
+      bucket.set(station, (bucket.get(station) ?? 0) + (slotMeta.get(entry.flowRackPosition.toUpperCase())?.demand ?? entry.quantity));
+      return bucket;
+    }, new Map<string, number>());
+    const loads = [...stationLoad.entries()].filter(([station]) => station !== "unknown").sort((a, b) => b[1] - a[1]);
+    if (loads.length > 1) {
+      const total = loads.reduce((sum, [, demand]) => sum + demand, 0);
+      const [station, demand] = loads[0];
+      if (total > 0 && demand / total >= 0.45) {
+        issues.push({
+          severity: "warning",
+          message: `${line}: Station ${station} trägt ${Math.round((demand / total) * 100)}% der Picksumme. Prüfe Verteilung und Ergonomie.`,
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+function summarizeSlotViolations(
+  lineEntries: RackEntry[],
+  slotMeta: Map<string, RackSlotMeta>,
+  highRunnerRecipes: Set<string>,
+) {
+  const slotReasons = new Map<string, string[]>();
+  const emptyErgonomicSlots = [...slotMeta.entries()]
+    .filter(([, meta]) => meta.preferredPick || meta.level === 1)
+    .filter(([position]) => !lineEntries.some((entry) => entry.flowRackPosition.toUpperCase() === position))
+    .length;
+
+  const stationLoad = lineEntries.reduce((bucket, entry) => {
+    const station = slotMeta.get(entry.flowRackPosition.toUpperCase())?.station || "unknown";
+    bucket.set(station, (bucket.get(station) ?? 0) + (slotMeta.get(entry.flowRackPosition.toUpperCase())?.demand ?? entry.quantity));
+    return bucket;
+  }, new Map<string, number>());
+  const totalStationDemand = [...stationLoad.values()].reduce((sum, value) => sum + value, 0);
+
+  for (const entry of lineEntries) {
+    const position = entry.flowRackPosition.toUpperCase();
+    const meta = slotMeta.get(position);
+    const reasons = slotReasons.get(position) ?? [];
+    if (highRunnerRecipes.has(entry.recipe) && !meta?.preferredPick) {
+      reasons.push("Highrunner nicht auf Mittelschiene");
+    }
+    if (meta?.level === 3 && emptyErgonomicSlots > 0) {
+      reasons.push("Etage 3 trotz besserer freier Plätze");
+    }
+    const station = meta?.station || "unknown";
+    const stationShare = totalStationDemand > 0 ? (stationLoad.get(station) ?? 0) / totalStationDemand : 0;
+    if (station !== "unknown" && stationShare >= 0.45) {
+      reasons.push(`Station ${station} trägt ${Math.round(stationShare * 100)}% der Last`);
+    }
+    if (reasons.length > 0) slotReasons.set(position, [...new Set(reasons)]);
+  }
+
+  return slotReasons;
+}
+
+function buildComparisonSummary(before: RackEntry[], after: RackEntry[], slotMeta: Map<string, RackSlotMeta>) {
+  const lines = [...new Set([...before.map((entry) => entry.line), ...after.map((entry) => entry.line)])].sort((a, b) => a.localeCompare(b));
+  return lines.map((line) => {
+    const beforeEntries = before.filter((entry) => entry.line === line);
+    const afterEntries = after.filter((entry) => entry.line === line);
+    const moved = afterEntries.filter((entry) => {
+      const previous = beforeEntries.find((candidate) => candidate.id === entry.id);
+      return previous && previous.flowRackPosition !== entry.flowRackPosition;
+    }).length;
+    const beforeMiddle = beforeEntries.filter((entry) => slotMeta.get(entry.flowRackPosition.toUpperCase())?.preferredPick).length;
+    const afterMiddle = afterEntries.filter((entry) => slotMeta.get(entry.flowRackPosition.toUpperCase())?.preferredPick).length;
+    const beforeTop = beforeEntries.filter((entry) => slotMeta.get(entry.flowRackPosition.toUpperCase())?.level === 3).length;
+    const afterTop = afterEntries.filter((entry) => slotMeta.get(entry.flowRackPosition.toUpperCase())?.level === 3).length;
+    return {
+      line,
+      moved,
+      middleDelta: afterMiddle - beforeMiddle,
+      topDelta: afterTop - beforeTop,
+    };
+  });
+}
+
+function buildRecommendationOverlay(before: RackEntry[], after: RackEntry[]) {
+  const bySlot = new Map<string, RackEntry[]>();
+  const movedEntries = new Map<string, { before: RackEntry; after: RackEntry }>();
+
+  for (const candidate of after) {
+    const previous = before.find((entry) => entry.id === candidate.id);
+    if (!previous) continue;
+    if (previous.flowRackPosition === candidate.flowRackPosition && previous.line === candidate.line) continue;
+    movedEntries.set(candidate.id, { before: previous, after: candidate });
+    const key = `${candidate.line}:${candidate.flowRackPosition.toUpperCase()}`;
+    const rows = bySlot.get(key) ?? [];
+    rows.push(candidate);
+    bySlot.set(key, rows);
+  }
+
+  return { bySlot, movedEntries };
 }
 
 async function parseVisualizationRackplan(file: File, market: RackMarket): Promise<Map<string, RackSlotMeta>> {
@@ -235,6 +546,7 @@ async function parseVisualizationRackplan(file: File, market: RackMarket): Promi
       const type = worksheet.getRow(9).getCell(column).text.trim();
       slotMeta.set(position.toUpperCase(), {
         level,
+        layoutColumn: Number(worksheet.getRow(12).getCell(column).text.trim()) || column,
         station,
         demand,
         type,
@@ -270,9 +582,15 @@ export function RackView({ week, locale }: Props) {
   const [status, setStatus] = useState<string>(locale === "de" ? "Noch keine Rackdaten geladen." : "No rack data loaded yet.");
   const [busy, setBusy] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
+  const [picksPerWorker, setPicksPerWorker] = useState(120);
+  const [staffingMode, setStaffingMode] = useState<StaffingMode>("balanced");
+  const [recommendationOnly, setRecommendationOnly] = useState(false);
+  const [comparison, setComparison] = useState<ComparisonSnapshot | null>(null);
+  const [selectedFocus, setSelectedFocus] = useState<SelectedRackFocus | null>(null);
   const [activeLines, setActiveLines] = useState<string[]>(RACK_MARKET_PROFILES.de.lines);
   const [draggedEntryId, setDraggedEntryId] = useState<string | null>(null);
   const [hoveredSlotKey, setHoveredSlotKey] = useState<string | null>(null);
+  const [slotMeta, setSlotMeta] = useState<Map<string, RackSlotMeta>>(new Map());
 
   const profile = RACK_MARKET_PROFILES[market];
   const scenarios = useMemo(() => scenarioOptions(market, locale), [market, locale]);
@@ -284,6 +602,10 @@ export function RackView({ week, locale }: Props) {
     setPdlIds(undefined);
     setBoxfile(undefined);
     setCo2MealIds(undefined);
+    setSlotMeta(new Map());
+    setRecommendationOnly(false);
+    setComparison(null);
+    setSelectedFocus(null);
     setSourceLabel("");
     setStatus(locale === "de" ? `Automatischer Rack-Start für ${week} wird vorbereitet …` : `Preparing automatic rack startup for ${week} …`);
   }, [market, week, locale, profile.lines]);
@@ -300,9 +622,10 @@ export function RackView({ week, locale }: Props) {
         ]);
         if (cancelled) return;
 
-        const [nextEntries, nextPdlIds] = await Promise.all([
+        const [nextEntries, nextPdlIds, nextSlotMeta] = await Promise.all([
           parseMultilineExcel(multilineFile, market, profile.lines),
           parsePdlCsv(pdlFile),
+          parseVisualizationRackplan(multilineFile, market),
         ]);
         if (cancelled) return;
 
@@ -310,6 +633,7 @@ export function RackView({ week, locale }: Props) {
         setEntries(nextEntries);
         setTemplateEntries(nextEntries);
         setPdlIds(nextPdlIds);
+        setSlotMeta(nextSlotMeta);
         setSourceLabel(`${multilineFile.name} · ${pdlFile.name}`);
         setStatus(locale === "de"
           ? `Rackfile-Basis für ${week} automatisch geladen. Export ist direkt möglich, Boxfile und CO2 sind nur noch optional für Zusatzchecks.`
@@ -331,7 +655,7 @@ export function RackView({ week, locale }: Props) {
     };
   }, [market, week, locale, profile.lines]);
 
-  const validation = useMemo(
+  const baseValidation = useMemo(
     () => validateRackPlan(entries, { pdlIds, boxfile, co2MealIds }),
     [entries, pdlIds, boxfile, co2MealIds],
   );
@@ -349,6 +673,90 @@ export function RackView({ week, locale }: Props) {
     );
   }, [entries, filterText]);
 
+  const highRunnerRecipes = useMemo(() => {
+    const source = templateEntries.length > 0 ? templateEntries : entries;
+    const next = new Set<string>();
+    for (const entry of source) {
+      if (slotMeta.get(entry.flowRackPosition.toUpperCase())?.highRunner) {
+        next.add(entry.recipe);
+      }
+    }
+    return next;
+  }, [templateEntries, entries, slotMeta]);
+
+  const preferredSlotsByRecipe = useMemo(() => {
+    const source = templateEntries.length > 0 ? templateEntries : entries;
+    return buildPreferredSlotsByRecipe(source, slotMeta);
+  }, [templateEntries, entries, slotMeta]);
+
+  const operationalIssues = useMemo(
+    () => buildOperationalValidation(entries, slotMeta, highRunnerRecipes),
+    [entries, slotMeta, highRunnerRecipes],
+  );
+
+  const validation = useMemo<RackValidationResult>(() => ({
+    ok: baseValidation.ok,
+    issues: [...operationalIssues, ...baseValidation.issues],
+  }), [baseValidation, operationalIssues]);
+  const comparisonSummary = useMemo(
+    () => comparison ? buildComparisonSummary(comparison.before, comparison.after, slotMeta) : [],
+    [comparison, slotMeta],
+  );
+  const recommendationPreview = useMemo(
+    () => recommendationOnly && slotMeta.size > 0 ? rebalanceErgonomicEntries(entries, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode) : null,
+    [recommendationOnly, entries, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode],
+  );
+  const activeComparison = useMemo<ComparisonSnapshot | null>(() => {
+    if (comparison) return comparison;
+    if (recommendationOnly && recommendationPreview) {
+      return {
+        label: locale === "de" ? "Live-Empfehlung ohne Überschreiben" : "Live recommendation without overwrite",
+        before: entries,
+        after: recommendationPreview,
+      };
+    }
+    return null;
+  }, [comparison, recommendationOnly, recommendationPreview, locale, entries]);
+  const activeComparisonSummary = useMemo(
+    () => activeComparison ? buildComparisonSummary(activeComparison.before, activeComparison.after, slotMeta) : [],
+    [activeComparison, slotMeta],
+  );
+  const recommendationOverlay = useMemo(
+    () => recommendationPreview ? buildRecommendationOverlay(entries, recommendationPreview) : { bySlot: new Map<string, RackEntry[]>(), movedEntries: new Map<string, { before: RackEntry; after: RackEntry }>() },
+    [entries, recommendationPreview],
+  );
+  const selectedEntries = useMemo(
+    () => selectedFocus ? entries.filter((entry) => entry.line === selectedFocus.line && entry.flowRackPosition.toUpperCase() === selectedFocus.position.toUpperCase()) : [],
+    [entries, selectedFocus],
+  );
+  const selectedRecommendedEntries = useMemo(
+    () => selectedFocus ? (recommendationOverlay.bySlot.get(`${selectedFocus.line}:${selectedFocus.position.toUpperCase()}`) ?? []) : [],
+    [recommendationOverlay, selectedFocus],
+  );
+  const selectedViolations = useMemo(
+    () => selectedFocus ? summarizeSlotViolations(entries.filter((entry) => entry.line === selectedFocus.line), slotMeta, highRunnerRecipes).get(selectedFocus.position.toUpperCase()) ?? [] : [],
+    [entries, selectedFocus, slotMeta, highRunnerRecipes],
+  );
+  const selectedMeta = useMemo(
+    () => selectedFocus ? slotMeta.get(selectedFocus.position.toUpperCase()) : undefined,
+    [selectedFocus, slotMeta],
+  );
+  const selectedMovedEntry = useMemo(
+    () => selectedFocus?.entryId ? recommendationOverlay.movedEntries.get(selectedFocus.entryId) : undefined,
+    [selectedFocus, recommendationOverlay],
+  );
+
+  useEffect(() => {
+    if (recommendationOnly) return;
+    const nextEntries = rebalanceErgonomicEntries(entries, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode);
+    if (nextEntries === entries) return;
+    const movedEntries = nextEntries.filter((entry, index) => entry.flowRackPosition !== entries[index]?.flowRackPosition).length;
+    setEntries(nextEntries);
+    setStatus(locale === "de"
+      ? `${movedEntries} Einträge ergonomisch nachgezogen: Modus ${staffingMode === "reduce" ? "Mitarbeiter senken" : staffingMode === "increase" ? "Mitarbeiter erhöhen" : "balanciert"}.`
+      : `Rebalanced ${movedEntries} entries with staffing mode ${staffingMode}.`);
+  }, [entries, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, locale, staffingMode, recommendationOnly]);
+
   const entriesByLineAndSlot = useMemo(() => {
     const bucket = new Map<string, RackEntry[]>();
     for (const entry of entries) {
@@ -363,9 +771,13 @@ export function RackView({ week, locale }: Props) {
   async function handleMultilineUpload(file: File) {
     setBusy(locale === "de" ? "MultiLine wird geladen …" : "Loading MultiLine …");
     try {
-      const nextEntries = await parseMultilineExcel(file, market, activeLines);
+      const [nextEntries, nextSlotMeta] = await Promise.all([
+        parseMultilineExcel(file, market, activeLines),
+        parseVisualizationRackplan(file, market),
+      ]);
       setEntries(nextEntries);
       setTemplateEntries(nextEntries);
+      setSlotMeta(nextSlotMeta);
       setSourceLabel(file.name);
       setStatus(locale === "de" ? `MultiLine importiert: ${file.name}` : `MultiLine imported: ${file.name}`);
     } catch (error) {
@@ -436,6 +848,8 @@ export function RackView({ week, locale }: Props) {
     const nextEntries = projectRackEntriesToLines(source, lines);
     setActiveLines(lines);
     setEntries(nextEntries);
+    setRecommendationOnly(false);
+    setComparison(null);
     setStatus(locale === "de" ? `Szenario aktiv: ${lines.join(", ")}` : `Scenario active: ${lines.join(", ")}`);
   }
 
@@ -451,6 +865,22 @@ export function RackView({ week, locale }: Props) {
     applyScenario(activeLines);
   }
 
+  function suggestBestPlan() {
+    const source = templateEntries.length > 0 ? projectRackEntriesToLines(templateEntries, activeLines) : entries;
+    if (source.length === 0) return;
+    const nextEntries = rebalanceErgonomicEntries(source, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode);
+    setComparison({
+      label: locale === "de" ? "Vorher / nach Optimierung" : "Before / after optimization",
+      before: source,
+      after: nextEntries,
+    });
+    setRecommendationOnly(false);
+    setEntries(nextEntries);
+    setStatus(locale === "de"
+      ? `Optimierung angewendet: beste Linienbelegung für Modus ${staffingMode === "reduce" ? "Mitarbeiter senken" : staffingMode === "increase" ? "Mitarbeiter erhöhen" : "balanciert"}.`
+      : `Applied best-line optimization for staffing mode ${staffingMode}.`);
+  }
+
   function handlePillDragStart(entryId: string) {
     setDraggedEntryId(entryId);
   }
@@ -462,10 +892,36 @@ export function RackView({ week, locale }: Props) {
 
   function handleSlotDrop(line: string, flowRackPosition: string) {
     if (!draggedEntryId) return;
-    setEntries((current) => moveRackEntry(current, draggedEntryId, line, flowRackPosition));
-    setStatus(locale === "de"
-      ? `Verschoben auf ${line} / ${flowRackPosition}. Etage 3 möglichst nur nutzen, wenn darunter nichts mehr frei ist.`
-      : `Moved to ${line} / ${flowRackPosition}. Keep tier 3 as free as possible.`);
+    const draggedEntry = entries.find((entry) => entry.id === draggedEntryId);
+    const targetEntries = entries.filter((entry) => entry.line === line && entry.flowRackPosition.toUpperCase() === flowRackPosition.toUpperCase() && entry.id !== draggedEntryId);
+    const targetMeta = slotMeta.get(flowRackPosition.toUpperCase());
+    if (draggedEntry && highRunnerRecipes.has(draggedEntry.recipe) && targetMeta && !targetMeta.preferredPick) {
+      setStatus(locale === "de"
+        ? `Highrunner ${draggedEntry.recipe} bitte nur auf der mittleren Schiene platzieren.`
+        : `Place high runner ${draggedEntry.recipe} on the middle rail only.`);
+      setDraggedEntryId(null);
+      setHoveredSlotKey(null);
+      return;
+    }
+    const swapCandidate = targetEntries.find((entry) => deriveEntryKind(entry) !== "ice") ?? targetEntries[0];
+    if (draggedEntry && swapCandidate) {
+      const draggedTargetMeta = slotMeta.get(swapCandidate.flowRackPosition.toUpperCase());
+      if (highRunnerRecipes.has(swapCandidate.recipe) && !slotMeta.get(draggedEntry.flowRackPosition.toUpperCase())?.preferredPick) {
+        setStatus(locale === "de"
+          ? `Swap blockiert: Highrunner ${swapCandidate.recipe} würde die Mittelschiene verlassen.`
+          : `Swap blocked: high runner ${swapCandidate.recipe} would leave the middle rail.`);
+      } else {
+        setEntries((current) => swapRackEntries(current, draggedEntryId, swapCandidate.id, line, flowRackPosition));
+        setStatus(locale === "de"
+          ? `Slots getauscht: ${draggedEntry.flowRackPosition} mit ${swapCandidate.flowRackPosition}.`
+          : `Swapped ${draggedEntry.flowRackPosition} with ${swapCandidate.flowRackPosition}.`);
+      }
+    } else {
+      setEntries((current) => moveRackEntry(current, draggedEntryId, line, flowRackPosition));
+      setStatus(locale === "de"
+        ? `Verschoben auf ${line} / ${flowRackPosition}. Mittlere Schiene bevorzugen, Highrunner bleiben in Level 2.`
+        : `Moved to ${line} / ${flowRackPosition}. Prefer the middle rail and keep high runners on level 2.`);
+    }
     setDraggedEntryId(null);
     setHoveredSlotKey(null);
   }
@@ -525,9 +981,17 @@ export function RackView({ week, locale }: Props) {
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{locale === "de" ? "Linien-Szenarien" : "Line scenarios"}</div>
                   <div className="mt-1 text-sm text-slate-700">{locale === "de" ? "Plane Primär- und Backup-Linien vor. Ein Klick baut die Rackfile sofort für die Ersatzlinie neu auf." : "Pre-plan primary and backup lines. One click rebuilds the rackfile for the backup line."}</div>
                 </div>
-                <button className="btn" onClick={rebuildForSelectedLines} disabled={activeLines.length === 0 || (entries.length === 0 && templateEntries.length === 0)}>
-                  {locale === "de" ? "Mit aktiven Linien neu aufbauen" : "Rebuild with active lines"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button className="btn" onClick={rebuildForSelectedLines} disabled={activeLines.length === 0 || (entries.length === 0 && templateEntries.length === 0)}>
+                    {locale === "de" ? "Mit aktiven Linien neu aufbauen" : "Rebuild with active lines"}
+                  </button>
+                  <button className={`btn ${recommendationOnly ? "btn-primary" : ""}`} onClick={() => setRecommendationOnly((current) => !current)} disabled={entries.length === 0 || slotMeta.size === 0}>
+                    {recommendationOnly ? (locale === "de" ? "Empfehlung ausblenden" : "Hide recommendation") : (locale === "de" ? "Nur Empfehlungen" : "Recommendations only")}
+                  </button>
+                  <button className="btn btn-primary" onClick={suggestBestPlan} disabled={entries.length === 0 || slotMeta.size === 0}>
+                    {locale === "de" ? "Beste Linie bauen" : "Build best line"}
+                  </button>
+                </div>
               </div>
               <div className="mt-3 grid gap-2 lg:grid-cols-3">
                 {scenarios.map((scenario) => (
@@ -590,12 +1054,161 @@ export function RackView({ week, locale }: Props) {
               <MiniStat label="Protein" value={summary.protein} />
               <MiniStat label={locale === "de" ? "Validierung" : "Validation"} value={validation.ok ? "OK" : validation.issues.filter((issue) => issue.severity === "error").length} accent={!validation.ok} />
             </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{locale === "de" ? "Mitarbeiter-Schlüssel" : "Staffing factor"}</div>
+                <div className="mt-1 text-sm text-slate-600">{locale === "de" ? "Picks pro Mitarbeiter für die Linienstatistik und Stationsabschätzung." : "Picks per worker for line and station staffing estimates."}</div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-2xl bg-slate-50 p-1 ring-1 ring-slate-200">
+                  {([
+                    { id: "reduce", label: locale === "de" ? "MA senken" : "Reduce workers" },
+                    { id: "balanced", label: locale === "de" ? "Balanciert" : "Balanced" },
+                    { id: "increase", label: locale === "de" ? "MA erhöhen" : "Increase workers" },
+                  ] as Array<{ id: StaffingMode; label: string }>).map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setStaffingMode(option.id)}
+                      className={`rounded-xl px-3 py-2 text-sm font-semibold ${staffingMode === option.id ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700"
+                    onClick={() => setPicksPerWorker((current) => Math.max(10, current - 10))}
+                  >
+                    -10
+                  </button>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    {locale === "de" ? "Picks / Mitarbeiter" : "Picks / worker"}
+                    <input
+                      type="number"
+                      min={1}
+                      value={picksPerWorker}
+                      onChange={(event) => setPicksPerWorker(Math.max(1, Number(event.target.value) || 1))}
+                      className="w-28 rounded-xl border-slate-300 px-3 py-2 ring-1 ring-slate-300"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700"
+                    onClick={() => setPicksPerWorker((current) => current + 10)}
+                  >
+                    +10
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[0.78fr_1.22fr]">
         <div className="space-y-4">
+          {selectedFocus && (
+            <div className="card overflow-hidden p-0">
+              <div className="border-b border-slate-200 bg-[linear-gradient(135deg,#0f172a,#1e293b_55%,#0369a1)] px-4 py-3 text-white">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">{locale === "de" ? "Slot / Rezept Fokus" : "Slot / recipe focus"}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className={lineBadge(selectedFocus.line)}>{selectedFocus.line}</span>
+                  <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold ring-1 ring-white/15">{selectedFocus.position}</span>
+                  {selectedMeta?.station && <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold ring-1 ring-white/15">{selectedMeta.station}</span>}
+                </div>
+              </div>
+              <div className="grid gap-3 p-4 xl:grid-cols-[0.95fr_1.05fr]">
+                <div className="space-y-3">
+                  <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                    <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "Aktuell im Fach" : "Currently in slot"}</div>
+                    <div className="mt-3 space-y-2">
+                      {selectedEntries.length === 0 && <div className="rounded-xl border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-500">{locale === "de" ? "Kein Eintrag im aktuellen Plan." : "No entry in the current plan."}</div>}
+                      {selectedEntries.map((entry) => (
+                        <button key={entry.id} type="button" onClick={() => setSelectedFocus({ line: selectedFocus.line, position: selectedFocus.position, entryId: entry.id })} className="flex w-full items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm">
+                          <div>
+                            <div className="font-semibold text-slate-900">{entry.recipe}</div>
+                            <div className="text-xs text-slate-500">{entry.displayName || entry.ingredient}</div>
+                          </div>
+                          <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${kindTone(deriveEntryKind(entry))}`}>x{entry.quantity}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                    <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "Regeln & Metadaten" : "Rules & metadata"}</div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide">
+                      <span className={`rounded-full px-2.5 py-1 ${selectedMeta?.preferredPick ? "bg-emerald-100 text-emerald-900" : "bg-slate-100 text-slate-700"}`}>{selectedMeta?.preferredPick ? (locale === "de" ? "Mittelschiene" : "Middle rail") : tierLabel((selectedMeta?.level as 1 | 2 | 3) || 1, locale)}</span>
+                      {selectedMeta?.highRunner && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-900">Highrunner</span>}
+                      {selectedMeta?.demand ? <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-900">Demand {selectedMeta.demand}</span> : null}
+                      {selectedMeta?.type ? <span className="rounded-full bg-violet-100 px-2.5 py-1 text-violet-900">{selectedMeta.type}</span> : null}
+                    </div>
+                    <div className="mt-3 space-y-2 text-sm">
+                      {selectedViolations.length === 0 && <div className="rounded-xl bg-emerald-50 px-3 py-3 text-emerald-900 ring-1 ring-emerald-200">{locale === "de" ? "Für dieses Fach liegen aktuell keine Regelverletzungen vor." : "No rule violations for this slot right now."}</div>}
+                      {selectedViolations.map((reason) => <div key={reason} className="rounded-xl bg-rose-50 px-3 py-3 text-rose-900 ring-1 ring-rose-200">{reason}</div>)}
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(14,165,233,0.14),rgba(255,255,255,0.96)),radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_40%)] p-4 ring-1 ring-sky-200">
+                    <div className="text-xs font-black uppercase tracking-[0.18em] text-sky-800">{locale === "de" ? "Empfohlene Belegung" : "Recommended occupancy"}</div>
+                    <div className="mt-3 space-y-2">
+                      {selectedRecommendedEntries.length === 0 && <div className="rounded-xl border border-dashed border-sky-200 bg-white/80 px-3 py-3 text-sm text-slate-500">{locale === "de" ? "Keine zusätzliche Empfehlung für dieses Fach." : "No additional recommendation for this slot."}</div>}
+                      {selectedRecommendedEntries.map((entry) => (
+                        <div key={entry.id} className="rounded-2xl border border-sky-200 bg-white/90 px-3 py-3 shadow-sm">
+                          <div className="font-semibold text-slate-900">{entry.recipe}</div>
+                          <div className="mt-1 text-xs text-slate-500">{entry.displayName || entry.ingredient}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {selectedMovedEntry && (
+                    <div className="rounded-2xl bg-slate-900 p-4 text-white ring-1 ring-slate-900">
+                      <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-300">{locale === "de" ? "Empfohlener Move" : "Recommended move"}</div>
+                      <div className="mt-2 text-sm text-slate-100">{selectedMovedEntry.after.recipe}</div>
+                      <div className="mt-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide">
+                        <span className="rounded-full bg-white/10 px-2.5 py-1">{selectedMovedEntry.before.line} {selectedMovedEntry.before.flowRackPosition}</span>
+                        <span>→</span>
+                        <span className="rounded-full bg-sky-500/20 px-2.5 py-1 text-sky-100">{selectedMovedEntry.after.line} {selectedMovedEntry.after.flowRackPosition}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {activeComparison && (
+            <div className="card overflow-hidden p-0">
+              <div className="border-b border-slate-200 bg-[linear-gradient(135deg,#111827,#1f2937_55%,#0f766e)] px-4 py-3 text-white">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">{locale === "de" ? "Vorher / Nachher" : "Before / after"}</div>
+                    <div className="mt-1 text-sm text-slate-200">{activeComparison.label}</div>
+                  </div>
+                  <button type="button" className="rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/15" onClick={() => setComparison(null)}>
+                    {locale === "de" ? "Ausblenden" : "Hide"}
+                  </button>
+                </div>
+              </div>
+              <div className="grid gap-3 p-4 md:grid-cols-3">
+                {activeComparisonSummary.map((item) => (
+                  <div key={item.line} className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={lineBadge(item.line)}>{item.line}</span>
+                      <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white">{item.moved} {locale === "de" ? "Moves" : "moves"}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                      <MiniStat label={locale === "de" ? "Mitte Δ" : "Middle Δ"} value={item.middleDelta > 0 ? `+${item.middleDelta}` : item.middleDelta} accent={item.middleDelta > 0} />
+                      <MiniStat label={locale === "de" ? "Etage 3 Δ" : "Tier 3 Δ"} value={item.topDelta > 0 ? `+${item.topDelta}` : item.topDelta} accent={item.topDelta > 0} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="card p-4">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-bold uppercase tracking-wide text-slate-600">{locale === "de" ? "Validierungsreport" : "Validation report"}</h3>
@@ -700,6 +1313,13 @@ export function RackView({ week, locale }: Props) {
                   slots={slots}
                   entries={entries}
                   entriesByLineAndSlot={entriesByLineAndSlot}
+                  slotMeta={slotMeta}
+                  highRunnerRecipes={highRunnerRecipes}
+                  picksPerWorker={picksPerWorker}
+                  staffingMode={staffingMode}
+                  selectedFocus={selectedFocus}
+                  recommendedEntriesBySlot={recommendationOverlay.bySlot}
+                  movedRecommendationByEntryId={recommendationOverlay.movedEntries}
                   locale={locale}
                   draggedEntryId={draggedEntryId}
                   hoveredSlotKey={hoveredSlotKey}
@@ -707,6 +1327,8 @@ export function RackView({ week, locale }: Props) {
                   onDropToSlot={handleSlotDrop}
                   onPillDragStart={handlePillDragStart}
                   onPillDragEnd={handlePillDragEnd}
+                  onSelectSlot={(selectedLine, position) => setSelectedFocus({ line: selectedLine, position })}
+                  onSelectEntry={(entryId, selectedLine, position) => setSelectedFocus({ line: selectedLine, position, entryId })}
                 />
               );
             })}
@@ -753,6 +1375,13 @@ function LineVisual({
   slots,
   entries,
   entriesByLineAndSlot,
+  slotMeta,
+  highRunnerRecipes,
+  picksPerWorker,
+  staffingMode,
+  selectedFocus,
+  recommendedEntriesBySlot,
+  movedRecommendationByEntryId,
   locale,
   draggedEntryId,
   hoveredSlotKey,
@@ -760,12 +1389,21 @@ function LineVisual({
   onDropToSlot,
   onPillDragStart,
   onPillDragEnd,
+  onSelectSlot,
+  onSelectEntry,
 }: {
   line: string;
   market: RackMarket;
   slots: number[];
   entries: RackEntry[];
   entriesByLineAndSlot: Map<string, RackEntry[]>;
+  slotMeta: Map<string, RackSlotMeta>;
+  highRunnerRecipes: Set<string>;
+  picksPerWorker: number;
+  staffingMode: StaffingMode;
+  selectedFocus: SelectedRackFocus | null;
+  recommendedEntriesBySlot: Map<string, RackEntry[]>;
+  movedRecommendationByEntryId: Map<string, { before: RackEntry; after: RackEntry }>;
   locale: UiLocale;
   draggedEntryId: string | null;
   hoveredSlotKey: string | null;
@@ -773,10 +1411,27 @@ function LineVisual({
   onDropToSlot: (line: string, flowRackPosition: string) => void;
   onPillDragStart: (entryId: string) => void;
   onPillDragEnd: () => void;
+  onSelectSlot: (line: string, position: string) => void;
+  onSelectEntry: (entryId: string, line: string, position: string) => void;
 }) {
   const accent = lineAccent(line);
   const lineEntries = entries.filter((entry) => entry.line === line);
-  const slotColumns = buildSlotColumns(slots);
+  const slotColumns = buildSlotColumns(slots, slotMeta);
+  const slotViolations = summarizeSlotViolations(lineEntries, slotMeta, highRunnerRecipes);
+  const stationLoads = [...lineEntries.reduce((bucket, entry) => {
+    const meta = slotMeta.get(entry.flowRackPosition.toUpperCase());
+    const station = meta?.station || (locale === "de" ? "Ohne Station" : "No station");
+    const current = bucket.get(station) ?? { station, demand: 0, entries: 0, middleRail: 0, highRunner: 0 };
+    current.demand += meta?.demand || entry.quantity;
+    current.entries += 1;
+    current.middleRail += meta?.preferredPick ? 1 : 0;
+    current.highRunner += highRunnerRecipes.has(entry.recipe) ? 1 : 0;
+    bucket.set(station, current);
+    return bucket;
+  }, new Map<string, { station: string; demand: number; entries: number; middleRail: number; highRunner: number }>()).values()]
+    .sort((a, b) => b.demand - a.demand || a.station.localeCompare(b.station));
+  const totalStationDemand = stationLoads.reduce((sum, station) => sum + station.demand, 0);
+  const estimatedWorkers = totalStationDemand > 0 ? totalStationDemand / picksPerWorker : 0;
   const occupiedSlots = slots.filter((slotNumber) => {
     const position = `F${String(slotNumber).padStart(2, "0")}`;
     return (entriesByLineAndSlot.get(`${line}:${position}`) ?? []).length > 0;
@@ -787,6 +1442,15 @@ function LineVisual({
     const topSlot = column.at(2);
     if (!topSlot) return false;
     return (entriesByLineAndSlot.get(`${line}:${topSlot.position}`) ?? []).length > 0;
+  }).length;
+  const middleRailUsed = slots.filter((slotNumber) => {
+    const position = `F${String(slotNumber).padStart(2, "0")}`;
+    return slotMeta.get(position)?.preferredPick && (entriesByLineAndSlot.get(`${line}:${position}`) ?? []).length > 0;
+  }).length;
+  const highRunnerOffMiddle = lineEntries.filter((entry) => {
+    if (!highRunnerRecipes.has(entry.recipe)) return false;
+    const meta = slotMeta.get(entry.flowRackPosition.toUpperCase());
+    return meta ? !meta.preferredPick : true;
   }).length;
 
   return (
@@ -820,8 +1484,11 @@ function LineVisual({
           <MiniStat label={locale === "de" ? "Belegt" : "Occupied"} value={occupiedSlots} />
           <MiniStat label={locale === "de" ? "Leer" : "Empty"} value={emptySlots} />
           <MiniStat label={locale === "de" ? "Items" : "Items"} value={lineEntries.length} />
+          <MiniStat label={locale === "de" ? "Mittelschiene" : "Middle rail"} value={middleRailUsed} accent={middleRailUsed === 0 && lineEntries.length > 0} />
+          <MiniStat label={locale === "de" ? "Highrunner falsch" : "High runners off"} value={highRunnerOffMiddle} accent={highRunnerOffMiddle > 0} />
           <MiniStat label={locale === "de" ? "Dichte" : "Density"} value={`${density}%`} accent={density >= 85} />
           <MiniStat label={locale === "de" ? "Etage 3 belegt" : "Tier 3 used"} value={topTierOccupied} accent={topTierOccupied > 0} />
+          <MiniStat label={locale === "de" ? "Mitarbeiter" : "Workers"} value={estimatedWorkers > 0 ? estimatedWorkers.toFixed(1) : "0.0"} accent={estimatedWorkers >= 1} />
         </div>
       </div>
 
@@ -829,6 +1496,82 @@ function LineVisual({
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "ASL Überblick" : "ASL overview"}</div>
           <div className="text-xs text-slate-500">{locale === "de" ? "Scroll horizontal für die komplette Linie" : "Scroll horizontally for the full line"}</div>
+        </div>
+
+        <div className="mb-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="rounded-[24px] border border-emerald-200 bg-[linear-gradient(135deg,rgba(16,185,129,0.18),rgba(255,255,255,0.96)),radial-gradient(circle_at_top_right,rgba(5,150,105,0.22),transparent_38%)] p-4 shadow-[inset_0_0_0_1px_rgba(16,185,129,0.15)]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase tracking-[0.2em] text-emerald-800">{locale === "de" ? "Pick-Korridor" : "Pick corridor"}</div>
+                <div className="mt-1 text-sm text-emerald-950">{locale === "de" ? "Mittelschiene priorisieren, obere Etage nur wenn nötig." : "Prioritize the middle rail and use the top tier only when needed."}</div>
+              </div>
+              <div className="rounded-2xl bg-emerald-700 px-3 py-2 text-right text-white shadow-sm">
+                <div className="text-[11px] uppercase tracking-wide text-emerald-100">{locale === "de" ? "Mittelschiene genutzt" : "Middle rail used"}</div>
+                <div className="text-2xl font-black tabular-nums">{middleRailUsed}</div>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+              <div className="rounded-2xl bg-white/85 px-3 py-2 ring-1 ring-emerald-200">
+                <div className="font-semibold uppercase tracking-wide text-emerald-800">{locale === "de" ? "Highrunner korrekt" : "High runners on rail"}</div>
+                <div className="mt-1 text-lg font-black text-emerald-950">{Math.max(lineEntries.filter((entry) => highRunnerRecipes.has(entry.recipe)).length - highRunnerOffMiddle, 0)}</div>
+              </div>
+              <div className="rounded-2xl bg-white/85 px-3 py-2 ring-1 ring-emerald-200">
+                <div className="font-semibold uppercase tracking-wide text-emerald-800">{locale === "de" ? "Außerhalb Mitte" : "Off middle"}</div>
+                <div className="mt-1 text-lg font-black text-rose-700">{highRunnerOffMiddle}</div>
+              </div>
+              <div className="rounded-2xl bg-white/85 px-3 py-2 ring-1 ring-emerald-200">
+                <div className="font-semibold uppercase tracking-wide text-emerald-800">{locale === "de" ? "Obere Etage" : "Top tier used"}</div>
+                <div className="mt-1 text-lg font-black text-slate-900">{topTierOccupied}</div>
+              </div>
+            </div>
+            <div className="mt-3 rounded-2xl bg-white/85 px-3 py-3 ring-1 ring-emerald-200">
+              <div className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-800">{locale === "de" ? "Optimierungsmodus" : "Optimization mode"}</div>
+              <div className="mt-1 text-sm text-emerald-950">{staffingMode === "reduce" ? (locale === "de" ? "Mitarbeiter senken: Last bündeln und Wege reduzieren." : "Reduce workers: consolidate load and shorten travel.") : staffingMode === "increase" ? (locale === "de" ? "Mitarbeiter erhöhen: Last breiter über Stationen verteilen." : "Increase workers: spread load across more stations.") : (locale === "de" ? "Balanciert: Ergonomie und Stationslast ausgleichen." : "Balanced: even out ergonomics and station load.")}</div>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50/90 p-4 ring-1 ring-slate-200/80">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{locale === "de" ? "Stationslast" : "Station load"}</div>
+                <div className="mt-1 text-sm text-slate-600">{locale === "de" ? "Echte Picksumme je Station aus dem Visualization-Sheet." : "Actual pick sum per station from the visualization sheet."}</div>
+              </div>
+              <div className="rounded-2xl bg-slate-900 px-3 py-2 text-right text-white">
+                <div className="text-[11px] uppercase tracking-wide text-slate-300">{locale === "de" ? "Gesamtsumme" : "Total sum"}</div>
+                <div className="text-2xl font-black tabular-nums">{Math.round(totalStationDemand)}</div>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {stationLoads.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
+                  {locale === "de" ? "Noch keine Stationslast verfügbar." : "No station load available yet."}
+                </div>
+              )}
+              {stationLoads.map((station) => (
+                <div key={`${line}-${station.station}`} className="rounded-2xl bg-white px-3 py-3 shadow-sm ring-1 ring-slate-200">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{station.station}</div>
+                      <div className="mt-1 text-2xl font-black tabular-nums text-slate-950">{Math.round(station.demand)}</div>
+                    </div>
+                    <div className="space-y-2 text-right">
+                      <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                        {station.entries} {locale === "de" ? "Einträge" : "entries"}
+                      </div>
+                      <div className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white">
+                        {locale === "de" ? `${(station.demand / picksPerWorker).toFixed(1)} MA` : `${(station.demand / picksPerWorker).toFixed(1)} FTE`}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide">
+                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">{locale === "de" ? `Mitte ${station.middleRail}` : `Middle ${station.middleRail}`}</span>
+                    <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-900">{locale === "de" ? `Anteil ${totalStationDemand > 0 ? Math.round((station.demand / totalStationDemand) * 100) : 0}%` : `Share ${totalStationDemand > 0 ? Math.round((station.demand / totalStationDemand) * 100) : 0}%`}</span>
+                    <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-900">{locale === "de" ? `Highrunner ${station.highRunner}` : `High runner ${station.highRunner}`}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="mb-4 grid gap-2 md:grid-cols-3">
@@ -848,6 +1591,7 @@ function LineVisual({
           <div className="relative min-w-max px-2 pt-8">
             <div className={`absolute left-0 right-0 ${market === "de" ? "top-[1.8rem] h-4" : "top-[2.25rem] h-2"} rounded-full bg-gradient-to-r ${accent.rail} opacity-90`} />
             {market === "de" && <div className="absolute left-6 right-6 top-[2.55rem] h-[6px] rounded-full bg-white/70" />}
+            <div className="pointer-events-none absolute inset-y-10 left-0 right-0 rounded-[32px] border border-emerald-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0),rgba(16,185,129,0.08)_34%,rgba(16,185,129,0.14)_50%,rgba(16,185,129,0.08)_66%,rgba(255,255,255,0))] shadow-[inset_0_0_0_1px_rgba(16,185,129,0.08)]" />
             <div className="relative flex items-start gap-3">
               {slotColumns.map((column, columnIndex) => {
                 return (
@@ -864,10 +1608,17 @@ function LineVisual({
                           const occupied = slotEntries.length > 0;
                           const slotKey = `${line}:${slot.position}`;
                           const isHovered = hoveredSlotKey === slotKey;
+                          const meta = slotMeta.get(slot.position);
+                          const isMiddleRail = meta?.preferredPick ?? slot.tier === 2;
+                          const violationReasons = slotViolations.get(slot.position) ?? [];
+                          const recommendedEntries = recommendedEntriesBySlot.get(slotKey) ?? [];
+                          const isSelected = selectedFocus?.line === line && selectedFocus.position.toUpperCase() === slot.position.toUpperCase();
                           return (
-                            <div
+                            <button
+                              type="button"
                               key={slotKey}
-                              className={`rounded-[22px] border p-3 transition ${occupied ? `${accent.slot} shadow-sm` : accent.slotEmpty} ${slot.tier === 3 ? "ring-1 ring-rose-200" : ""} ${isHovered ? "ring-2 ring-slate-900 ring-offset-2" : ""}`}
+                              className={`relative overflow-hidden rounded-[22px] border p-3 text-left transition-all duration-300 ${occupied ? `${accent.slot} shadow-sm` : accent.slotEmpty} ${slot.tier === 3 ? "ring-1 ring-rose-200" : ""} ${isMiddleRail ? "border-emerald-300 bg-[linear-gradient(135deg,rgba(16,185,129,0.16),rgba(255,255,255,0.92))] ring-2 ring-emerald-400 shadow-[0_18px_30px_-24px_rgba(5,150,105,0.95)]" : ""} ${violationReasons.length > 0 ? "border-rose-300 bg-[linear-gradient(135deg,rgba(251,113,133,0.18),rgba(255,255,255,0.95))] ring-2 ring-rose-400 shadow-[0_18px_30px_-24px_rgba(225,29,72,0.85)]" : ""} ${isSelected ? "-translate-y-1 ring-2 ring-slate-900 ring-offset-2 shadow-[0_22px_42px_-26px_rgba(15,23,42,0.85)]" : ""} ${isHovered ? "ring-2 ring-slate-900 ring-offset-2" : ""}`}
+                              onClick={() => onSelectSlot(line, slot.position)}
                               onDragOver={(event) => {
                                 event.preventDefault();
                                 onHoverSlot(slotKey);
@@ -878,30 +1629,61 @@ function LineVisual({
                                 onDropToSlot(line, slot.position);
                               }}
                             >
+                              {isMiddleRail && <div className="pointer-events-none absolute inset-y-0 left-0 w-1.5 bg-emerald-500" />}
+                              {recommendedEntries.length > 0 && <div className="pointer-events-none absolute inset-x-2 top-1 h-1 rounded-full bg-sky-400/90 animate-pulse" />}
                               <div className="flex items-center justify-between gap-2">
                                 <div>
                                   <div className="font-mono text-xs font-bold uppercase tracking-[0.22em] text-slate-500">{slot.position}</div>
-                                  <div className="mt-1 text-[11px] text-slate-500">{tierLabel(slot.tier, locale)}</div>
+                                  <div className="mt-1 text-[11px] text-slate-500">{meta?.preferredPick ? (locale === "de" ? `${tierLabel(slot.tier, locale)} · Mittelschiene` : `${tierLabel(slot.tier, locale)} · Middle rail`) : tierLabel(slot.tier, locale)}</div>
                                 </div>
-                                <div className={`rounded-full px-2.5 py-1 text-xs font-bold ${slot.tier === 3 ? "bg-rose-600 text-white" : occupied ? accent.chip : "bg-slate-200 text-slate-600"}`}>{slotEntries.length}</div>
+                                <div className={`rounded-full px-2.5 py-1 text-xs font-bold ${meta?.highRunner ? "bg-emerald-600 text-white" : slot.tier === 3 ? "bg-rose-600 text-white" : occupied ? accent.chip : "bg-slate-200 text-slate-600"}`}>{slotEntries.length}</div>
                               </div>
 
                               <div className="mt-3 space-y-1.5">
+                                {recommendedEntries.length > 0 && (
+                                  <div className="rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-2 text-[11px] font-semibold text-sky-900 shadow-[0_8px_18px_-12px_rgba(14,165,233,0.9)] animate-[pulse_3s_ease-in-out_infinite]">
+                                    <div className="uppercase tracking-wide text-sky-700">{locale === "de" ? "Empfohlener Zielslot" : "Recommended target slot"}</div>
+                                    <div className="mt-1 space-y-1">
+                                      {recommendedEntries.map((entry) => <div key={`${slotKey}-${entry.id}`}>{entry.recipe}</div>)}
+                                    </div>
+                                  </div>
+                                )}
+                                {violationReasons.length > 0 && (
+                                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-2 text-[11px] font-semibold text-rose-900">
+                                    <div className="uppercase tracking-wide text-rose-700">{locale === "de" ? "Regelverstoß" : "Rule violation"}</div>
+                                    <div className="mt-1 space-y-1">
+                                      {violationReasons.map((reason) => <div key={`${slot.position}-${reason}`}>{reason}</div>)}
+                                    </div>
+                                  </div>
+                                )}
+                                {meta?.highRunner && (
+                                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-semibold text-emerald-900">
+                                    {locale === "de" ? `Highrunner · Demand ${meta.demand}` : `High runner · demand ${meta.demand}`}
+                                  </div>
+                                )}
                                 {slotEntries.map((entry) => {
                                   const kind = deriveEntryKind(entry);
                                   const isDragged = draggedEntryId === entry.id;
+                                  const isHighRunner = highRunnerRecipes.has(entry.recipe);
                                   return (
                                     <button
                                       key={entry.id}
                                       type="button"
                                       draggable
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        onSelectEntry(entry.id, line, slot.position);
+                                      }}
                                       onDragStart={() => onPillDragStart(entry.id)}
                                       onDragEnd={onPillDragEnd}
-                                      className={`flex w-full items-center justify-between gap-2 rounded-full border px-3 py-2 text-left text-xs font-semibold transition ${kindTone(kind)} ${isDragged ? "scale-[0.98] opacity-60" : "hover:-translate-y-0.5 hover:shadow-sm"}`}
+                                      className={`flex w-full items-center justify-between gap-2 rounded-full border px-3 py-2 text-left text-xs font-semibold transition-all duration-300 ${kindTone(kind)} ${isHighRunner ? "ring-2 ring-emerald-300" : ""} ${movedRecommendationByEntryId.has(entry.id) ? "shadow-[0_10px_24px_-16px_rgba(14,165,233,0.9)] ring-2 ring-sky-300" : ""} ${isDragged ? "scale-[0.98] opacity-60" : "hover:-translate-y-0.5 hover:shadow-sm"}`}
                                       title={locale === "de" ? "Zum Verschieben ziehen" : "Drag to move"}
                                     >
                                       <span className="truncate">{entry.recipe}</span>
-                                      <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold">x{entry.quantity}</span>
+                                      <span className="flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold">
+                                        {movedRecommendationByEntryId.has(entry.id) && <span className="text-sky-700">↗</span>}
+                                        <span>x{entry.quantity}</span>
+                                      </span>
                                     </button>
                                   );
                                 })}
@@ -911,7 +1693,7 @@ function LineVisual({
                                   </div>
                                 )}
                               </div>
-                            </div>
+                            </button>
                           );
                         })}
                       </div>

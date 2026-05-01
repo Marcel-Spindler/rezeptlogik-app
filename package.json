@@ -12,7 +12,7 @@
     "rackfile:plan": "tsx scripts/rackfile-tool.ts plan",
     "rackfile:generate": "tsx scripts/rackfile-tool.ts generate",
     "push:firestore": "tsx scripts/push-firestore.ts",
-    "deploy": "npm run build && firebase deploy --only hosting,firestore:rules"
+    "deploy": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
