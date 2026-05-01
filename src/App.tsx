@@ -3,10 +3,11 @@ import { loadData, refreshRampUpDataOnStart } from "./dataSource";
 import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, Station, ShelfLifeInfo, DetailedSubRecipe, RecipeStructure } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, DEFAULT_STATION_DEVICE_COUNTS, DEFAULT_STATION_POOLS, computeWeekLoad, fmtMin, getBaseVerdenVolume, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools, normalizePoolName, saveStationDeviceCounts, saveStationPools, tokenToStation, workflowSteps } from "./equipment";
+import { loadDynamicModule } from "./dynamicImport";
 import { PlanningView } from "./PlanningView";
 import { formatDateTime, marketToLocale, marketVariantLabel, MARKET_LANGUAGE_LABEL, tl, type UiLocale } from "./i18n";
 
-const RackView = lazy(() => import("./RackView").then((module) => ({ default: module.RackView })));
+const RackView = lazy(() => loadDynamicModule("rack-view", () => import("./RackView").then((module) => ({ default: module.RackView }))));
 
 const MARKETS: Market[] = ["BENL", "DKSE", "DE"];
 const MARKET_LABEL: Record<Market, string> = { BENL: "BENL", DKSE: "DK/SE", DE: "DE" };

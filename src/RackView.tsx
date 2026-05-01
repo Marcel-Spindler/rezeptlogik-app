@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { loadDynamicModule } from "./dynamicImport";
 import type { UiLocale } from "./i18n";
 import {
   RACK_MARKET_PROFILES,
@@ -7,7 +8,6 @@ import {
   lineSlotRange,
   parseBoxfileCsv,
   parseCo2Csv,
-  parseMultilineExcel,
   parsePdlCsv,
   parseRackfileCsv,
   projectRackEntriesToLines,
@@ -21,6 +21,7 @@ import {
   updateRackEntry,
   validateRackPlan,
 } from "./rack";
+import type { RackSlotMeta } from "./rackWorkbook";
 
 type Props = {
   week: string;
@@ -48,21 +49,22 @@ type SelectedRackFocus = {
   entryId?: string;
 };
 
-type RackSlotMeta = {
-  level: number;
-  layoutColumn: number;
-  station: string;
-  demand: number;
-  type: string;
-  preferredPick: boolean;
-  highRunner: boolean;
-};
+function clampRackZoom(value: number) {
+  return Math.min(1.45, Math.max(0.65, Number(value.toFixed(2))));
+}
 
 const AUTO_MULTILINE_URL = "/data/rack/MultiLine-latest.xlsx";
 const AUTO_PDL_URL: Record<RackMarket, string> = {
   de: "/data/gsheet-truth-export/Factor_DE - PDL Forecast.csv",
   nordics: "/data/gsheet-truth-export/Factor_Nor - PDL Forecast.csv",
 };
+
+let rackWorkbookModulePromise: Promise<typeof import("./rackWorkbook")> | null = null;
+
+async function loadRackWorkbookModule() {
+  rackWorkbookModulePromise ??= loadDynamicModule("rack-workbook", () => import("./rackWorkbook"));
+  return rackWorkbookModulePromise;
+}
 
 function scenarioOptions(market: RackMarket, locale: UiLocale): LineScenario[] {
   if (market === "de") {
@@ -236,16 +238,6 @@ function swapRackEntries(entries: RackEntry[], draggedEntryId: string, targetEnt
     if (entry.id === targetEntryId) return updatedRackEntry(entry, sourceLine, sourcePosition);
     return entry;
   }).sort((a, b) => a.line.localeCompare(b.line) || a.sort - b.sort || a.recipe.localeCompare(b.recipe));
-}
-
-function visualizationSheetName(market: RackMarket) {
-  return market === "de" ? "Visualization Rackplan - DACH" : "Visualization Rackplan - Nordic";
-}
-
-function parseDemandValue(text: string) {
-  const normalized = text.replace(/[^0-9,.-]/g, "").replace(",", ".");
-  const value = Number(normalized);
-  return Number.isFinite(value) ? value : 0;
 }
 
 function rackPositionNumber(position: string) {
@@ -522,45 +514,6 @@ function buildRecommendationOverlay(before: RackEntry[], after: RackEntry[]) {
   return { bySlot, movedEntries };
 }
 
-async function parseVisualizationRackplan(file: File, market: RackMarket): Promise<Map<string, RackSlotMeta>> {
-  const { Workbook } = await import("exceljs");
-  const workbook = new Workbook();
-  await workbook.xlsx.load(await file.arrayBuffer());
-
-  const worksheet = workbook.getWorksheet(visualizationSheetName(market));
-  if (!worksheet) return new Map();
-
-  const slotMeta = new Map<string, RackSlotMeta>();
-  for (let rowNumber = 13; rowNumber <= worksheet.rowCount - 2; rowNumber += 1) {
-    const levelText = worksheet.getRow(rowNumber).getCell(5).text.trim();
-    const demandLevelText = worksheet.getRow(rowNumber + 1).getCell(5).text.trim();
-    const positionLevelText = worksheet.getRow(rowNumber + 2).getCell(5).text.trim();
-    const level = Number(levelText);
-    if (!Number.isFinite(level) || levelText !== demandLevelText || levelText !== positionLevelText) continue;
-
-    for (let column = 6; column <= worksheet.columnCount; column += 1) {
-      const position = worksheet.getRow(rowNumber + 2).getCell(column).text.trim();
-      if (!/^F\d+$/i.test(position)) continue;
-      const demand = parseDemandValue(worksheet.getRow(rowNumber + 1).getCell(column).text.trim());
-      const station = worksheet.getRow(11).getCell(column).text.trim();
-      const type = worksheet.getRow(9).getCell(column).text.trim();
-      slotMeta.set(position.toUpperCase(), {
-        level,
-        layoutColumn: Number(worksheet.getRow(12).getCell(column).text.trim()) || column,
-        station,
-        demand,
-        type,
-        preferredPick: level === 2,
-        highRunner: level === 2 && demand > 0,
-      });
-    }
-
-    rowNumber += 2;
-  }
-
-  return slotMeta;
-}
-
 async function fetchPublicFile(url: string, fallbackName: string): Promise<File> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -591,6 +544,7 @@ export function RackView({ week, locale }: Props) {
   const [draggedEntryId, setDraggedEntryId] = useState<string | null>(null);
   const [hoveredSlotKey, setHoveredSlotKey] = useState<string | null>(null);
   const [slotMeta, setSlotMeta] = useState<Map<string, RackSlotMeta>>(new Map());
+  const [rackZoomByLine, setRackZoomByLine] = useState<Record<string, number>>({});
 
   const profile = RACK_MARKET_PROFILES[market];
   const scenarios = useMemo(() => scenarioOptions(market, locale), [market, locale]);
@@ -606,6 +560,7 @@ export function RackView({ week, locale }: Props) {
     setRecommendationOnly(false);
     setComparison(null);
     setSelectedFocus(null);
+    setRackZoomByLine({});
     setSourceLabel("");
     setStatus(locale === "de" ? `Automatischer Rack-Start für ${week} wird vorbereitet …` : `Preparing automatic rack startup for ${week} …`);
   }, [market, week, locale, profile.lines]);
@@ -622,12 +577,15 @@ export function RackView({ week, locale }: Props) {
         ]);
         if (cancelled) return;
 
-        const [nextEntries, nextPdlIds, nextSlotMeta] = await Promise.all([
-          parseMultilineExcel(multilineFile, market, profile.lines),
+        const { parseRackWorkbook } = await loadRackWorkbookModule();
+
+        const [workbookData, nextPdlIds] = await Promise.all([
+          parseRackWorkbook(multilineFile, market, profile.lines),
           parsePdlCsv(pdlFile),
-          parseVisualizationRackplan(multilineFile, market),
         ]);
         if (cancelled) return;
+
+        const { entries: nextEntries, slotMeta: nextSlotMeta } = workbookData;
 
         setActiveLines(profile.lines);
         setEntries(nextEntries);
@@ -768,13 +726,22 @@ export function RackView({ week, locale }: Props) {
     return bucket;
   }, [entries]);
 
+  function lineZoom(line: string) {
+    return rackZoomByLine[line] ?? 0.9;
+  }
+
+  function updateLineZoom(line: string, nextZoom: number) {
+    setRackZoomByLine((current) => ({
+      ...current,
+      [line]: clampRackZoom(nextZoom),
+    }));
+  }
+
   async function handleMultilineUpload(file: File) {
     setBusy(locale === "de" ? "MultiLine wird geladen …" : "Loading MultiLine …");
     try {
-      const [nextEntries, nextSlotMeta] = await Promise.all([
-        parseMultilineExcel(file, market, activeLines),
-        parseVisualizationRackplan(file, market),
-      ]);
+      const { parseRackWorkbook } = await loadRackWorkbookModule();
+      const { entries: nextEntries, slotMeta: nextSlotMeta } = await parseRackWorkbook(file, market, activeLines);
       setEntries(nextEntries);
       setTemplateEntries(nextEntries);
       setSlotMeta(nextSlotMeta);
@@ -975,7 +942,7 @@ export function RackView({ week, locale }: Props) {
 
         <div className="grid gap-4 p-4 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-4">
-            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="rounded-[28px] bg-[radial-gradient(circle_at_top_left,rgba(148,163,184,0.14),transparent_38%),linear-gradient(135deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] p-4 ring-1 ring-slate-200 shadow-[0_24px_60px_-40px_rgba(15,23,42,0.35)]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{locale === "de" ? "Linien-Szenarien" : "Line scenarios"}</div>
@@ -993,11 +960,25 @@ export function RackView({ week, locale }: Props) {
                   </button>
                 </div>
               </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                <div className="rounded-2xl bg-slate-950 px-3 py-3 text-white shadow-[0_18px_35px_-24px_rgba(15,23,42,0.9)]">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-slate-300">{locale === "de" ? "Lazy Load" : "Lazy load"}</div>
+                  <div className="mt-1 text-sm font-semibold">{locale === "de" ? "RackView + Workbook getrennt geladen" : "RackView + workbook load separately"}</div>
+                </div>
+                <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(255,255,255,0.96))] px-3 py-3 ring-1 ring-emerald-200">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-emerald-700">{locale === "de" ? "Workbook-Metadaten" : "Workbook metadata"}</div>
+                  <div className="mt-1 text-sm font-semibold text-emerald-950">{slotMeta.size > 0 ? `${slotMeta.size} ${locale === "de" ? "Slots mit Layout-Semantik" : "slots with layout semantics"}` : (locale === "de" ? "Wird nach dem XLSX-Ladevorgang ergänzt" : "Filled after XLSX load")}</div>
+                </div>
+                <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(14,165,233,0.14),rgba(255,255,255,0.96))] px-3 py-3 ring-1 ring-sky-200">
+                  <div className="text-[11px] uppercase tracking-[0.16em] text-sky-700">{locale === "de" ? "Planungsmodus" : "Planning mode"}</div>
+                  <div className="mt-1 text-sm font-semibold text-sky-950">{recommendationOnly ? (locale === "de" ? "Nur Empfehlungen sichtbar" : "Recommendations overlay only") : (locale === "de" ? "Direktes Planen auf Live-Stand" : "Planning directly on live state")}</div>
+                </div>
+              </div>
               <div className="mt-3 grid gap-2 lg:grid-cols-3">
                 {scenarios.map((scenario) => (
                   <button
                     key={scenario.id}
-                    className={`rounded-2xl border p-3 text-left transition ${activeLines.join("|") === scenario.lines.join("|") ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                    className={`rounded-[24px] border p-3 text-left transition-all duration-300 ${activeLines.join("|") === scenario.lines.join("|") ? "border-slate-900 bg-slate-900 text-white shadow-[0_22px_40px_-28px_rgba(15,23,42,0.95)]" : "border-slate-200 bg-white/90 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_20px_32px_-28px_rgba(15,23,42,0.45)]"}`}
                     onClick={() => applyScenario(scenario.lines)}
                   >
                     <div className="font-semibold">{scenario.label}</div>
@@ -1030,12 +1011,13 @@ export function RackView({ week, locale }: Props) {
             </div>
           </div>
 
-          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+          <div className="rounded-[28px] bg-[radial-gradient(circle_at_top_right,rgba(14,165,233,0.16),transparent_32%),linear-gradient(135deg,rgba(248,250,252,0.96),rgba(255,255,255,0.96))] p-4 ring-1 ring-slate-200 shadow-[0_24px_60px_-40px_rgba(14,165,233,0.35)]">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{locale === "de" ? "Status" : "Status"}</div>
-                <div className="mt-1 text-sm font-medium text-slate-800">{busy ?? status}</div>
-                {sourceLabel && <div className="mt-1 text-xs text-slate-500">{locale === "de" ? "Quelle" : "Source"}: {sourceLabel}</div>}
+                <div className="mt-1 inline-flex items-center rounded-full bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">{busy ? (locale === "de" ? "Lädt" : "Loading") : (locale === "de" ? "Bereit" : "Ready")}</div>
+                <div className="mt-2 text-sm font-medium text-slate-800">{busy ?? status}</div>
+                {sourceLabel && <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">{locale === "de" ? "Quelle" : "Source"}</span><span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">{sourceLabel}</span></div>}
               </div>
               <button
                 className="btn btn-primary"
@@ -1044,6 +1026,13 @@ export function RackView({ week, locale }: Props) {
               >
                 {locale === "de" ? "Rackfile exportieren" : "Export rackfile"}
               </button>
+            </div>
+            <div className="mt-4 rounded-2xl bg-white/85 p-3 ring-1 ring-slate-200 backdrop-blur">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">{locale === "de" ? "Auto-Load aktiv" : "Auto-load active"}</span>
+                <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-900">{locale === "de" ? "Workbook getrennt nachgeladen" : "Workbook loaded separately"}</span>
+                <span className="rounded-full bg-violet-100 px-2.5 py-1 text-violet-900">{locale === "de" ? `${usedLines.length || activeLines.length} Linien im Fokus` : `${usedLines.length || activeLines.length} lines in focus`}</span>
+              </div>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 xl:grid-cols-7">
               <MiniStat label="Meals" value={summary.meal} />
@@ -1298,7 +1287,10 @@ export function RackView({ week, locale }: Props) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wide text-slate-600">{locale === "de" ? "Linienbild" : "Line map"}</h3>
-              <p className="mt-1 text-sm text-slate-500">{locale === "de" ? "Die ASLs werden als echte Förderlinie gezeigt: mit Track, Slotfolge, Belegung und den geplanten Artikeln pro Position." : "Each ASL is rendered like a real conveyor line with track, slot sequence, occupancy and planned items per position."}</p>
+              <p className="mt-1 text-sm text-slate-500">{locale === "de" ? "Die ASLs bleiben exakt dreietagig gestapelt. Mit Zoom kannst du dichter für den Überblick oder näher für den Nachbau arbeiten." : "The ASLs stay stacked in exact three-tier columns. Use zoom for overview or closer reconstruction."}</p>
+            </div>
+            <div className="rounded-[22px] bg-slate-50 px-3 py-2 ring-1 ring-slate-200 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              {locale === "de" ? "Zoom jetzt je Linie separat" : "Zoom is now per line"}
             </div>
           </div>
 
@@ -1317,6 +1309,8 @@ export function RackView({ week, locale }: Props) {
                   highRunnerRecipes={highRunnerRecipes}
                   picksPerWorker={picksPerWorker}
                   staffingMode={staffingMode}
+                  rackZoom={lineZoom(line)}
+                  onRackZoomChange={(nextZoom) => updateLineZoom(line, nextZoom)}
                   selectedFocus={selectedFocus}
                   recommendedEntriesBySlot={recommendationOverlay.bySlot}
                   movedRecommendationByEntryId={recommendationOverlay.movedEntries}
@@ -1341,9 +1335,14 @@ export function RackView({ week, locale }: Props) {
 
 function UploadCard({ label, hint, accept, onPick }: { label: string; hint: string; accept: string; onPick: (file: File) => Promise<void> }) {
   return (
-    <label className="group cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 text-sm text-slate-700">{hint}</div>
+    <label className="group cursor-pointer overflow-hidden rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,1),rgba(248,250,252,0.98))] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_20px_38px_-28px_rgba(15,23,42,0.45)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+          <div className="mt-1 text-sm text-slate-700">{hint}</div>
+        </div>
+        <div className="rounded-2xl bg-slate-950 px-3 py-2 text-lg font-black text-white shadow-[0_18px_30px_-24px_rgba(15,23,42,0.9)]">{label[0]}</div>
+      </div>
       <div className="mt-4 inline-flex rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Datei wählen</div>
       <input
         type="file"
@@ -1379,6 +1378,8 @@ function LineVisual({
   highRunnerRecipes,
   picksPerWorker,
   staffingMode,
+  rackZoom,
+  onRackZoomChange,
   selectedFocus,
   recommendedEntriesBySlot,
   movedRecommendationByEntryId,
@@ -1401,6 +1402,8 @@ function LineVisual({
   highRunnerRecipes: Set<string>;
   picksPerWorker: number;
   staffingMode: StaffingMode;
+  rackZoom: number;
+  onRackZoomChange: (nextZoom: number) => void;
   selectedFocus: SelectedRackFocus | null;
   recommendedEntriesBySlot: Map<string, RackEntry[]>;
   movedRecommendationByEntryId: Map<string, { before: RackEntry; after: RackEntry }>;
@@ -1452,6 +1455,12 @@ function LineVisual({
     const meta = slotMeta.get(entry.flowRackPosition.toUpperCase());
     return meta ? !meta.preferredPick : true;
   }).length;
+  const matrixColumnMinWidth = Math.round(148 * rackZoom);
+  const miniMapMinWidth = Math.round(30 + rackZoom * 18);
+  const miniMapCols = rackZoom <= 0.75 ? 14 : rackZoom <= 0.9 ? 12 : rackZoom <= 1.05 ? 10 : rackZoom <= 1.2 ? 8 : 6;
+  const slotPadding = `${Math.max(8, Math.round(10 * rackZoom))}px`;
+  const pillFontSize = `${Math.max(9, Math.round(10 * rackZoom))}px`;
+  const metaFontSize = `${Math.max(9, Math.round(10 * rackZoom))}px`;
 
   return (
     <div className={`overflow-hidden rounded-[28px] border border-slate-200 bg-gradient-to-br ${accent.shell} p-4 sm:p-5 ${accent.glow}`}>
@@ -1476,6 +1485,60 @@ function LineVisual({
                 {locale === "de" ? "Drag-and-drop Planung" : "Drag-and-drop planning"}
               </span>
             </div>
+            <div className="mt-3 max-w-xl rounded-[24px] bg-white/78 p-3 ring-1 ring-white/75 backdrop-blur">
+              <div className="flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <span>{locale === "de" ? "Linienauslastung" : "Lane utilization"}</span>
+                <span>{density}%</span>
+              </div>
+              <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-200">
+                <div className={`h-full rounded-full bg-gradient-to-r ${accent.rail}`} style={{ width: `${Math.min(density, 100)}%` }} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide">
+                <span className="rounded-full bg-white px-2.5 py-1 text-slate-700 ring-1 ring-slate-200">{locale === "de" ? `${occupiedSlots} belegt` : `${occupiedSlots} occupied`}</span>
+                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">{locale === "de" ? `${middleRailUsed} Mitte` : `${middleRailUsed} middle`}</span>
+                <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-900">{locale === "de" ? `${estimatedWorkers.toFixed(1)} MA Bedarf` : `${estimatedWorkers.toFixed(1)} worker load`}</span>
+              </div>
+            </div>
+            <div className="mt-3 rounded-[22px] bg-white/78 p-2 ring-1 ring-white/75 backdrop-blur max-w-xl">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700"
+                  onClick={() => onRackZoomChange(rackZoom - 0.1)}
+                >
+                  -
+                </button>
+                <div className="min-w-[140px] flex-1 px-1">
+                  <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    <span>{locale === "de" ? `${line} Zoom` : `${line} zoom`}</span>
+                    <span>{Math.round(rackZoom * 100)}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={65}
+                    max={145}
+                    step={5}
+                    value={Math.round(rackZoom * 100)}
+                    onChange={(event) => onRackZoomChange(Number(event.target.value) / 100)}
+                    className="mt-1 w-full"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700"
+                  onClick={() => onRackZoomChange(rackZoom + 0.1)}
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                  onClick={() => onRackZoomChange(0.9)}
+                >
+                  {locale === "de" ? "Reset" : "Reset"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1495,7 +1558,7 @@ function LineVisual({
       <div className="mt-5 rounded-[24px] border border-white/60 bg-white/75 p-3 ring-1 ring-white/50 backdrop-blur">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "ASL Überblick" : "ASL overview"}</div>
-          <div className="text-xs text-slate-500">{locale === "de" ? "Scroll horizontal für die komplette Linie" : "Scroll horizontally for the full line"}</div>
+          <div className="text-xs text-slate-500">{locale === "de" ? "Kompakte Säulenmatrix statt langer Scroll-Achse" : "Compact stacked matrix instead of a long scroll axis"}</div>
         </div>
 
         <div className="mb-4 grid gap-3 xl:grid-cols-[0.95fr_1.05fr]">
@@ -1587,22 +1650,56 @@ function LineVisual({
           ))}
         </div>
 
-        <div className="overflow-x-auto pb-3">
-          <div className="relative min-w-max px-2 pt-8">
-            <div className={`absolute left-0 right-0 ${market === "de" ? "top-[1.8rem] h-4" : "top-[2.25rem] h-2"} rounded-full bg-gradient-to-r ${accent.rail} opacity-90`} />
-            {market === "de" && <div className="absolute left-6 right-6 top-[2.55rem] h-[6px] rounded-full bg-white/70" />}
-            <div className="pointer-events-none absolute inset-y-10 left-0 right-0 rounded-[32px] border border-emerald-200/70 bg-[linear-gradient(180deg,rgba(255,255,255,0),rgba(16,185,129,0.08)_34%,rgba(16,185,129,0.14)_50%,rgba(16,185,129,0.08)_66%,rgba(255,255,255,0))] shadow-[inset_0_0_0_1px_rgba(16,185,129,0.08)]" />
-            <div className="relative flex items-start gap-3">
+        <div className="pb-3">
+          <div className="relative px-2 pt-4">
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500 shadow-[0_18px_30px_-28px_rgba(15,23,42,0.45)] backdrop-blur">
+              <span>{locale === "de" ? "Förderachse" : "Conveyor axis"}</span>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full bg-emerald-100 px-2 py-1 text-emerald-900">{locale === "de" ? "Mitte = Pick-Korridor" : "Middle = pick corridor"}</span>
+                <span className="rounded-full bg-rose-100 px-2 py-1 text-rose-900">{locale === "de" ? "Oben = Reserve" : "Top = reserve"}</span>
+              </div>
+            </div>
+            <div className="mb-4 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,0.9),rgba(241,245,249,0.95))] p-3 shadow-[inset_0_0_0_1px_rgba(148,163,184,0.08)]">
+              <div className="flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <span>{locale === "de" ? "Linienfluss" : "Line flow"}</span>
+                <span>{locale === "de" ? `${slotColumns.length} Säulen kompakt umgebrochen` : `${slotColumns.length} wrapped columns`}</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+                <div className={`h-full rounded-full bg-gradient-to-r ${accent.rail}`} style={{ width: "100%" }} />
+              </div>
+              <div
+                className="mt-3 grid gap-1"
+                style={{ gridTemplateColumns: `repeat(${miniMapCols}, minmax(${miniMapMinWidth}px, 1fr))` }}
+              >
+                {slotColumns.map((column, columnIndex) => {
+                  const columnActive = column.some((slot) => (entriesByLineAndSlot.get(`${line}:${slot.position}`) ?? []).length > 0);
+                  return (
+                    <button
+                      key={`${line}-minimap-${columnIndex}`}
+                      type="button"
+                      onClick={() => onSelectSlot(line, column[1]?.position ?? column[0]?.position ?? "")}
+                      className={`rounded-xl px-2 py-2 text-[10px] font-bold transition ${columnActive ? `${accent.chip} shadow-sm` : "bg-white text-slate-500 ring-1 ring-slate-200"}`}
+                    >
+                      {column.map((slot) => slot.position.replace("F", "")).join("/")}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div
+              className="grid gap-3"
+              style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${matrixColumnMinWidth}px, 1fr))` }}
+            >
               {slotColumns.map((column, columnIndex) => {
                 return (
-                  <div key={`${line}-column-${columnIndex}`} className="relative w-[210px] shrink-0">
-                    <div className={`absolute left-1/2 top-[-0.45rem] h-5 w-1 -translate-x-1/2 rounded-full ${column.some((slot) => (entriesByLineAndSlot.get(`${line}:${slot.position}`) ?? []).length > 0) ? accent.chip : "bg-slate-300"}`} />
-                    <div className="rounded-[24px] border border-slate-200/80 bg-white/70 p-3 shadow-sm backdrop-blur">
-                      <div className="mb-3 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <div key={`${line}-column-${columnIndex}`} className="relative min-w-0">
+                    <div className={`absolute left-1/2 top-[-0.3rem] h-3.5 w-1 -translate-x-1/2 rounded-full ${column.some((slot) => (entriesByLineAndSlot.get(`${line}:${slot.position}`) ?? []).length > 0) ? accent.chip : "bg-slate-300"}`} />
+                    <div className="rounded-[20px] border border-slate-200/80 bg-white/82 p-2.5 shadow-sm backdrop-blur">
+                      <div className="mb-2 flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                         <span>{locale === "de" ? "Säule" : "Column"} {columnIndex + 1}</span>
                         <span>{column.map((slot) => slot.position.replace("F", "")).join(" / ")}</span>
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         {[...column].reverse().map((slot) => {
                           const slotEntries = entriesByLineAndSlot.get(`${line}:${slot.position}`) ?? [];
                           const occupied = slotEntries.length > 0;
@@ -1617,8 +1714,13 @@ function LineVisual({
                             <button
                               type="button"
                               key={slotKey}
-                              className={`relative overflow-hidden rounded-[22px] border p-3 text-left transition-all duration-300 ${occupied ? `${accent.slot} shadow-sm` : accent.slotEmpty} ${slot.tier === 3 ? "ring-1 ring-rose-200" : ""} ${isMiddleRail ? "border-emerald-300 bg-[linear-gradient(135deg,rgba(16,185,129,0.16),rgba(255,255,255,0.92))] ring-2 ring-emerald-400 shadow-[0_18px_30px_-24px_rgba(5,150,105,0.95)]" : ""} ${violationReasons.length > 0 ? "border-rose-300 bg-[linear-gradient(135deg,rgba(251,113,133,0.18),rgba(255,255,255,0.95))] ring-2 ring-rose-400 shadow-[0_18px_30px_-24px_rgba(225,29,72,0.85)]" : ""} ${isSelected ? "-translate-y-1 ring-2 ring-slate-900 ring-offset-2 shadow-[0_22px_42px_-26px_rgba(15,23,42,0.85)]" : ""} ${isHovered ? "ring-2 ring-slate-900 ring-offset-2" : ""}`}
+                              className={`relative overflow-hidden rounded-[18px] border p-2.5 text-left transition-all duration-300 ${occupied ? `${accent.slot} shadow-sm` : accent.slotEmpty} ${slot.tier === 3 ? "ring-1 ring-rose-200" : ""} ${isMiddleRail ? "border-emerald-300 bg-[linear-gradient(135deg,rgba(16,185,129,0.16),rgba(255,255,255,0.92))] ring-2 ring-emerald-400 shadow-[0_14px_24px_-22px_rgba(5,150,105,0.95)]" : ""} ${violationReasons.length > 0 ? "border-rose-300 bg-[linear-gradient(135deg,rgba(251,113,133,0.18),rgba(255,255,255,0.95))] ring-2 ring-rose-400 shadow-[0_14px_24px_-22px_rgba(225,29,72,0.85)]" : ""} ${isSelected ? "-translate-y-0.5 ring-2 ring-slate-900 ring-offset-2 shadow-[0_18px_28px_-24px_rgba(15,23,42,0.85)]" : ""} ${isHovered ? "ring-2 ring-slate-900 ring-offset-2" : ""}`}
+                              style={{ padding: slotPadding }}
                               onClick={() => onSelectSlot(line, slot.position)}
+                              onDoubleClick={() => {
+                                onSelectSlot(line, slot.position);
+                                onRackZoomChange(Math.max(rackZoom, 1.1));
+                              }}
                               onDragOver={(event) => {
                                 event.preventDefault();
                                 onHoverSlot(slotKey);
@@ -1633,15 +1735,15 @@ function LineVisual({
                               {recommendedEntries.length > 0 && <div className="pointer-events-none absolute inset-x-2 top-1 h-1 rounded-full bg-sky-400/90 animate-pulse" />}
                               <div className="flex items-center justify-between gap-2">
                                 <div>
-                                  <div className="font-mono text-xs font-bold uppercase tracking-[0.22em] text-slate-500">{slot.position}</div>
-                                  <div className="mt-1 text-[11px] text-slate-500">{meta?.preferredPick ? (locale === "de" ? `${tierLabel(slot.tier, locale)} · Mittelschiene` : `${tierLabel(slot.tier, locale)} · Middle rail`) : tierLabel(slot.tier, locale)}</div>
+                                  <div className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">{slot.position}</div>
+                                  <div className="mt-0.5 text-slate-500" style={{ fontSize: metaFontSize }}>{meta?.preferredPick ? (locale === "de" ? `${tierLabel(slot.tier, locale)} · Mittelschiene` : `${tierLabel(slot.tier, locale)} · Middle rail`) : tierLabel(slot.tier, locale)}</div>
                                 </div>
-                                <div className={`rounded-full px-2.5 py-1 text-xs font-bold ${meta?.highRunner ? "bg-emerald-600 text-white" : slot.tier === 3 ? "bg-rose-600 text-white" : occupied ? accent.chip : "bg-slate-200 text-slate-600"}`}>{slotEntries.length}</div>
+                                <div className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${meta?.highRunner ? "bg-emerald-600 text-white" : slot.tier === 3 ? "bg-rose-600 text-white" : occupied ? accent.chip : "bg-slate-200 text-slate-600"}`}>{slotEntries.length}</div>
                               </div>
 
-                              <div className="mt-3 space-y-1.5">
+                              <div className="mt-2 space-y-1">
                                 {recommendedEntries.length > 0 && (
-                                  <div className="rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-2 text-[11px] font-semibold text-sky-900 shadow-[0_8px_18px_-12px_rgba(14,165,233,0.9)] animate-[pulse_3s_ease-in-out_infinite]">
+                                  <div className="rounded-xl border border-sky-200 bg-sky-50 px-2 py-1.5 text-[10px] font-semibold text-sky-900 shadow-[0_8px_18px_-12px_rgba(14,165,233,0.9)] animate-[pulse_3s_ease-in-out_infinite]">
                                     <div className="uppercase tracking-wide text-sky-700">{locale === "de" ? "Empfohlener Zielslot" : "Recommended target slot"}</div>
                                     <div className="mt-1 space-y-1">
                                       {recommendedEntries.map((entry) => <div key={`${slotKey}-${entry.id}`}>{entry.recipe}</div>)}
@@ -1649,7 +1751,7 @@ function LineVisual({
                                   </div>
                                 )}
                                 {violationReasons.length > 0 && (
-                                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-2 text-[11px] font-semibold text-rose-900">
+                                  <div className="rounded-xl border border-rose-200 bg-rose-50 px-2 py-1.5 text-[10px] font-semibold text-rose-900">
                                     <div className="uppercase tracking-wide text-rose-700">{locale === "de" ? "Regelverstoß" : "Rule violation"}</div>
                                     <div className="mt-1 space-y-1">
                                       {violationReasons.map((reason) => <div key={`${slot.position}-${reason}`}>{reason}</div>)}
@@ -1657,7 +1759,7 @@ function LineVisual({
                                   </div>
                                 )}
                                 {meta?.highRunner && (
-                                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-semibold text-emerald-900">
+                                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-[10px] font-semibold text-emerald-900">
                                     {locale === "de" ? `Highrunner · Demand ${meta.demand}` : `High runner · demand ${meta.demand}`}
                                   </div>
                                 )}
@@ -1674,13 +1776,19 @@ function LineVisual({
                                         event.stopPropagation();
                                         onSelectEntry(entry.id, line, slot.position);
                                       }}
+                                      onDoubleClick={(event) => {
+                                        event.stopPropagation();
+                                        onSelectEntry(entry.id, line, slot.position);
+                                        onRackZoomChange(Math.max(rackZoom, 1.1));
+                                      }}
                                       onDragStart={() => onPillDragStart(entry.id)}
                                       onDragEnd={onPillDragEnd}
-                                      className={`flex w-full items-center justify-between gap-2 rounded-full border px-3 py-2 text-left text-xs font-semibold transition-all duration-300 ${kindTone(kind)} ${isHighRunner ? "ring-2 ring-emerald-300" : ""} ${movedRecommendationByEntryId.has(entry.id) ? "shadow-[0_10px_24px_-16px_rgba(14,165,233,0.9)] ring-2 ring-sky-300" : ""} ${isDragged ? "scale-[0.98] opacity-60" : "hover:-translate-y-0.5 hover:shadow-sm"}`}
+                                      className={`flex w-full items-center justify-between gap-1.5 rounded-full border px-2.5 py-1.5 text-left text-[10px] font-semibold transition-all duration-300 ${kindTone(kind)} ${isHighRunner ? "ring-2 ring-emerald-300" : ""} ${movedRecommendationByEntryId.has(entry.id) ? "shadow-[0_10px_24px_-16px_rgba(14,165,233,0.9)] ring-2 ring-sky-300" : ""} ${isDragged ? "scale-[0.98] opacity-60" : "hover:-translate-y-0.5 hover:shadow-sm"}`}
+                                      style={{ fontSize: pillFontSize }}
                                       title={locale === "de" ? "Zum Verschieben ziehen" : "Drag to move"}
                                     >
                                       <span className="truncate">{entry.recipe}</span>
-                                      <span className="flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold">
+                                      <span className="flex items-center gap-1 rounded-full bg-white/70 px-2 py-0.5 text-[9px] font-bold">
                                         {movedRecommendationByEntryId.has(entry.id) && <span className="text-sky-700">↗</span>}
                                         <span>x{entry.quantity}</span>
                                       </span>
@@ -1688,7 +1796,7 @@ function LineVisual({
                                   );
                                 })}
                                 {!occupied && (
-                                  <div className="rounded-full border border-dashed border-slate-200 px-3 py-2 text-center text-[11px] text-slate-400">
+                                  <div className="rounded-full border border-dashed border-slate-200 px-2.5 py-1.5 text-center text-[10px] text-slate-400">
                                     {locale === "de" ? "frei" : "free"}
                                   </div>
                                 )}
