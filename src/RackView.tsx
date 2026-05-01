@@ -33,6 +33,12 @@ type LineScenario = {
   note: string;
 };
 
+const AUTO_MULTILINE_URL = "/data/rack/MultiLine-latest.xlsx";
+const AUTO_PDL_URL: Record<RackMarket, string> = {
+  de: "/data/gsheet-truth-export/Factor_DE - PDL Forecast.csv",
+  nordics: "/data/gsheet-truth-export/Factor_Nor - PDL Forecast.csv",
+};
+
 function scenarioOptions(market: RackMarket, locale: UiLocale): LineScenario[] {
   if (market === "de") {
     return [
@@ -112,6 +118,90 @@ function lineBadge(line: string) {
   return `rounded-full px-2 py-0.5 text-xs font-semibold ${hue}`;
 }
 
+function lineAccent(line: string) {
+  if (line.endsWith("1")) {
+    return {
+      shell: "from-sky-500/18 via-cyan-500/10 to-white",
+      rail: "from-sky-500 via-cyan-500 to-sky-300",
+      glow: "shadow-[0_20px_60px_-28px_rgba(14,165,233,0.75)]",
+      slot: "border-sky-200 bg-sky-50/80",
+      slotEmpty: "border-sky-100 bg-white/70",
+      chip: "bg-sky-600 text-white",
+      text: "text-sky-900",
+    };
+  }
+  if (line.endsWith("3")) {
+    return {
+      shell: "from-emerald-500/18 via-teal-500/10 to-white",
+      rail: "from-emerald-500 via-teal-500 to-emerald-300",
+      glow: "shadow-[0_20px_60px_-28px_rgba(16,185,129,0.7)]",
+      slot: "border-emerald-200 bg-emerald-50/80",
+      slotEmpty: "border-emerald-100 bg-white/70",
+      chip: "bg-emerald-600 text-white",
+      text: "text-emerald-900",
+    };
+  }
+  if (line.endsWith("4")) {
+    return {
+      shell: "from-orange-500/18 via-amber-500/10 to-white",
+      rail: "from-orange-500 via-amber-500 to-orange-300",
+      glow: "shadow-[0_20px_60px_-28px_rgba(249,115,22,0.72)]",
+      slot: "border-orange-200 bg-orange-50/80",
+      slotEmpty: "border-orange-100 bg-white/70",
+      chip: "bg-orange-600 text-white",
+      text: "text-orange-900",
+    };
+  }
+
+  return {
+    shell: "from-violet-500/18 via-fuchsia-500/10 to-white",
+    rail: "from-violet-500 via-fuchsia-500 to-violet-300",
+    glow: "shadow-[0_20px_60px_-28px_rgba(139,92,246,0.72)]",
+    slot: "border-violet-200 bg-violet-50/80",
+    slotEmpty: "border-violet-100 bg-white/70",
+    chip: "bg-violet-600 text-white",
+    text: "text-violet-900",
+  };
+}
+
+function buildSlotColumns(slots: number[]) {
+  const columns: Array<Array<{ slotNumber: number; position: string; tier: 1 | 2 | 3 }>> = [];
+  for (let index = 0; index < slots.length; index += 3) {
+    const slice = slots.slice(index, index + 3);
+    columns.push(slice.map((slotNumber, tierIndex) => ({
+      slotNumber,
+      position: `F${String(slotNumber).padStart(2, "0")}`,
+      tier: (tierIndex + 1) as 1 | 2 | 3,
+    })));
+  }
+  return columns;
+}
+
+function tierTone(tier: 1 | 2 | 3) {
+  if (tier === 1) return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (tier === 2) return "border-sky-200 bg-sky-50 text-sky-900";
+  return "border-rose-200 bg-rose-50 text-rose-900";
+}
+
+function tierLabel(tier: 1 | 2 | 3, locale: UiLocale) {
+  if (locale === "de") return tier === 1 ? "Etage 1" : tier === 2 ? "Etage 2" : "Etage 3";
+  return tier === 1 ? "Tier 1" : tier === 2 ? "Tier 2" : "Tier 3";
+}
+
+function moveRackEntry(entries: RackEntry[], entryId: string, line: string, flowRackPosition: string): RackEntry[] {
+  return updateRackEntry(entries, entryId, { line, flowRackPosition });
+}
+
+async function fetchPublicFile(url: string, fallbackName: string): Promise<File> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Auto-Quelle nicht gefunden: ${url}`);
+  }
+  const blob = await response.blob();
+  const name = decodeURIComponent(url.split("/").at(-1) ?? fallbackName) || fallbackName;
+  return new File([blob], name, { type: blob.type || undefined });
+}
+
 export function RackView({ week, locale }: Props) {
   const [market, setMarket] = useState<RackMarket>("de");
   const [entries, setEntries] = useState<RackEntry[]>([]);
@@ -124,6 +214,8 @@ export function RackView({ week, locale }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const [activeLines, setActiveLines] = useState<string[]>(RACK_MARKET_PROFILES.de.lines);
+  const [draggedEntryId, setDraggedEntryId] = useState<string | null>(null);
+  const [hoveredSlotKey, setHoveredSlotKey] = useState<string | null>(null);
 
   const profile = RACK_MARKET_PROFILES[market];
   const scenarios = useMemo(() => scenarioOptions(market, locale), [market, locale]);
@@ -136,8 +228,51 @@ export function RackView({ week, locale }: Props) {
     setBoxfile(undefined);
     setCo2MealIds(undefined);
     setSourceLabel("");
-    setStatus(locale === "de" ? "Markt gewechselt. Bitte Rackdaten neu laden oder Szenario anwenden." : "Market changed. Reload rack data or apply a scenario.");
-  }, [market]);
+    setStatus(locale === "de" ? `Automatischer Rack-Start für ${week} wird vorbereitet …` : `Preparing automatic rack startup for ${week} …`);
+  }, [market, week, locale, profile.lines]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAutomaticSources() {
+      setBusy(locale === "de" ? `Lade Standardquellen für ${week} …` : `Loading default sources for ${week} …`);
+      try {
+        const [multilineFile, pdlFile] = await Promise.all([
+          fetchPublicFile(AUTO_MULTILINE_URL, "MultiLine-latest.xlsx"),
+          fetchPublicFile(AUTO_PDL_URL[market], market === "de" ? "Factor_DE - PDL Forecast.csv" : "Factor_Nor - PDL Forecast.csv"),
+        ]);
+        if (cancelled) return;
+
+        const [nextEntries, nextPdlIds] = await Promise.all([
+          parseMultilineExcel(multilineFile, market, profile.lines),
+          parsePdlCsv(pdlFile),
+        ]);
+        if (cancelled) return;
+
+        setActiveLines(profile.lines);
+        setEntries(nextEntries);
+        setTemplateEntries(nextEntries);
+        setPdlIds(nextPdlIds);
+        setSourceLabel(`${multilineFile.name} · ${pdlFile.name}`);
+        setStatus(locale === "de"
+          ? `Rackfile-Basis für ${week} automatisch geladen. Export ist direkt möglich, Boxfile und CO2 sind nur noch optional für Zusatzchecks.`
+          : `Rackfile base for ${week} loaded automatically. You can export immediately; boxfile and CO2 are only optional extra checks.`);
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus(locale === "de"
+          ? `Automatischer Rack-Start fehlgeschlagen: ${message}. Du kannst die Dateien unten weiterhin manuell überschreiben.`
+          : `Automatic rack startup failed: ${message}. You can still override files manually below.`);
+      } finally {
+        if (!cancelled) setBusy(null);
+      }
+    }
+
+    void loadAutomaticSources();
+    return () => {
+      cancelled = true;
+    };
+  }, [market, week, locale, profile.lines]);
 
   const validation = useMemo(
     () => validateRackPlan(entries, { pdlIds, boxfile, co2MealIds }),
@@ -238,7 +373,7 @@ export function RackView({ week, locale }: Props) {
   function applyScenario(lines: string[]) {
     const source = templateEntries.length > 0 ? templateEntries : entries;
     if (source.length === 0) {
-      setStatus(locale === "de" ? "Zuerst MultiLine oder Rackfile laden, dann kann ein Szenario aufgebaut werden." : "Load MultiLine or rackfile first before applying a scenario.");
+      setStatus(locale === "de" ? "Noch keine Rack-Basis geladen. Warte kurz auf den Auto-Import oder wähle unten Dateien manuell aus." : "No rack base loaded yet. Wait for the automatic import or choose files manually below.");
       return;
     }
     const nextEntries = projectRackEntriesToLines(source, lines);
@@ -259,6 +394,25 @@ export function RackView({ week, locale }: Props) {
     applyScenario(activeLines);
   }
 
+  function handlePillDragStart(entryId: string) {
+    setDraggedEntryId(entryId);
+  }
+
+  function handlePillDragEnd() {
+    setDraggedEntryId(null);
+    setHoveredSlotKey(null);
+  }
+
+  function handleSlotDrop(line: string, flowRackPosition: string) {
+    if (!draggedEntryId) return;
+    setEntries((current) => moveRackEntry(current, draggedEntryId, line, flowRackPosition));
+    setStatus(locale === "de"
+      ? `Verschoben auf ${line} / ${flowRackPosition}. Etage 3 möglichst nur nutzen, wenn darunter nichts mehr frei ist.`
+      : `Moved to ${line} / ${flowRackPosition}. Keep tier 3 as free as possible.`);
+    setDraggedEntryId(null);
+    setHoveredSlotKey(null);
+  }
+
   return (
     <div className="space-y-4">
       <section className="card overflow-hidden">
@@ -269,8 +423,8 @@ export function RackView({ week, locale }: Props) {
               <h2 className="text-2xl font-bold tracking-tight">{locale === "de" ? "Rack-Planung, Visualisierung und Validierung" : "Rack planning, visualization and validation"}</h2>
               <p className="max-w-3xl text-sm text-slate-200">
                 {locale === "de"
-                  ? "Lade MultiLine, Rackfile, PDL, Boxfile und CO2 lokal hoch. Die Ansicht zeigt die komplette Linienbelegung visuell, erlaubt manuelle Slot-Anpassungen und exportiert am Ende wieder eine saubere Rackfile CSV."
-                  : "Upload MultiLine, rackfile, PDL, boxfile and CO2 locally. The view shows the full line allocation, supports manual slot edits and exports a clean rackfile CSV."}
+                  ? "Beim Öffnen lädt das Tool die Standardquellen selbst und baut daraus direkt die Rackfile-Basis für die gewählte KW. MultiLine, PDL, Boxfile, CO2 oder ein bestehendes Rackfile kannst du unten nur noch optional als Override nachladen."
+                  : "On open, the tool loads the default sources automatically and builds the rackfile base for the selected week. MultiLine, PDL, boxfile, CO2 or an existing rackfile below are optional overrides only."}
               </p>
             </div>
             <div className="min-w-[220px] rounded-2xl bg-white/10 p-3 ring-1 ring-white/15 backdrop-blur">
@@ -342,12 +496,17 @@ export function RackView({ week, locale }: Props) {
             </div>
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <UploadCard label="MultiLine XLSX" hint={profile.sheet} onPick={handleMultilineUpload} accept=".xlsx" />
-            <UploadCard label="Rackfile CSV" hint={locale === "de" ? "existierende Rackfile laden" : "load existing rackfile"} onPick={handleRackfileUpload} accept=".csv" />
-            <UploadCard label="PDL CSV" hint={locale === "de" ? "Meal-Soll prüfen" : "check meal target"} onPick={handlePdlUpload} accept=".csv" />
-            <UploadCard label="Boxfile CSV" hint={locale === "de" ? "ETL BOXFILE_VE" : "ETL BOXFILE_VE"} onPick={handleBoxfileUpload} accept=".csv" />
-            <UploadCard label="CO2 CSV" hint={locale === "de" ? `ETL CO_2 (${profile.boxPrefix})` : `ETL CO_2 (${profile.boxPrefix})`} onPick={handleCo2Upload} accept=".csv" />
-          </div>
+              <div className="md:col-span-2 xl:col-span-3 rounded-2xl border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">
+                {locale === "de"
+                  ? "Standardquellen werden automatisch geladen. Die folgenden Uploads sind nur für manuelle Overrides oder zusätzliche Validierung gedacht."
+                  : "Default sources are loaded automatically. The uploads below are only for manual overrides or additional validation."}
+              </div>
+              <UploadCard label="MultiLine XLSX" hint={locale === "de" ? `${profile.sheet} · optional überschreiben` : `${profile.sheet} · optional override`} onPick={handleMultilineUpload} accept=".xlsx" />
+              <UploadCard label="Rackfile CSV" hint={locale === "de" ? "optional: bestehendes Rackfile importieren" : "optional: import existing rackfile"} onPick={handleRackfileUpload} accept=".csv" />
+              <UploadCard label="PDL CSV" hint={locale === "de" ? "optional: Meal-Soll überschreiben" : "optional: override meal target"} onPick={handlePdlUpload} accept=".csv" />
+              <UploadCard label="Boxfile CSV" hint={locale === "de" ? "optional: ETL BOXFILE_VE für Zusatzchecks" : "optional: ETL BOXFILE_VE for extra checks"} onPick={handleBoxfileUpload} accept=".csv" />
+              <UploadCard label="CO2 CSV" hint={locale === "de" ? `optional: ETL CO_2 (${profile.boxPrefix})` : `optional: ETL CO_2 (${profile.boxPrefix})`} onPick={handleCo2Upload} accept=".csv" />
+            </div>
           </div>
 
           <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
@@ -469,7 +628,7 @@ export function RackView({ week, locale }: Props) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wide text-slate-600">{locale === "de" ? "Linienbild" : "Line map"}</h3>
-              <p className="mt-1 text-sm text-slate-500">{locale === "de" ? "Jeder Rackplatz wird als Slot dargestellt. Leere Plätze bleiben sichtbar, damit die Verteilung in der Linie sofort auffällt." : "Each rack position is rendered as a slot. Empty positions remain visible so distribution issues stand out immediately."}</p>
+              <p className="mt-1 text-sm text-slate-500">{locale === "de" ? "Die ASLs werden als echte Förderlinie gezeigt: mit Track, Slotfolge, Belegung und den geplanten Artikeln pro Position." : "Each ASL is rendered like a real conveyor line with track, slot sequence, occupancy and planned items per position."}</p>
             </div>
           </div>
 
@@ -477,46 +636,21 @@ export function RackView({ week, locale }: Props) {
             {(usedLines.length > 0 ? usedLines : activeLines).map((line) => {
               const slots = lineSlotRange(entries, line);
               return (
-                <div key={line} className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className={lineBadge(line)}>{line}</span>
-                      <span className="text-sm text-slate-500">{locale === "de" ? `${entries.filter((entry) => entry.line === line).length} Items geplant` : `${entries.filter((entry) => entry.line === line).length} planned items`}</span>
-                    </div>
-                    <div className="text-xs text-slate-400">{slots.length > 0 ? `F${String(slots[0]).padStart(2, "0")} – F${String(slots[slots.length - 1]).padStart(2, "0")}` : (locale === "de" ? "keine Slots" : "no slots")}</div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-                    {slots.map((slotNumber) => {
-                      const position = `F${String(slotNumber).padStart(2, "0")}`;
-                      const slotEntries = entriesByLineAndSlot.get(`${line}:${position}`) ?? [];
-                      const occupied = slotEntries.length > 0;
-                      return (
-                        <div key={`${line}-${position}`} className={`min-h-[120px] rounded-2xl border p-3 ${occupied ? "border-slate-300 bg-white shadow-sm" : "border-dashed border-slate-200 bg-slate-50"}`}>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="font-mono text-xs font-semibold text-slate-500">{position}</div>
-                            <div className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${occupied ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-500"}`}>{slotEntries.length}</div>
-                          </div>
-                          <div className="mt-3 space-y-2">
-                            {slotEntries.map((entry) => {
-                              const kind = deriveEntryKind(entry);
-                              return (
-                                <div key={entry.id} className={`rounded-xl border px-2 py-2 text-xs ${kindTone(kind)}`}>
-                                  <div className="font-semibold">{entry.recipe}</div>
-                                  <div className="mt-1 line-clamp-2 text-[11px] opacity-80">{entry.displayName || entry.ingredient || entry.sku}</div>
-                                  <div className="mt-2 flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide opacity-70">
-                                    <span>{kind}</span>
-                                    <span>Qty {entry.quantity}</span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            {!occupied && <div className="rounded-xl border border-dashed border-slate-200 px-2 py-6 text-center text-xs text-slate-400">leer</div>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                <LineVisual
+                  key={line}
+                  line={line}
+                  market={market}
+                  slots={slots}
+                  entries={entries}
+                  entriesByLineAndSlot={entriesByLineAndSlot}
+                  locale={locale}
+                  draggedEntryId={draggedEntryId}
+                  hoveredSlotKey={hoveredSlotKey}
+                  onHoverSlot={setHoveredSlotKey}
+                  onDropToSlot={handleSlotDrop}
+                  onPillDragStart={handlePillDragStart}
+                  onPillDragEnd={handlePillDragEnd}
+                />
               );
             })}
           </div>
@@ -552,6 +686,186 @@ function MiniStat({ label, value, accent = false }: { label: string; value: numb
     <div className={`rounded-xl px-3 py-2 ring-1 ${accent ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-900 ring-slate-200"}`}>
       <div className={`text-[11px] uppercase tracking-wide ${accent ? "text-slate-300" : "text-slate-500"}`}>{label}</div>
       <div className="mt-1 text-lg font-bold tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+function LineVisual({
+  line,
+  market,
+  slots,
+  entries,
+  entriesByLineAndSlot,
+  locale,
+  draggedEntryId,
+  hoveredSlotKey,
+  onHoverSlot,
+  onDropToSlot,
+  onPillDragStart,
+  onPillDragEnd,
+}: {
+  line: string;
+  market: RackMarket;
+  slots: number[];
+  entries: RackEntry[];
+  entriesByLineAndSlot: Map<string, RackEntry[]>;
+  locale: UiLocale;
+  draggedEntryId: string | null;
+  hoveredSlotKey: string | null;
+  onHoverSlot: (slotKey: string | null) => void;
+  onDropToSlot: (line: string, flowRackPosition: string) => void;
+  onPillDragStart: (entryId: string) => void;
+  onPillDragEnd: () => void;
+}) {
+  const accent = lineAccent(line);
+  const lineEntries = entries.filter((entry) => entry.line === line);
+  const slotColumns = buildSlotColumns(slots);
+  const occupiedSlots = slots.filter((slotNumber) => {
+    const position = `F${String(slotNumber).padStart(2, "0")}`;
+    return (entriesByLineAndSlot.get(`${line}:${position}`) ?? []).length > 0;
+  }).length;
+  const emptySlots = Math.max(slots.length - occupiedSlots, 0);
+  const density = slots.length > 0 ? Math.round((occupiedSlots / slots.length) * 100) : 0;
+  const topTierOccupied = slotColumns.filter((column) => {
+    const topSlot = column.at(2);
+    if (!topSlot) return false;
+    return (entriesByLineAndSlot.get(`${line}:${topSlot.position}`) ?? []).length > 0;
+  }).length;
+
+  return (
+    <div className={`overflow-hidden rounded-[28px] border border-slate-200 bg-gradient-to-br ${accent.shell} p-4 sm:p-5 ${accent.glow}`}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className={lineBadge(line)}>{line}</span>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${accent.chip}`}>{locale === "de" ? "Aktive Förderlinie" : "Active conveyor line"}</span>
+          </div>
+          <div>
+            <h4 className={`text-xl font-black tracking-tight ${accent.text}`}>{locale === "de" ? `${line} Rack-Linie` : `${line} rack lane`}</h4>
+            <p className="mt-1 text-sm text-slate-600">
+              {locale === "de"
+                ? `Von ${slots.length > 0 ? `F${String(slots[0]).padStart(2, "0")}` : "-"} bis ${slots.length > 0 ? `F${String(slots[slots.length - 1]).padStart(2, "0")}` : "-"}. Die Fächer werden wie im Staffing echt dreietagig gebaut, also z. B. 13, 14, 15 übereinander.`
+                : `From ${slots.length > 0 ? `F${String(slots[0]).padStart(2, "0")}` : "-"} to ${slots.length > 0 ? `F${String(slots[slots.length - 1]).padStart(2, "0")}` : "-"}. Compartments are rendered as real three-tier stacks, for example 13, 14, 15 vertically.`}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide">
+              <span className={`rounded-full px-2.5 py-1 ${accent.chip}`}>
+                {market === "de" ? (locale === "de" ? "DE mit Liner-Bühne" : "DE with liner stage") : (locale === "de" ? "Nordics ohne Liner" : "Nordics without liner")}
+              </span>
+              <span className="rounded-full bg-white/70 px-2.5 py-1 text-slate-700 ring-1 ring-slate-200">
+                {locale === "de" ? "Drag-and-drop Planung" : "Drag-and-drop planning"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid min-w-[260px] grid-cols-3 gap-2 text-sm">
+          <MiniStat label={locale === "de" ? "Slots" : "Slots"} value={slots.length} />
+          <MiniStat label={locale === "de" ? "Belegt" : "Occupied"} value={occupiedSlots} />
+          <MiniStat label={locale === "de" ? "Leer" : "Empty"} value={emptySlots} />
+          <MiniStat label={locale === "de" ? "Items" : "Items"} value={lineEntries.length} />
+          <MiniStat label={locale === "de" ? "Dichte" : "Density"} value={`${density}%`} accent={density >= 85} />
+          <MiniStat label={locale === "de" ? "Etage 3 belegt" : "Tier 3 used"} value={topTierOccupied} accent={topTierOccupied > 0} />
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-[24px] border border-white/60 bg-white/75 p-3 ring-1 ring-white/50 backdrop-blur">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "ASL Überblick" : "ASL overview"}</div>
+          <div className="text-xs text-slate-500">{locale === "de" ? "Scroll horizontal für die komplette Linie" : "Scroll horizontally for the full line"}</div>
+        </div>
+
+        <div className="mb-4 grid gap-2 md:grid-cols-3">
+          {[1, 2, 3].map((tier) => (
+            <div key={tier} className={`rounded-2xl border px-3 py-2 text-xs ${tierTone(tier as 1 | 2 | 3)}`}>
+              <div className="font-bold uppercase tracking-wide">{tierLabel(tier as 1 | 2 | 3, locale)}</div>
+              <div className="mt-1 opacity-80">
+                {tier < 3
+                  ? (locale === "de" ? "Direkte Arbeitszone in der Säule." : "Primary working zone in the column.")
+                  : (locale === "de" ? "Obere Etage, möglichst sparsam belegen." : "Top tier, use sparingly when possible.")}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="overflow-x-auto pb-3">
+          <div className="relative min-w-max px-2 pt-8">
+            <div className={`absolute left-0 right-0 ${market === "de" ? "top-[1.8rem] h-4" : "top-[2.25rem] h-2"} rounded-full bg-gradient-to-r ${accent.rail} opacity-90`} />
+            {market === "de" && <div className="absolute left-6 right-6 top-[2.55rem] h-[6px] rounded-full bg-white/70" />}
+            <div className="relative flex items-start gap-3">
+              {slotColumns.map((column, columnIndex) => {
+                return (
+                  <div key={`${line}-column-${columnIndex}`} className="relative w-[210px] shrink-0">
+                    <div className={`absolute left-1/2 top-[-0.45rem] h-5 w-1 -translate-x-1/2 rounded-full ${column.some((slot) => (entriesByLineAndSlot.get(`${line}:${slot.position}`) ?? []).length > 0) ? accent.chip : "bg-slate-300"}`} />
+                    <div className="rounded-[24px] border border-slate-200/80 bg-white/70 p-3 shadow-sm backdrop-blur">
+                      <div className="mb-3 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        <span>{locale === "de" ? "Säule" : "Column"} {columnIndex + 1}</span>
+                        <span>{column.map((slot) => slot.position.replace("F", "")).join(" / ")}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {[...column].reverse().map((slot) => {
+                          const slotEntries = entriesByLineAndSlot.get(`${line}:${slot.position}`) ?? [];
+                          const occupied = slotEntries.length > 0;
+                          const slotKey = `${line}:${slot.position}`;
+                          const isHovered = hoveredSlotKey === slotKey;
+                          return (
+                            <div
+                              key={slotKey}
+                              className={`rounded-[22px] border p-3 transition ${occupied ? `${accent.slot} shadow-sm` : accent.slotEmpty} ${slot.tier === 3 ? "ring-1 ring-rose-200" : ""} ${isHovered ? "ring-2 ring-slate-900 ring-offset-2" : ""}`}
+                              onDragOver={(event) => {
+                                event.preventDefault();
+                                onHoverSlot(slotKey);
+                              }}
+                              onDragLeave={() => onHoverSlot(null)}
+                              onDrop={(event) => {
+                                event.preventDefault();
+                                onDropToSlot(line, slot.position);
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="font-mono text-xs font-bold uppercase tracking-[0.22em] text-slate-500">{slot.position}</div>
+                                  <div className="mt-1 text-[11px] text-slate-500">{tierLabel(slot.tier, locale)}</div>
+                                </div>
+                                <div className={`rounded-full px-2.5 py-1 text-xs font-bold ${slot.tier === 3 ? "bg-rose-600 text-white" : occupied ? accent.chip : "bg-slate-200 text-slate-600"}`}>{slotEntries.length}</div>
+                              </div>
+
+                              <div className="mt-3 space-y-1.5">
+                                {slotEntries.map((entry) => {
+                                  const kind = deriveEntryKind(entry);
+                                  const isDragged = draggedEntryId === entry.id;
+                                  return (
+                                    <button
+                                      key={entry.id}
+                                      type="button"
+                                      draggable
+                                      onDragStart={() => onPillDragStart(entry.id)}
+                                      onDragEnd={onPillDragEnd}
+                                      className={`flex w-full items-center justify-between gap-2 rounded-full border px-3 py-2 text-left text-xs font-semibold transition ${kindTone(kind)} ${isDragged ? "scale-[0.98] opacity-60" : "hover:-translate-y-0.5 hover:shadow-sm"}`}
+                                      title={locale === "de" ? "Zum Verschieben ziehen" : "Drag to move"}
+                                    >
+                                      <span className="truncate">{entry.recipe}</span>
+                                      <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold">x{entry.quantity}</span>
+                                    </button>
+                                  );
+                                })}
+                                {!occupied && (
+                                  <div className="rounded-full border border-dashed border-slate-200 px-3 py-2 text-center text-[11px] text-slate-400">
+                                    {locale === "de" ? "frei" : "free"}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

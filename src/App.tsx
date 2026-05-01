@@ -384,11 +384,11 @@ export default function App() {
     };
   }, []);
 
-  if (error) return <Shell locale={locale}><div className="card p-6 text-red-700">{tl(locale, "Fehler:")} {error}<br/>
-    <span className="text-sm text-slate-500">{tl(locale, "Tipp:")} <code>npm run import:local</code> ausführen.</span></div></Shell>;
-  if (!data) return <Shell locale={locale}><div className="card p-6">{tl(locale, "Lade Daten…")}</div></Shell>;
+  const weeks = data?.weeks ?? [];
+  const weekRecipes = data?.weekRecipes ?? [];
+  const recipesByCode = data?.recipes ?? {};
 
-  const recipesOfWeek = data.weekRecipes
+  const recipesOfWeek = weekRecipes
     .filter(r => r.hfWeek === selectedWeek)
     .filter(isProducedInVerden)
     .filter((r, i, arr) => arr.findIndex(x => x.code === r.code) === i)
@@ -396,7 +396,7 @@ export default function App() {
 
   const searchNeedle = searchText.trim().toLowerCase();
   const filteredRecipes = searchNeedle
-    ? recipesOfWeek.filter(r => recipeSearchText(r, data.recipes[r.code]).includes(searchNeedle))
+    ? recipesOfWeek.filter(r => recipeSearchText(r, recipesByCode[r.code]).includes(searchNeedle))
     : recipesOfWeek;
 
   const portionMultiplier = 1 + upliftPercent / 100;
@@ -409,21 +409,21 @@ export default function App() {
   const plannedTotal = adjustedPortions(totals.base, upliftPercent);
 
   const previousWeek = useMemo(() => {
-    const currentIndex = data.weeks.indexOf(selectedWeek);
+    const currentIndex = weeks.indexOf(selectedWeek);
     if (currentIndex <= 0) return null;
-    return data.weeks[currentIndex - 1] ?? null;
-  }, [data.weeks, selectedWeek]);
+    return weeks[currentIndex - 1] ?? null;
+  }, [selectedWeek, weeks]);
 
   const previousWeekRecipes = useMemo(() => {
     if (!previousWeek) return [] as WeekRecipe[];
-    return data.weekRecipes
+    return weekRecipes
       .filter(r => r.hfWeek === previousWeek)
       .filter(isProducedInVerden)
       .filter((r, i, arr) => arr.findIndex(x => x.code === r.code) === i);
-  }, [data.weekRecipes, previousWeek]);
+  }, [previousWeek, weekRecipes]);
 
   const weekDelta = useMemo(() => {
-    if (!previousWeek) return null;
+    if (!data || !previousWeek) return null;
 
     const currentByCode = new Map(recipesOfWeek.map(recipe => [recipe.code, recipe]));
     const previousByCode = new Map(previousWeekRecipes.map(recipe => [recipe.code, recipe]));
@@ -452,7 +452,7 @@ export default function App() {
       if (delta !== 0) {
         changed.push({
           code,
-          recipeName: data.recipes[code]?.markets[globalMarket]?.recipeNameLocal || current.recipeName || previous.recipeName,
+          recipeName: recipesByCode[code]?.markets[globalMarket]?.recipeNameLocal || current.recipeName || previous.recipeName,
           current: currentPortions,
           previous: previousPortions,
           delta,
@@ -477,13 +477,17 @@ export default function App() {
       removed,
       changed,
     };
-  }, [data.recipes, globalMarket, previousWeek, previousWeekRecipes, recipesOfWeek, upliftPercent]);
+  }, [data, globalMarket, previousWeek, previousWeekRecipes, recipesByCode, recipesOfWeek, upliftPercent]);
 
   const activeRecipe: WeekRecipe | undefined =
     filteredRecipes.find(r => r.code === selectedRecipe)
     ?? filteredRecipes[0]
     ?? recipesOfWeek.find(r => r.code === selectedRecipe)
     ?? recipesOfWeek[0];
+
+  if (error) return <Shell locale={locale}><div className="card p-6 text-red-700">{tl(locale, "Fehler:")} {error}<br/>
+    <span className="text-sm text-slate-500">{tl(locale, "Tipp:")} <code>npm run import:local</code> ausführen.</span></div></Shell>;
+  if (!data) return <Shell locale={locale}><div className="card p-6">{tl(locale, "Lade Daten…")}</div></Shell>;
 
   return (
     <Shell locale={locale}>
