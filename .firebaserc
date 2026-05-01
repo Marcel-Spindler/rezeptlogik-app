@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "hellofresh-de-problem-solve"
+  },
+  "targets": {
+    "hellofresh-de-problem-solve": {
+      "hosting": {
+        "rezeptlogik-verden-factor": [
+          "rezeptlogik-verden-factor"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

@@ -1,0 +1,6 @@
+# Scratch-Outputs – nicht committen
+*.csv
+*.json
+output/
+__pycache__/
+*.pyc

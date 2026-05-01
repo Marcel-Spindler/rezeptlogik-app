@@ -1,0 +1,288 @@
+rules_version = '2';
+
+// ============================================================================
+// GETEILTES PROJEKT: hellofresh-de-problem-solve
+// ----------------------------------------------------------------------------
+// Diese Datei enthaelt die KOMPLETTEN, LIVE-IDENTISCHEN Factory-Hub-Rules
+// (unveraendert uebernommen) PLUS einen rein additiven Block fuer die
+// Rezeptlogik-App unter dem Pfad apps/rezeptlogik/**.
+//
+// WICHTIG:
+//  - Am Factory-Hub-Teil wurde NICHTS geaendert (keine Reihenfolge, keine
+//    Funktion, keine Bedingung). Das Verhalten von Factory-Hub bleibt 1:1.
+//  - Der Rezeptlogik-Block beruehrt ausschliesslich Dokumente unterhalb von
+//    /apps/rezeptlogik/** und kollidiert nicht mit factoryHub_*-Collections.
+//  - Geschrieben wird in Rezeptlogik nur via Admin-SDK (Service Account) ->
+//    daher "allow write: if false".
+//
+// Deploy (manuell durch dich, wenn du bereit bist):
+//   firebase deploy --only firestore:rules --project hellofresh-de-problem-solve
+//   NIEMALS "firebase deploy" ohne --only verwenden.
+//
+// Hinweis: Aus firebase.json wurde der "firestore"-Block entfernt, damit ein
+// versehentliches Deploy aus diesem Repo NICHTS ueberschreibt. Fuer das
+// einmalige Deployen dieser zusammengefuehrten Rules muss er temporaer wieder
+// gesetzt werden ODER der Deploy erfolgt aus dem Factory-Hub-Repo mit dem
+// hier zusammengefuehrten Inhalt.
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function authEmail() {
+      return signedIn() && request.auth.token.email is string
+        ? request.auth.token.email.lower()
+        : "";
+    }
+
+    function userDocPath() {
+      return /databases/$(database)/documents/factoryHub_users/$(request.auth.uid);
+    }
+
+    function userDoc() {
+      return get(userDocPath()).data;
+    }
+
+    function isEnabled() {
+      return signedIn()
+        && exists(userDocPath())
+        && userDoc().enabled == true;
+    }
+
+    function isReviewer() {
+      return isEnabled()
+        && (userDoc().role == "supervisor" || userDoc().role == "admin");
+    }
+
+    function isAdmin() {
+      return isEnabled() && userDoc().role == "admin";
+    }
+
+    function isOwnUserDoc(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function isBootstrapSuperAdmin(uid) {
+      return isOwnUserDoc(uid)
+        && (
+          authEmail() == "marcel.spindler@hellofresh.de"
+        );
+    }
+
+    function isAdminManagedUserCreate() {
+      return isAdmin()
+        && request.resource.data.uid is string
+        && request.resource.data.email is string
+        && request.resource.data.role is string
+        && request.resource.data.enabled is bool
+        && request.resource.data.approvalStatus is string;
+    }
+
+    function isSafeOperatorBootstrapCreate() {
+      return request.resource.data.role == "operator"
+        && request.resource.data.enabled == false
+        && request.resource.data.approvalStatus == "pending"
+        && request.resource.data.email is string
+        && request.resource.data.email.lower() == authEmail()
+        && (
+          !("grantedPageIds" in request.resource.data)
+          || (
+            request.resource.data.grantedPageIds is list
+            && request.resource.data.grantedPageIds.hasOnly(["recovery.work_orders"])
+          )
+        );
+    }
+
+    function isSafeBootstrapAdminCreate() {
+      return isBootstrapSuperAdmin(request.resource.data.uid)
+        && request.resource.data.role == "admin"
+        && request.resource.data.enabled == true
+        && request.resource.data.approvalStatus == "approved"
+        && request.resource.data.email is string
+        && request.resource.data.email.lower() == authEmail();
+    }
+
+    function ownProfileProtectedFieldsUnchanged() {
+      return request.resource.data.uid == resource.data.uid
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.enabled == resource.data.enabled
+        && request.resource.data.approvalStatus == resource.data.approvalStatus
+        && request.resource.data.department == resource.data.department
+        && request.resource.data.activityProfile == resource.data.activityProfile
+        && request.resource.data.grantedPageIds == resource.data.grantedPageIds
+        && request.resource.data.koerberLinked == resource.data.koerberLinked
+        && request.resource.data.koerberUsername == resource.data.koerberUsername;
+    }
+
+    match /factoryHub_users/{uid} {
+      allow get: if isOwnUserDoc(uid) || isReviewer();
+      allow list: if isReviewer();
+      allow create: if (
+          isOwnUserDoc(uid)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.enabled is bool
+          && (
+            isSafeOperatorBootstrapCreate()
+            || isSafeBootstrapAdminCreate()
+          )
+        )
+        || isAdminManagedUserCreate();
+      allow update: if isAdmin()
+        || isBootstrapSuperAdmin(uid)
+        || (
+          isOwnUserDoc(uid)
+          && ownProfileProtectedFieldsUnchanged()
+          && request.resource.data.email is string
+          && request.resource.data.email.lower() == authEmail()
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /factoryHub_accessRequests/{docId} {
+      allow create: if false;
+      allow read, update: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /factoryHub_mail/{docId} {
+      allow create: if isReviewer()
+        && request.resource.data.to is string
+        && request.resource.data.message.subject is string
+        && request.resource.data.message.html is string;
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /factoryHub_leftovers/{docId} {
+      allow read: if isEnabled();
+      allow create: if isEnabled();
+      allow update: if isReviewer();
+      allow delete: if isAdmin();
+    }
+
+    match /factoryHub_decisions/{docId} {
+      allow read: if isEnabled();
+      allow create: if isReviewer();
+      allow update, delete: if isAdmin();
+    }
+
+    match /factoryHub_actions/{docId} {
+      allow read: if isEnabled();
+      allow create, update: if isReviewer();
+      allow delete: if isAdmin();
+    }
+
+    match /factoryHub_dailyReports/{docId} {
+      allow read: if isEnabled();
+      allow write: if isReviewer();
+    }
+
+    match /factoryHub_shiftReportRuns/{docId} {
+      allow read: if isReviewer();
+      allow create, update: if isReviewer();
+      allow delete: if isAdmin();
+    }
+
+    match /factoryHub_auditEvents/{docId} {
+      allow read: if isEnabled();
+      allow create: if isEnabled()
+        && request.resource.data.entityType is string
+        && request.resource.data.actionType is string
+        && request.resource.data.summary is string
+        && request.resource.data.actorUid is string
+        && request.resource.data.actorName is string
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /factoryHub_products/{docId} {
+      allow read: if isEnabled();
+      allow write: if isReviewer();
+    }
+
+    match /factoryHub_productRules/{docId} {
+      allow read: if isEnabled();
+      allow write: if isReviewer();
+    }
+
+    match /factoryHub_workOrders/{docId} {
+      allow read: if isEnabled();
+      allow create, update: if isReviewer();
+      allow delete: if isAdmin();
+    }
+
+    match /factoryHub_settings/{docId} {
+      allow read: if isEnabled();
+      allow write: if isReviewer() && docId != "linePlanningScenarioControl";
+    }
+
+    match /factoryHub_warehouses/{docId} {
+      allow read: if isEnabled();
+      allow write: if isReviewer();
+    }
+
+    match /factoryHub_warehouseLocations/{docId} {
+      allow read: if isEnabled();
+      allow write: if isReviewer();
+    }
+
+    match /factoryHub_wmsMappings/{docId} {
+      allow read: if isEnabled();
+      allow write: if isReviewer();
+    }
+
+    match /factoryHub_wmsConnectorConfigs/{docId} {
+      allow read: if isReviewer();
+      allow write: if isAdmin();
+    }
+
+    match /factoryHub_wmsExportQueue/{docId} {
+      allow read: if isReviewer();
+      allow create: if isReviewer();
+      allow update: if isReviewer();
+      allow delete: if isAdmin();
+    }
+
+    match /factoryHub_wmsSyncRuns/{docId} {
+      allow read: if isReviewer();
+      allow write: if isReviewer();
+    }
+
+    match /factoryHub_wmsInboundEvents/{docId} {
+      allow read: if isReviewer();
+      allow create: if isReviewer();
+      allow update, delete: if isAdmin();
+    }
+
+    match /factoryHub_config/{docId} {
+      // Dataset metadata readable by all enabled users; only admin (via Cloud Function with service account) writes
+      allow read: if isEnabled();
+      allow write: if isAdmin();
+    }
+
+    match /factoryHub_linePlanningScenarios/{docId} {
+      allow read: if isEnabled();
+      allow write: if isReviewer();
+    }
+
+    match /factoryHub_leftovers/{docId}/{subPath=**} {
+      allow read: if isEnabled();
+      allow create, update: if isReviewer();
+      allow delete: if isAdmin();
+    }
+
+    // ========================================================================
+    // REZEPTLOGIK (additiv, beruehrt ausschliesslich apps/rezeptlogik/**)
+    // ------------------------------------------------------------------------
+    // Interner Planer, MVP. Lesen offen (kein Auth-Layer in der App), Schreiben
+    // ausschliesslich via Admin-SDK / Service Account (push-firestore.ts).
+    // Greift NICHT in factoryHub_*-Collections ein.
+    // ========================================================================
+    match /apps/rezeptlogik/{path=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

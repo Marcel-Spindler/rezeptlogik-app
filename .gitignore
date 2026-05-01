@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.firebase/
+.env
+.env.local
+secrets/
+public/data/*.json
+!public/data/.gitkeep
+*.tsbuildinfo
