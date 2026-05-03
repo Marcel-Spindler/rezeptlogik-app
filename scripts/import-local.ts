@@ -1,5 +1,5 @@
-// Liest die XLSX (Meal Selection) und die 6 CSVs aus C:\Rezeptlogik
-// und schreibt eine konsolidierte public/data/data.json fürs Frontend.
+// Liest die XLSX (Meal Selection) und die CSVs aus dem konfigurierten
+// Rezeptlogik-Quellordner und schreibt eine konsolidierte public/data/data.json.
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import Papa from "papaparse";
@@ -13,12 +13,28 @@ import type {
 const DETAILED_CSV = "export-sub-recipes-by-recipe-detailed.csv";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
 
-const SOURCE_DIR = process.env.REZEPTLOGIK_SOURCE_DIR ?? "C:\\Rezeptlogik";
+function resolveSourceDir(): string {
+  const configured = process.env.REZEPTLOGIK_SOURCE_DIR?.trim();
+  if (configured) return configured;
+
+  const candidates = [
+    "C:\\Rezeptlogik",
+    resolve("Rezeptlogik"),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, XLSX_FILE))) return candidate;
+  }
+
+  return candidates[0];
+}
+
 const OUT_DIR = resolve("public", "data");
 const OUT_FILE = join(OUT_DIR, "data.json");
 
 const XLSX_FILE = "F_EU - 2026 Ramp Up Planning V2.0 (1).xlsx";
 const COOK_CSV = "Cook Schedules Per DC - Cook Shifts per DC.csv";
+const SOURCE_DIR = resolveSourceDir();
 
 // CSV-Mapping nach Markt (gemäß Inhalt: (1)=BNL, (2)=DE, (3)=DKSE)
 const RECIPE_CSVS: Record<Market, string> = {

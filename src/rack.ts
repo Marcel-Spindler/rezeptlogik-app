@@ -184,11 +184,16 @@ export async function parseMultilineExcel(file: File, market: RackMarket, lines?
   return out.sort((a, b) => a.line.localeCompare(b.line) || a.sort - b.sort || a.recipe.localeCompare(b.recipe));
 }
 
-export async function parsePdlCsv(file: File): Promise<Set<string>> {
+export async function parsePdlCsv(file: File, weekFilter?: string): Promise<Set<string>> {
   const text = await file.text();
   const parsed = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
   const ids = new Set<string>();
   for (const row of parsed.data) {
+    // Wenn weekFilter angegeben, nur Zeilen der aktuellen Woche auswerten
+    if (weekFilter) {
+      const rowWeek = asString(row.hf_week);
+      if (rowWeek !== weekFilter) continue;
+    }
     const mealSwap = asString(row.meal_swap);
     for (const token of mealSwap.split(/\s+/)) {
       const match = token.match(/^(\d+):/);
@@ -196,6 +201,19 @@ export async function parsePdlCsv(file: File): Promise<Set<string>> {
     }
   }
   return ids;
+}
+
+/**
+ * Filtert Einträge auf PDL-aktive Mahlzeiten + alle Nicht-Mahlzeit-Einträge (Verpackung, Ice usw.).
+ * Wird nur angewendet wenn pdlIds nicht leer ist (Sicherheits-Fallback).
+ */
+export function applyPdlFilter(entries: RackEntry[], pdlIds: Set<string>): RackEntry[] {
+  if (pdlIds.size === 0) return entries;
+  return entries.filter((e) => {
+    const kind = deriveEntryKind(e);
+    if (kind === "meal") return pdlIds.has(e.recipe);
+    return true; // Verpackung, Ice, Loyalty, Beverage, Protein behalten
+  });
 }
 
 export async function parseBoxfileCsv(file: File): Promise<RackBoxSnapshot> {
@@ -317,7 +335,10 @@ export function validateRackPlan(entries: RackEntry[], options?: { pdlIds?: Set<
   for (const [slotKey, bucket] of groupedBySlot.entries()) {
     const nonIce = bucket.filter((entry) => deriveEntryKind(entry) !== "ice");
     if (nonIce.length > 1) {
-      issues.push({ severity: "warning", message: `Mehrfachbelegung in ${slotKey}: ${nonIce.map((entry) => entry.recipe).join(", ")}` });
+      issues.push({
+        severity: "error",
+        message: `Mehrfachbelegung in ${slotKey}: ${nonIce.map((entry) => entry.recipe).join(", ")}. Ein Fach darf nur einmal belegt sein.`,
+      });
     }
   }
 

@@ -8,6 +8,7 @@ import { PlanningView } from "./PlanningView";
 import { formatDateTime, marketToLocale, marketVariantLabel, MARKET_LANGUAGE_LABEL, tl, type UiLocale } from "./i18n";
 
 const RackView = lazy(() => loadDynamicModule("rack-view", () => import("./RackView").then((module) => ({ default: module.RackView }))));
+const LinePlanningView = lazy(() => loadDynamicModule("line-planning", () => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView }))));
 
 const MARKETS: Market[] = ["BENL", "DKSE", "DE"];
 const MARKET_LABEL: Record<Market, string> = { BENL: "BENL", DKSE: "DK/SE", DE: "DE" };
@@ -355,7 +356,23 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedWeek, setSelectedWeek] = usePersistent<string>("week", "");
   const [selectedRecipe, setSelectedRecipe] = usePersistent<string | null>("recipe", null);
-  const [view, setView] = usePersistent<"recipe" | "equipment" | "planning" | "woche" | "rack">("view", "recipe");
+  const [view, setView] = usePersistent<"recipe" | "equipment" | "planning" | "woche" | "rack" | "ket">("view", "recipe");
+  // URL-Parameter ?view=ket und ?week=... haben Vorrang vor gespeichertem Zustand.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const param = params.get("view");
+    const weekParam = params.get("week");
+    const valid = ["recipe", "equipment", "planning", "woche", "rack", "ket"] as const;
+    if ((valid as readonly string[]).includes(param ?? "")) {
+      setView(param as typeof valid[number]);
+    }
+    if (weekParam) {
+      setSelectedWeek(weekParam);
+      setSelectedRecipe(null);
+      setSearchText("");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [upliftPercent, setUpliftPercent] = usePersistent<number>("uplift", 0);
   const [searchText, setSearchText] = useState<string>("");
   // Markt-Selektion global mitlesen (wird in RecipeDetail gespeichert)
@@ -502,8 +519,9 @@ export default function App() {
               ["woche", tl(locale, "Σ Wochenbestellung")],
               ["equipment", tl(locale, "Equipment")],
               ["planning", tl(locale, "Wochenplaner")],
-              ["rack", locale === "de" ? "Rack" : locale === "nl" ? "Rack" : "Rack"]
-            ] as ["recipe"|"equipment"|"planning"|"woche"|"rack", string][]).map(([k, l]) => (
+              ["rack", "Rack"],
+              ["ket", "Linienplanung"]
+            ] as ["recipe"|"equipment"|"planning"|"woche"|"rack"|"ket", string][]).map(([k, l]) => (
               <button key={k} onClick={() => setView(k)}
                 className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md ${
                   view === k ? "bg-white shadow ring-1 ring-slate-300" : "text-slate-500 hover:text-slate-800"
@@ -519,13 +537,13 @@ export default function App() {
             >
               {data.weeks.map(w => {
                 const n = data.weekRecipes.filter(r => r.hfWeek === w).filter(isProducedInVerden).length;
-                return <option key={w} value={w}>{w}  ({n} {locale === "de" ? "produzierte Rezepte" : locale === "nl" ? "geproduceerde recepten" : "produced recipes"})</option>;
+                return <option key={w} value={w}>{w}  ({n} produzierte Rezepte)</option>;
               })}
             </select>
             <div className="mt-3 grid grid-cols-2 xl:grid-cols-3 gap-2 text-xs">
               <Stat label={tl(locale, "Produzierte Rezepte")} value={fmtNum(recipesOfWeek.length)} />
               <Stat label={tl(locale, "Verden Basis")} value={fmtNum(totals.base)} />
-              <Stat label={`${locale === "de" ? "Verden Plan" : locale === "nl" ? "Verden plan" : "Verden plan"}${upliftPercent !== 0 ? ` (${upliftPercent > 0 ? "+" : ""}${upliftPercent}%)` : ""}`} value={fmtNum(plannedTotal)} accent />
+              <Stat label={`Verden Plan${upliftPercent !== 0 ? ` (${upliftPercent > 0 ? "+" : ""}${upliftPercent}%)` : ""}`} value={fmtNum(plannedTotal)} accent />
               {MARKETS.map(m => totals[m] > 0 && (
                 <Stat key={m} label={marketVariantLabel(locale, m)} value={fmtNum(totals[m])} />
               ))}
@@ -560,18 +578,18 @@ export default function App() {
 
           <div className="card p-2">
             <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              {locale === "de" ? `Rezepte in ${selectedWeek}` : locale === "nl" ? `Recepten in ${selectedWeek}` : `Recipes in ${selectedWeek}`}
+              {`Rezepte in ${selectedWeek}`}
             </div>
             <div className="px-2 pb-2">
               <input
                 type="search"
                 value={searchText}
                 onChange={e => setSearchText(e.target.value)}
-                placeholder={locale === "de" ? "Suche nach Meal, Artikel, SKU, Zutat ..." : locale === "nl" ? "Zoek naar meal, artikel, SKU, ingrediënt ..." : "Search meal, item, SKU, ingredient ..."}
+                placeholder="Suche nach Meal, Artikel, SKU, Zutat ..."
                 className="w-full rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-3 py-2 text-sm"
               />
               <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-                <span>{locale === "de" ? `${fmtNum(filteredRecipes.length)} von ${fmtNum(recipesOfWeek.length)} Treffern` : locale === "nl" ? `${fmtNum(filteredRecipes.length)} van ${fmtNum(recipesOfWeek.length)} resultaten` : `${fmtNum(filteredRecipes.length)} of ${fmtNum(recipesOfWeek.length)} matches`}</span>
+                <span>{`${fmtNum(filteredRecipes.length)} von ${fmtNum(recipesOfWeek.length)} Treffern`}</span>
                 {searchText && <button className="hover:text-slate-800" onClick={() => setSearchText("")}>{tl(locale, "Suche leeren")}</button>}
               </div>
             </div>
@@ -631,7 +649,12 @@ export default function App() {
           )}
           {view === "rack" && (
             <Suspense fallback={<div className="card p-6 text-slate-500">{tl(locale, "Rack-Ansicht wird geladen …")}</div>}>
-              <RackView week={selectedWeek} locale={locale} />
+              <RackView week={selectedWeek} locale="de" />
+            </Suspense>
+          )}
+          {view === "ket" && (
+            <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
+              <LinePlanningView week={selectedWeek} locale={locale} />
             </Suspense>
           )}
           {view === "recipe" && (activeRecipe
@@ -642,8 +665,8 @@ export default function App() {
         </main>
       </div>
       <footer className="mt-6 text-xs text-slate-400">
-        {locale === "de" ? "Daten generiert" : locale === "nl" ? "Gegevens gegenereerd" : "Data generated"}: {formatDateTime(locale, data.generatedAt)} ·
-        {locale === "de" ? "Quelle" : locale === "nl" ? "Bron" : "Source"}: {(import.meta.env.VITE_DATA_SOURCE ?? "local")} · Site: VF (Verden)
+        Daten generiert: {formatDateTime(locale, data.generatedAt)} ·
+        Quelle: {(import.meta.env.VITE_DATA_SOURCE ?? "local")} · Site: VF (Verden)
       </footer>
     </Shell>
   );
@@ -805,7 +828,7 @@ function WocheZutatenView({ data, week, upliftPercent, locale }:
   }
 
   if (weekRecipes.length === 0) return (
-    <div className="card p-6 text-slate-500">{locale === "de" ? `Keine Rezepte in ${week}.` : locale === "nl" ? `Geen recepten in ${week}.` : `No recipes in ${week}.`}</div>
+    <div className="card p-6 text-slate-500">{`Keine Rezepte in ${week}.`}</div>
   );
 
   return (
@@ -815,9 +838,9 @@ function WocheZutatenView({ data, week, upliftPercent, locale }:
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{tl(locale, "Σ Wochenbestellung")}</div>
-            <div className="text-lg font-bold text-slate-900">{week} · {fmtNum(weekRecipes.length)} {locale === "de" ? "produzierte Rezepte" : locale === "nl" ? "geproduceerde recepten" : "produced recipes"}</div>
+            <div className="text-lg font-bold text-slate-900">{week} · {fmtNum(weekRecipes.length)} produzierte Rezepte</div>
             <div className="text-sm text-slate-500 mt-0.5">
-              {locale === "de" ? "Alle Brutto-Zutaten über alle Rezepte der Woche aggregiert." : locale === "nl" ? "Alle bruto-ingrediënten over alle recepten van de week geaggregeerd." : "All gross ingredients aggregated across all recipes of the week."}
+              Alle Brutto-Zutaten über alle Rezepte der Woche aggregiert.
             </div>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
@@ -836,30 +859,30 @@ function WocheZutatenView({ data, week, upliftPercent, locale }:
           {grandTotals.map(gt => (
             <div key={gt.du} className="rounded-lg bg-slate-50 ring-1 ring-slate-200 px-3 py-1.5 text-sm">
               <span className="font-bold tabular-nums">{fmtNum(gt.total, 1)} {gt.du}</span>
-              <span className="text-slate-400 ml-1 text-xs">{locale === "de" ? "gesamt" : locale === "nl" ? "totaal" : "total"}</span>
+              <span className="text-slate-400 ml-1 text-xs">gesamt</span>
             </div>
           ))}
           <div className="rounded-lg bg-slate-50 ring-1 ring-slate-200 px-3 py-1.5 text-sm">
             <span className="font-bold tabular-nums">{fmtNum(sorted.length)}</span>
-            <span className="text-slate-400 ml-1 text-xs">{locale === "de" ? "Zutaten" : locale === "nl" ? "Ingrediënten" : "Ingredients"}</span>
+            <span className="text-slate-400 ml-1 text-xs">Zutaten</span>
           </div>
         </div>
 
         {/* Search + Sort + Export */}
         <div className="mt-3 flex flex-wrap gap-2 items-center">
           <input type="search" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder={locale === "de" ? "Zutat, SKU, Kategorie suchen ..." : locale === "nl" ? "Zoek ingrediënt, SKU, categorie ..." : "Search ingredient, SKU, category ..."}
+            placeholder="Zutat, SKU, Kategorie suchen ..."
             className="min-w-[14rem] flex-1 rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-3 py-2 text-sm" />
-          {search && <button className="btn" onClick={() => setSearch("")}>{locale === "de" ? "Leeren" : locale === "nl" ? "Wissen" : "Clear"}</button>}
+          {search && <button className="btn" onClick={() => setSearch("")}>Leeren</button>}
           <select value={sort} onChange={e => { setSort(e.target.value as WocheSortKey); setSortAsc(false); }}
             className="rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-2 py-2 text-sm">
-            <option value="qty">{locale === "de" ? "Sortierung: Menge ↓" : locale === "nl" ? "Sortering: hoeveelheid ↓" : "Sort: quantity ↓"}</option>
-            <option value="name">{locale === "de" ? "Sortierung: Name A–Z" : locale === "nl" ? "Sortering: naam A-Z" : "Sort: name A-Z"}</option>
-            <option value="cat">{locale === "de" ? "Sortierung: Kategorie" : locale === "nl" ? "Sortering: categorie" : "Sort: category"}</option>
-            <option value="recipes">{locale === "de" ? "Sortierung: Anz. Rezepte" : locale === "nl" ? "Sortering: aantal recepten" : "Sort: recipe count"}</option>
+            <option value="qty">Sortierung: Menge ↓</option>
+            <option value="name">Sortierung: Name A–Z</option>
+            <option value="cat">Sortierung: Kategorie</option>
+            <option value="recipes">Sortierung: Anz. Rezepte</option>
           </select>
-          <button onClick={() => setSortAsc(a => !a)} className="btn" title={locale === "de" ? "Reihenfolge umkehren" : locale === "nl" ? "Volgorde omkeren" : "Reverse order"}>
-            {sortAsc ? (locale === "de" ? "↑ Aufsteigend" : locale === "nl" ? "↑ Oplopend" : "↑ Ascending") : (locale === "de" ? "↓ Absteigend" : locale === "nl" ? "↓ Aflopend" : "↓ Descending")}
+          <button onClick={() => setSortAsc(a => !a)} className="btn" title="Reihenfolge umkehren">
+            {sortAsc ? "↑ Aufsteigend" : "↓ Absteigend"}
           </button>
           <button onClick={exportToClipboard} className={`btn ${copied ? "bg-emerald-100 text-emerald-800" : ""}`}>
             {copied ? tl(locale, "✓ Kopiert!") : tl(locale, "📋 Export TSV")}
@@ -937,7 +960,7 @@ function Shell({ children, locale }: { children: React.ReactNode; locale: UiLoca
       <header className="bg-white border-b border-slate-200">
         <div className="mx-auto max-w-screen-2xl px-4 py-3 flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-bold tracking-tight">{locale === "de" ? "Rezeptlogik · Verden Planer" : locale === "nl" ? "Receptlogica · Verden planner" : "Recipe logic · Verden planner"}</h1>
+            <h1 className="text-lg font-bold tracking-tight">Factor OPS Planner</h1>
             <p className="text-xs text-slate-500">2026 Ramp-Up · NL · EN · DE</p>
           </div>
         </div>

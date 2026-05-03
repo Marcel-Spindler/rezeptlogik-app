@@ -14,7 +14,7 @@ Planung der Verden-Produktion (Site **VF**) für die Märkte BENL, DK/SE und DE.
 ```powershell
 cd C:\rezeptlogik-app
 npm install
-npm run import:local   # liest XLSX + 6 CSVs aus C:\Rezeptlogik → public/data/data.json
+npm run import:local   # nutzt REZEPTLOGIK_SOURCE_DIR, sonst C:\Rezeptlogik, sonst .\Rezeptlogik → public/data/data.json
 npm run dev            # http://127.0.0.1:5173
 ```
 
@@ -73,8 +73,8 @@ npm run push:firestore     # nutzt firebase-admin + dieselben service-account-Cr
 ```
 
 In `.env.local`: `VITE_DATA_SOURCE=firestore` setzen — die App liest dann live
-aus Firestore (Read = öffentlich, Write nur per Admin-SDK, siehe
-[firestore.rules](firestore.rules)).
+aus Firestore. Achtung: Dieses Repo haengt an einem geteilten Firebase-Projekt;
+Firestore-Rules fuer die Default-DB duerfen hier nicht per CLI deployt werden.
 
 ---
 
@@ -82,10 +82,14 @@ aus Firestore (Read = öffentlich, Write nur per Admin-SDK, siehe
 
 ```powershell
 npm run build
-firebase deploy --only hosting,firestore:rules
+firebase deploy --only hosting
 ```
 
 Die App ist danach unter `https://<projekt>.web.app/` erreichbar.
+
+Firestore-Hinweis: Keine Rules-Deploys aus diesem Repo. Die Datei
+[firestore.rules](firestore.rules) ist hier nur Referenz-/Arbeitsstand fuer den
+Rezeptlogik-Pfad im Shared-Projekt und darf andere Apps nicht ueberfahren.
 
 ---
 

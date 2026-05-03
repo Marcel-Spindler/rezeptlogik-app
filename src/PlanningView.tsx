@@ -192,21 +192,24 @@ function getShiftPreset(presetId: string, shiftCount: number) {
 }
 
 function shiftPresetLabel(locale: UiLocale, presetId: string): string {
-  if (presetId === "single-current") return locale === "de" ? "Aktuell: Einschicht" : locale === "nl" ? "Actueel: 1 ploeg" : "Current: single shift";
-  if (presetId === "double-ready") return locale === "de" ? "Vorbereitet: 2 Schichten" : locale === "nl" ? "Voorbereid: 2 ploegen" : "Prepared: 2 shifts";
-  return locale === "de" ? "Vorbereitet: 3 Schichten" : locale === "nl" ? "Voorbereid: 3 ploegen" : "Prepared: 3 shifts";
+  void locale;
+  if (presetId === "single-current") return "Aktuell: Einschicht";
+  if (presetId === "double-ready") return "Vorbereitet: 2 Schichten";
+  return "Vorbereitet: 3 Schichten";
 }
 
 function shiftPresetShortLabel(locale: UiLocale, presetId: string): string {
-  if (presetId === "single-current") return locale === "de" ? "Einschicht" : locale === "nl" ? "1 ploeg" : "Single shift";
-  if (presetId === "double-ready") return locale === "de" ? "2 Schichten" : locale === "nl" ? "2 ploegen" : "2 shifts";
-  return locale === "de" ? "3 Schichten" : locale === "nl" ? "3 ploegen" : "3 shifts";
+  void locale;
+  if (presetId === "single-current") return "Einschicht";
+  if (presetId === "double-ready") return "2 Schichten";
+  return "3 Schichten";
 }
 
 function shiftPresetNote(locale: UiLocale, presetId: string): string {
-  if (presetId === "single-current") return locale === "de" ? "Produktivbetrieb heute. Das ist der sichere Default und bleibt beim Neuladen aktiv." : locale === "nl" ? "Huidige productie. Dit is de veilige standaard en blijft actief na herladen." : "Current production setup. This is the safe default and stays active after reload.";
-  if (presetId === "double-ready") return locale === "de" ? "Ein Klick schaltet zusätzliche Slots zu, ohne die restliche Planung umzubauen." : locale === "nl" ? "Eén klik schakelt extra slots in zonder de rest van de planning om te bouwen." : "One click enables additional slots without rebuilding the rest of the plan.";
-  return locale === "de" ? "Für späteren Mehrschichtbetrieb vorbereitet, inkl. 3 Assembly Lines im Fulfilment." : locale === "nl" ? "Voorbereid op later meerploegenbedrijf, inclusief 3 assembly lines in fulfilment." : "Prepared for future multi-shift operation, including 3 assembly lines in fulfilment.";
+  void locale;
+  if (presetId === "single-current") return "Produktivbetrieb heute. Das ist der sichere Default und bleibt beim Neuladen aktiv.";
+  if (presetId === "double-ready") return "Ein Klick schaltet zusätzliche Slots zu, ohne die restliche Planung umzubauen.";
+  return "Für späteren Mehrschichtbetrieb vorbereitet, inkl. 3 Assembly Lines im Fulfilment.";
 }
 
 function shelfTone(status: ShelfLifeInfo["status"]): string {
@@ -510,17 +513,17 @@ export function PlanningView(
       <div className="card p-4">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div>
-            <h2 className="text-lg font-bold text-slate-800">{locale === "de" ? "Wochenboard" : locale === "nl" ? "Weekboard" : "Week board"} · {week}</h2>
+            <h2 className="text-lg font-bold text-slate-800">Wochenboard · {week}</h2>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              {locale === "de" ? "Rezepte oben in Tag/Schicht-Karten ziehen · zwischen Slots verschieben · zurück nach 'Offen' zum Entfernen" : locale === "nl" ? "Recepten naar dag-/ploegkaarten slepen · tussen slots verplaatsen · terug naar 'Open' om te verwijderen" : "Drag recipes into day/shift cards · move between slots · drag back to 'Open' to remove"}
+              Rezepte oben in Tag/Schicht-Karten ziehen · zwischen Slots verschieben · zurück nach 'Offen' zum Entfernen
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 ring-1 ring-slate-200">
-              {analysis.plannedCount} {locale === "de" ? "geplant" : locale === "nl" ? "gepland" : "planned"}
+              {analysis.plannedCount} geplant
             </span>
             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
-              {unplanned.length} {locale === "de" ? "offen" : locale === "nl" ? "open" : "open"}
+              {unplanned.length} offen
             </span>
             <span className="rounded-full bg-verden-50 px-2 py-0.5 text-[10px] font-semibold text-verden-700 ring-1 ring-verden-200">
               {shiftPresetShortLabel(locale, activePreset.id)}
@@ -529,14 +532,14 @@ export function PlanningView(
               className="rounded-lg bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 px-3 py-1 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
               onClick={() => {
                 if (analysis.plannedCount === 0) return;
-                if (window.confirm(locale === "de" ? `Kalender für Szenario '${scenario.name}' wirklich leeren? ${analysis.plannedCount} Zuordnung(en) gehen verloren.` : locale === "nl" ? `Kalender voor scenario '${scenario.name}' echt leegmaken? ${analysis.plannedCount} toewijzing(en) gaan verloren.` : `Clear the calendar for scenario '${scenario.name}'? ${analysis.plannedCount} assignment(s) will be lost.`)) {
+                if (window.confirm(`Kalender für Szenario '${scenario.name}' wirklich leeren? ${analysis.plannedCount} Zuordnung(en) gehen verloren.`)) {
                   setStorage(prev => resetScenario(prev, week, scenario.id));
                 }
               }}
               disabled={analysis.plannedCount === 0}
-              title={locale === "de" ? "Alle Rezepte aus dem Kalender entfernen" : locale === "nl" ? "Alle recepten uit de kalender verwijderen" : "Remove all recipes from the calendar"}
+              title="Alle Rezepte aus dem Kalender entfernen"
             >
-              {locale === "de" ? "🗑 Kalender leeren" : locale === "nl" ? "🗑 Kalender leegmaken" : "🗑 Clear calendar"}
+              🗑 Kalender leeren
             </button>
           </div>
         </div>
@@ -558,15 +561,15 @@ export function PlanningView(
         >
           <div className="flex items-center justify-between gap-2 mb-1.5 px-1">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              {locale === "de" ? "Verfügbare Rezepte" : locale === "nl" ? "Beschikbare recepten" : "Available recipes"} · {unplanned.length}
+              Verfügbare Rezepte · {unplanned.length}
             </div>
             <div className="text-[10px] text-slate-400">
-              {dragOverUnplanned ? (locale === "de" ? "Loslassen -> aus Plan nehmen" : locale === "nl" ? "Loslaten -> uit plan halen" : "Release -> remove from plan") : (locale === "de" ? "↓ in Tag/Schicht ziehen" : locale === "nl" ? "↓ naar dag/ploeg slepen" : "↓ drag into day/shift")}
+              {dragOverUnplanned ? "Loslassen -> aus Plan nehmen" : "↓ in Tag/Schicht ziehen"}
             </div>
           </div>
           {unplanned.length === 0 ? (
             <div className="px-2 py-3 text-center text-xs text-emerald-700 bg-emerald-50 rounded-md ring-1 ring-emerald-200">
-              {locale === "de" ? "✓ Alle Rezepte verplant" : locale === "nl" ? "✓ Alle recepten ingepland" : "✓ All recipes scheduled"}
+              ✓ Alle Rezepte verplant
             </div>
           ) : (
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -746,12 +749,12 @@ export function PlanningView(
                   {/* Leer-Hint */}
                   {dayItems.length === 0 && !isAnyDragOver && (
                     <div className="absolute inset-0 flex items-center justify-center text-[10px] text-slate-300 pointer-events-none">
-                      {isDragActive ? (locale === "de" ? "hier ablegen" : locale === "nl" ? "hier neerzetten" : "drop here") : (locale === "de" ? "leer" : locale === "nl" ? "leeg" : "empty")}
+                      {isDragActive ? "hier ablegen" : "leer"}
                     </div>
                   )}
                   {isAnyDragOver && (
                     <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-verden-700 pointer-events-none">
-                      {locale === "de" ? "ablegen -> Uhrzeit ergibt sich aus Position" : locale === "nl" ? "neerzetten -> starttijd volgt uit positie" : "drop -> start time follows from position"}
+                      ablegen - Uhrzeit ergibt sich aus Position
                     </div>
                   )}
                 </div>
@@ -766,8 +769,8 @@ export function PlanningView(
           <div>
             <h2 className="text-xl font-bold">{tl(locale, "Wochenplaner")} · {week}</h2>
             <p className="mt-1 text-sm text-slate-500">
-              {locale === "de" ? "Lokaler Szenario-Planer im Browser. Keine Firestore-Schreibvorgänge, keine Live-Risiken." : locale === "nl" ? "Lokale scenarioplanner in de browser. Geen Firestore-schrijfacties, geen live-risico's." : "Local scenario planner in the browser. No Firestore writes, no live risks."}
-              {upliftPercent !== 0 ? ` ${locale === "de" ? "Aktiver Planfaktor" : locale === "nl" ? "Actieve planfactor" : "Active plan factor"}: ${upliftPercent > 0 ? "+" : ""}${upliftPercent}%.` : ""}
+              Lokaler Szenario-Planer im Browser. Keine Firestore-Schreibvorgänge, keine Live-Risiken.
+              {upliftPercent !== 0 ? ` Aktiver Planfaktor: ${upliftPercent > 0 ? "+" : ""}${upliftPercent}%.` : ""}
             </p>
           </div>
           <div className="rounded-full bg-verden-50 px-3 py-1 text-xs font-semibold text-verden-700 ring-1 ring-verden-200">

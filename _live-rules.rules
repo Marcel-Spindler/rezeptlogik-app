@@ -274,13 +274,98 @@ service cloud.firestore {
     // REZEPTLOGIK (additiv, beruehrt ausschliesslich apps/rezeptlogik/**)
     // ------------------------------------------------------------------------
     // Interner Planer, MVP. Lesen offen (kein Auth-Layer in der App), Schreiben
-    // aktuell teils direkt aus dem Client. Deshalb Regeln hier nur mit groesster
-    // Vorsicht pflegen und niemals aus diesem Repo projektweit deployen.
+    // ausschliesslich via Admin-SDK / Service Account (push-firestore.ts).
     // Greift NICHT in factoryHub_*-Collections ein.
     // ========================================================================
     match /apps/rezeptlogik/{path=**} {
       allow read: if true;
-      allow write: if true; // aktuelles MVP-Verhalten, nicht aus diesem Repo deployen
+      allow write: if true; // Planer-App schreibt direkt (kein Auth-Layer)
+    }
+
+    // ========================================================================
+    // BEGLEIT-PRODUKTION-TRACKER (Issue Tracker)
+    // ------------------------------------------------------------------------
+    // Strikt isoliert auf apps/issueTracker/**. Helpers sind it_*-prefixiert,
+    // um Kollisionen mit Factory-Hub-Helpers (isAdmin, signedIn, ...) zu
+    // vermeiden. Greift NICHT in factoryHub_*- oder rezeptlogik-Daten ein.
+    // ========================================================================
+    function it_isSignedIn() { return request.auth != null; }
+    function it_memberDoc() {
+      return get(/databases/$(database)/documents/apps/issueTracker/members/$(request.auth.uid)).data;
+    }
+    function it_isMember() {
+      return it_isSignedIn()
+        && exists(/databases/$(database)/documents/apps/issueTracker/members/$(request.auth.uid))
+        && it_memberDoc().active == true;
+    }
+    function it_isAdmin() {
+      return it_isMember() && it_memberDoc().role == 'admin';
+    }
+
+    match /apps/issueTracker/members/{uid} {
+      // Self-Read MUSS erlaubt sein, sonst Henne-Ei (it_isMember liest dieses Doc).
+      allow read: if it_isSignedIn() && (request.auth.uid == uid || it_isMember());
+      allow create: if false; // ausschliesslich via Cloud Function
+      allow update: if it_isAdmin()
+        || (it_isMember() && request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.active == resource.data.active
+            && request.resource.data.email == resource.data.email);
+      allow delete: if it_isAdmin();
+    }
+
+    match /apps/issueTracker/departments/{deptId} {
+      allow read: if it_isMember();
+      allow write: if it_isAdmin();
+    }
+    match /apps/issueTracker/issueCategories/{id} {
+      allow read: if it_isMember();
+      allow write: if it_isAdmin();
+    }
+
+    match /apps/issueTracker/issues/{issueId} {
+      allow read: if it_isMember();
+      allow create: if it_isMember()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update: if it_isMember();
+      allow delete: if it_isAdmin();
+
+      match /comments/{commentId} {
+        allow read: if it_isMember();
+        allow create: if it_isMember()
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if it_isMember()
+          && resource.data.createdBy == request.auth.uid;
+        allow delete: if it_isAdmin()
+          || (it_isMember() && resource.data.createdBy == request.auth.uid);
+      }
+    }
+
+    match /apps/issueTracker/dailyCheckins/{docId} {
+      allow read: if it_isMember();
+      allow create, update: if it_isMember()
+        && request.resource.data.reportedBy == request.auth.uid;
+      allow delete: if it_isAdmin();
+    }
+
+    match /apps/issueTracker/dailyOperations/{docId} {
+      allow read: if it_isMember();
+      allow create, update: if it_isMember()
+        && request.resource.data.reportedBy == request.auth.uid;
+      allow delete: if it_isAdmin();
+    }
+
+    match /apps/issueTracker/kpiDaily/{docId} {
+      allow read: if it_isMember();
+      allow write: if false;
+    }
+
+    match /apps/issueTracker/weeklyReports/{docId} {
+      allow read: if it_isMember();
+      allow write: if false;
     }
   }
 }
+
+
+

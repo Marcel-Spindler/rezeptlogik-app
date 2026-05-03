@@ -9,8 +9,8 @@ export const MARKET_UI_LOCALE: Record<Market, UiLocale> = {
 };
 
 export const MARKET_LANGUAGE_LABEL: Record<Market, string> = {
-  BENL: "NL",
-  DKSE: "EN",
+  BENL: "BENL",
+  DKSE: "DK/SE",
   DE: "DE"
 };
 
@@ -136,7 +136,10 @@ const TEXTS: Record<string, Partial<Record<UiLocale, string>>> = {
 };
 
 export function marketToLocale(market: Market): UiLocale {
-  return MARKET_UI_LOCALE[market];
+  // UI-Sprache ist global immer Deutsch; Marktwechsel betrifft nur Marktdaten
+  // (z. B. lokale Meal-/Rezeptnamen), nicht die Oberflächensprache.
+  void market;
+  return "de";
 }
 
 export function formatNumber(locale: UiLocale, value: number, digits = 0): string {

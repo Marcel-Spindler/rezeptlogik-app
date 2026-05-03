@@ -5,6 +5,15 @@ Ersetzt den F-ALPS Excel-Schritt:
 Liest 'static exportP2L - DACH' aus dem MultiLine-Excel und baut daraus
 die Rackfile CSV (= das Format das ins System hochgeladen wird).
 
+━━━ PLANUNGSREGEL (verbindlich) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Highrunner (= Positionen mit highRunner=True in der Visualization-Rackplan,
+  d.h. Etage 2 / Mittelschiene mit Demand > 0) dürfen AUSSCHLIESSLICH auf der
+  Mittelschiene (Level 2, preferredPick=True) verplant werden.
+  Auf der OBERSCHIENE (Level 1) sind Highrunner VERBOTEN.
+  Die App-Logik (RackView.tsx) setzt diese Regel beim Auto-Plan durch und
+  meldet Verstöße als Error in der Validierung.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 Verwendung:
     python generate_rackfile.py                          # de-Profil (ASL3 + ASL4)
     python generate_rackfile.py --market nordics        # nordics-Profil (ASL1 + ASL5)

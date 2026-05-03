@@ -26,12 +26,9 @@
     ]
   }
   // HINWEIS: "firestore"-Block bewusst entfernt (Schutzgelaender).
-  // Das Projekt "hellofresh-de-problem-solve" wird von mehreren Apps geteilt
-  // (u. a. Factory-Hub). Firestore-Rules gelten projektweit und wuerden sich
-  // sonst gegenseitig ueberschreiben. Die Datei firestore.rules in diesem Repo
-  // ist die zusammengefuehrte Referenzversion (Factory-Hub + Rezeptlogik) und
-  // ist bereits live deployt. Aenderungen an Rules nur bewusst und manuell:
-  //   1) "firestore"-Block hier temporaer wieder einfuegen
-  //   2) firebase deploy --only firestore:rules --project hellofresh-de-problem-solve
-  //   3) Block wieder entfernen
+  // Das Projekt "hellofresh-de-problem-solve" wird von mehreren Apps geteilt.
+  // Firestore-Rules gelten projektweit und duerfen aus diesem App-Repo NICHT
+  // ausgerollt werden, weil sonst andere Apps im Shared-Projekt betroffen sind.
+  // Regeln fuer die Default-DB nur ueber den sicheren Master-Prozess
+  // (Console/REST bzw. dediziertes Master-Repo) aendern, nicht ueber dieses Repo.
 }
