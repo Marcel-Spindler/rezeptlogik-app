@@ -515,11 +515,11 @@ export function suggestAssignments(
     const recipeLoad = computeWeekLoad(data, week, { portionMultiplier: options?.portionMultiplier }).recipes.find(r => r.weekRecipe.code === recipe.recipeCode);
     if (!recipeLoad) continue;
     const hints = recipePlanningHints(data, week, recipe.recipeCode);
-    const preferredDays = hints.thaw || hints.seafood
-      ? ["Do", "Fr", "Sa", "So", "Mo", "Di", "Mi"]
+    const preferredDays: PlannerDay[] = hints.thaw || hints.seafood
+      ? ["Do", "Fr", "So", "Mo", "Di", "Mi"]
       : hints.preproduction
-        ? ["Do", "Sa", "Fr", "So", "Mo", "Di", "Mi"]
-        : ["Fr", "So", "Do", "Sa", "Mo", "Di", "Mi"];
+        ? ["Do", "Fr", "So", "Mo", "Di", "Mi"]
+        : ["Fr", "So", "Do", "Mo", "Di", "Mi"];
 
     let best: PlannerSuggestedAssignment | undefined;
     for (const day of PLANNER_DAYS) {

@@ -22,14 +22,30 @@ export async function refreshRampUpDataOnStart(): Promise<void> {
 }
 
 export async function loadData(): Promise<DataBundle> {
-  if (SOURCE === "firestore") return loadFromFirestore();
+  if (SOURCE === "firestore") {
+    try {
+      return await loadFromFirestore();
+    } catch {
+      // Stabilitäts-Guardrail: Bei Firestore-Problemen auf lokale Daten zurückfallen.
+      return loadFromJson();
+    }
+  }
   return loadFromJson();
 }
 
 async function loadFromJson(): Promise<DataBundle> {
-  const res = await fetch(`/data/data.json?ts=${Date.now()}`);
+  let res: Response;
+  try {
+    res = await fetch(`/data/data.json?ts=${Date.now()}`, { cache: "no-store" });
+  } catch {
+    throw new Error(`Datenquelle nicht erreichbar (data.json).`);
+  }
   if (!res.ok) throw new Error(`data.json nicht gefunden – npm run import:local ausführen.`);
-  return res.json();
+  try {
+    return await res.json();
+  } catch {
+    throw new Error(`data.json ist ungültig formatiert.`);
+  }
 }
 
 async function loadFromFirestore(): Promise<DataBundle> {

@@ -1497,7 +1497,7 @@ function TreeCanvas({ roots, code, recipeName, week, market }: {
 
   const totalLeaves = useMemo(() => Math.max(1, subtreeLeafCount(roots, expanded)), [roots, expanded]);
   const maxDepth   = useMemo(() => flatNodes.reduce((m, n) => Math.max(m, n.depth), 0), [flatNodes]);
-  const svgW = TPAD * 2 + (maxDepth + 1) * (TW + TGX);
+  const _svgW = TPAD * 2 + (maxDepth + 1) * (TW + TGX);
   const svgH = TPAD * 2 + totalLeaves * (TH + TGY);
 
   const edges = useMemo(() => flatNodes.filter(n => n.parentId).map(n => {

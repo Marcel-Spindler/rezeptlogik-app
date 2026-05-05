@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Sheets Export - Anleitung</title>
+    <style>
+        * { margin: 0; padding: 0; }
+        body {
+            font-family: 'Google Sans', 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        header {
+            background: linear-gradient(135deg, #4285f4 0%, #34a853 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+        header h1 img {
+            height: 40px;
+        }
+        header p {
+            font-size: 1.2em;
+            opacity: 0.95;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .section {
+            margin-bottom: 50px;
+        }
+        .section h2 {
+            color: #1a73e8;
+            border-bottom: 3px solid #1a73e8;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+            font-size: 1.8em;
+        }
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }
+        .file-card {
+            background: linear-gradient(135deg, #f3f3f3 0%, #ffffff 100%);
+            border: 2px solid #e8eaed;
+            border-radius: 8px;
+            padding: 25px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .file-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            border-color: #4285f4;
+        }
+        .file-card .icon {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .file-card h3 {
+            color: #202124;
+            margin-bottom: 8px;
+            font-size: 1.2em;
+        }
+        .file-card .filename {
+            background: #e8eaed;
+            color: #3c4043;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            margin-bottom: 12px;
+            display: inline-block;
+        }
+        .file-card p {
+            color: #5f6368;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }
+        .step-box {
+            background: #f8f9fa;
+            border-left: 4px solid #1a73e8;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .step-box h3 {
+            color: #202124;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .step-number {
+            background: #1a73e8;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .step-box ol {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+        .step-box li {
+            margin: 10px 0;
+            color: #3c4043;
+        }
+        .highlight {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            color: #155724;
+        }
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin: 30px 0;
+            flex-wrap: wrap;
+        }
+        .button {
+            background: linear-gradient(135deg, #4285f4 0%, #1a73e8 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(66,133,244,0.3);
+        }
+        .button-secondary {
+            background: #34a853;
+        }
+        .button-secondary:hover {
+            box-shadow: 0 4px 12px rgba(52,168,83,0.3);
+        }
+        .code-block {
+            background: #1f1f1f;
+            color: #9ccc65;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+        .share-method {
+            background: #e3f2fd;
+            border: 2px dashed #1a73e8;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .share-method h3 {
+            color: #1a73e8;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .share-method p {
+            color: #3c4043;
+            line-height: 1.6;
+        }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .comparison-box {
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid;
+        }
+        .comparison-box.recommended {
+            background: #f0f9ff;
+            border-color: #34a853;
+        }
+        .comparison-box.recommended h4 {
+            color: #34a853;
+        }
+        .comparison-box.alternative {
+            background: #f3f3f3;
+            border-color: #e8eaed;
+        }
+        .comparison-box h4 {
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+        .comparison-box ul {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+        .comparison-box li {
+            color: #3c4043;
+            margin: 8px 0;
+        }
+        @media (max-width: 768px) {
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+            header h1 {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .file-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        footer {
+            background: #f8f9fa;
+            padding: 30px;
+            text-align: center;
+            color: #5f6368;
+            border-top: 1px solid #dadce0;
+        }
+        .emoji-large {
+            font-size: 3em;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                📊 Google Sheets Ready!
+                <span style="font-size: 0.6em; opacity: 0.8;">KW 19 Analyse</span>
+            </h1>
+            <p>Teile deine Daten ganz einfach über Google Sheets</p>
+        </header>
+
+        <div class="content">
+            <!-- ÜBERSICHT -->
+            <div class="section">
+                <h2>📋 Deine Export-Dateien</h2>
+                <p style="color: #5f6368; margin-bottom: 20px;">
+                    5 TSV-Dateien (Tab-Separated Values) für optimalen Import in Google Sheets
+                </p>
+
+                <div class="file-grid">
+                    <div class="file-card">
+                        <div class="icon">📊</div>
+                        <h3>Übersicht</h3>
+                        <span class="filename">KW19_Google_Sheets_ÜBERSICHT.tsv</span>
+                        <p>Schnellstatistik: Zugänge, Bewegungen, Netto-Bestand</p>
+                    </div>
+
+                    <div class="file-card">
+                        <div class="icon">📦</div>
+                        <h3>Produkte</h3>
+                        <span class="filename">KW19_Google_Sheets_PRODUKTE.tsv</span>
+                        <p>Alle 119 Produkte sortiert nach Gewicht</p>
+                    </div>
+
+                    <div class="file-card">
+                        <div class="icon">📍</div>
+                        <h3>Bereiche</h3>
+                        <span class="filename">KW19_Google_Sheets_BEREICHE.tsv</span>
+                        <p>189 Bereiche kategorisiert (Prep, Fulfillment, Lager)</p>
+                    </div>
+
+                    <div class="file-card">
+                        <div class="icon">🏆</div>
+                        <h3>Top Kategorien</h3>
+                        <span class="filename">KW19_Google_Sheets_TOP_KATEGORIEN.tsv</span>
+                        <p>Top Produkte pro Bereichskategorie</p>
+                    </div>
+
+                    <div class="file-card">
+                        <div class="icon">🔲</div>
+                        <h3>Produkt-Bereich Matrix</h3>
+                        <span class="filename">KW19_Google_Sheets_MATRIX.tsv</span>
+                        <p>Top 50 Produkte mit Gewichten pro Bereich</p>
+                    </div>
+
+                    <div class="file-card">
+                        <div class="icon">📄</div>
+                        <h3>Zusätzlich</h3>
+                        <span class="filename">KW19_Analyse_Excel_Report.xlsx</span>
+                        <p>Excel-Alternative mit Graphiken</p>
+                    </div>
+                </div>
+
+                <div class="success">
+                    <strong>✅ Alle Dateien vorhanden!</strong><br>
+                    Speicherort: <code style="background: rgba(0,0,0,0.1); padding: 2px 6px; border-radius: 3px;">C:\WMS Wahrheit\</code>
+                </div>
+            </div>
+
+            <!-- SCHNELLANLEITUNG -->
+            <div class="section">
+                <h2>🚀 So teilst du es (3 Schritte)</h2>
+
+                <div class="step-box">
+                    <h3><span class="step-number">1</span> Google Sheets öffnen</h3>
+                    <ol>
+                        <li>Gehe zu <strong>https://sheets.google.com</strong></li>
+                        <li>Melde dich mit deinem Google-Konto an</li>
+                        <li>Klick auf <strong>'+'</strong> (Neue Tabelle)</li>
+                    </ol>
+                </div>
+
+                <div class="step-box">
+                    <h3><span class="step-number">2</span> Dateien importieren</h3>
+                    <ol>
+                        <li>Klick oben links auf <strong>Datei</strong> → <strong>Importieren</strong></li>
+                        <li>Wähle <strong>'Datei hochladen'</strong> Tab</li>
+                        <li>Lade eine TSV-Datei hoch (z.B. <code style="background: #f0f0f0;">KW19_Google_Sheets_PRODUKTE.tsv</code>)</li>
+                        <li>Google erkennt automatisch Tab-Trennzeichen ✓</li>
+                        <li>Klick <strong>'In neue Tabelle importieren'</strong></li>
+                        <li><strong>Fertig!</strong> (für jede andere Datei wiederholen)</li>
+                    </ol>
+                </div>
+
+                <div class="step-box">
+                    <h3><span class="step-number">3</span> Teilen & Freigeben</h3>
+                    <ol>
+                        <li>Öffne die importierte Tabelle</li>
+                        <li>Klick oben rechts auf <strong>'Freigabe'</strong> (oder 🔗)</li>
+                        <li>Wähle: <strong>Einige Personen</strong> oder <strong>Jeder mit dem Link</strong></li>
+                        <li>Berechtigungen setzen:
+                            <ul style="margin: 10px 0 0 20px; font-size: 0.9em;">
+                                <li><strong>Ansicht</strong> = nur ansehen (sicher)</li>
+                                <li><strong>Bearbeitung</strong> = ändern dürfen</li>
+                                <li><strong>Kommentierung</strong> = mit Kommentaren</li>
+                            </ul>
+                        </li>
+                        <li>Link kopieren & verteilen 📧</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- SHARING METHODS -->
+            <div class="section">
+                <h2>📧 Teilen-Methoden</h2>
+
+                <div class="share-method">
+                    <h3>🔗 Via Link (Empfohlen)</h3>
+                    <p><strong>Beste Methode für schnelle Freigabe:</strong></p>
+                    <p>Nach Import → Klick "Freigabe" → "Jeder mit dem Link kann zugreifen" → Link kopieren → Per E-Mail/Chat versenden</p>
+                    <p style="margin-top: 10px; color: #999; font-size: 0.9em;">Vorteil: Keine Einladung nötig, sofort Zugriff</p>
+                </div>
+
+                <div class="share-method">
+                    <h3>👥 Mit Personen teilen</h3>
+                    <p><strong>Für gezielten Zugriff:</strong></p>
+                    <p>Freigabe → "Einige Personen" → E-Mail-Adressen eingeben → Berechtigungen wählen → Freigeben</p>
+                    <p style="margin-top: 10px; color: #999; font-size: 0.9em;">Vorteil: Nur bestimmte Personen haben Zugriff</p>
+                </div>
+
+                <div class="share-method">
+                    <h3>📥 Download für Offline</h3>
+                    <p><strong>Wenn Offline nötig:</strong></p>
+                    <p>Nach Import → Datei → Herunterladen → Format wählen (Excel, PDF, CSV, TSV)</p>
+                    <p style="margin-top: 10px; color: #999; font-size: 0.9em;">Vorteil: Offline verfügbar, aber keine Live-Updates</p>
+                </div>
+            </div>
+
+            <!-- BEST PRACTICES -->
+            <div class="section">
+                <h2>💡 Google Sheets Tips & Tricks</h2>
+
+                <div class="comparison">
+                    <div class="comparison-box recommended">
+                        <h4>✅ Empfohlen MACHEN:</h4>
+                        <ul>
+                            <li>✓ TSV statt CSV (bessere Umlaute)</li>
+                            <li>✓ Filter verwenden (Daten → Filter)</li>
+                            <li>✓ Spalten sortieren (A-Z, Z-A)</li>
+                            <li>✓ Bedingte Formatierung für Farben</li>
+                            <li>✓ Pivot-Tabellen erstellen</li>
+                            <li>✓ Link mit "Ansicht" Berechtigung teilen</li>
+                            <li>✓ Benachrichtigungen aktivieren</li>
+                        </ul>
+                    </div>
+
+                    <div class="comparison-box alternative">
+                        <h4>❌ Vermeiden:</h4>
+                        <ul>
+                            <li>✗ Direkt Rohdaten ändern (Backup machen)</li>
+                            <li>✗ Zu viele Berechtigungen vergeben</li>
+                            <li>✗ Sensible Daten ohne Link-Schutz teilen</li>
+                            <li>✗ Auf riesige Dateien direkt hochladen</li>
+                            <li>✗ Ohne Versionsverlauf arbeiten</li>
+                            <li>✗ Offline ohne Sync</li>
+                            <li>✗ Falsches Trennzeichen beim Import</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OPTIONAL: Excel -->
+            <div class="section">
+                <h2>📊 Alternative: Excel-Datei direkt teilen</h2>
+
+                <div class="step-box">
+                    <h3><span class="step-number">1</span> Excel-Datei hochladen</h3>
+                    <p>Datei: <code style="background: #f0f0f0;">KW19_Analyse_Excel_Report.xlsx</code></p>
+                    <ol>
+                        <li>Google Drive öffnen (https://drive.google.com)</li>
+                        <li>Datei hochladen oder per Drag & Drop</li>
+                        <li>Rechtsklick auf Datei → "Mit Google Sheets öffnen"</li>
+                        <li>Google konvertiert automatisch</li>
+                        <li>Dann normal freigeben</li>
+                    </ol>
+                </div>
+            </div>
+
+            <!-- SICHERHEIT -->
+            <div class="section">
+                <h2>🔒 Datenschutz & Sicherheit</h2>
+
+                <div class="highlight">
+                    <strong>⚠️ Bedenke:</strong>
+                    <ul style="margin-left: 20px; margin-top: 10px; line-height: 1.8;">
+                        <li><strong>Verzeichnis</strong> vs. <strong>Bearbeiten</strong>: "Ansicht" ist sicherer!</li>
+                        <li><strong>Link-Schutz</strong>: "Jeder mit Link" kann zugreifen → nur für vertrauenswürdige</li>
+                        <li><strong>Versionsverlauf</strong>: Google speichert alle Änderungen</li>
+                        <li><strong>Offline-Modus</strong>: Funktioniert mit Chrome-Erweiterung</li>
+                        <li><strong>Download</strong>: Einfach wieder herunterladen → lokal speichern</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- HÄUFIGE FRAGEN -->
+            <div class="section">
+                <h2>❓ Häufige Fragen</h2>
+
+                <div class="step-box" style="background: #fafafa;">
+                    <h3>F: Funktioniert TSV auch mit Google Sheets?</h3>
+                    <p><strong>A:</strong> Ja! TSV (Tab-Separated Values) funktioniert sogar besser als CSV, besonders mit Umlauten (ö, ä, ü). Google erkennt automatisch Tab-Trennzeichen.</p>
+                </div>
+
+                <div class="step-box" style="background: #fafafa;">
+                    <h3>F: Kann ich mehrere Dateien in 1 Spreadsheet importieren?</h3>
+                    <p><strong>A:</strong> Ja! Jede TSV-Datei = 1 neues Sheet. So hast du alle Daten an einem Ort (Übersicht, Produkte, Bereiche, etc.)</p>
+                </div>
+
+                <div class="step-box" style="background: #fafafa;">
+                    <h3>F: Wie teile ich mit automatischen Updates?</h3>
+                    <p><strong>A:</strong> Google Sheets hat keine "Live"-Updates von CSV. Aber: Immer die TSV-Datei neu importieren = aktuellste Daten.</p>
+                </div>
+
+                <div class="step-box" style="background: #fafafa;">
+                    <h3>F: Wer soll Zugriff haben?</h3>
+                    <p><strong>A:</strong> "Ansicht" = Nur ansehen (sicher). "Bearbeitung" = Ändern dürfen. Wähle je nach Zweck!</p>
+                </div>
+
+                <div class="step-box" style="background: #fafafa;">
+                    <h3>F: Kann ich die Daten auch in Excel teilen?</h3>
+                    <p><strong>A:</strong> Ja! Nutze <code style="background: #f0f0f0;">KW19_Analyse_Excel_Report.xlsx</code> oder speichere aus Sheets als Excel herunter.</p>
+                </div>
+            </div>
+
+            <!-- FERTIG -->
+            <div class="section">
+                <div class="success" style="text-align: center; padding: 30px;">
+                    <div class="emoji-large">✅</div>
+                    <h3 style="color: #28a745; margin-bottom: 10px;">Ready to Share!</h3>
+                    <p style="color: #155724; font-size: 1.1em;">Alle Dateien sind vorbereitet und bereit für Google Sheets.</p>
+                    <p style="color: #155724; margin-top: 15px;">Starte jetzt: https://sheets.google.com</p>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p><strong>Speicherort der Dateien:</strong> <code>C:\WMS Wahrheit\</code></p>
+            <p style="margin-top: 15px; color: #999;">Erstellt: 5. Mai 2026 | KW 19 Analyse</p>
+        </footer>
+    </div>
+</body>
+</html>

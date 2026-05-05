@@ -671,8 +671,11 @@ function articleZoneTarget(entry: RackEntry) {
 function pickfaceWindowsForMarket(market: RackMarket): PickfaceWindow[] {
   if (market === "de") {
     return [
+      // Zuschaltbare Liner-Vorzone (Slots 13–27) → Blöcke 1 & 2.
+      { id: "zuschalt-liner-a", min: 13, max: 18, maxTier: 3, area: "chilled", gapPx: 14, zuschaltbar: true, blockNumber: 1 },
+      { id: "zuschalt-liner-b", min: 19, max: 27, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 2 },
       // Chilled Area – 3 Ebenen, jeder Picker eigenständig.
-      { id: "p1", min: 28, max: 36, pickerNumber: 1, maxTier: 3, area: "chilled" },
+      { id: "p1", min: 28, max: 36, pickerNumber: 1, maxTier: 3, area: "chilled", gapPx: 18 },
       // Zuschaltbare Pufferzonen zwischen P1 und P2 (Slots 37–54) → Blöcke 3 & 4.
       { id: "zuschalt-p1p2-a", min: 37, max: 45, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 3 },
       { id: "zuschalt-p1p2-b", min: 46, max: 54, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 4 },
@@ -696,15 +699,31 @@ function pickfaceWindowsForMarket(market: RackMarket): PickfaceWindow[] {
     ];
   }
 
-  // Nordics: 7 Picker, identisches Fach-Layout, aber keine Liner-Zone und
-  // keine Pufferzone (zuschaltbar) zwischen Pickern. Slots 6–27 = Lager-Vorzone.
+  // Nordics: 7 Picker + 7 zuschaltbare Pufferzonen = 14 Windows.
+  // Gleiche Struktur wie DE – Liner-Vorzone + Picker + Zuschaltbar-Buffer.
   return [
-    { id: "p1", min: 28, max: 54, pickerNumber: 1, maxTier: 3, area: "chilled" },
-    { id: "p2", min: 55, max: 87, pickerNumber: 2, maxTier: 3, area: "chilled", gapPx: 18 },
-    { id: "p3", min: 88, max: 93, pickerNumber: 3, maxTier: 3, area: "chilled", gapPx: 18, highRunnerOverflow: true },
-    { id: "p4", min: 94, max: 104, pickerNumber: 4, maxTier: 3, area: "mealkit", gapPx: 28 },
-    { id: "p5", min: 105, max: 118, pickerNumber: 5, maxTier: 2, area: "mealkit", gapPx: 18 },
-    { id: "p6", min: 119, max: 130, pickerNumber: 6, maxTier: 2, area: "mealkit", gapPx: 18 },
+    // Zuschaltbare Liner-Vorzone (Slots 13–27) → Blöcke 1 & 2.
+    { id: "zuschalt-liner-a", min: 13, max: 18, maxTier: 3, area: "chilled", gapPx: 14, zuschaltbar: true, blockNumber: 1 },
+    { id: "zuschalt-liner-b", min: 19, max: 27, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 2 },
+    // Chilled Area – 3 Ebenen.
+    { id: "p1", min: 28, max: 36, pickerNumber: 1, maxTier: 3, area: "chilled", gapPx: 18 },
+    // Zuschaltbare Pufferzonen zwischen P1 und P2 (Slots 37–54) → Blöcke 3 & 4.
+    { id: "zuschalt-p1p2-a", min: 37, max: 45, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 3 },
+    { id: "zuschalt-p1p2-b", min: 46, max: 54, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 4 },
+    { id: "p2", min: 55, max: 63, pickerNumber: 2, maxTier: 3, area: "chilled", gapPx: 18 },
+    // Zuschaltbare Pufferzonen zwischen P2 und P3 (Slots 64–84) → Blöcke 5 & 6.
+    { id: "zuschalt-p2p3-a", min: 64, max: 72, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 5 },
+    { id: "zuschalt-p2p3-b", min: 73, max: 84, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 6 },
+    // Picker 3: etwas breiter als in DE – übernimmt bei Bedarf Highrunner-Overflow.
+    { id: "p3", min: 85, max: 93, pickerNumber: 3, maxTier: 3, area: "chilled", gapPx: 18, highRunnerOverflow: true },
+    // Physische Trennung Chilled → Mealkit.
+    { id: "p4", min: 94, max: 104, pickerNumber: 4, maxTier: 3, area: "mealkit", gapPx: 28, wallBefore: true },
+    // Mealkit-Bereich: nur 2 Ebenen (twoTierCutoff = 105 für Nordics).
+    { id: "p5", min: 105, max: 112, pickerNumber: 5, maxTier: 2, area: "mealkit", gapPx: 18 },
+    // Zuschaltbarer Block 7 (Slots 113–118) zwischen P5 und P6.
+    { id: "zuschalt-p5p6", min: 113, max: 118, maxTier: 2, area: "mealkit", gapPx: 12, zuschaltbar: true, blockNumber: 7 },
+    { id: "p6", min: 119, max: 130, pickerNumber: 6, maxTier: 2, area: "mealkit", gapPx: 12 },
+    // Picker 7: Gifts / Eis – hinterer Bereich, 2 Ebenen.
     { id: "p7", min: 131, max: 144, pickerNumber: 7, maxTier: 2, area: "gifts", gapPx: 28 },
   ];
 }
@@ -715,9 +734,28 @@ function findPickfaceForSlotNumber(slotNumber: number, market: RackMarket): Pick
 
 function pickfaceBaseWindowCount(market: RackMarket) {
   // Anzahl Pickfenster im Standard-Hallenbild (alle aktiv darstellen).
-  // DE: 8 Picker + 6 zuschaltbare Pufferzonen = 14 Windows.
-  // Nordics: 7 Picker = 7 Windows.
-  return market === "de" ? 14 : 7;
+  // DE: 8 Picker + 8 zuschaltbare Pufferzonen = 16 Windows.
+  // Nordics: 7 Picker + 7 zuschaltbare Pufferzonen = 14 Windows.
+  return market === "de" ? 16 : 14;
+}
+
+function pickfaceWindowLabel(window: PickfaceWindow, locale: UiLocale) {
+  if (window.zuschaltbar) {
+    const block = window.blockNumber ? ` ${window.blockNumber}` : "";
+    return locale === "de"
+      ? `Zuschaltbar${block} (F${window.min}-F${window.max})`
+      : `Add-on${block} (F${window.min}-F${window.max})`;
+  }
+  const picker = window.pickerNumber ? `P${window.pickerNumber}` : window.id.toUpperCase();
+  return `${picker} (F${window.min}-F${window.max})`;
+}
+
+function pickfaceDelta(previous: PickfaceWindow[], next: PickfaceWindow[]) {
+  const previousIds = new Set(previous.map((window) => window.id));
+  const nextIds = new Set(next.map((window) => window.id));
+  const opened = next.filter((window) => !previousIds.has(window.id));
+  const closed = previous.filter((window) => !nextIds.has(window.id));
+  return { opened, closed };
 }
 
 function buildActivePickfaceWindows(market: RackMarket, plannedWorkersRounded: number, hallLayoutWorkers: number): PickfaceWindow[] {
@@ -730,7 +768,7 @@ function buildActivePickfaceWindows(market: RackMarket, plannedWorkersRounded: n
 }
 
 function isPositionInPickfaceWindows(position: string, activePickfaceWindows: PickfaceWindow[]) {
-  if (activePickfaceWindows.length === 0) return true;
+  if (activePickfaceWindows.length === 0) return false;
   const slotNumber = rackPositionNumber(position);
   if (!Number.isFinite(slotNumber) || slotNumber === Number.MAX_SAFE_INTEGER) return true;
   return activePickfaceWindows.some((window) => slotNumber >= window.min && slotNumber <= window.max);
@@ -1271,11 +1309,30 @@ function rebalanceErgonomicEntries(
       .filter((candidate) => {
         // Highrunner-Eis → Mittelschiene (level 2) bevorzugt, nie Oberschiene (level 1)
         if (entryIsHighRunner && entryIsIce) return (candidate.meta?.level ?? 2) !== 1;
-        if (entryIsHighRunner) return candidate.meta?.preferredPick;
+        // Highrunner: preferredPick zuerst; Fallback auf non-level-1, wenn alle preferredPick besetzt
+        if (entryIsHighRunner) return !!candidate.meta?.preferredPick || (candidate.meta?.level ?? 2) !== 1;
         if (entryIsIce) return (candidate.meta?.level ?? 2) !== 1; // Eis nie auf Oberschiene
+        // Alle anderen: Oberschiene (level 1) als absolutes Last-Resort — nur wenn nichts anderes frei
         return true;
       });
-    const candidatePool = candidates.filter((candidate) => candidate.position === currentPosition || candidate.occupancy === 0);
+    // Für Highrunner: preferredPick-Slots bevorzugen; für alle: level 1 wirklich nur als letzter Ausweg
+    const preferredCandidates = entryIsHighRunner
+      ? candidates.filter((c) => c.meta?.preferredPick)
+      : null;
+    const nonLevel1Candidates = candidates.filter((c) => (c.meta?.level ?? 2) !== 1);
+    const candidatePool = (() => {
+      // Highrunner: erst preferredPick, dann non-level-1 (Fallback), dann alles
+      if (entryIsHighRunner) {
+        const pref = (preferredCandidates ?? []).filter((c) => c.position === currentPosition || c.occupancy === 0);
+        if (pref.length > 0) return pref;
+        const fallback = nonLevel1Candidates.filter((c) => c.position === currentPosition || c.occupancy === 0);
+        if (fallback.length > 0) return fallback;
+      }
+      // Alle anderen: level 2/3 first, level 1 nur wenn sonst nichts frei
+      const nonL1 = nonLevel1Candidates.filter((c) => c.position === currentPosition || c.occupancy === 0);
+      if (nonL1.length > 0) return nonL1;
+      return candidates.filter((c) => c.position === currentPosition || c.occupancy === 0);
+    })();
     const pickfaceCandidatePool = isPickfaceManagedEntry(entry, highRunnerRecipes)
       ? candidatePool.filter((candidate) => candidate.position === currentPosition || isPositionInPickfaceWindows(candidate.position, activePickfaceWindows))
       : candidatePool;
@@ -1487,7 +1544,12 @@ function buildRecommendationOverlay(before: RackEntry[], after: RackEntry[]) {
 }
 
 async function fetchPublicFile(url: string, fallbackName: string): Promise<File> {
-  const response = await fetch(url);
+  let response: Response;
+  try {
+    response = await fetch(url, { cache: "no-store" });
+  } catch {
+    throw new Error(`Auto-Quelle nicht erreichbar: ${url}`);
+  }
   if (!response.ok) {
     throw new Error(`Auto-Quelle nicht gefunden: ${url}`);
   }
@@ -1511,7 +1573,10 @@ export function RackView({ week, locale }: Props) {
   const [filterText, setFilterText] = useState("");
   const [picksPerWorker, setPicksPerWorker] = useState(120);
   const [plannedWorkersManual, setPlannedWorkersManual] = useState<number | null>(null);
-  const [disabledPickfaceIds, setDisabledPickfaceIds] = useState<Set<string>>(new Set());
+  const [disabledPickfaceIds, setDisabledPickfaceIds] = useState<Set<string>>(
+    () => new Set(pickfaceWindowsForMarket("de").filter((w) => !w.zuschaltbar).map((w) => w.id)),
+  );
+  const [enabledZuschaltbarPickfaceIds, setEnabledZuschaltbarPickfaceIds] = useState<Set<string>>(new Set());
   const [staffingMode, setStaffingMode] = useState<StaffingMode>("balanced");
   const [recommendationOnly, setRecommendationOnly] = useState(false);
   const [hasManualEdits, setHasManualEdits] = useState(false);
@@ -1568,6 +1633,9 @@ export function RackView({ week, locale }: Props) {
     setPlanHistoryItems([]);
     setClearLogs([]);
     setHasManualEdits(false);
+    setEnabledZuschaltbarPickfaceIds(new Set());
+    // Alle regulären Picker beim Marktwechsel sperren – User schaltet manuell frei.
+    setDisabledPickfaceIds(new Set(pickfaceWindowsForMarket(market).filter((w) => !w.zuschaltbar).map((w) => w.id)));
     if (relocatedHighlightTimerRef.current) {
       clearTimeout(relocatedHighlightTimerRef.current);
       relocatedHighlightTimerRef.current = null;
@@ -1688,17 +1756,65 @@ export function RackView({ week, locale }: Props) {
     () => (totalDemandPicks > 0 && picksPerWorker > 0 ? totalDemandPicks / picksPerWorker : 0),
     [totalDemandPicks, picksPerWorker],
   );
-  const plannedWorkersRounded = useMemo(
+  const plannedWorkersRoundedFromDemand = useMemo(
     () => totalDemandPicks > 0
       ? Math.max(1, Math.round(plannedWorkersFte))
       : (plannedWorkersManual ?? hallLayoutWorkers),
     [plannedWorkersFte, hallLayoutWorkers, totalDemandPicks, plannedWorkersManual],
   );
-  const activePickfaceWindows = useMemo(
-    () => buildActivePickfaceWindows(market, plannedWorkersRounded, hallLayoutWorkers)
-            .filter((w) => !disabledPickfaceIds.has(w.id)),
-    [market, plannedWorkersRounded, hallLayoutWorkers, disabledPickfaceIds],
+  const plannedWorkersRounded = useMemo(
+    () => plannedWorkersManual ?? plannedWorkersRoundedFromDemand,
+    [plannedWorkersManual, plannedWorkersRoundedFromDemand],
   );
+  const workersDrivenPickfaceWindows = useMemo(
+    () => buildActivePickfaceWindows(market, plannedWorkersRounded, hallLayoutWorkers),
+    [market, plannedWorkersRounded, hallLayoutWorkers],
+  );
+  const closedPickfaceIdsByWorkers = useMemo(() => {
+    const activeIds = new Set(workersDrivenPickfaceWindows.map((window) => window.id));
+    return new Set(
+      pickfaceWindowsForMarket(market)
+        .filter((window) => !activeIds.has(window.id) && !window.zuschaltbar)
+        .map((window) => window.id),
+    );
+  }, [workersDrivenPickfaceWindows, market]);
+  const activePickfaceWindows = useMemo(
+    () => workersDrivenPickfaceWindows.filter((window) => {
+      if (window.zuschaltbar && !enabledZuschaltbarPickfaceIds.has(window.id)) return false;
+      return !disabledPickfaceIds.has(window.id);
+    }),
+    [workersDrivenPickfaceWindows, disabledPickfaceIds, enabledZuschaltbarPickfaceIds],
+  );
+
+  function toggleZuschaltbarPickface(id: string) {
+    setEnabledZuschaltbarPickfaceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    const window = pickfaceWindowsForMarket(market).find((candidate) => candidate.id === id);
+    const blockLabel = window?.blockNumber ? `Z${window.blockNumber}` : id.toUpperCase();
+    const willBeEnabled = !enabledZuschaltbarPickfaceIds.has(id);
+    setStatus(locale === "de"
+      ? `${blockLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt für alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Automatisch" oder manueller Verteilung.`
+      : `${blockLabel} ${willBeEnabled ? "enabled" : "locked"}. Applies to all lines in ${market.toUpperCase()}. Fill after clicking automatic planning or by manual placement.`);
+  }
+
+  function togglePickfaceDisabled(id: string) {
+    setDisabledPickfaceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    const window = pickfaceWindowsForMarket(market).find((candidate) => candidate.id === id);
+    const pickerLabel = window?.pickerNumber ? `P${window.pickerNumber}` : id.toUpperCase();
+    const willBeEnabled = disabledPickfaceIds.has(id);
+    setStatus(locale === "de"
+      ? `${pickerLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt für alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Automatisch" oder manueller Verteilung.`
+      : `${pickerLabel} ${willBeEnabled ? "enabled" : "locked"}. Applies to all lines in ${market.toUpperCase()}. Fill after clicking automatic planning or by manual placement.`);
+  }
 
   const filteredEntries = useMemo(() => {
     const needle = filterText.trim().toLowerCase();
@@ -1868,28 +1984,10 @@ export function RackView({ week, locale }: Props) {
     setStatus(locale === "de"
       ? `${movedCount} Einträge automatisch neu verteilt: Ein Fach pro Eintrag als Standard, Modus ${staffingMode === "reduce" ? "Mitarbeiter senken" : staffingMode === "increase" ? "Mitarbeiter erhöhen" : "balanciert"}.`
       : `Rebalanced ${movedCount} entries with staffing mode ${staffingMode}.`);
-  }, [entries, market, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, locale, staffingMode, recommendationOnly, hasManualEdits, lockedStationsByLine, activePickfaceWindows]);
+  }, [entries, market, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, locale, staffingMode, recommendationOnly, hasManualEdits, lockedStationsByLine]);
 
-  useEffect(() => {
-    if (entries.length === 0) return;
-    const hasManagedEntriesOutsideActiveWindows = entries.some((entry) =>
-      isPickfaceManagedEntry(entry, highRunnerRecipes)
-      && !isPositionActiveByWorkers(entry.flowRackPosition.toUpperCase(), market, activePickfaceWindows),
-    );
-    if (!hasManagedEntriesOutsideActiveWindows) return;
-
-    const nextEntries = optimizeAutomaticRackPlan(entries, market, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode, lockedStationsByLine, activePickfaceWindows);
-    if (nextEntries === entries) return;
-    const prevPositions = new Map(entries.map((entry) => [entry.id, entry.flowRackPosition]));
-    const movedCount = nextEntries.filter((entry) => prevPositions.get(entry.id) !== entry.flowRackPosition).length;
-    if (movedCount === 0) return;
-
-    skipNextAutoOptimizeRef.current = true;
-    setEntries(nextEntries);
-    setStatus(locale === "de"
-      ? `Pickfenster aktualisiert (${activePickfaceWindows.length} aktiv): ${movedCount} Einträge in aktive Bereiche verschoben.`
-      : `Pick windows updated (${activePickfaceWindows.length} active): moved ${movedCount} entries into active windows.`);
-  }, [entries, market, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode, lockedStationsByLine, activePickfaceWindows, locale]);
+  // Block-Freigaben/Sperren wirken nur als Regelrahmen.
+  // Die tatsächliche Umplanung startet erst auf Nutzeraktion (Automatisch oder manuell).
 
   const entriesByLineAndSlot = useMemo(() => {
     const bucket = new Map<string, RackEntry[]>();
@@ -2154,6 +2252,7 @@ export function RackView({ week, locale }: Props) {
       }
     }
     setStaffingMode(nextMode);
+    setPlannedWorkersManual(null);
     setComparison(null);
     setRecommendationOnly(false);
     setPicksPerWorker(safeNext);
@@ -2168,24 +2267,75 @@ export function RackView({ week, locale }: Props) {
       : `Staffing factor set to ${safeNext} (${nextWorkersFte.toFixed(1)} FTE). Rack replanned in ${nextMode} mode (${movedEntries} moves).`);
   }
 
-  function adjustPlannedWorkers(delta: number) {
-    if (totalDemandPicks <= 0) {
-      setPlannedWorkersManual(Math.max(1, plannedWorkersRounded + delta));
-      return;
+  function applyPlannedWorkersTarget(nextWorkers: number) {
+    const safeWorkers = Math.max(1, Math.round(nextWorkers));
+    const previousWindows = activePickfaceWindows;
+    const nextWorkersDrivenWindows = buildActivePickfaceWindows(market, safeWorkers, hallLayoutWorkers);
+    const nextActiveWindows = nextWorkersDrivenWindows.filter((window) => {
+      if (window.zuschaltbar && !enabledZuschaltbarPickfaceIds.has(window.id)) return false;
+      return !disabledPickfaceIds.has(window.id);
+    });
+    const windowChanges = pickfaceDelta(previousWindows, nextActiveWindows);
+
+    let nextMode: StaffingMode = staffingMode;
+    if (safeWorkers > plannedWorkersRounded) {
+      nextMode = "increase";
+    } else if (safeWorkers < plannedWorkersRounded) {
+      nextMode = "reduce";
+    } else {
+      nextMode = "balanced";
     }
-    const nextWorkers = Math.max(1, plannedWorkersRounded + delta);
-    const nextPicksPerWorker = Math.max(1, Math.round(totalDemandPicks / nextWorkers));
-    updatePicksPerWorker(nextPicksPerWorker);
+
+    const nextPicksPerWorker = totalDemandPicks > 0
+      ? Math.max(1, Math.round(totalDemandPicks / safeWorkers))
+      : picksPerWorker;
+
+    setStaffingMode(nextMode);
+    setPlannedWorkersManual(safeWorkers);
+    setComparison(null);
+    setRecommendationOnly(false);
+    if (totalDemandPicks > 0) {
+      setPicksPerWorker(nextPicksPerWorker);
+    }
+
+    const nextEntries = optimizeAutomaticRackPlan(
+      entries,
+      market,
+      highRunnerRecipes,
+      slotMeta,
+      preferredSlotsByRecipe,
+      nextMode,
+      lockedStationsByLine,
+      nextActiveWindows,
+    );
+
+    skipNextAutoOptimizeRef.current = true;
+    setEntries(nextEntries);
+
+    const movedEntries = nextEntries.filter((entry) => {
+      const previous = entries.find((candidate) => candidate.id === entry.id);
+      return previous && previous.flowRackPosition !== entry.flowRackPosition;
+    }).length;
+
+    const openedText = windowChanges.opened.map((window) => pickfaceWindowLabel(window, locale)).join(", ");
+    const closedText = windowChanges.closed.map((window) => pickfaceWindowLabel(window, locale)).join(", ");
+    const windowStatus = openedText
+      ? (locale === "de" ? `geöffnet: ${openedText}` : `opened: ${openedText}`)
+      : closedText
+        ? (locale === "de" ? `geschlossen: ${closedText}` : `closed: ${closedText}`)
+        : (locale === "de" ? "keine Pickface-Änderung" : "no pickface change");
+
+    setStatus(locale === "de"
+      ? `Planung auf ${safeWorkers} MA gesetzt (${nextPicksPerWorker} Picks/MA, ${nextActiveWindows.length} aktive Pickfenster): ${windowStatus}. ${movedEntries} Einträge wurden automatisch neu verteilt.`
+      : `Planning set to ${safeWorkers} workers (${nextPicksPerWorker} picks/worker, ${nextActiveWindows.length} active pick windows): ${windowStatus}. ${movedEntries} entries were rebalanced.`);
+  }
+
+  function adjustPlannedWorkers(delta: number) {
+    applyPlannedWorkersTarget(plannedWorkersRounded + delta);
   }
 
   function setPlannedWorkersAbsolute(nextWorkers: number) {
-    if (totalDemandPicks <= 0) {
-      setPlannedWorkersManual(Math.max(1, Math.round(nextWorkers)));
-      return;
-    }
-    const safeWorkers = Math.max(1, Math.round(nextWorkers));
-    const nextPicksPerWorker = Math.max(1, Math.round(totalDemandPicks / safeWorkers));
-    updatePicksPerWorker(nextPicksPerWorker);
+    applyPlannedWorkersTarget(nextWorkers);
   }
 
   function suggestBestPlan() {
@@ -2972,13 +3122,10 @@ export function RackView({ week, locale }: Props) {
                     onPillDragStart={handlePillDragStart}
                     onPillDragEnd={handlePillDragEnd}
                     disabledPickfaceIds={disabledPickfaceIds}
-                    onTogglePickfaceDisabled={(id) =>
-                      setDisabledPickfaceIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(id)) next.delete(id); else next.add(id);
-                        return next;
-                      })
-                    }
+                    enabledZuschaltbarPickfaceIds={enabledZuschaltbarPickfaceIds}
+                    closedPickfaceIdsByWorkers={closedPickfaceIdsByWorkers}
+                    onTogglePickfaceDisabled={togglePickfaceDisabled}
+                    onToggleZuschaltbarPickface={toggleZuschaltbarPickface}
                   />
                 );
               }
@@ -3014,14 +3161,10 @@ export function RackView({ week, locale }: Props) {
                   changedSlots={changedSlots}
                   bottleneckRecipe={bottleneckRecipe}
                   disabledPickfaceIds={disabledPickfaceIds}
-                  onTogglePickfaceDisabled={(id) =>
-                    setDisabledPickfaceIds((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(id)) next.delete(id);
-                      else next.add(id);
-                      return next;
-                    })
-                  }
+                  enabledZuschaltbarPickfaceIds={enabledZuschaltbarPickfaceIds}
+                  closedPickfaceIdsByWorkers={closedPickfaceIdsByWorkers}
+                  onTogglePickfaceDisabled={togglePickfaceDisabled}
+                  onToggleZuschaltbarPickface={toggleZuschaltbarPickface}
                 />
               );
             })}
@@ -3227,7 +3370,10 @@ function FrontRackGrid({
   onPillDragStart,
   onPillDragEnd,
   disabledPickfaceIds,
+  enabledZuschaltbarPickfaceIds,
+  closedPickfaceIdsByWorkers,
   onTogglePickfaceDisabled,
+  onToggleZuschaltbarPickface,
 }: {
   market: RackMarket;
   line: string;
@@ -3246,7 +3392,10 @@ function FrontRackGrid({
   onPillDragStart: (entryId: string) => void;
   onPillDragEnd: () => void;
   disabledPickfaceIds: Set<string>;
+  enabledZuschaltbarPickfaceIds: Set<string>;
+  closedPickfaceIdsByWorkers: Set<string>;
   onTogglePickfaceDisabled: (id: string) => void;
+  onToggleZuschaltbarPickface: (id: string) => void;
 }) {
   const columns = buildFrontColumns(slots, slotMeta, market);
   const headers = blueprintHeaderSegments(market, locale);
@@ -3260,9 +3409,27 @@ function FrontRackGrid({
         </div>
 
         <div className="rounded-2xl border border-slate-300 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-3 ring-1 ring-slate-200">
-          <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "Linie von links nach rechts" : "Line from left to right"}</div>
-            <div className="text-xs text-slate-500">{locale === "de" ? "Drag-and-drop direkt auf das gewünschte Fach" : "Drag and drop directly onto the target slot"}</div>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Legende für Zuschaltbar-Pickfaces – nur wenn Markt solche hat */}
+              {pickfaceWindowsForMarket(market).some((w) => w.zuschaltbar) && (
+                <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200 text-[11px] font-semibold text-slate-600">
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block rounded bg-red-100 px-1.5 py-0.5 text-red-900 ring-1 ring-red-300">🔒 Z#</span>
+                    <span>{locale === "de" ? "gesperrt" : "locked"}</span>
+                  </span>
+                  <span className="text-slate-300">|</span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-900 ring-1 ring-emerald-300">🔓 Z#</span>
+                    <span>{locale === "de" ? "freigeschaltet" : "unlocked"}</span>
+                  </span>
+                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-500">{locale === "de" ? "klicken zum Umschalten" : "click to toggle"}</span>
+                </div>
+              )}
+              <div className="text-xs text-slate-500">{locale === "de" ? "Drag-and-drop direkt auf das gewünschte Fach" : "Drag and drop directly onto the target slot"}</div>
+            </div>
           </div>
 
           <div className="flex items-end gap-1.5" onDragOver={(e) => e.preventDefault()}>
@@ -3292,7 +3459,10 @@ function FrontRackGrid({
               const isWallSeparator = !!showSeparator && !!columnPickface?.wallBefore;
               const maxTier = columnPickface?.maxTier ?? 3;
               const tiersToRender: (1 | 2 | 3)[] = maxTier === 2 ? [2, 1] : [3, 2, 1];
-              const isPickfaceDisabled = !!columnPickface && !columnPickface.zuschaltbar && disabledPickfaceIds.has(columnPickface.id);
+              const isZuschaltbarLocked = !!columnPickface?.zuschaltbar && !enabledZuschaltbarPickfaceIds.has(columnPickface.id);
+              const isPickfaceClosedByWorkers = !!columnPickface && !columnPickface.zuschaltbar && closedPickfaceIdsByWorkers.has(columnPickface.id);
+              const isPickfaceDisabledByOverride = !!columnPickface && !columnPickface.zuschaltbar && disabledPickfaceIds.has(columnPickface.id);
+              const isPickfaceDisabled = isZuschaltbarLocked || isPickfaceClosedByWorkers || isPickfaceDisabledByOverride;
 
               return (
                 <React.Fragment key={`${line}-front-col-${index}`}>
@@ -3322,53 +3492,30 @@ function FrontRackGrid({
                         3 MA
                       </div>
                     )}
-                    {/* Zuschaltbar Block 1 (Slots 13–18): Badge "1" */}
-                    {isZuschaltbarBlock1 && showZuschaltbarGapBefore && (
-                      <div
-                        className="mb-1 rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider bg-red-100 text-red-900 ring-1 ring-red-300"
-                        title="Zuschaltbarer Block 1 · +1 MA · Slots 13–18"
-                      >
-                        +1 MA · 1
-                      </div>
-                    )}
-                    {/* Zuschaltbar Block 2 (Slots 19–27): Badge "2" */}
-                    {isZuschaltbarBlock2 && showBlock2GapBefore && (
-                      <div
-                        className="mb-1 rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider bg-red-100 text-red-900 ring-1 ring-red-300"
-                        title="Zuschaltbarer Block 2 · +1 MA · Slots 19–27"
-                      >
-                        +1 MA · 2
-                      </div>
-                    )}
+                    {/* Blöcke 1+2 werden jetzt als echte zuschaltbar-Fenster über den columnPickface-Branch gerendert */}
                     {/* Picker-Badge oben über der ersten Säule eines neuen Pickfaces */}
                     {columnPickface && (showSeparator || index === 0) && (
                       columnPickface.zuschaltbar ? (
-                        <div
-                          className="mb-1 rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider bg-red-100 text-red-900 ring-1 ring-red-300"
-                          title={`Zuschaltbarer Block ${columnPickface.blockNumber} · +1 MA · Slots ${columnPickface.min}–${columnPickface.max}`}
+                        <button
+                          type="button"
+                          onClick={() => onToggleZuschaltbarPickface(columnPickface.id)}
+                          className={`mb-1 w-full rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider ring-1 transition ${isZuschaltbarLocked ? "bg-red-100 text-red-900 ring-red-300" : "bg-emerald-100 text-emerald-900 ring-emerald-300"}`}
+                          title={isZuschaltbarLocked
+                            ? `Zuschaltbarer Block ${columnPickface.blockNumber} · gesperrt · Klick zum Freischalten (Slots ${columnPickface.min}–${columnPickface.max})`
+                            : `Zuschaltbarer Block ${columnPickface.blockNumber} · freigeschaltet · Klick zum Sperren (Slots ${columnPickface.min}–${columnPickface.max})`}
                         >
-                          +1 MA · {columnPickface.blockNumber}
-                        </div>
+                          {isZuschaltbarLocked ? `🔒 Z${columnPickface.blockNumber}` : `🔓 Z${columnPickface.blockNumber}`}
+                        </button>
                       ) : (
                         <button
                           type="button"
                           onClick={() => onTogglePickfaceDisabled(columnPickface.id)}
-                          className={`mb-1 w-full rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider transition ${
-                            isPickfaceDisabled
-                              ? "bg-slate-200 text-slate-400 ring-1 ring-slate-300 line-through"
-                              : columnPickface.area === "gifts"
-                                ? "bg-blue-100 text-blue-900 ring-1 ring-blue-200 hover:bg-blue-200"
-                                : columnPickface.area === "mealkit"
-                                  ? "bg-emerald-100 text-emerald-900 ring-1 ring-emerald-200 hover:bg-emerald-200"
-                                  : "bg-rose-100 text-rose-900 ring-1 ring-rose-200 hover:bg-rose-200"
-                          }`}
-                          title={
-                            isPickfaceDisabled
-                              ? `⚠ P${columnPickface.pickerNumber} deaktiviert · Klick zum Reaktivieren`
-                              : `P${columnPickface.pickerNumber} · Slots ${columnPickface.min}–${columnPickface.max} · Klick zum Deaktivieren (z.B. defektes Pickface)`
-                          }
+                          className={`mb-1 w-full rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider ring-1 transition ${isPickfaceDisabledByOverride ? "bg-red-100 text-red-900 ring-red-300" : "bg-emerald-100 text-emerald-900 ring-emerald-300"}`}
+                          title={isPickfaceDisabledByOverride
+                            ? `P${columnPickface.pickerNumber} · gesperrt · Klick zum Freischalten (Slots ${columnPickface.min}–${columnPickface.max})`
+                            : `P${columnPickface.pickerNumber} · aktiv · Klick zum Sperren (Slots ${columnPickface.min}–${columnPickface.max})`}
                         >
-                          {isPickfaceDisabled ? `⊘ P${columnPickface.pickerNumber}` : `P${columnPickface.pickerNumber}`}
+                          {isPickfaceDisabledByOverride ? `🔒 P${columnPickface.pickerNumber}` : `🔓 P${columnPickface.pickerNumber}`}
                         </button>
                       )
                     )}
@@ -3376,6 +3523,7 @@ function FrontRackGrid({
                     const slot = column.find((candidate) => candidate.tier === tier);
                     const slotKey = slot ? `${line}:${slot.position}` : `${line}:empty-${index}-${tier}`;
                     const slotEntries = slot ? (entriesByLineAndSlot.get(slotKey) ?? []) : [];
+                    const effectiveSlotEntries = isPickfaceDisabled ? [] : slotEntries;
                     const isSelected = !!slot && selectedFocus?.line === line && selectedFocus.position.toUpperCase() === slot.position.toUpperCase();
                     const isHovered = !!slot && hoveredSlotKey === slotKey;
                     const isMiddle = tier === 2;
@@ -3412,7 +3560,7 @@ function FrontRackGrid({
                           <span>{locale === "de" ? `E${tier}` : `T${tier}`}</span>
                         </div>
                         <div className="space-y-1">
-                          {slotEntries.length === 0 && slot && (
+                          {effectiveSlotEntries.length === 0 && slot && (
                             <div
                               className="rounded-md border border-dashed border-slate-300 px-1 py-1 text-center text-[10px] text-slate-400"
                               onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; }}
@@ -3421,7 +3569,7 @@ function FrontRackGrid({
                               {locale === "de" ? "frei" : "free"}
                             </div>
                           )}
-                          {slotEntries.map((entry) => {
+                          {effectiveSlotEntries.map((entry) => {
                             const kind = deriveEntryKind(entry);
                             const isDragged = draggedEntryId === entry.id;
                             return (
@@ -3493,7 +3641,10 @@ function LineLaneBoard({
   onPillDragStart,
   onPillDragEnd,
   disabledPickfaceIds,
+  enabledZuschaltbarPickfaceIds,
+  closedPickfaceIdsByWorkers,
   onTogglePickfaceDisabled,
+  onToggleZuschaltbarPickface,
 }: {
   market: RackMarket;
   line: string;
@@ -3512,7 +3663,10 @@ function LineLaneBoard({
   onPillDragStart: (entryId: string) => void;
   onPillDragEnd: () => void;
   disabledPickfaceIds: Set<string>;
+  enabledZuschaltbarPickfaceIds: Set<string>;
+  closedPickfaceIdsByWorkers: Set<string>;
   onTogglePickfaceDisabled: (id: string) => void;
+  onToggleZuschaltbarPickface: (id: string) => void;
 }) {
   const occupiedSlots = slots.filter((slotNumber) => {
     const position = `F${String(slotNumber).padStart(2, "0")}`;
@@ -3567,7 +3721,10 @@ function LineLaneBoard({
         onPillDragStart={onPillDragStart}
         onPillDragEnd={onPillDragEnd}
         disabledPickfaceIds={disabledPickfaceIds}
+        enabledZuschaltbarPickfaceIds={enabledZuschaltbarPickfaceIds}
+        closedPickfaceIdsByWorkers={closedPickfaceIdsByWorkers}
         onTogglePickfaceDisabled={onTogglePickfaceDisabled}
+        onToggleZuschaltbarPickface={onToggleZuschaltbarPickface}
       />
     </div>
   );
@@ -3602,7 +3759,10 @@ function LineVisual({
   changedSlots,
   bottleneckRecipe = "",
   disabledPickfaceIds,
+  enabledZuschaltbarPickfaceIds,
+  closedPickfaceIdsByWorkers,
   onTogglePickfaceDisabled,
+  onToggleZuschaltbarPickface,
 }: {
   line: string;
   market: RackMarket;
@@ -3633,7 +3793,10 @@ function LineVisual({
   changedSlots: Set<string>;
   bottleneckRecipe?: string;
   disabledPickfaceIds: Set<string>;
+  enabledZuschaltbarPickfaceIds: Set<string>;
+  closedPickfaceIdsByWorkers: Set<string>;
   onTogglePickfaceDisabled: (id: string) => void;
+  onToggleZuschaltbarPickface: (id: string) => void;
 }) {
   const accent = lineAccent(line);
   const lineEntries = entries.filter((entry) => entry.line === line);
@@ -4086,7 +4249,10 @@ function LineVisual({
           onPillDragStart={onPillDragStart}
           onPillDragEnd={onPillDragEnd}
           disabledPickfaceIds={disabledPickfaceIds}
+          enabledZuschaltbarPickfaceIds={enabledZuschaltbarPickfaceIds}
+          closedPickfaceIdsByWorkers={closedPickfaceIdsByWorkers}
           onTogglePickfaceDisabled={onTogglePickfaceDisabled}
+          onToggleZuschaltbarPickface={onToggleZuschaltbarPickface}
         />
       </div>
     </div>

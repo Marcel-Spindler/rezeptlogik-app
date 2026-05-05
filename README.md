@@ -64,6 +64,26 @@ npm run import:gsheet
 
 → holt **Meal Selection** live aus dem Sheet, kombiniert mit lokalen Recipe/Cook-CSVs.
 
+### Weekly-WMS-Input nach Google Sheets pushen
+
+Wenn der Reiter Input (mit trailing space im Namen) als zentrale Quelle fuer Wochen-Formeln/Tabellen dienen soll,
+kann der lokale `Transaction_Log.xlsx` automatisiert hochgeladen werden:
+
+```powershell
+# Standard: Dry-Run (zeigt nur Anzahl/Beispiel)
+npm run push:wms:input
+
+# Echt schreiben (clear + update des Input-Tabs)
+$env:WMS_PUSH_DRY_RUN="false"
+npm run push:wms:input
+```
+
+Optional:
+
+- `WMS_MIN_WEEK=202619` (Default) -> ab welcher KW importiert wird
+- `WMS_TRANSACTION_LOG_PATH=...` -> alternativer XLSX-Pfad
+- `GSHEET_INPUT_TAB="Input "` -> Ziel-Reitername (mit ggf. trailing space)
+
 ---
 
 ## 4. Firestore befüllen (optional, statt JSON)

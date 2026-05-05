@@ -27,7 +27,25 @@ import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
 // Wiederverwenden: importiere die Loader aus import-local NICHT direkt (zyklus); kopieren würde Logik dupliziertn.
 // Stattdessen: die Funktionen sind klein genug, hier neu für Sheet aufzubauen.
 
-const SOURCE_DIR = process.env.REZEPTLOGIK_SOURCE_DIR ?? "C:\\Rezeptlogik";
+const COOK_CSV = "Cook Schedules Per DC - Cook Shifts per DC.csv";
+
+function resolveSourceDir(): string {
+  const configured = process.env.REZEPTLOGIK_SOURCE_DIR?.trim();
+  if (configured) return configured;
+
+  const candidates = [
+    "C:\\Rezeptlogik",
+    resolve("Rezeptlogik"),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, COOK_CSV))) return candidate;
+  }
+
+  return candidates[0];
+}
+
+const SOURCE_DIR = resolveSourceDir();
 const OUT_DIR = resolve("public", "data");
 const OUT_FILE = join(OUT_DIR, "data.json");
 
@@ -42,8 +60,6 @@ if (SHEET_IDS.length === 0) {
   console.error("GSHEET_ID/GSHEET_IDS nicht in .env.local gesetzt");
   process.exit(1);
 }
-
-const COOK_CSV = "Cook Schedules Per DC - Cook Shifts per DC.csv";
 const RECIPE_CSVS: Record<Market, string> = {
   BENL: "export-recipes (1).csv",
   DE:   "export-recipes (2).csv",
@@ -70,24 +86,89 @@ function parseRecipeName(full: string): { code: string; base: string } {
   return { code: full, base: full };
 }
 
+function inferHfWeek(text: string): string | undefined {
+  const direct = /(20\d{2})[-_ ]?W(\d{1,2})/i.exec(text);
+  if (direct) return `${direct[1]}-W${String(parseInt(direct[2], 10)).padStart(2, "0")}`;
+
+  const kw = /KW\s*(\d{1,2})/i.exec(text);
+  if (!kw) return undefined;
+
+  const year = process.env.GSHEET_HF_YEAR?.trim() || String(new Date().getFullYear());
+  return `${year}-W${String(parseInt(kw[1], 10)).padStart(2, "0")}`;
+}
+
 async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[]; weeks: string[] }> {
   const auth = new google.auth.GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   });
   const sheets = google.sheets({ version: "v4", auth: await auth.getClient() as any });
 
-  const out: WeekRecipe[] = [];
+  const out = new Map<string, WeekRecipe>();
   const weekSet = new Set<string>();
-  const seen = new Set<string>();   // dedupe per hfWeek+code
 
-  const addWeekRecipe = (wr: WeekRecipe): boolean => {
-    if (!wr.hfWeek || !wr.code || !/^\d{4}-W\d{2}$/.test(wr.hfWeek)) return false;
-    const k = `${wr.hfWeek}__${wr.code}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    out.push(wr);
-    weekSet.add(wr.hfWeek);
-    return true;
+  const keyOf = (hfWeek: string, code: string) => `${hfWeek}__${code}`;
+
+  const upsertWeekRecipe = (patch: Partial<WeekRecipe> & { hfWeek: string; code: string }): boolean => {
+    const hfWeek = patch.hfWeek?.trim();
+    const code = patch.code?.trim();
+    if (!hfWeek || !code || !/^\d{4}-W\d{2}$/.test(hfWeek)) return false;
+
+    const k = keyOf(hfWeek, code);
+    const existedBefore = out.has(k);
+    const existing = out.get(k) ?? {
+      hfWeek,
+      weekShort: hfWeek.slice(5),
+      code,
+      recipeName: "",
+      preference: "",
+      slot: {},
+      verdenVolume: { BENL: 0, DKSE: 0, DE: 0 },
+      totalVerdenVolume: 0,
+      productionBuffer: 0,
+    };
+
+    const next: WeekRecipe = {
+      ...existing,
+      weekShort: patch.weekShort ?? existing.weekShort,
+      recipeName: patch.recipeName || existing.recipeName,
+      preference: patch.preference || existing.preference,
+      productionBuffer: patch.productionBuffer ?? existing.productionBuffer,
+      slot: {
+        BENL: patch.slot?.BENL ?? existing.slot.BENL,
+        DKSE: patch.slot?.DKSE ?? existing.slot.DKSE,
+        DE: patch.slot?.DE ?? existing.slot.DE,
+      },
+      verdenVolume: {
+        BENL: patch.verdenVolume?.BENL ?? existing.verdenVolume.BENL,
+        DKSE: patch.verdenVolume?.DKSE ?? existing.verdenVolume.DKSE,
+        DE: patch.verdenVolume?.DE ?? existing.verdenVolume.DE,
+      },
+      totalVerdenVolume: patch.totalVerdenVolume ?? existing.totalVerdenVolume,
+    };
+
+    if (!patch.totalVerdenVolume) {
+      next.totalVerdenVolume = next.verdenVolume.BENL + next.verdenVolume.DKSE + next.verdenVolume.DE;
+    }
+
+    out.set(k, next);
+    weekSet.add(hfWeek);
+    return !existedBefore;
+  };
+
+  const extractHfWeekFromTitle = (title: string): string | undefined => {
+    const direct = /(20\d{2})[-_ ]?W(\d{1,2})/i.exec(title);
+    if (direct) return `${direct[1]}-W${String(parseInt(direct[2], 10)).padStart(2, "0")}`;
+    const kw = /KW\s*(\d{1,2})/i.exec(title);
+    if (kw) {
+      const year = process.env.GSHEET_HF_YEAR?.trim() || String(new Date().getFullYear());
+      return `${year}-W${String(parseInt(kw[1], 10)).padStart(2, "0")}`;
+    }
+    const w = /^W(\d{1,2})$/i.exec(title.trim());
+    if (w) {
+      const year = process.env.GSHEET_HF_YEAR?.trim() || String(new Date().getFullYear());
+      return `${year}-W${String(parseInt(w[1], 10)).padStart(2, "0")}`;
+    }
+    return undefined;
   };
 
   const parseLegacyMealSelectionRows = (rows: any[][]): number => {
@@ -98,7 +179,7 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
       const verdenAbsBENL = num(row[18]);
       const verdenAbsNORD = num(row[19]);
       const verdenAbsDE = num(row[20]);
-      const ok = addWeekRecipe({
+      const ok = upsertWeekRecipe({
         hfWeek,
         weekShort: hfWeek.slice(5),
         code,
@@ -146,7 +227,7 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
       const de = num(row[18]);
       const slotVal = num(c3);
 
-      const ok = addWeekRecipe({
+      const ok = upsertWeekRecipe({
         hfWeek,
         weekShort: (row[2] || hfWeek.slice(5)).toString(),
         code,
@@ -166,8 +247,126 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
     return added;
   };
 
+  const parseMskuInputRows = (rows: any[][], hfWeek: string): number => {
+    if (!rows.length) return 0;
+    const header = rows[0].map((c: unknown) => (c ?? "").toString().trim().toLowerCase());
+    const recipeIdx = header.findIndex(h => h === "recipe name" || h.includes("recipe name"));
+    if (recipeIdx < 0) return 0;
+
+    let added = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const full = (rows[i]?.[recipeIdx] ?? "").toString().trim();
+      if (!full) continue;
+      const { code, base } = parseRecipeName(full);
+      if (!/^[A-Z]{2}\d{4}[A-Z0-9]+$/.test(code)) continue;
+
+      const ok = upsertWeekRecipe({
+        hfWeek,
+        weekShort: hfWeek.slice(5),
+        code,
+        recipeName: base,
+      });
+      if (ok) added++;
+    }
+    return added;
+  };
+
+  const parseWTabRows = (rows: any[][], hfWeek: string): number => {
+    const marketToken = (v: string): "BENL" | "DKSE" | "DE" | undefined => {
+      const t = v.trim().toUpperCase().replace(/\s+/g, "");
+      if (t === "BNL" || t === "BENL") return "BENL";
+      if (t === "NOR" || t === "NORD" || t === "DKSE") return "DKSE";
+      if (t === "DE") return "DE";
+      return undefined;
+    };
+
+    const extractVolumes = (row: string[]): { BENL: number; DKSE: number; DE: number } => {
+      const outVol = { BENL: 0, DKSE: 0, DE: 0 };
+      for (let i = 0; i < row.length - 1; i++) {
+        const mk = marketToken(row[i] || "");
+        if (!mk) continue;
+        const v = num(row[i + 1]);
+        if (v > 0) outVol[mk] = v;
+      }
+      return outVol;
+    };
+
+    let added = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i].map((c: unknown) => (c ?? "").toString().trim());
+      const recipeCell = row.find(c => /^[A-Z]{2}\d{4}[A-Z0-9]+\s*-\s*/.test(c));
+      if (!recipeCell) continue;
+
+      const { code, base } = parseRecipeName(recipeCell);
+      const vol = { BENL: 0, DKSE: 0, DE: 0 };
+
+      const blockRows = rows.slice(i, Math.min(i + 10, rows.length));
+      for (const b of blockRows) {
+        const parsed = extractVolumes(b.map((c: unknown) => (c ?? "").toString().trim()));
+        vol.BENL = Math.max(vol.BENL, parsed.BENL);
+        vol.DKSE = Math.max(vol.DKSE, parsed.DKSE);
+        vol.DE = Math.max(vol.DE, parsed.DE);
+      }
+
+      const ok = upsertWeekRecipe({
+        hfWeek,
+        weekShort: hfWeek.slice(5),
+        code,
+        recipeName: base,
+        verdenVolume: vol,
+        totalVerdenVolume: vol.BENL + vol.DKSE + vol.DE,
+      });
+      if (ok) added++;
+    }
+
+    return added;
+  };
+
   for (const SHEET_ID of SHEET_IDS) {
     console.log(`  → Sheet ${SHEET_ID}`);
+
+    let titles: string[] = [];
+    try {
+      const meta = await sheets.spreadsheets.get({
+        spreadsheetId: SHEET_ID,
+        fields: "sheets(properties(title))"
+      });
+      titles = (meta.data.sheets ?? [])
+        .map(s => s.properties?.title ?? "")
+        .filter(Boolean);
+    } catch (e: any) {
+      console.warn(`     Konnte Sheet-Metadaten nicht lesen (${e?.message ?? e})`);
+    }
+
+    const mskuTitles = titles.filter(t => /MSKU\s*INPUT\s*\(KW\d{1,2}\)/i.test(t));
+    for (const title of mskuTitles) {
+      const hfWeek = extractHfWeekFromTitle(title);
+      if (!hfWeek) continue;
+      try {
+        const range = `'${title}'!A1:Z5000`;
+        const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range });
+        const rows = res.data.values ?? [];
+        const count = parseMskuInputRows(rows, hfWeek);
+        if (count > 0) console.log(`     ${count} neue Zeilen aus ${title} übernommen`);
+      } catch {
+        // intentionally ignored
+      }
+    }
+
+    const weekTitles = titles.filter(t => /^W\d{1,2}$/i.test(t.trim()));
+    for (const title of weekTitles) {
+      const hfWeek = extractHfWeekFromTitle(title);
+      if (!hfWeek) continue;
+      try {
+        const range = `'${title}'!A1:Z5000`;
+        const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range });
+        const rows = res.data.values ?? [];
+        const count = parseWTabRows(rows, hfWeek);
+        if (count > 0) console.log(`     ${count} neue Zeilen aus ${title} übernommen`);
+      } catch {
+        // intentionally ignored
+      }
+    }
 
     // 1) Preferred source: Ramp-up table.
     let added = 0;
@@ -175,7 +374,8 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
       const rampRanges = [
         "'PO Maitre'!A1:Z5000",
         "'[Import] Convini Order Sheet'!A1:Z5000",
-        "'_Import_ Convini Order Sheet'!A1:Z5000"
+        "'_Import_ Convini Order Sheet'!A1:Z5000",
+        "'Input '!A1:Z5000"
       ];
       for (const range of rampRanges) {
         try {
@@ -204,9 +404,10 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
     } catch (e: any) {
       console.warn(`     Meal Selection Fallback fehlgeschlagen (${e?.message ?? e})`);
     }
+
     console.log(`     ${added} neue Zeilen übernommen`);
   }
-  return { weekRecipes: out, weeks: [...weekSet].sort() };
+  return { weekRecipes: [...out.values()], weeks: [...weekSet].sort() };
 }
 
 function loadRecipesFromCsv(): Record<string, Recipe> {
