@@ -37,7 +37,7 @@ type LineScenario = {
 
 type StaffingMode = "reduce" | "balanced" | "increase";
 
-type RackDisplayTab = "visual" | "line";
+type RackDisplayTab = "visual" | "line" | "detail";
 
 type ComparisonSnapshot = {
   label: string;
@@ -664,7 +664,7 @@ function articleZoneTarget(entry: RackEntry) {
   if (kind === "protein") return 0.55;
   if (kind === "ice") return 0.62;
   if (kind === "beverage") return 0.72;
-  if (kind === "loyalty") return 0.82;
+  if (kind === "loyalty") return 0.92;
   return 0.5;
 }
 
@@ -839,7 +839,11 @@ function pickfacePenaltyForEntry(
   if (market === "de") {
     // Picker 1 (F28-F36): Meal + Eis Kernbereich
     if (kind === "ice") {
-      penalty += distanceToRange(slotNumber, 28, 36) * 0.45;
+      // Eis: Anfang (P1: F28-36), Mitte (P3: F85-90) ODER Ende (P7/P8: F129-144) – das Nächste gewinnt
+      const iceDEtoStart  = distanceToRange(slotNumber, 28, 36);
+      const iceDEtoMiddle = distanceToRange(slotNumber, 85, 90);
+      const iceDEtoEnd    = distanceToRange(slotNumber, 129, 144);
+      penalty += Math.min(iceDEtoStart, iceDEtoMiddle, iceDEtoEnd) * 0.45;
     } else if (kind === "meal") {
       penalty += distanceToRange(slotNumber, 28, 36) * 0.12;
     }
@@ -856,6 +860,11 @@ function pickfacePenaltyForEntry(
       penalty += distanceToRange(slotNumber, 85, 90) * 0.22;
     } else if (slotNumber >= 85 && slotNumber <= 90) {
       penalty += kind === "meal" ? 0.65 : 1.35;
+    }
+
+    // Flyer, Gifts, Loyalties: bevorzugt am Ende der Halle (Gifts-Bereich P7/P8: F129-F144)
+    if (kind === "loyalty" || kind === "other") {
+      penalty += distanceToRange(slotNumber, 129, 144) * 0.30;
     }
 
     return penalty;
@@ -877,7 +886,8 @@ function pickfacePenaltyForEntry(
   ];
 
   if (kind === "ice") {
-    penalty += distanceToRange(slotNumber, 30, 36) * 0.42;
+    // Nordics: Eis nur am Ende der Halle (P7: F131-F144)
+    penalty += distanceToRange(slotNumber, 131, 144) * 0.42;
   }
 
   if (kind === "meal") {
@@ -898,6 +908,11 @@ function pickfacePenaltyForEntry(
     penalty += distanceToRange(slotNumber, 87, 90) * 0.2;
   } else if (slotNumber >= 87 && slotNumber <= 90) {
     penalty += kind === "meal" ? 0.55 : 1.25;
+  }
+
+  // Flyer, Gifts, Loyalties: bevorzugt am Ende der Halle (P7: F131-F144)
+  if (kind === "loyalty" || kind === "other") {
+    penalty += distanceToRange(slotNumber, 131, 144) * 0.30;
   }
 
   return penalty;
@@ -922,18 +937,24 @@ function buildPickerLoadContext(
   const pickerPickCount = new Map<string, number>();
   const pickerHasIce = new Map<string, boolean>();
 
+  const pickerHasSmoothie = new Map<string, boolean>();
   for (const entry of entries) {
     const slotNumber = rackPositionNumber(entry.flowRackPosition.toUpperCase());
     const window = activePickfaceWindows.find((w) => slotNumber >= w.min && slotNumber <= w.max);
     if (!window) continue;
     const key = `${entry.line}:${window.id}`;
     pickerPickCount.set(key, (pickerPickCount.get(key) ?? 0) + 1);
-    if (deriveEntryKind(entry) === "ice") {
+    const entryKind = deriveEntryKind(entry);
+    if (entryKind === "ice") {
       pickerHasIce.set(key, true);
+    }
+    if (entryKind === "beverage") {
+      // Smoothies: leicht + schnell → Picker kann mehr verarbeiten
+      pickerHasSmoothie.set(key, true);
     }
   }
 
-  return { pickerPickCount, pickerHasIce };
+  return { pickerPickCount, pickerHasIce, pickerHasSmoothie };
 }
 
 /** Penalty wenn ein Picker-Fenster bereits überdurchschnittlich viele Picks hat.
@@ -945,13 +966,15 @@ function pickerLoadPenalty(
   pickerPickCount: Map<string, number>,
   pickerHasIce: Map<string, boolean>,
   avgPicksPerPicker: number,
+  pickerHasSmoothie: Map<string, boolean> = new Map(),
 ): number {
   const slotNumber = rackPositionNumber(candidatePosition);
   const window = activePickfaceWindows.find((w) => slotNumber >= w.min && slotNumber <= w.max);
   if (!window) return 0;
   const key = `${line}:${window.id}`;
   const count = pickerPickCount.get(key) ?? 0;
-  const capacityFactor = pickerHasIce.get(key) ? 0.75 : 1.0;
+  // Eis: kalt + schwer → 60 % Kapazität; Smoothies: leicht + schnell → 125 % Kapazität
+  const capacityFactor = pickerHasIce.get(key) ? 0.60 : pickerHasSmoothie.get(key) ? 1.25 : 1.0;
   const target = avgPicksPerPicker * capacityFactor;
   // Penalty steigt überproportional wenn der Picker schon über Ziel liegt.
   const overshoot = count - target;
@@ -1122,10 +1145,8 @@ function findBestAutoSlot(
     ? candidates.filter((candidate) => (candidate.meta?.level ?? 2) !== 1)
     : candidates;
   const pool = highRunnerCandidates.length > 0 ? highRunnerCandidates : highRunnerFallback;
-  const activePickfacePool = isPickfaceManagedEntry(entry, highRunnerRecipes)
-    ? pool.filter((candidate) => isPositionInPickfaceWindows(candidate.position, activePickfaceWindows))
-    : pool;
-  const finalPool = activePickfacePool.length > 0 ? activePickfacePool : pool;
+  // Harte Regel: Alle Einträge nur in aktiven/freigegebenen Pickfaces platzieren
+  const finalPool = pool.filter((candidate) => isPositionInPickfaceWindows(candidate.position, activePickfaceWindows));
 
   return finalPool.sort((a, b) =>
     Number(b.preferredForRecipe) - Number(a.preferredForRecipe)
@@ -1134,7 +1155,6 @@ function findBestAutoSlot(
     || ergonomicTierRank(a.meta, a.position, market) - ergonomicTierRank(b.meta, b.position, market)
     || (a.pickfacePenalty + a.tierPenalty) - (b.pickfacePenalty + b.tierPenalty)
     || a.zonePenalty - b.zonePenalty
-    || stationPreferenceScore(staffingMode, a.stationLoad, a.lineAverageLoad) - stationPreferenceScore(staffingMode, b.stationLoad, b.lineAverageLoad)
     || (b.meta?.demand ?? 0) - (a.meta?.demand ?? 0)
     || a.distance - b.distance
   )[0];
@@ -1238,8 +1258,8 @@ function optimizeAutomaticRackPlan(
   // Picker-Load-Balancing: gleiche Picks pro aktivem Picker, Eis-Picker reduziert
   const activeWindows = activePickfaceWindows.filter((w) => !w.zuschaltbar);
   const avgPicksPerPicker = activeWindows.length > 0 ? conflictResolved.length / activeWindows.length : 0;
-  const { pickerPickCount, pickerHasIce } = buildPickerLoadContext(conflictResolved, market, activePickfaceWindows);
-  return rebalanceErgonomicEntries(conflictResolved, market, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode, lockedStationsByLine, activePickfaceWindows, pickerPickCount, pickerHasIce, avgPicksPerPicker);
+  const { pickerPickCount, pickerHasIce, pickerHasSmoothie } = buildPickerLoadContext(conflictResolved, market, activePickfaceWindows);
+  return rebalanceErgonomicEntries(conflictResolved, market, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode, lockedStationsByLine, activePickfaceWindows, pickerPickCount, pickerHasIce, avgPicksPerPicker, pickerHasSmoothie);
 }
 
 function rebalanceErgonomicEntries(
@@ -1254,6 +1274,7 @@ function rebalanceErgonomicEntries(
   pickerPickCount: Map<string, number> = new Map(),
   pickerHasIce: Map<string, boolean> = new Map(),
   avgPicksPerPicker = 0,
+  pickerHasSmoothie: Map<string, boolean> = new Map(),
 ) {
   if (entries.length === 0 || slotMeta.size === 0) return entries;
 
@@ -1299,7 +1320,7 @@ function rebalanceErgonomicEntries(
         })(),
         pickfacePenalty: pickfacePenaltyForEntry(entry, position, market, highRunnerRecipes, activePickfaceWindows),
         tierPenalty: thirdTierPenalty(slotMeta.get(position)),
-        loadPenalty: avgPicksPerPicker > 0 ? pickerLoadPenalty(position, entry.line, activePickfaceWindows, pickerPickCount, pickerHasIce, avgPicksPerPicker) : 0,
+        loadPenalty: avgPicksPerPicker > 0 ? pickerLoadPenalty(position, entry.line, activePickfaceWindows, pickerPickCount, pickerHasIce, avgPicksPerPicker, pickerHasSmoothie) : 0,
       }))
       .filter((candidate) => {
         const candidateStation = candidate.meta?.station?.trim() || "unknown";
@@ -1333,10 +1354,9 @@ function rebalanceErgonomicEntries(
       if (nonL1.length > 0) return nonL1;
       return candidates.filter((c) => c.position === currentPosition || c.occupancy === 0);
     })();
-    const pickfaceCandidatePool = isPickfaceManagedEntry(entry, highRunnerRecipes)
-      ? candidatePool.filter((candidate) => candidate.position === currentPosition || isPositionInPickfaceWindows(candidate.position, activePickfaceWindows))
-      : candidatePool;
-    const finalCandidatePool = pickfaceCandidatePool.length > 0 ? pickfaceCandidatePool : candidatePool;
+    // Harte Regel: Alle Einträge nur in aktiven/freigegebenen Pickfaces platzieren
+    const finalCandidatePool = candidatePool.filter((candidate) =>
+      candidate.position === currentPosition || isPositionInPickfaceWindows(candidate.position, activePickfaceWindows));
 
     const sortedCandidates = finalCandidatePool.sort((a, b) =>
         Number(b.preferredForRecipe) - Number(a.preferredForRecipe)
@@ -1346,7 +1366,6 @@ function rebalanceErgonomicEntries(
         || (a.pickfacePenalty + a.tierPenalty + a.loadPenalty) - (b.pickfacePenalty + b.tierPenalty + b.loadPenalty)
         || a.zonePenalty - b.zonePenalty
         || a.occupancy - b.occupancy
-        || stationPreferenceScore(staffingMode, a.stationLoad, a.lineAverageLoad) - stationPreferenceScore(staffingMode, b.stationLoad, b.lineAverageLoad)
         || Number(b.meta?.highRunner) - Number(a.meta?.highRunner)
         || (b.meta?.demand ?? 0) - (a.meta?.demand ?? 0)
         || a.distance - b.distance,
@@ -1601,6 +1620,8 @@ export function RackView({ week, locale }: Props) {
   // J: QR-Sharing
   const [showQrModal, setShowQrModal] = useState(false);
   const [displayTab, setDisplayTab] = useState<RackDisplayTab>("line");
+  // Pre-Build-Validierung
+  const [prebuildBlocker, setPrebuildBlocker] = useState<null | { errors: string[]; warnings: string[] }>(null);
   // H: Versionshistorie
   const [planHistoryItems, setPlanHistoryItems] = useState<Array<{ ts: number; market: string; week: string; entryCount: number }>>([]);
   // Upload-Panel: zugeklappt / Auto-Ladefehler
@@ -1787,33 +1808,49 @@ export function RackView({ week, locale }: Props) {
   );
 
   function toggleZuschaltbarPickface(id: string) {
+    const window = pickfaceWindowsForMarket(market).find((candidate) => candidate.id === id);
+    const willBeEnabled = !enabledZuschaltbarPickfaceIds.has(id);
     setEnabledZuschaltbarPickfaceIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-    const window = pickfaceWindowsForMarket(market).find((candidate) => candidate.id === id);
+    // Beim Entsperren: Einträge in diesem Pickface-Bereich leeren,
+    // damit der Slot wirklich erst nach "Beste Linie bauen" befüllt wird.
+    if (willBeEnabled && window) {
+      setEntries((prev) => prev.filter((entry) => {
+        const n = rackPositionNumber(entry.flowRackPosition.toUpperCase());
+        return n < window.min || n > window.max;
+      }));
+    }
     const blockLabel = window?.blockNumber ? `Z${window.blockNumber}` : id.toUpperCase();
-    const willBeEnabled = !enabledZuschaltbarPickfaceIds.has(id);
     setStatus(locale === "de"
-      ? `${blockLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt für alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Automatisch" oder manueller Verteilung.`
-      : `${blockLabel} ${willBeEnabled ? "enabled" : "locked"}. Applies to all lines in ${market.toUpperCase()}. Fill after clicking automatic planning or by manual placement.`);
+      ? `${blockLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt für alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Beste Linie bauen" oder manueller Verteilung.`
+      : `${blockLabel} ${willBeEnabled ? "enabled" : "locked"}. Applies to all lines in ${market.toUpperCase()}. Fill after clicking Build best line or by manual placement.`);
   }
 
   function togglePickfaceDisabled(id: string) {
+    const window = pickfaceWindowsForMarket(market).find((candidate) => candidate.id === id);
+    const willBeEnabled = disabledPickfaceIds.has(id);
     setDisabledPickfaceIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-    const window = pickfaceWindowsForMarket(market).find((candidate) => candidate.id === id);
+    // Beim Entsperren: Einträge in diesem Pickface-Bereich leeren,
+    // damit der Slot wirklich erst nach "Beste Linie bauen" befüllt wird.
+    if (willBeEnabled && window) {
+      setEntries((prev) => prev.filter((entry) => {
+        const n = rackPositionNumber(entry.flowRackPosition.toUpperCase());
+        return n < window.min || n > window.max;
+      }));
+    }
     const pickerLabel = window?.pickerNumber ? `P${window.pickerNumber}` : id.toUpperCase();
-    const willBeEnabled = disabledPickfaceIds.has(id);
     setStatus(locale === "de"
-      ? `${pickerLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt für alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Automatisch" oder manueller Verteilung.`
-      : `${pickerLabel} ${willBeEnabled ? "enabled" : "locked"}. Applies to all lines in ${market.toUpperCase()}. Fill after clicking automatic planning or by manual placement.`);
+      ? `${pickerLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt für alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Beste Linie bauen" oder manueller Verteilung.`
+      : `${pickerLabel} ${willBeEnabled ? "enabled" : "locked"}. Applies to all lines in ${market.toUpperCase()}. Fill after clicking Build best line or by manual placement.`);
   }
 
   const filteredEntries = useMemo(() => {
@@ -1850,6 +1887,14 @@ export function RackView({ week, locale }: Props) {
   const operationalIssues = useMemo(
     () => buildOperationalValidation(entries, slotMeta, highRunnerRecipes),
     [entries, slotMeta, highRunnerRecipes],
+  );
+
+  // Meals die keinem aktiven Pickface-Fenster zugeordnet sind → müssen manuell verteilt werden
+  const unplacedMeals = useMemo(
+    () => entries.filter(
+      (entry) => deriveEntryKind(entry) === "meal" && !isPositionInPickfaceWindows(entry.flowRackPosition.toUpperCase(), activePickfaceWindows),
+    ),
+    [entries, activePickfaceWindows],
   );
 
   const validation = useMemo<RackValidationResult>(() => ({
@@ -2152,8 +2197,8 @@ export function RackView({ week, locale }: Props) {
     const snapshotCount = entries.length;
     const snapshotEntries = entries.map((e) => ({ recipe: e.recipe, line: e.line, flowRackPosition: e.flowRackPosition, quantity: e.quantity }));
     setEntries([]);
-    setTemplateEntries([]);
-    rawEntriesRef.current = [];
+    // templateEntries und rawEntriesRef absichtlich NICHT leeren,
+    // damit "Beste Linie bauen" nach der Bereinigung weiterhin als Datenquelle dienen kann.
     setComparison(null);
     setShowClearConfirm(false);
     setStatus(locale === "de" ? `Planung bereinigt (${snapshotCount} Einträge gelöscht).` : `Plan cleared (${snapshotCount} entries removed).`);
@@ -2339,6 +2384,17 @@ export function RackView({ week, locale }: Props) {
   }
 
   function suggestBestPlan() {
+    const errors   = validation.issues.filter((i) => i.severity === "error").map((i) => i.message);
+    const warnings = validation.issues.filter((i) => i.severity === "warning").map((i) => i.message);
+    if (errors.length > 0 || warnings.length > 0) {
+      setPrebuildBlocker({ errors, warnings });
+      return;
+    }
+    _doSuggestBestPlan();
+  }
+
+  function _doSuggestBestPlan() {
+    setPrebuildBlocker(null);
     const source = templateEntries.length > 0 ? projectRackEntriesToLines(templateEntries, activeLines) : entries;
     if (source.length === 0) return;
     const nextEntries = optimizeAutomaticRackPlan(source, market, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, staffingMode, lockedStationsByLine, activePickfaceWindows);
@@ -2515,7 +2571,7 @@ export function RackView({ week, locale }: Props) {
                   <button className={`btn ${recommendationOnly ? "btn-primary" : ""}`} onClick={() => setRecommendationOnly((current) => !current)} disabled={entries.length === 0 || slotMeta.size === 0}>
                     {recommendationOnly ? (locale === "de" ? "Empfehlung ausblenden" : "Hide recommendation") : (locale === "de" ? "Nur Empfehlungen" : "Recommendations only")}
                   </button>
-                  <button className="btn btn-primary" onClick={suggestBestPlan} disabled={entries.length === 0 || slotMeta.size === 0}>
+                  <button className="btn btn-primary" onClick={suggestBestPlan} disabled={(entries.length === 0 && templateEntries.length === 0) || slotMeta.size === 0}>
                     {locale === "de" ? "Beste Linie bauen" : "Build best line"}
                   </button>
                   {/* C: Template-Vergleich */}
@@ -2590,9 +2646,10 @@ export function RackView({ week, locale }: Props) {
             </div>
 
             {(() => {
+              const hasData = entries.length > 0 || templateEntries.length > 0;
               const sources = [
-                { key: "multiline", label: "MultiLine XLSX", loaded: entries.length > 0 && slotMeta.size > 0, auto: true },
-                { key: "rackfile",  label: "Rackfile CSV",  loaded: entries.length > 0, auto: false },
+                { key: "multiline", label: "MultiLine XLSX", loaded: hasData && slotMeta.size > 0, auto: true },
+                { key: "rackfile",  label: "Rackfile CSV",  loaded: hasData, auto: false },
                 { key: "pdl",       label: "PDL CSV",       loaded: pdlIds !== undefined, auto: true },
                 { key: "boxfile",   label: "Boxfile CSV",   loaded: boxfile !== undefined, auto: false },
                 { key: "co2",       label: "CO2 CSV",       loaded: co2MealIds !== undefined, auto: false },
@@ -2824,7 +2881,7 @@ export function RackView({ week, locale }: Props) {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[0.78fr_1.22fr]">
+      <section className={`grid gap-4 ${displayTab !== "detail" ? "xl:grid-cols-[0.78fr_1.22fr]" : ""}`}>
         <div className="space-y-4">
           {selectedFocus && (
             <div className="card overflow-hidden p-0">
@@ -3085,6 +3142,14 @@ export function RackView({ week, locale }: Props) {
               </button>
               <button
                 type="button"
+                className={`rounded-xl px-3 py-2 text-xs font-bold ring-2 ${displayTab === "detail" ? "bg-sky-700 text-white ring-sky-700" : "bg-sky-50 text-sky-800 ring-sky-300 hover:bg-sky-100"}`}
+                onClick={() => setDisplayTab("detail")}
+                title={locale === "de" ? "Fokus-Ansicht: Slot- und Rezeptdetails in der Mitte" : "Focus view: slot and recipe details center-stage"}
+              >
+                {locale === "de" ? "🔍 Detail-Reiter" : "🔍 Detail tab"}
+              </button>
+              <button
+                type="button"
                 className={`rounded-xl px-3 py-2 text-xs font-semibold ${validation.ok && entries.length > 0 ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"}`}
                 onClick={() => downloadText(market === "de" ? `Rackfile_[${week}]_[F-DE]_[${usedLines.join("_") || activeLines.join("_")}].csv` : `Rackfile_KW${week.split("W").at(-1)}_[Fact-Nordics]_[ASL${(usedLines.length > 0 ? usedLines : activeLines).map((line) => line.replace("ASL", "")).join(",")}].csv`, exportRackfileCsv(entries))}
                 disabled={!validation.ok || entries.length === 0}
@@ -3095,8 +3160,77 @@ export function RackView({ week, locale }: Props) {
             </div>
           </div>
 
+          {unplacedMeals.length > 0 && (
+            <div className="mt-4 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50 px-4 py-4 ring-1 ring-amber-200">
+              <div className="flex items-start gap-3">
+                <span className="text-2xl" role="img" aria-label="Achtung">⚠️</span>
+                <div className="flex-1">
+                  <div className="text-sm font-black uppercase tracking-wide text-amber-800">
+                    {locale === "de" ? `${unplacedMeals.length} Meal${unplacedMeals.length > 1 ? "s" : ""} ohne Pickplatz – manuell verteilen!` : `${unplacedMeals.length} meal${unplacedMeals.length > 1 ? "s" : ""} without a pickface slot – distribute manually!`}
+                  </div>
+                  <div className="mt-1 text-xs text-amber-700">
+                    {locale === "de" ? "Diese Mahlzeiten liegen außerhalb aller aktiven Pickfaces und wurden nicht automatisch verplant. Bitte händisch einem freien Slot zuweisen." : "These meals are outside all active pickfaces and were not auto-assigned. Please assign them manually to a free slot."}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {unplacedMeals.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-1.5 rounded-full bg-amber-200 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-300"
+                        title={`${entry.line} · ${entry.flowRackPosition} · ${entry.displayName || entry.ingredient}`}
+                      >
+                        <span className="rounded-full bg-amber-800 px-1.5 py-0.5 text-[10px] font-black text-amber-50">{entry.line}</span>
+                        <span>{entry.recipe}</span>
+                        <span className="text-amber-600">@{entry.flowRackPosition}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Per-Linie + Gesamt-Export-Leiste */}
+          {entries.length > 0 && displayTab !== "detail" && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {(usedLines.length > 0 ? usedLines : activeLines).map((line) => {
+                const lineEntries = entries.filter((e) => e.line === line);
+                const filename = market === "de"
+                  ? `Rackfile_[${week}]_[F-DE]_[${line}].csv`
+                  : `Rackfile_KW${week.split("W").at(-1)}_[Fact-Nordics]_[${line}].csv`;
+                return (
+                  <button
+                    key={line}
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs font-bold text-white hover:bg-slate-700 disabled:opacity-40"
+                    disabled={lineEntries.length === 0}
+                    onClick={() => downloadText(filename, exportRackfileCsv(lineEntries))}
+                    title={`${lineEntries.length} Einträge auf ${line}`}
+                  >
+                    <span>📄</span>
+                    <span>{line}</span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-40"
+                disabled={!validation.ok || entries.length === 0}
+                onClick={() => downloadText(
+                  market === "de"
+                    ? `Rackfile_[${week}]_[F-DE]_[${(usedLines.length > 0 ? usedLines : activeLines).join("_")}].csv`
+                    : `Rackfile_KW${week.split("W").at(-1)}_[Fact-Nordics]_[ASL${(usedLines.length > 0 ? usedLines : activeLines).map((l) => l.replace("ASL", "")).join(",")}].csv`,
+                  exportRackfileCsv(entries),
+                )}
+                title={locale === "de" ? "Alle aktiven Linien zusammen exportieren" : "Export all active lines combined"}
+              >
+                <span>📦</span>
+                <span>{market === "de" ? "Alle DE" : "Alle Nordics"}</span>
+              </button>
+            </div>
+          )}
+
           <div className="mt-4 space-y-6">
-            {(usedLines.length > 0 ? usedLines : activeLines).map((line) => {
+            {displayTab !== "detail" && (usedLines.length > 0 ? usedLines : activeLines).map((line) => {
               // Physisches Hallenbild ist immer fix — nur die marktspezifischen Slots (keine
               // metaSlots aus dem Workbook), damit DE-Liner-Zone (37–54, 64–84) nicht als
               // Spalten erscheint und der Unterschied zu Nordics sichtbar bleibt.
@@ -3169,6 +3303,14 @@ export function RackView({ week, locale }: Props) {
               );
             })}
           </div>
+
+          {displayTab === "detail" && (
+            <div className="mt-6 rounded-2xl border-2 border-dashed border-sky-200 bg-sky-50 px-5 py-6 text-center text-sm text-sky-700">
+              {locale === "de"
+                ? "Detail-Modus aktiv – klicke einen Slot in der Linien- oder Visualisierungs-Ansicht, um hier die Details zu sehen."
+                : "Detail mode active – click a slot in the line or visual view to inspect it here."}
+            </div>
+          )}
         </div>
       </section>
 
@@ -3246,6 +3388,68 @@ export function RackView({ week, locale }: Props) {
                 onClick={() => setShowClearConfirm(false)}
               >
                 {locale === "de" ? "Abbrechen" : "Cancel"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pre-Build-Validierungsmodal */}
+      {prebuildBlocker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setPrebuildBlocker(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-[28px] bg-white p-6 shadow-2xl ring-1 ring-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-2xl" role="img" aria-label="Achtung">⚠️</span>
+              <div className="text-sm font-black uppercase tracking-wide text-slate-800">
+                {locale === "de" ? "Vorher prüfen – Probleme im Rackplan" : "Check first – Issues in rack plan"}
+              </div>
+            </div>
+            <p className="mb-4 text-xs text-slate-500">
+              {locale === "de"
+                ? "Vor dem Optimieren wurden folgende Probleme erkannt. Fehler (rot) müssen behoben werden, Warnungen (gelb) sind optional."
+                : "The following issues were found before optimizing. Errors (red) must be resolved; warnings (yellow) are optional."}
+            </p>
+            {prebuildBlocker.errors.length > 0 && (
+              <div className="mb-3 rounded-2xl bg-red-50 p-3 ring-1 ring-red-200">
+                <div className="mb-1 text-xs font-black uppercase tracking-wide text-red-700">{locale === "de" ? `${prebuildBlocker.errors.length} Fehler` : `${prebuildBlocker.errors.length} error${prebuildBlocker.errors.length > 1 ? "s" : ""}`}</div>
+                <ul className="space-y-1">
+                  {prebuildBlocker.errors.map((msg, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-red-800">
+                      <span className="mt-px shrink-0 text-red-500">●</span>
+                      <span>{msg}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {prebuildBlocker.warnings.length > 0 && (
+              <div className="mb-4 rounded-2xl bg-amber-50 p-3 ring-1 ring-amber-200">
+                <div className="mb-1 text-xs font-black uppercase tracking-wide text-amber-700">{locale === "de" ? `${prebuildBlocker.warnings.length} Warnungen` : `${prebuildBlocker.warnings.length} warning${prebuildBlocker.warnings.length > 1 ? "s" : ""}`}</div>
+                <ul className="space-y-1">
+                  {prebuildBlocker.warnings.map((msg, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-amber-800">
+                      <span className="mt-px shrink-0 text-amber-500">●</span>
+                      <span>{msg}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                className="btn btn-primary flex-1"
+                onClick={_doSuggestBestPlan}
+              >
+                {locale === "de" ? "Trotzdem bauen" : "Build anyway"}
+              </button>
+              <button className="btn flex-1" onClick={() => setPrebuildBlocker(null)}>
+                {locale === "de" ? "Abbrechen & prüfen" : "Cancel & review"}
               </button>
             </div>
           </div>

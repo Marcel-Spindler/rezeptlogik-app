@@ -195,11 +195,293 @@ function parseKet(rows: string[][]): KetWO[] {
 const NAV_TABS = [
   { key: "kitchen", label: "🍳 Küche",   desc: "Küchenplanung (KET)" },
   { key: "asl",     label: "📋 ASL",     desc: "Linienplanung (informativ)" },
-  // { key: "quality", label: "✅ QS",    desc: "Qualitätschecks" },
-  // { key: "stock",   label: "📦 Lager", desc: "Bestand & Debox" },
+  { key: "quality", label: "✅ Qualität", desc: "Datenqualität / Plausibilitätschecks" },
+  { key: "kpi",     label: "📈 KPI",      desc: "Kennzahlen & Top-Treiber" },
 ] as const;
 
 type NavKey = (typeof NAV_TABS)[number]["key"];
+
+type QualitySeverity = "critical" | "warn" | "info";
+type QualityDomain = "ket" | "asl";
+
+type QualityIssue = {
+  id: string;
+  severity: QualitySeverity;
+  domain: QualityDomain;
+  title: string;
+  detail: string;
+};
+
+function sevWeight(sev: QualitySeverity): number {
+  if (sev === "critical") return 0;
+  if (sev === "warn") return 1;
+  return 2;
+}
+
+function qualityTone(severity: QualitySeverity): string {
+  if (severity === "critical") return "bg-rose-50 text-rose-800 border-rose-200";
+  if (severity === "warn") return "bg-amber-50 text-amber-800 border-amber-200";
+  return "bg-slate-50 text-slate-700 border-slate-200";
+}
+
+function analyzeQuality(ketWOs: KetWO[], recipes: LinePlanRecipe[], schedule: ScheduleMap): QualityIssue[] {
+  const issues: QualityIssue[] = [];
+
+  // KET checks
+  ketWOs.forEach((wo, idx) => {
+    if (!wo.woNumber) {
+      issues.push({
+        id: `ket-missing-wo-${idx}`,
+        severity: "critical",
+        domain: "ket",
+        title: "WO ohne WO-Nummer",
+        detail: `${wo.recipeName || "Unbekanntes Rezept"} (Prio ${wo.priority}) hat keine WO-Nummer.`,
+      });
+    }
+    if (!wo.recipeId) {
+      issues.push({
+        id: `ket-missing-recipeid-${idx}`,
+        severity: "warn",
+        domain: "ket",
+        title: "WO ohne Recipe-ID",
+        detail: `WO ${wo.woNumber || "ohne Nummer"} hat keine Recipe-ID.`,
+      });
+    }
+    if (!wo.hotKitchenDay) {
+      issues.push({
+        id: `ket-missing-day-${idx}`,
+        severity: "warn",
+        domain: "ket",
+        title: "WO ohne Produktionstag",
+        detail: `WO ${wo.woNumber || "ohne Nummer"} ist keinem Hot-Kitchen-Tag zugeordnet.`,
+      });
+    }
+    if (wo.targetPortions <= 0) {
+      issues.push({
+        id: `ket-invalid-portions-${idx}`,
+        severity: "warn",
+        domain: "ket",
+        title: "WO mit 0 Portionen",
+        detail: `WO ${wo.woNumber || "ohne Nummer"} hat targetPortions=${wo.targetPortions}.`,
+      });
+    }
+  });
+
+  const woDupe = new Map<string, number>();
+  for (const wo of ketWOs) {
+    if (!wo.woNumber) continue;
+    woDupe.set(wo.woNumber, (woDupe.get(wo.woNumber) ?? 0) + 1);
+  }
+  for (const [woNumber, count] of woDupe.entries()) {
+    if (count > 1) {
+      issues.push({
+        id: `ket-dup-${woNumber}`,
+        severity: "critical",
+        domain: "ket",
+        title: "Doppelte WO-Nummer",
+        detail: `WO ${woNumber} kommt ${count}× vor.`,
+      });
+    }
+  }
+
+  // ASL checks
+  const recipeCodes = new Set(recipes.map(r => r.code));
+  recipes.forEach((r, idx) => {
+    if (!r.code) {
+      issues.push({
+        id: `asl-missing-code-${idx}`,
+        severity: "critical",
+        domain: "asl",
+        title: "Rezept ohne Code",
+        detail: `Ein ASL-Rezept hat keinen Code.`,
+      });
+    }
+    if (!r.name) {
+      issues.push({
+        id: `asl-missing-name-${idx}`,
+        severity: "warn",
+        domain: "asl",
+        title: "Rezept ohne Name",
+        detail: `Rezept ${r.code || "ohne Code"} hat keinen Namen.`,
+      });
+    }
+    if (r.speedPerMin <= 0) {
+      issues.push({
+        id: `asl-speed-${idx}`,
+        severity: "warn",
+        domain: "asl",
+        title: "Ungültige Liniengeschwindigkeit",
+        detail: `${r.code || "ohne Code"} hat speedPerMin=${r.speedPerMin}.`,
+      });
+    }
+    if (r.totalPlanned <= 0) {
+      issues.push({
+        id: `asl-planned-${idx}`,
+        severity: "info",
+        domain: "asl",
+        title: "Rezept ohne Planmenge",
+        detail: `${r.code || "ohne Code"} hat totalPlanned=${r.totalPlanned}.`,
+      });
+    }
+  });
+
+  for (const [slotKey, planned] of Object.entries(schedule)) {
+    if (!planned) continue;
+    if (!recipeCodes.has(planned.code)) {
+      issues.push({
+        id: `asl-orphan-slot-${slotKey}`,
+        severity: "warn",
+        domain: "asl",
+        title: "Slot mit unbekanntem Rezept",
+        detail: `Slot ${slotKey} referenziert ${planned.code}, das nicht in der Rezeptliste ist.`,
+      });
+    }
+  }
+
+  return issues.sort((a, b) => sevWeight(a.severity) - sevWeight(b.severity));
+}
+
+function KpiView({
+  ketWOs,
+  ketOverrides,
+  recipes,
+  schedule,
+  weekNum,
+}: {
+  ketWOs: KetWO[];
+  ketOverrides: Record<string, { day?: string; status?: string }>;
+  recipes: LinePlanRecipe[];
+  schedule: ScheduleMap;
+  weekNum: number;
+}) {
+  const totalWOs = ketWOs.length;
+  const doneWOs = ketWOs.filter(wo => /done|fertig/i.test(ketOverrides[wo.woNumber]?.status ?? wo.status)).length;
+  const progressWOs = ketWOs.filter(wo => /progress|aktiv/i.test(ketOverrides[wo.woNumber]?.status ?? wo.status)).length;
+  const openWOs = Math.max(0, totalWOs - doneWOs - progressWOs);
+  const totalPortions = ketWOs.reduce((s, wo) => s + wo.targetPortions, 0);
+
+  const perDay = DAYS.map(day => {
+    const count = ketWOs.filter(wo => (ketOverrides[wo.woNumber]?.day ?? wo.hotKitchenDay) === day).length;
+    return { day, count };
+  }).filter(x => x.count > 0);
+
+  const topKetRecipes = Array.from(
+    ketWOs.reduce((m, wo) => {
+      const key = wo.recipeId || wo.recipeName || "Unbekannt";
+      const cur = m.get(key) ?? { key, portions: 0, jobs: 0 };
+      cur.portions += wo.targetPortions;
+      cur.jobs += 1;
+      m.set(key, cur);
+      return m;
+    }, new Map<string, { key: string; portions: number; jobs: number }>())
+      .values()
+  ).sort((a, b) => b.portions - a.portions).slice(0, 8);
+
+  const slotsFilled = Object.values(schedule).filter(Boolean).length;
+  const aslPlannedTotal = recipes.reduce((s, r) => s + r.totalPlanned, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">KPI Übersicht · KW {weekNum}</div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+          <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">KET WOs</div><div className="text-xl font-bold">{fmtNum(totalWOs)}</div></div>
+          <div className="rounded-xl bg-emerald-50 p-3"><div className="text-xs text-emerald-700">Fertig</div><div className="text-xl font-bold text-emerald-800">{fmtNum(doneWOs)}</div></div>
+          <div className="rounded-xl bg-amber-50 p-3"><div className="text-xs text-amber-700">In Arbeit</div><div className="text-xl font-bold text-amber-800">{fmtNum(progressWOs)}</div></div>
+          <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">Offen</div><div className="text-xl font-bold">{fmtNum(openWOs)}</div></div>
+          <div className="rounded-xl bg-indigo-50 p-3"><div className="text-xs text-indigo-700">KET Portionen</div><div className="text-xl font-bold text-indigo-800">{fmtNum(totalPortions)}</div></div>
+          <div className="rounded-xl bg-sky-50 p-3"><div className="text-xs text-sky-700">ASL Rezepte</div><div className="text-xl font-bold text-sky-800">{fmtNum(recipes.length)}</div></div>
+          <div className="rounded-xl bg-violet-50 p-3"><div className="text-xs text-violet-700">ASL Planmenge</div><div className="text-xl font-bold text-violet-800">{fmtNum(aslPlannedTotal)}</div></div>
+          <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">ASL Slots belegt</div><div className="text-xl font-bold">{fmtNum(slotsFilled)}</div></div>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">KET Verteilung nach Tag</div>
+          <div className="space-y-2">
+            {perDay.length === 0 && <div className="text-sm text-slate-400">Keine Tagesdaten vorhanden.</div>}
+            {perDay.map(row => (
+              <div key={row.day} className="flex items-center gap-3">
+                <div className="w-24 text-sm text-slate-600">{row.day}</div>
+                <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-2 bg-indigo-500" style={{ width: `${(row.count / Math.max(1, totalWOs)) * 100}%` }} />
+                </div>
+                <div className="w-10 text-right text-sm font-semibold text-slate-700">{row.count}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+          <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Top Rezepte (KET nach Portionen)</div>
+          <div className="space-y-2">
+            {topKetRecipes.length === 0 && <div className="text-sm text-slate-400">Keine KET-Daten vorhanden.</div>}
+            {topKetRecipes.map((r, i) => (
+              <div key={r.key} className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-xs text-slate-400">#{i + 1}</div>
+                  <div className="text-sm font-semibold text-slate-800 truncate">{r.key}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-indigo-700 tabular-nums">{fmtNum(r.portions)}</div>
+                  <div className="text-[11px] text-slate-500">{r.jobs} WO</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QualityView({
+  issues,
+  ketCount,
+  aslCount,
+}: {
+  issues: QualityIssue[];
+  ketCount: number;
+  aslCount: number;
+}) {
+  const critical = issues.filter(i => i.severity === "critical").length;
+  const warn = issues.filter(i => i.severity === "warn").length;
+  const info = issues.filter(i => i.severity === "info").length;
+  const scoreBase = Math.max(1, ketCount + aslCount);
+  const score = Math.max(0, Math.round(100 - ((critical * 12 + warn * 5 + info * 1) / scoreBase) * 10));
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Datenqualität</div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+          <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">Quality Score</div><div className="text-xl font-bold">{score}/100</div></div>
+          <div className="rounded-xl bg-rose-50 p-3"><div className="text-xs text-rose-700">Critical</div><div className="text-xl font-bold text-rose-800">{critical}</div></div>
+          <div className="rounded-xl bg-amber-50 p-3"><div className="text-xs text-amber-700">Warn</div><div className="text-xl font-bold text-amber-800">{warn}</div></div>
+          <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">Info</div><div className="text-xl font-bold">{info}</div></div>
+          <div className="rounded-xl bg-sky-50 p-3"><div className="text-xs text-sky-700">Datensätze</div><div className="text-xl font-bold text-sky-800">{ketCount + aslCount}</div></div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Issues</div>
+        <div className="space-y-2">
+          {issues.length === 0 && <div className="text-sm text-emerald-700 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">Keine Datenqualitätsprobleme gefunden.</div>}
+          {issues.map(issue => (
+            <div key={issue.id} className={`rounded-xl border px-3 py-2 ${qualityTone(issue.severity)}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-sm">{issue.title}</div>
+                <span className="text-[10px] uppercase tracking-wide">{issue.domain} · {issue.severity}</span>
+              </div>
+              <div className="text-xs mt-1 opacity-90">{issue.detail}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  KET / KITCHEN  — Card
@@ -772,6 +1054,11 @@ export function ShareDashboard({ week }: { week: string }) {
   const [activeTab,    setActiveTab]    = useState<NavKey>("kitchen");
   const [copied,       setCopied]       = useState(false);
 
+  const qualityIssues = useMemo(
+    () => analyzeQuality(ketWOs, recipes, schedule),
+    [ketWOs, recipes, schedule]
+  );
+
   // ── Load ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     void (async () => {
@@ -979,7 +1266,22 @@ export function ShareDashboard({ week }: { week: string }) {
             weekNum={weekNum > 0 ? weekNum : parseInt(weekStr)}
           />
         )}
-        {/* Weitere Tabs hier ergänzen */}
+        {activeTab === "quality" && (
+          <QualityView
+            issues={qualityIssues}
+            ketCount={ketWOs.length}
+            aslCount={recipes.length}
+          />
+        )}
+        {activeTab === "kpi" && (
+          <KpiView
+            ketWOs={ketWOs}
+            ketOverrides={ketOverrides}
+            recipes={recipes}
+            schedule={schedule}
+            weekNum={weekNum > 0 ? weekNum : parseInt(weekStr)}
+          />
+        )}
       </main>
 
       {/* ── Footer ───────────────────────────────────────────────────── */}

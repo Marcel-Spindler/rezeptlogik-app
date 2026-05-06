@@ -356,13 +356,13 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedWeek, setSelectedWeek] = usePersistent<string>("week", "");
   const [selectedRecipe, setSelectedRecipe] = usePersistent<string | null>("recipe", null);
-  const [view, setView] = usePersistent<"recipe" | "equipment" | "planning" | "woche" | "rack" | "ket">("view", "recipe");
+  const [view, setView] = usePersistent<"recipe" | "equipment" | "planning" | "woche" | "rack" | "ket" | "phase2">("view", "recipe");
   // URL-Parameter ?view=ket und ?week=... haben Vorrang vor gespeichertem Zustand.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const param = params.get("view");
     const weekParam = params.get("week");
-    const valid = ["recipe", "equipment", "planning", "woche", "rack", "ket"] as const;
+    const valid = ["recipe", "equipment", "planning", "woche", "rack", "ket", "phase2"] as const;
     if ((valid as readonly string[]).includes(param ?? "")) {
       setView(param as typeof valid[number]);
     }
@@ -520,8 +520,9 @@ export default function App() {
               ["equipment", tl(locale, "Equipment")],
               ["planning", tl(locale, "Wochenplaner")],
               ["rack", "Rack"],
-              ["ket", "Linienplanung"]
-            ] as ["recipe"|"equipment"|"planning"|"woche"|"rack"|"ket", string][]).map(([k, l]) => (
+              ["ket", "Linienplanung"],
+              ["phase2", "What-if & Diff"]
+            ] as ["recipe"|"equipment"|"planning"|"woche"|"rack"|"ket"|"phase2", string][]).map(([k, l]) => (
               <button key={k} onClick={() => setView(k)}
                 className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md ${
                   view === k ? "bg-white shadow ring-1 ring-slate-300" : "text-slate-500 hover:text-slate-800"

@@ -1,9 +1,24 @@
-# TODO – WMS KW Report Rebuild (GSheet)
+# Phase 3 – TODO (Engpass-Radar + Weekly Export + Automation)
 
-- [x] Analyze current sync behavior and confirm layout conflict with W20 template tabs
-- [ ] Design new standalone KW report tabs (`KWxx_Report`) to avoid touching W20-style operational tabs
-- [ ] Implement new report script (KPI summary + top products + top areas per KW)
-- [ ] Keep old sync script untouched for now; no writes to existing W20-based tabs
-- [ ] Run dry-run/validation for detected weeks and row counts
-- [ ] Run real push to target GSheet and create/update `KW19_Report`, `KW20_Report`, `KW26_Report`
-- [ ] Verify terminal output and provide import/sync usage instructions (only Transaction_Log as input)
+- [ ] 1) Scope & Architektur festziehen
+  - Zielbereiche: Engpass-Radar, Export-Paket, Automations/Polish
+  - Ziel-Dateien identifizieren (voraussichtlich `src/App.tsx`, ggf. Helferdateien)
+
+- [ ] 2) Engpass-Radar (MVP) implementieren
+  - Aggregation kritischer Ingredients über Woche/Märkte
+  - Severity-Logik + Priorisierung
+  - UI-Karten + Tabelle mit Drilldown
+
+- [ ] 3) Weekly Export-Paket (MVP) implementieren
+  - Export der Radar-/Planungsdaten (CSV, optional XLSX)
+  - konsistente Spalten + Dateinamen-Konvention
+
+- [ ] 4) Automations/Polish
+  - Filter/Zustand persistieren
+  - UX-Polish + Fallbacks bei fehlenden Daten
+  - Performance-Checks auf großen Datensätzen
+
+- [ ] 5) Validierung
+  - Build/Typecheck
+  - Smoke-Tests der neuen Phase-3-Bereiche
+  - kurze Regression der Kern-Navigation
