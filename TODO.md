@@ -1,24 +1,20 @@
-# Phase 3 – TODO (Engpass-Radar + Weekly Export + Automation)
+och zur verfügung haben# TODO – App What-if Fix + Rack Drag&Drop + UI Cleanup
 
-- [ ] 1) Scope & Architektur festziehen
-  - Zielbereiche: Engpass-Radar, Export-Paket, Automations/Polish
-  - Ziel-Dateien identifizieren (voraussichtlich `src/App.tsx`, ggf. Helferdateien)
+- [ ] 1) What-if & Diff in App reparieren
+  - `phase2` View korrekt im Main-Render einhängen
+  - Yield-Rechner robust für beide Richtungen (Rohware→Output, Output→Rohware)
+  - Diff-Anzeige stabil und nachvollziehbar
 
-- [ ] 2) Engpass-Radar (MVP) implementieren
-  - Aggregation kritischer Ingredients über Woche/Märkte
-  - Severity-Logik + Priorisierung
-  - UI-Karten + Tabelle mit Drilldown
+- [ ] 2) Rack: Unplaced-Meals-Pills drag&drop-fähig machen
+  - `draggable` aktivieren
+  - `dragstart` mit `dataTransfer` + bestehendem Handler verdrahten
+  - `dragend` mit bestehendem Handler verdrahten
 
-- [ ] 3) Weekly Export-Paket (MVP) implementieren
-  - Export der Radar-/Planungsdaten (CSV, optional XLSX)
-  - konsistente Spalten + Dateinamen-Konvention
+- [ ] 3) Rack: "Manuelle Planung" Sektion entfernen
+  - komplette Tabelle + Filter-UI entfernen
+  - ungenutzte States/Computed Values bereinigen (`filterText`, `filteredEntries`)
 
-- [ ] 4) Automations/Polish
-  - Filter/Zustand persistieren
-  - UX-Polish + Fallbacks bei fehlenden Daten
-  - Performance-Checks auf großen Datensätzen
-
-- [ ] 5) Validierung
-  - Build/Typecheck
-  - Smoke-Tests der neuen Phase-3-Bereiche
-  - kurze Regression der Kern-Navigation
+- [ ] 4) Critical-path Validierung (A)
+  - What-if & Diff lokal prüfen
+  - Rack Drag von "Meals ohne Pickplatz" in Slots prüfen
+  - kurzer Reload/Persistenz-Check

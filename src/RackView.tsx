@@ -1589,7 +1589,6 @@ export function RackView({ week, locale }: Props) {
   const [sourceLabel, setSourceLabel] = useState<string>("");
   const [status, setStatus] = useState<string>(locale === "de" ? "Noch keine Rackdaten geladen." : "No rack data loaded yet.");
   const [busy, setBusy] = useState<string | null>(null);
-  const [filterText, setFilterText] = useState("");
   const [picksPerWorker, setPicksPerWorker] = useState(120);
   const [plannedWorkersManual, setPlannedWorkersManual] = useState<number | null>(null);
   const [disabledPickfaceIds, setDisabledPickfaceIds] = useState<Set<string>>(
@@ -1630,6 +1629,8 @@ export function RackView({ week, locale }: Props) {
   // K: Planung bereinigen – Bestätigungs-Modal
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearLogs, setClearLogs] = useState<Array<{ ts: number; market: string; week: string; entryCount: number; clearedBy: string }>>([]);
+  // M: Manuelle Planung Filter
+  const [filterText, setFilterText] = useState("");
 
   const profile = RACK_MARKET_PROFILES[market];
   const scenarios = useMemo(() => scenarioOptions(market, locale), [market, locale]);

@@ -5,6 +5,7 @@ import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, DEFAULT_STATION_DEVICE_COUNTS, DEFAULT_STATION_POOLS, computeWeekLoad, fmtMin, getBaseVerdenVolume, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools, normalizePoolName, saveStationDeviceCounts, saveStationPools, tokenToStation, workflowSteps } from "./equipment";
 import { loadDynamicModule } from "./dynamicImport";
 import { PlanningView } from "./PlanningView";
+import { WhatIfView } from "./WhatIfView";
 import { formatDateTime, marketToLocale, marketVariantLabel, MARKET_LANGUAGE_LABEL, tl, type UiLocale } from "./i18n";
 
 const RackView = lazy(() => loadDynamicModule("rack-view", () => import("./RackView").then((module) => ({ default: module.RackView }))));
@@ -657,6 +658,9 @@ export default function App() {
             <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
               <LinePlanningView week={selectedWeek} locale={locale} />
             </Suspense>
+          )}
+          {view === "phase2" && (
+            <WhatIfView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />
           )}
           {view === "recipe" && (activeRecipe
             ? <RecipeDetail wr={activeRecipe} recipe={data.recipes[activeRecipe.code]} data={data}
