@@ -1,18 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DataBundle, ShelfLifeInfo, WeekRecipe } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, loadStationDeviceCounts, loadStationPools } from "./equipment";
 import {
+  assignmentKey,
   PLANNER_DAYS,
   PLANNER_SHIFTS,
   SHIFT_CAPACITY_MIN,
-  DAY_VISIBLE_MIN,
-  SHIFT_LENGTH_MIN,
-  getShiftStartMin,
-  getShiftFromStartMin,
-  formatDayMin,
   analyzePlan,
   assignRecipe,
+  computeBatchSplitPlan,
   createScenario,
   getActiveScenario,
   getWeekState,
@@ -28,11 +25,9 @@ import {
   type PlannerStationConflict
 } from "./planner";
 import { tl, type UiLocale } from "./i18n";
+import { usePlanningOasisData } from "./planningOasisData";
 
 const PLANNER_UI_SETTINGS_STORAGE_KEY = "rezeptlogik-planner-ui-settings-v1";
-
-/** Pixel-Höhe der Tages-Timeline (24h). 720px ≈ 30px / Stunde. */
-const TIMELINE_HEIGHT_PX = 720;
 
 type PlannerUiSettings = {
   shiftPresetId: string;
@@ -120,6 +115,23 @@ function parseSlot(value: string): { day: PlannerDay; shift: PlannerShift } | nu
   if (!(PLANNER_DAYS as readonly string[]).includes(day)) return null;
   if (!(PLANNER_SHIFTS as readonly string[]).includes(shift)) return null;
   return { day: day as PlannerDay, shift: shift as PlannerShift };
+}
+
+function pickLowestLoadSlot(
+  slotLoads: Map<string, number>,
+  activeShifts: readonly PlannerShift[]
+): { day: PlannerDay; shift: PlannerShift } | null {
+  let best: { day: PlannerDay; shift: PlannerShift; load: number } | null = null;
+  for (const day of PLANNER_DAYS) {
+    for (const shift of activeShifts) {
+      const key = slotValue(day, shift);
+      const load = slotLoads.get(key) ?? 0;
+      if (!best || load < best.load) {
+        best = { day, shift, load };
+      }
+    }
+  }
+  return best ? { day: best.day, shift: best.shift } : null;
 }
 
 function topConflictLabel(conflict: PlannerStationConflict): string {
@@ -229,15 +241,29 @@ function getWeekSplit(data: DataBundle, week: string) {
     dkse,
     de,
     benl,
+    benlFriday: benl,
     deFriday,
     deSunday: Math.max(0, de - deFriday)
   };
+}
+
+function planningRoleTone(role: "factory" | "hybrid" | "supplied" | undefined): string {
+  if (role === "hybrid") return "bg-sky-50 text-sky-800 ring-sky-200";
+  if (role === "supplied") return "bg-amber-50 text-amber-800 ring-amber-200";
+  return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+}
+
+function planningRoleLabel(role: "factory" | "hybrid" | "supplied" | undefined): string {
+  if (role === "hybrid") return "Hybrid";
+  if (role === "supplied") return "Zulieferung";
+  return "Eigene Produktion";
 }
 
 export function PlanningView(
   { data, week, locale, upliftPercent = 0, selectedRecipe, onSelectRecipe }:
   { data: DataBundle; week: string; locale: UiLocale; upliftPercent?: number; selectedRecipe?: string | null; onSelectRecipe?: (recipeCode: string) => void }
 ) {
+  const { data: planningOasis } = usePlanningOasisData();
   const [storage, setStorage] = useState(() => loadPlannerStorage());
   const [newScenarioName, setNewScenarioName] = useState("");
   const [stationDeviceCounts] = useState(() => loadStationDeviceCounts());
@@ -248,8 +274,6 @@ export function PlanningView(
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const [dragOverUnplanned, setDragOverUnplanned] = useState(false);
   const [expandedRecipes, setExpandedRecipes] = useState<Set<string>>(new Set());
-  const dayColumnRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
   useEffect(() => {
     savePlannerStorage(storage);
   }, [storage]);
@@ -280,6 +304,8 @@ export function PlanningView(
     });
   }, [data, week, scenario, activeShifts, portionMultiplier, stationDeviceCounts, stationPools, uiSettings.showAutoSuggestions]);
   const split = useMemo(() => getWeekSplit(data, week), [data, week]);
+  const batchSplitPlan = useMemo(() => computeBatchSplitPlan(data, week), [data, week]);
+  const weekIntel = planningOasis?.weeks[week] ?? null;
   const shelfRisk = useMemo(() => {
     const seen = new Set<string>();
     const rows: ShelfLifeInfo[] = [];
@@ -316,15 +342,15 @@ export function PlanningView(
     return buckets;
   }, [analysis.recipes]);
 
-  /** Tageszuordnungen mit Start- und Dauer-Minuten für die Timeline. */
-  const timelineByDay = useMemo(() => {
+  /** Wochenboard-Zuordnungen ohne Uhrzeit: nur Tag + Schicht. */
+  const assignmentsByDayShift = useMemo(() => {
     type Tile = {
       key: string;
       code: string;
       subRecipeId?: string;
       name: string;
       activeMin: number;
-      startMin: number;
+      order: number;
       shift: PlannerShift;
       kind: "main" | "sub";
       subCount: number; // für main-tile: Anzahl noch enthaltener Subs
@@ -332,14 +358,13 @@ export function PlanningView(
     const buckets: Record<string, Tile[]> = {};
     for (const recipe of analysis.recipes) {
       if (recipe.assigned && recipe.activeMin > 0) {
-        const start = recipe.assigned.startMin ?? getShiftStartMin(recipe.assigned.shift);
         const remainingSubs = recipe.subRecipes.filter(s => !s.assigned).length;
-        (buckets[recipe.assigned.day] ??= []).push({
+        (buckets[slotValue(recipe.assigned.day, recipe.assigned.shift)] ??= []).push({
           key: recipe.recipeCode,
           code: recipe.recipeCode,
           name: recipe.recipeName,
           activeMin: Math.max(15, recipe.activeMin),
-          startMin: start,
+          order: recipe.assigned.order ?? Number.MAX_SAFE_INTEGER,
           shift: recipe.assigned.shift,
           kind: "main",
           subCount: remainingSubs
@@ -347,21 +372,26 @@ export function PlanningView(
       }
       for (const sub of recipe.subRecipes) {
         if (!sub.assigned) continue;
-        const start = sub.assigned.startMin ?? getShiftStartMin(sub.assigned.shift);
-        (buckets[sub.assigned.day] ??= []).push({
+        (buckets[slotValue(sub.assigned.day, sub.assigned.shift)] ??= []).push({
           key: `${recipe.recipeCode}::${sub.subRecipeId}`,
           code: recipe.recipeCode,
           subRecipeId: sub.subRecipeId,
           name: `${sub.subRecipeName} (${recipe.recipeName})`,
           activeMin: Math.max(15, sub.activeMin),
-          startMin: start,
+          order: sub.assigned.order ?? Number.MAX_SAFE_INTEGER,
           shift: sub.assigned.shift,
           kind: "sub",
           subCount: 0
         });
       }
     }
-    for (const rows of Object.values(buckets)) rows.sort((a, b) => a.startMin - b.startMin);
+    for (const rows of Object.values(buckets)) {
+      rows.sort((a, b) => {
+        if (a.order !== b.order) return a.order - b.order;
+        if (a.kind !== b.kind) return a.kind === "sub" ? -1 : 1;
+        return b.activeMin - a.activeMin || a.name.localeCompare(b.name);
+      });
+    }
     return buckets;
   }, [analysis.recipes]);
 
@@ -469,30 +499,9 @@ export function PlanningView(
     if (!parsed) return;
     const key = parsed.subRecipeId ? `${parsed.recipe.code}::${parsed.subRecipeId}` : parsed.recipe.code;
     const current = scenario.assignments[key];
-    if (current && current.day === day && current.shift === shift && current.startMin === undefined) return;
+    if (current && current.day === day && current.shift === shift) return;
     setStorage(prev => assignRecipe(prev, week, scenario.id, parsed.recipe, {
       day, shift,
-      subRecipeId: parsed.subRecipeId,
-      subRecipeName: parsed.subRecipeName
-    }));
-  }
-
-  /** Drop on a day's timeline at pixel offset → compute startMin (snap to 15 min). */
-  function handleDropOnTimeline(event: React.DragEvent, day: PlannerDay, columnEl: HTMLElement) {
-    event.preventDefault();
-    const parsed = parseDropPayload(event);
-    setDragOverSlot(null);
-    handleDragEnd();
-    if (!parsed) return;
-    const rect = columnEl.getBoundingClientRect();
-    const offsetY = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
-    const minPerPx = DAY_VISIBLE_MIN / rect.height;
-    const rawMin = offsetY * minPerPx;
-    const SNAP = 15;
-    const startMin = Math.max(0, Math.min(DAY_VISIBLE_MIN - SNAP, Math.round(rawMin / SNAP) * SNAP));
-    const shift = getShiftFromStartMin(startMin);
-    setStorage(prev => assignRecipe(prev, week, scenario.id, parsed.recipe, {
-      day, shift, startMin,
       subRecipeId: parsed.subRecipeId,
       subRecipeName: parsed.subRecipeName
     }));
@@ -507,6 +516,226 @@ export function PlanningView(
     setStorage(prev => removeAssignment(prev, week, scenario.id, parsed.recipe.code, parsed.subRecipeId));
   }
 
+  function handleAutoplanRecipe(targetCode: string) {
+    if (activeShifts.length === 0) return;
+    setStorage((prev) => {
+      const weekState = getWeekState(prev, week);
+      const currentScenario = getActiveScenario(prev, week);
+      const analysisNow = analyzePlan(data, week, currentScenario, {
+        portionMultiplier,
+        shiftCapacityMin: DEFAULT_SHIFT_MIN,
+        stationDeviceCounts,
+        stationPools
+      });
+
+      const slotLoads = new Map<string, number>();
+      const slotOrders = new Map<string, number>();
+
+      const registerOrder = (day: PlannerDay, shift: PlannerShift, order?: number) => {
+        const key = slotValue(day, shift);
+        const current = slotOrders.get(key) ?? 0;
+        if (typeof order === "number" && Number.isFinite(order)) {
+          slotOrders.set(key, Math.max(current, Math.round(order)));
+          return;
+        }
+        slotOrders.set(key, current + 1);
+      };
+
+      const nextOrder = (day: PlannerDay, shift: PlannerShift) => {
+        const key = slotValue(day, shift);
+        const value = (slotOrders.get(key) ?? 0) + 1;
+        slotOrders.set(key, value);
+        return value;
+      };
+
+      const addLoad = (day: PlannerDay, shift: PlannerShift) => {
+        const key = slotValue(day, shift);
+        slotLoads.set(key, (slotLoads.get(key) ?? 0) + 1);
+      };
+      // Seed loads with all currently planned items
+      for (const recipe of analysisNow.recipes) {
+        if (recipe.assigned) {
+          addLoad(recipe.assigned.day, recipe.assigned.shift);
+          registerOrder(recipe.assigned.day, recipe.assigned.shift, recipe.assigned.order);
+        }
+        for (const sub of recipe.subRecipes) {
+          if (sub.assigned) {
+            addLoad(sub.assigned.day, sub.assigned.shift);
+            registerOrder(sub.assigned.day, sub.assigned.shift, sub.assigned.order);
+          }
+        }
+      }
+
+      const targetRecipe = analysisNow.recipes.find(r => r.recipeCode === targetCode);
+      if (!targetRecipe) return prev;
+
+      const nextAssignments = { ...currentScenario.assignments };
+
+      // First assign unplanned subs (longest first)
+      const openSubs = targetRecipe.subRecipes
+        .filter(s => !s.assigned && s.activeMin > 0)
+        .sort((a, b) => b.activeMin - a.activeMin);
+      for (const sub of openSubs) {
+        const slot = pickLowestLoadSlot(slotLoads, activeShifts);
+        if (!slot) continue;
+        nextAssignments[assignmentKey(targetCode, sub.subRecipeId)] = {
+          recipeCode: targetCode,
+          subRecipeId: sub.subRecipeId,
+          subRecipeName: sub.subRecipeName,
+          day: slot.day,
+          shift: slot.shift,
+          order: nextOrder(slot.day, slot.shift)
+        };
+        addLoad(slot.day, slot.shift);
+      }
+
+      // Then assign main if unplanned
+      if (!targetRecipe.assigned) {
+        const slot = pickLowestLoadSlot(slotLoads, activeShifts);
+        if (slot) {
+          nextAssignments[assignmentKey(targetCode)] = {
+            recipeCode: targetCode,
+            day: slot.day,
+            shift: slot.shift,
+            order: nextOrder(slot.day, slot.shift)
+          };
+          addLoad(slot.day, slot.shift);
+        }
+      }
+
+      return {
+        ...prev,
+        weeks: {
+          ...prev.weeks,
+          [week]: {
+            ...weekState,
+            scenarios: weekState.scenarios.map((s) =>
+              s.id === currentScenario.id ? { ...s, assignments: nextAssignments } : s
+            )
+          }
+        }
+      };
+    });
+  }
+
+  function handleAutoPlanWeekBoard() {
+    if (activeShifts.length === 0) return;
+    setStorage((prev) => {
+      const weekState = getWeekState(prev, week);
+      const currentScenario = getActiveScenario(prev, week);
+      const analysisNow = analyzePlan(data, week, currentScenario, {
+        portionMultiplier,
+        shiftCapacityMin: DEFAULT_SHIFT_MIN,
+        stationDeviceCounts,
+        stationPools
+      });
+
+      const nextAssignments = { ...currentScenario.assignments };
+      const slotLoads = new Map<string, number>();
+      const slotOrders = new Map<string, number>();
+
+      const registerOrder = (day: PlannerDay, shift: PlannerShift, order?: number) => {
+        const key = slotValue(day, shift);
+        const current = slotOrders.get(key) ?? 0;
+        if (typeof order === "number" && Number.isFinite(order)) {
+          slotOrders.set(key, Math.max(current, Math.round(order)));
+          return;
+        }
+        slotOrders.set(key, current + 1);
+      };
+
+      const nextOrder = (day: PlannerDay, shift: PlannerShift) => {
+        const key = slotValue(day, shift);
+        const value = (slotOrders.get(key) ?? 0) + 1;
+        slotOrders.set(key, value);
+        return value;
+      };
+
+      const addLoad = (day: PlannerDay, shift: PlannerShift) => {
+        const key = slotValue(day, shift);
+        slotLoads.set(key, (slotLoads.get(key) ?? 0) + 1);
+      };
+
+      for (const recipe of analysisNow.recipes) {
+        if (recipe.assigned) {
+          addLoad(recipe.assigned.day, recipe.assigned.shift);
+          registerOrder(recipe.assigned.day, recipe.assigned.shift, recipe.assigned.order);
+        }
+        for (const sub of recipe.subRecipes) {
+          if (!sub.assigned) continue;
+          addLoad(sub.assigned.day, sub.assigned.shift);
+          registerOrder(sub.assigned.day, sub.assigned.shift, sub.assigned.order);
+        }
+      }
+
+      const unassignedSubs = analysisNow.recipes
+        .flatMap((recipe) =>
+          recipe.subRecipes
+            .filter((sub) => !sub.assigned && sub.activeMin > 0)
+            .map((sub) => ({
+              recipeCode: recipe.recipeCode,
+              subRecipeId: sub.subRecipeId,
+              subRecipeName: sub.subRecipeName,
+              activeMin: sub.activeMin
+            }))
+        )
+        .sort((a, b) => b.activeMin - a.activeMin || a.recipeCode.localeCompare(b.recipeCode));
+
+      for (const sub of unassignedSubs) {
+        const slot = pickLowestLoadSlot(slotLoads, activeShifts);
+        if (!slot) continue;
+        nextAssignments[assignmentKey(sub.recipeCode, sub.subRecipeId)] = {
+          recipeCode: sub.recipeCode,
+          subRecipeId: sub.subRecipeId,
+          subRecipeName: sub.subRecipeName,
+          day: slot.day,
+          shift: slot.shift,
+          order: nextOrder(slot.day, slot.shift)
+        };
+        addLoad(slot.day, slot.shift);
+      }
+
+      const refreshedAnalysis = analyzePlan(data, week, {
+        ...currentScenario,
+        assignments: nextAssignments
+      }, {
+        portionMultiplier,
+        shiftCapacityMin: DEFAULT_SHIFT_MIN,
+        stationDeviceCounts,
+        stationPools
+      });
+
+      const unassignedMains = refreshedAnalysis.recipes
+        .filter((recipe) => !recipe.assigned && recipe.activeMin > 0)
+        .sort((a, b) => b.activeMin - a.activeMin || a.recipeCode.localeCompare(b.recipeCode));
+
+      for (const main of unassignedMains) {
+        const slot = pickLowestLoadSlot(slotLoads, activeShifts);
+        if (!slot) continue;
+        nextAssignments[assignmentKey(main.recipeCode)] = {
+          recipeCode: main.recipeCode,
+          day: slot.day,
+          shift: slot.shift,
+          order: nextOrder(slot.day, slot.shift)
+        };
+        addLoad(slot.day, slot.shift);
+      }
+
+      return {
+        ...prev,
+        weeks: {
+          ...prev.weeks,
+          [week]: {
+            ...weekState,
+            scenarios: weekState.scenarios.map((s) =>
+              s.id === currentScenario.id ? { ...s, assignments: nextAssignments } : s
+            )
+          }
+        }
+      };
+    });
+  }
+
   return (
     <div className="space-y-3">
       {/* ── TOP: Wochenboard mit Drag & Drop ──────────────────────────────── */}
@@ -517,6 +746,28 @@ export function PlanningView(
             <p className="text-[11px] text-slate-500 mt-0.5">
               Rezepte oben in Tag/Schicht-Karten ziehen · zwischen Slots verschieben · zurück nach 'Offen' zum Entfernen
             </p>
+            {weekIntel && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {weekIntel.hasTruthData ? (
+                  <>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200">Eigene PDL {fmtNum(weekIntel.factoryPdlPortions)}</span>
+                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800 ring-1 ring-sky-200">Hybrid {fmtNum(weekIntel.hybridPdlPortions)}</span>
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200">Zulieferung {fmtNum(weekIntel.suppliedPdlPortions)}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200">Work Orders {fmtNum(weekIntel.workOrderCount)}</span>
+                    <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-800 ring-1 ring-violet-200">WO Target {fmtNum(weekIntel.totalTargetPortions)}</span>
+                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800 ring-1 ring-sky-200">LinePlating {fmtNum(weekIntel.platingTotal)}</span>
+                  </>
+                )}
+              </div>
+            )}
+            {weekIntel && !weekIntel.hasTruthData && (
+              <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                Für diese KW fehlen aktuell Truth-/PDL-Daten im Export. KET- und LinePlating-Zahlen werden trotzdem angezeigt, PDL bleibt bis zum passenden KW-Export 0.
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 ring-1 ring-slate-200">
@@ -528,6 +779,15 @@ export function PlanningView(
             <span className="rounded-full bg-verden-50 px-2 py-0.5 text-[10px] font-semibold text-verden-700 ring-1 ring-verden-200">
               {shiftPresetShortLabel(locale, activePreset.id)}
             </span>
+            <button
+              className="rounded-lg bg-verden-600 text-white ring-1 ring-verden-700 hover:bg-verden-700 px-3 py-1 text-xs font-semibold"
+              onClick={handleAutoPlanWeekBoard}
+              title={locale === "de"
+                ? "Verplant offene Sub-Meals zuerst nach Dauer (lang -> kurz), danach offene Haupt-Meals."
+                : "Plans open sub-meals first by duration (long -> short), then open main meals."}
+            >
+              {locale === "de" ? "Auto: Meals + Subs" : "Auto: Meals + Subs"}
+            </button>
             <button
               className="rounded-lg bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 px-3 py-1 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
               onClick={() => {
@@ -577,6 +837,7 @@ export function PlanningView(
                 const isExpanded = expandedRecipes.has(recipe.recipeCode);
                 const openSubs = recipe.subRecipes.filter(s => !s.assigned && s.activeMin > 0);
                 const hasMain = !recipe.assigned;
+                const recipeIntel = planningOasis?.recipes[recipe.recipeCode] ?? null;
                 const totalRemaining = (hasMain ? recipe.activeMin : 0)
                   + (recipe.assigned ? 0 : 0); // activeMin already excludes standalone subs
                 return (
@@ -592,32 +853,44 @@ export function PlanningView(
                         onDragEnd={handleDragEnd}
                         onClick={() => onSelectRecipe?.(recipe.recipeCode)}
                         title={hasMain
-                          ? `${recipe.recipeName} · Σ verbleibend ${fmtMin(totalRemaining)}${openSubs.length < recipe.subRecipes.length ? ` (${recipe.subRecipes.length - openSubs.length} Sub bereits geplant)` : ""}`
+                          ? `${recipe.recipeName}${openSubs.length < recipe.subRecipes.length ? ` (${recipe.subRecipes.length - openSubs.length} Sub bereits geplant)` : ""}`
                           : `${recipe.recipeName} · Hauptrezept geplant – nur noch Subs offen`}
                         className={`w-full text-left ${hasMain ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                       >
                         <div className="flex items-center justify-between gap-1">
                           <span className="font-mono text-[10px] text-slate-500">{hasMain ? "⋮⋮" : "✓"} {recipe.recipeCode}</span>
-                          <span className="text-[10px] font-semibold text-slate-700 tabular-nums">{fmtMin(recipe.activeMin)}</span>
+                          <span className="text-[10px] font-semibold text-slate-500">{openSubs.length} Subs offen</span>
                         </div>
                         <div className="text-xs font-medium leading-tight text-slate-800 line-clamp-2">{recipe.recipeName}</div>
+                        <div className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold ring-1 ${planningRoleTone(recipeIntel?.planningRole)}`}>
+                          {planningRoleLabel(recipeIntel?.planningRole)}
+                        </div>
                         <div className="mt-0.5 text-[10px] text-slate-500 truncate">
                           {recipe.topStations.map(s => s.station).join(" · ") || "—"}
                         </div>
                       </button>
-                      {recipe.subRecipes.length > 0 && (
+                      <div className="mt-1 flex gap-1">
                         <button
-                          className="mt-1 w-full text-[10px] font-semibold text-verden-700 hover:text-verden-900 bg-verden-50 hover:bg-verden-100 rounded px-1 py-0.5 ring-1 ring-verden-200"
-                          onClick={() => setExpandedRecipes(prev => {
-                            const next = new Set(prev);
-                            if (next.has(recipe.recipeCode)) next.delete(recipe.recipeCode);
-                            else next.add(recipe.recipeCode);
-                            return next;
-                          })}
+                          className="flex-1 text-[10px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded px-1 py-0.5 ring-1 ring-amber-300"
+                          title={`Dieses Rezept + ${openSubs.length} Sub(s) automatisch verplanen`}
+                          onClick={() => handleAutoplanRecipe(recipe.recipeCode)}
                         >
-                          {isExpanded ? "▾" : "▸"} {openSubs.length}/{recipe.subRecipes.length} {tl(locale, "Sub-Rezepte")}
+                          ⚡ Auto
                         </button>
-                      )}
+                        {recipe.subRecipes.length > 0 && (
+                          <button
+                            className="flex-1 text-[10px] font-semibold text-verden-700 hover:text-verden-900 bg-verden-50 hover:bg-verden-100 rounded px-1 py-0.5 ring-1 ring-verden-200"
+                            onClick={() => setExpandedRecipes(prev => {
+                              const next = new Set(prev);
+                              if (next.has(recipe.recipeCode)) next.delete(recipe.recipeCode);
+                              else next.add(recipe.recipeCode);
+                              return next;
+                            })}
+                          >
+                            {isExpanded ? "▾" : "▸"} {openSubs.length}/{recipe.subRecipes.length} Subs
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {/* Sub-Rezept-Pillen */}
                     {isExpanded && recipe.subRecipes.length > 0 && (
@@ -632,12 +905,12 @@ export function PlanningView(
                               onDragEnd={handleDragEnd}
                               title={isPlanned
                                 ? `${sub.subRecipeName} bereits in ${sub.assigned!.day} ${sub.assigned!.shift} geplant – aus Kalender ziehen zum Entfernen`
-                                : `${sub.subRecipeName} · ${sub.category} · ${fmtMin(sub.activeMin)} – ziehen, um Sub separat zu planen`}
+                                : `${sub.subRecipeName} · ${sub.category} – ziehen, um Sub separat zu planen`}
                               className={`w-full text-left rounded px-1.5 py-1 text-[10px] ring-1 transition-all ${isPlanned ? "bg-emerald-50 ring-emerald-200 text-emerald-800 cursor-not-allowed" : draggingSubId === sub.subRecipeId ? "opacity-40 bg-amber-50 ring-amber-300" : "bg-white ring-slate-200 hover:ring-amber-400 hover:bg-amber-50 cursor-grab active:cursor-grabbing"}`}
                             >
                               <div className="flex items-center justify-between gap-1">
                                 <span className="font-semibold leading-tight line-clamp-1">{isPlanned ? "✓ " : "⋮⋮ "}{sub.subRecipeName}</span>
-                                <span className="font-mono tabular-nums shrink-0">{fmtMin(sub.activeMin)}</span>
+                                <span className="font-mono tabular-nums shrink-0">{sub.category || "Sub"}</span>
                               </div>
                               <div className="text-[9px] text-slate-500 truncate">{sub.category}</div>
                             </button>
@@ -652,111 +925,68 @@ export function PlanningView(
           )}
         </div>
 
-        {/* Tages-Timeline – jede Spalte ist ein voller Tag mit Zeitachse */}
-        <div className="flex gap-2 overflow-x-auto">
-          {/* Zeitachsen-Beschriftung links */}
-          <div className="shrink-0 w-12 pt-7 pb-1">
-            <div className="relative" style={{ height: `${TIMELINE_HEIGHT_PX}px` }}>
-              {Array.from({ length: 9 }).map((_, i) => {
-                const hour = i * 3; // alle 3h: 06,09,12,15,18,21,00,03,06
-                const min = hour * 60;
-                const top = (min / DAY_VISIBLE_MIN) * TIMELINE_HEIGHT_PX;
-                return (
-                  <div key={hour} className="absolute right-1 -translate-y-1/2 text-[10px] font-mono text-slate-400 tabular-nums" style={{ top: `${top}px` }}>
-                    {formatDayMin(min)}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
+        {/* Wochenboard ohne Zeitachse: nur Tag + Schicht + Reihenfolge */}
+        <div className="grid gap-2 overflow-x-auto md:grid-cols-4 xl:grid-cols-7">
           {PLANNER_DAYS.map(day => {
-            const dayItems = timelineByDay[day] ?? [];
-            const isAnyDragOver = dragOverSlot?.startsWith(`${day}__`);
-            const isDragActive = draggingCode !== null;
+            const dayTotal = activeShifts.reduce((sum, shift) => sum + (assignmentsByDayShift[slotValue(day, shift)]?.length ?? 0), 0);
             return (
-              <div key={day} className="flex-1 min-w-[140px]">
-                <div className="text-center text-xs font-bold uppercase tracking-wide text-slate-700 bg-slate-100 rounded-md py-1 mb-1">
-                  {day} <span className="text-[10px] font-normal text-slate-500">· {dayItems.length}</span>
+              <div key={day} className="min-w-[180px] rounded-lg bg-slate-50 ring-1 ring-slate-200 p-1.5">
+                <div className="text-center text-xs font-bold uppercase tracking-wide text-slate-700 bg-white rounded-md py-1 mb-1 ring-1 ring-slate-200">
+                  {day} <span className="text-[10px] font-normal text-slate-500">· {dayTotal}</span>
                 </div>
-                <div
-                  ref={el => { dayColumnRefs.current[day] = el; }}
-                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOverSlot !== `${day}__TL`) setDragOverSlot(`${day}__TL`); }}
-                  onDragLeave={() => { if (dragOverSlot === `${day}__TL`) setDragOverSlot(null); }}
-                  onDrop={e => { const el = dayColumnRefs.current[day]; if (el) handleDropOnTimeline(e, day, el); }}
-                  className={`relative rounded-lg ring-1 transition-all bg-white ${isAnyDragOver ? "ring-2 ring-verden-500 bg-verden-50" : isDragActive ? "ring-dashed ring-slate-300" : "ring-slate-200"}`}
-                  style={{ height: `${TIMELINE_HEIGHT_PX}px` }}
-                >
-                  {/* Schicht-Hintergrundbänder */}
-                  {(["S1", "S2", "S3"] as const).map((shift, idx) => {
-                    const top = (getShiftStartMin(shift) / DAY_VISIBLE_MIN) * TIMELINE_HEIGHT_PX;
-                    const height = (SHIFT_LENGTH_MIN / DAY_VISIBLE_MIN) * TIMELINE_HEIGHT_PX;
-                    const tones = ["bg-emerald-50/40", "bg-amber-50/40", "bg-sky-50/40"];
+                <div className="space-y-1.5">
+                  {activeShifts.map(shift => {
+                    const slot = slotValue(day, shift);
+                    const items = assignmentsByDayShift[slot] ?? [];
+                    const isDragOver = dragOverSlot === slot;
+                    const isDragActive = draggingCode !== null;
                     return (
-                      <div key={shift} className={`absolute inset-x-0 ${tones[idx]} pointer-events-none`} style={{ top: `${top}px`, height: `${height}px` }}>
-                        <div className="text-[9px] font-bold text-slate-400 px-1 pt-0.5">{shift}</div>
+                      <div
+                        key={slot}
+                        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOverSlot !== slot) setDragOverSlot(slot); }}
+                        onDragLeave={() => { if (dragOverSlot === slot) setDragOverSlot(null); }}
+                        onDrop={e => handleDropOnSlot(e, day, shift)}
+                        className={`rounded-md p-1 ring-1 min-h-[74px] transition-all ${isDragOver ? "ring-2 ring-verden-500 bg-verden-50" : isDragActive ? "ring-dashed ring-slate-300 bg-white" : "ring-slate-200 bg-white"}`}
+                      >
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{shift} · {items.length}</div>
+                        <div className="space-y-1">
+                          {items.map(item => {
+                            const isSelected = selectedRecipe === item.code;
+                            const isSub = item.kind === "sub";
+                            const isDragging = draggingCode === item.code && (draggingSubId ?? null) === (item.subRecipeId ?? null);
+                            const recipeIntel = planningOasis?.recipes[item.code] ?? null;
+                            return (
+                              <button
+                                key={item.key}
+                                draggable
+                                onDragStart={e => { e.stopPropagation(); handleDragStart(e, item.code, item.subRecipeId); }}
+                                onDragEnd={handleDragEnd}
+                                onClick={() => onSelectRecipe?.(item.code)}
+                                title={`${item.name} · ${isSub ? "Sub-Rezept" : `Hauptkachel (${item.subCount} Sub${item.subCount === 1 ? "" : "s"} enthalten)`} · ${fmtMin(item.activeMin)}`}
+                                className={`w-full rounded-md px-1.5 py-1 text-left ring-1 cursor-grab active:cursor-grabbing transition-opacity ${isDragging ? "opacity-30" : ""} ${isSub
+                                  ? (isSelected ? "bg-amber-600 text-white ring-amber-700 shadow" : "bg-amber-50 ring-amber-300 hover:ring-amber-500 text-amber-900")
+                                  : (isSelected ? "bg-verden-600 text-white ring-verden-700 shadow" : "bg-white ring-verden-300 hover:ring-verden-500 text-slate-800")}`}
+                              >
+                                <div className="flex items-center justify-between gap-1 leading-none">
+                                  <span className="font-mono text-[9px] opacity-70">#{item.order} · {isSub ? "▸" : "⋮⋮"} {item.code}</span>
+                                  <span className="text-[9px] font-mono opacity-70">{fmtMin(item.activeMin)}</span>
+                                </div>
+                                <div className="text-[10px] font-semibold leading-tight mt-0.5 line-clamp-2">{item.name}</div>
+                                <div className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold ring-1 ${planningRoleTone(recipeIntel?.planningRole)}`}>
+                                  {planningRoleLabel(recipeIntel?.planningRole)}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {items.length === 0 && (
+                          <div className="text-[10px] text-slate-300 text-center py-2 pointer-events-none">
+                            {isDragOver ? "hier ablegen" : "leer"}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
-                  {/* Stunden-Gitterlinien */}
-                  {Array.from({ length: 8 }).map((_, i) => {
-                    const min = (i + 1) * 3 * 60;
-                    const top = (min / DAY_VISIBLE_MIN) * TIMELINE_HEIGHT_PX;
-                    return <div key={i} className="absolute inset-x-0 border-t border-dashed border-slate-200 pointer-events-none" style={{ top: `${top}px` }} />;
-                  })}
-
-                  {/* Rezept-/Sub-Kacheln absolut positioniert */}
-                  {dayItems.map(item => {
-                    const top = (item.startMin / DAY_VISIBLE_MIN) * TIMELINE_HEIGHT_PX;
-                    const heightRaw = (item.activeMin / DAY_VISIBLE_MIN) * TIMELINE_HEIGHT_PX;
-                    const height = Math.max(28, heightRaw);
-                    const isSelected = selectedRecipe === item.code;
-                    const isSub = item.kind === "sub";
-                    const isDragging = draggingCode === item.code && (draggingSubId ?? null) === (item.subRecipeId ?? null);
-                    return (
-                      <button
-                        key={item.key}
-                        draggable
-                        onDragStart={e => { e.stopPropagation(); handleDragStart(e, item.code, item.subRecipeId); }}
-                        onDragEnd={handleDragEnd}
-                        onClick={() => onSelectRecipe?.(item.code)}
-                        title={`${item.name} · ${isSub ? "Sub-Rezept" : `Hauptkachel (${item.subCount} Sub${item.subCount === 1 ? "" : "s"} enthalten)`} · ${fmtMin(item.activeMin)} · Start ${formatDayMin(item.startMin)}`}
-                        className={`absolute rounded-md px-1.5 py-1 text-left ring-1 cursor-grab active:cursor-grabbing transition-opacity overflow-hidden ${isDragging ? "opacity-30" : ""} ${isSub
-                          ? (isSelected ? "bg-amber-600 text-white ring-amber-700 z-10 shadow-lg" : "bg-amber-50 ring-amber-400 hover:ring-amber-600 hover:shadow-md text-amber-900")
-                          : (isSelected ? "bg-verden-600 text-white ring-verden-700 z-10 shadow-lg" : "bg-white ring-verden-300 hover:ring-verden-500 hover:shadow-md text-slate-800")}`}
-                        style={{
-                          top: `${top}px`,
-                          height: `${height}px`,
-                          // Subs etwas eingerückt, damit man sie visuell von Mains unterscheiden kann
-                          left: isSub ? "12px" : "4px",
-                          right: isSub ? "4px" : "4px"
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-1 leading-none">
-                          <span className="font-mono text-[9px] opacity-70">{isSub ? "▸" : "⋮⋮"} {item.code}</span>
-                          <span className="text-[9px] font-mono opacity-70">{formatDayMin(item.startMin)}</span>
-                        </div>
-                        <div className="text-[10px] font-semibold leading-tight mt-0.5 line-clamp-2">{item.name}</div>
-                        {height >= 50 && (
-                          <div className="text-[9px] opacity-70 mt-0.5">
-                            {fmtMin(item.activeMin)}{!isSub && item.subCount > 0 ? ` · ${item.subCount} Subs inkl.` : ""}
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-
-                  {/* Leer-Hint */}
-                  {dayItems.length === 0 && !isAnyDragOver && (
-                    <div className="absolute inset-0 flex items-center justify-center text-[10px] text-slate-300 pointer-events-none">
-                      {isDragActive ? "hier ablegen" : "leer"}
-                    </div>
-                  )}
-                  {isAnyDragOver && (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-verden-700 pointer-events-none">
-                      ablegen - Uhrzeit ergibt sich aus Position
-                    </div>
-                  )}
                 </div>
               </div>
             );
@@ -934,33 +1164,133 @@ export function PlanningView(
 
       <div className="card p-4">
         <div className="flex items-center justify-between gap-2 mb-3">
-          <h3 className="text-sm font-semibold text-slate-700">{tl(locale, "Wochenrhythmus Donnerstag bis Sonntag")}</h3>
+          <h3 className="text-sm font-semibold text-slate-700">{tl(locale, "Wochenrhythmus Montag bis Sonntag")}</h3>
           <span className="text-xs text-slate-500">{shiftPresetShortLabel(locale, activePreset.id)} {locale === "de" ? "aktiv" : locale === "nl" ? "actief" : "active"} · {activeShiftSummary}</span>
         </div>
-        <div className="grid md:grid-cols-4 gap-3 text-sm">
+        <div className="text-[11px] text-slate-500 mb-2">
+          {locale === "de"
+            ? "Backward-Plan: Plating Fr (DK/SE + BENL + DE Split 1) und So (DE Split 2). Subrezepte werden rueckwaerts ueber Lead-Zeit eingeplant. MHD: Fisch 9 Tage, sonst 13 Tage."
+            : locale === "nl"
+              ? "Backward-plan: plating Vr (DK/SE + BENL + DE Split 1) en Zo (DE Split 2). Sub-recepten via lead time rugwaarts. THT: vis 9 d, anders 13 d."
+              : "Backward plan: plating Fri (DK/SE + BENL + DE Split 1) and Sun (DE Split 2). Sub-recipes scheduled backwards by lead time. Shelf life: fish 9d, else 13d."}
+        </div>
+        <div className="grid md:grid-cols-7 gap-2 text-sm">
+          <div className="rounded-xl bg-amber-50 ring-1 ring-amber-200 p-3">
+            <div className="text-[10px] uppercase tracking-wide text-amber-700">Mo · S1</div>
+            <div className="mt-1 font-semibold">Inbound KW-1</div>
+            <div className="mt-1 text-[11px] text-slate-700">Rohwarenannahme &amp; Quality-Gate fuer die laufende KW.</div>
+            <div className="mt-1 text-[11px] text-slate-600">Lange Vorlaeufe: Brining, Curing, Marinade ueber Nacht.</div>
+          </div>
+          <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-3">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500">Di · S1</div>
+            <div className="mt-1 font-semibold">Subrezepte L3</div>
+            <div className="mt-1 text-[11px] text-slate-600">Saucen, Bruehen, Slow-Cook, Butter-Family. Liquide in Schalen vorbereiten.</div>
+          </div>
+          <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-3">
+            <div className="text-[10px] uppercase tracking-wide text-slate-500">Mi · S1</div>
+            <div className="mt-1 font-semibold">Subrezepte L2</div>
+            <div className="mt-1 text-[11px] text-slate-600">Blast-Chiller, chilled Hold, Portionierung mit Vorlauf.</div>
+          </div>
           <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-3">
             <div className="text-[10px] uppercase tracking-wide text-slate-500">Do · S1</div>
-            <div className="mt-1 font-semibold">Wochenstart Produktion</div>
-            <div className="mt-1 text-xs text-slate-600">Alle Prep-/Chiller-Teile für Freitag nach vorne ziehen.</div>
+            <div className="mt-1 font-semibold">Wochenstart Plating-Prep</div>
+            <div className="mt-1 text-[11px] text-slate-600">Vortags-Prep fuer Fr (Cutting, chilled Prep, Hot-Cook-Setup).</div>
           </div>
           <div className="rounded-xl bg-verden-50 ring-1 ring-verden-200 p-3">
             <div className="text-[10px] uppercase tracking-wide text-verden-700">Fr · S1</div>
-            <div className="mt-1 font-semibold">Fulfillment 1</div>
+            <div className="mt-1 font-semibold">Plating + Fulfillment 1</div>
             <div className="mt-1 text-xs text-slate-700">DK/SE komplett: <b>{fmtNum(split.dkse)}</b></div>
+            <div className="text-xs text-slate-700">BENL komplett: <b>{fmtNum(split.benlFriday)}</b></div>
             <div className="text-xs text-slate-700">DE Split 1: <b>{fmtNum(split.deFriday)}</b></div>
           </div>
-          <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-slate-500">Sa · S1</div>
-            <div className="mt-1 font-semibold">Vorproduktion Sonntag</div>
-            <div className="mt-1 text-xs text-slate-600">Restliche Deutschland-Mengen fuer Sonntag vorbereiten.</div>
+          <div className="rounded-xl bg-rose-50 ring-1 ring-rose-200 p-3 relative">
+            <div className="text-[10px] uppercase tracking-wide text-rose-600">Sa</div>
+            <div className="mt-1 font-semibold text-rose-700">Kueche nicht besetzt</div>
+            <div className="mt-1 text-[11px] text-rose-700/80">Keine Produktion. Vorprod fuer So muss spaetestens Fr abgeschlossen sein.</div>
+            <span className="absolute top-2 right-2 pill bg-rose-100 text-rose-700">geschlossen</span>
           </div>
-          <div className="rounded-xl bg-blue-50 ring-1 ring-blue-200 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-blue-700">So · S1</div>
-            <div className="mt-1 font-semibold">Fulfillment 2</div>
+          <div className="rounded-xl bg-blue-50 ring-1 ring-blue-200 p-3 relative">
+            <div className="text-[10px] uppercase tracking-wide text-blue-700">So</div>
+            <div className="mt-1 font-semibold">Fulfillment 2 (nur Versand)</div>
             <div className="mt-1 text-xs text-slate-700">DE Split 2: <b>{fmtNum(split.deSunday)}</b></div>
-            {split.benl > 0 && <div className="mt-1 text-xs text-slate-600">BENL: <b>{fmtNum(split.benl)}</b> ohne festen Packsplit im Modell.</div>}
+            <div className="mt-1 text-[11px] text-slate-600">Kueche zu — Plating-Ware kommt aus Fr-Vorprod (gekuehlt gehalten).</div>
+            <span className="absolute top-2 right-2 pill bg-rose-100 text-rose-700">Kueche zu</span>
           </div>
         </div>
+      </div>
+
+      <div className="card p-4">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="text-sm font-semibold text-slate-700">Batch-Split nach MHD &amp; Fulfillment-Tag</h3>
+          <span className="text-[11px] text-slate-500">Kunde: 7 Tage Rest · Fisch MHD 9d, sonst 13d</span>
+        </div>
+        <div className="text-[11px] text-slate-500 mb-3">
+          Sa &amp; So ist die Kueche in Verden nicht besetzt — produziert wird ausschliesslich Mo–Fr.
+          Wenn DE am Sonntag gefulfillt wird, muss dieselbe SKU oft auf zwei Produktionstage gesplittet
+          werden, damit beim Kunden noch 7 Tage Rest-MHD ankommen. Die Empfehlung unten zeigt pro Rezept
+          die zwei Chargen mit Fenster und empfohlenem Produktionstag (immer Mo–Fr).
+        </div>
+        {batchSplitPlan.length === 0 ? (
+          <div className="rounded-lg bg-slate-50 ring-1 ring-slate-200 px-3 py-2 text-xs text-slate-500">
+            Keine Rezepte mit Volumen in dieser KW.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-slate-500">
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-1.5 pr-2">Rezept</th>
+                  <th className="text-left py-1.5 pr-2">MHD</th>
+                  <th className="text-left py-1.5 pr-2">Charge</th>
+                  <th className="text-right py-1.5 pr-2">Portionen</th>
+                  <th className="text-left py-1.5 pr-2">Fenster</th>
+                  <th className="text-left py-1.5 pr-2">Empfohlen</th>
+                  <th className="text-left py-1.5 pr-2">Begruendung</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batchSplitPlan.slice(0, 30).map(plan => plan.batches.map((batch, idx) => (
+                  <tr
+                    key={`${plan.recipeCode}-${batch.fulfillmentDay}`}
+                    className={`border-b border-slate-100 ${plan.batches.length > 1 ? "bg-amber-50/40" : ""}`}
+                  >
+                    {idx === 0 ? (
+                      <td className="py-1.5 pr-2 align-top" rowSpan={plan.batches.length}>
+                        <div className="font-mono font-semibold text-slate-800">{plan.recipeCode}</div>
+                        <div className="text-[11px] text-slate-500">{plan.recipeName}</div>
+                        {plan.batches.length > 1 && (
+                          <span className="pill bg-amber-100 text-amber-800 mt-1">Split-Pflicht</span>
+                        )}
+                      </td>
+                    ) : null}
+                    {idx === 0 ? (
+                      <td className="py-1.5 pr-2 align-top" rowSpan={plan.batches.length}>
+                        <span className={`pill ${plan.isSeafood ? "bg-cyan-100 text-cyan-800" : "bg-slate-100 text-slate-700"}`}>
+                          {plan.isSeafood ? "Fisch · 9d" : "Standard · 13d"}
+                        </span>
+                      </td>
+                    ) : null}
+                    <td className="py-1.5 pr-2">
+                      <div className="font-semibold text-slate-800">{batch.fulfillmentDay}</div>
+                      <div className="text-[10px] text-slate-500">{batch.fulfillmentLabel}</div>
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums font-semibold">{fmtNum(batch.portions)}</td>
+                    <td className="py-1.5 pr-2">{batch.earliestProductionDay}–{batch.latestProductionDay}</td>
+                    <td className="py-1.5 pr-2">
+                      <span className="pill bg-emerald-100 text-emerald-800">{batch.recommendedProductionDay}</span>
+                    </td>
+                    <td className="py-1.5 pr-2 text-[11px] text-slate-600">{batch.reason}</td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+            {batchSplitPlan.length > 30 && (
+              <div className="mt-2 text-[11px] text-slate-500">
+                … {batchSplitPlan.length - 30} weitere Rezepte ohne Splitanforderung ausgeblendet.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="card p-4">

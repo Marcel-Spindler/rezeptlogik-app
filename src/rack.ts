@@ -17,6 +17,9 @@ export type RackEntry = {
   gramage: string;
   sort: number;
   source: "rackfile" | "multiline" | "manual";
+  /** Optionale Etage im Pickface: 1 = unten, 2 = mitte, 3 = oben.
+   *  Wird vom Rack-v2-Auto-Fill gesetzt; legacy Quellen lassen sie undefined. */
+  tier?: 1 | 2 | 3;
 };
 
 export type RackValidationIssue = {
@@ -326,10 +329,10 @@ export function validateRackPlan(entries: RackEntry[], options?: { pdlIds?: Set<
     if (bucket.length < 2) continue;
     const onlyIce = bucket.every((entry) => deriveEntryKind(entry) === "ice");
     if (onlyIce) {
-      issues.push({ severity: "info", message: `Geteilter UniCode für IcePack erlaubt: ${uniCode}` });
-    } else {
-      issues.push({ severity: "error", message: `Duplikat UniCode: ${uniCode}` });
+      // Geteilter UniCode für IcePack ist erlaubt und Standard (z. B. 3er-Eis) – kein Hinweis nötig.
+      continue;
     }
+    issues.push({ severity: "error", message: `Duplikat UniCode: ${uniCode}` });
   }
 
   for (const [slotKey, bucket] of groupedBySlot.entries()) {

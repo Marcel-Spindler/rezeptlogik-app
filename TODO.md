@@ -1,20 +1,11 @@
-och zur verfügung haben# TODO – App What-if Fix + Rack Drag&Drop + UI Cleanup
+# TODO – Rackplaner Fixes (DE)
 
-- [ ] 1) What-if & Diff in App reparieren
-  - `phase2` View korrekt im Main-Render einhängen
-  - Yield-Rechner robust für beide Richtungen (Rohware→Output, Output→Rohware)
-  - Diff-Anzeige stabil und nachvollziehbar
-
-- [ ] 2) Rack: Unplaced-Meals-Pills drag&drop-fähig machen
-  - `draggable` aktivieren
-  - `dragstart` mit `dataTransfer` + bestehendem Handler verdrahten
-  - `dragend` mit bestehendem Handler verdrahten
-
-- [ ] 3) Rack: "Manuelle Planung" Sektion entfernen
-  - komplette Tabelle + Filter-UI entfernen
-  - ungenutzte States/Computed Values bereinigen (`filterText`, `filteredEntries`)
-
-- [ ] 4) Critical-path Validierung (A)
-  - What-if & Diff lokal prüfen
-  - Rack Drag von "Meals ohne Pickplatz" in Slots prüfen
-  - kurzer Reload/Persistenz-Check
+- [ ] Analyse in `src/RackView.tsx` finalisieren und konkrete Edit-Stellen markieren
+- [ ] 3er-Eis-Drag&Drop als Block robust machen (inkl. Relocation-Zielauswahl)
+- [ ] Validierungslogik so anpassen, dass erlaubte 3er-Eis in DE keine Meldung erzeugen
+- [ ] Auto-Planung korrigieren:
+  - [ ] P1 (F28–F36) in DE zuverlässig priorisieren
+  - [ ] Packaging strikt auf Vorzone begrenzen (kein „letzter Slot“)
+- [ ] Drop-Relocation absichern (keine unerlaubten End-/Out-of-zone-Ziele)
+- [ ] TODO-Status aktualisieren
+- [ ] Sanity-Check per Build/Lint ausführen

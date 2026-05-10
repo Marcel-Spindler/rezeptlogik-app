@@ -95,13 +95,13 @@ type PickfaceWindow = {
   area?: "chilled" | "mealkit" | "gifts";
   /** Visueller Abstand (Pixel) vor diesem Pickface in der LineLaneBoard-Darstellung. */
   gapPx?: number;
-  /** Hinweis für den Optimierer: hier dürfen Highrunner-Überläufer rein, falls Platz knapp wird. */
+  /** Hinweis f├╝r den Optimierer: hier d├╝rfen Highrunner-├£berl├ñufer rein, falls Platz knapp wird. */
   highRunnerOverflow?: boolean;
-  /** Pufferzone zwischen zwei Pickern – kein fester Picker, optional zuschaltbar. */
+  /** Pufferzone zwischen zwei Pickern ÔÇô kein fester Picker, optional zuschaltbar. */
   zuschaltbar?: boolean;
-  /** Laufende Nummer des zuschaltbaren Blocks (1–N, fortlaufend über alle Zuschaltbar-Blöcke). */
+  /** Laufende Nummer des zuschaltbaren Blocks (1ÔÇôN, fortlaufend ├╝ber alle Zuschaltbar-Bl├Âcke). */
   blockNumber?: number;
-  /** Physische Wand vor diesem Pickface – wird als dicke massive Säule dargestellt. */
+  /** Physische Wand vor diesem Pickface ÔÇô wird als dicke massive S├ñule dargestellt. */
   wallBefore?: boolean;
 };
 
@@ -138,15 +138,15 @@ function scenarioOptions(market: RackMarket, locale: UiLocale): LineScenario[] {
       },
       {
         id: "primary-4",
-        label: locale === "de" ? "Primär: nur ASL4" : "Primary: ASL4 only",
+        label: locale === "de" ? "Prim├ñr: nur ASL4" : "Primary: ASL4 only",
         lines: ["ASL4"],
-        note: locale === "de" ? "DE läuft komplett auf ASL4." : "Run DE fully on ASL4.",
+        note: locale === "de" ? "DE l├ñuft komplett auf ASL4." : "Run DE fully on ASL4.",
       },
       {
         id: "backup-3",
         label: locale === "de" ? "Backup: nur ASL3" : "Backup: ASL3 only",
         lines: ["ASL3"],
-        note: locale === "de" ? "Schneller Fallback wenn ASL4 ausfällt." : "Fast fallback if ASL4 fails.",
+        note: locale === "de" ? "Schneller Fallback wenn ASL4 ausf├ñllt." : "Fast fallback if ASL4 fails.",
       },
     ];
   }
@@ -160,15 +160,15 @@ function scenarioOptions(market: RackMarket, locale: UiLocale): LineScenario[] {
     },
     {
       id: "primary-5",
-      label: locale === "de" ? "Primär: nur ASL5" : "Primary: ASL5 only",
+      label: locale === "de" ? "Prim├ñr: nur ASL5" : "Primary: ASL5 only",
       lines: ["ASL5"],
-      note: locale === "de" ? "Nordics läuft komplett auf ASL5." : "Run Nordics fully on ASL5.",
+      note: locale === "de" ? "Nordics l├ñuft komplett auf ASL5." : "Run Nordics fully on ASL5.",
     },
     {
       id: "backup-1",
       label: locale === "de" ? "Backup: nur ASL1" : "Backup: ASL1 only",
       lines: ["ASL1"],
-      note: locale === "de" ? "Schneller Fallback wenn ASL5 ausfällt." : "Fast fallback if ASL5 fails.",
+      note: locale === "de" ? "Schneller Fallback wenn ASL5 ausf├ñllt." : "Fast fallback if ASL5 fails.",
     },
   ];
 }
@@ -352,9 +352,9 @@ function blueprintHeaderSegments(market: RackMarket, locale: UiLocale) {
   }
 
   return {
-    title: locale === "de" ? "Nordics (Dänemark/Schweden)" : "Nordics (Denmark/Sweden)",
+    title: locale === "de" ? "Nordics (D├ñnemark/Schweden)" : "Nordics (Denmark/Sweden)",
     lanes: [
-      { label: locale === "de" ? "Nordics (Dänemark/Schweden)" : "Nordics (Denmark/Sweden)", span: 22, tone: "bg-amber-50 text-amber-950 ring-amber-200" },
+      { label: locale === "de" ? "Nordics (D├ñnemark/Schweden)" : "Nordics (Denmark/Sweden)", span: 22, tone: "bg-amber-50 text-amber-950 ring-amber-200" },
     ],
     roles: [
       { label: locale === "de" ? "1 Box-Aufsteller" : "1 box setter", span: 3 },
@@ -445,8 +445,8 @@ function areaZoneTemplates(market: RackMarket, locale: UiLocale): AreaZoneTempla
       {
         id: "chilled",
         label: locale === "de" ? "Chilled Area" : "Chilled Area",
-        subtitle: locale === "de" ? "Liner/Box-Bestückung und Meal-Vorstufe" : "Liner/box staging and meal pre-stage",
-        note: locale === "de" ? "Mittelfeld für Materialfluss und Vorbereitungen." : "Mid section for material flow and staging.",
+        subtitle: locale === "de" ? "Liner/Box-Best├╝ckung und Meal-Vorstufe" : "Liner/box staging and meal pre-stage",
+        note: locale === "de" ? "Mittelfeld f├╝r Materialfluss und Vorbereitungen." : "Mid section for material flow and staging.",
         spanClass: "md:col-span-4",
         shell: "from-sky-200 via-indigo-100 to-white",
         border: "border-sky-300",
@@ -456,7 +456,7 @@ function areaZoneTemplates(market: RackMarket, locale: UiLocale): AreaZoneTempla
         id: "mealkit",
         label: locale === "de" ? "Pick & Pack Area" : "Pick & Pack Area",
         subtitle: locale === "de" ? "Waage, Pack-Out und EOL rechts" : "Scale, pack-out and EOL on the right",
-        note: locale === "de" ? "Rechte Seite für Aussteuerung, Pack-Out und EOL. (Keine Mealkits mehr.)" : "Right side for output, pack-out and EOL. (No mealkits.)",
+        note: locale === "de" ? "Rechte Seite f├╝r Aussteuerung, Pack-Out und EOL. (Keine Mealkits mehr.)" : "Right side for output, pack-out and EOL. (No mealkits.)",
         spanClass: "md:col-span-5",
         shell: "from-emerald-200 via-lime-100 to-white",
         border: "border-emerald-300",
@@ -479,8 +479,8 @@ function areaZoneTemplates(market: RackMarket, locale: UiLocale): AreaZoneTempla
     {
       id: "chilled",
       label: locale === "de" ? "Chilled Area" : "Chilled Area",
-      subtitle: locale === "de" ? "Bestückung und Meal-Vorstufe" : "Staging and meal pre-stage",
-      note: locale === "de" ? "Mittlerer Korridor für gekühlte Vorstufen." : "Central corridor for chilled pre-stage work.",
+      subtitle: locale === "de" ? "Best├╝ckung und Meal-Vorstufe" : "Staging and meal pre-stage",
+      note: locale === "de" ? "Mittlerer Korridor f├╝r gek├╝hlte Vorstufen." : "Central corridor for chilled pre-stage work.",
       spanClass: "md:col-span-4",
       shell: "from-sky-200 via-indigo-100 to-white",
       border: "border-sky-300",
@@ -490,7 +490,7 @@ function areaZoneTemplates(market: RackMarket, locale: UiLocale): AreaZoneTempla
       id: "mealkit",
       label: locale === "de" ? "Pick & Pack Area" : "Pick & Pack Area",
       subtitle: locale === "de" ? "Waage, Pack-Out und EOL rechts" : "Scale, pack-out and EOL on the right",
-      note: locale === "de" ? "Rechter Abschnitt – Linie voll in Betrieb, kein Mealkit-Betrieb mehr." : "Right section – line fully active, no mealkit production.",
+      note: locale === "de" ? "Rechter Abschnitt ÔÇô Linie voll in Betrieb, kein Mealkit-Betrieb mehr." : "Right section ÔÇô line fully active, no mealkit production.",
       spanClass: "md:col-span-5",
       shell: "from-emerald-200 via-lime-100 to-white",
       border: "border-emerald-300",
@@ -506,14 +506,14 @@ function hallRoleRails(market: RackMarket, locale: UiLocale): HallRoleRails {
         locale === "de" ? "1 Box-Aufsteller" : "1 box setter",
         locale === "de" ? "2 Liner MA" : "2 liner staff",
         locale === "de" ? "1 Picker" : "1 picker",
-        locale === "de" ? "1 Liner / Box Bestücker" : "1 liner / box loader",
-        locale === "de" ? "2 Bestücker Meals" : "2 meal loaders",
-        locale === "de" ? "1 Läufer PCK und Meals" : "1 PCK and meals runner",
+        locale === "de" ? "1 Liner / Box Best├╝cker" : "1 liner / box loader",
+        locale === "de" ? "2 Best├╝cker Meals" : "2 meal loaders",
+        locale === "de" ? "1 L├ñufer PCK und Meals" : "1 PCK and meals runner",
       ],
       right: [
-        locale === "de" ? "1 Box-Schließer" : "1 box closer",
+        locale === "de" ? "1 Box-Schlie├ƒer" : "1 box closer",
         locale === "de" ? "2 Abpacker" : "2 unpackers",
-        locale === "de" ? "1 EOL Läufer" : "1 EOL runner",
+        locale === "de" ? "1 EOL L├ñufer" : "1 EOL runner",
         locale === "de" ? "1 PS" : "1 PS",
         locale === "de" ? "1. Waage" : "1st scale",
       ],
@@ -524,14 +524,14 @@ function hallRoleRails(market: RackMarket, locale: UiLocale): HallRoleRails {
     left: [
       locale === "de" ? "1 Box-Aufsteller" : "1 box setter",
       locale === "de" ? "1 Picker" : "1 picker",
-      locale === "de" ? "1 Box-Bestücker" : "1 box loader",
-      locale === "de" ? "2 Bestücker Meals" : "2 meal loaders",
-      locale === "de" ? "1 Läufer PCK und Meals" : "1 PCK and meals runner",
+      locale === "de" ? "1 Box-Best├╝cker" : "1 box loader",
+      locale === "de" ? "2 Best├╝cker Meals" : "2 meal loaders",
+      locale === "de" ? "1 L├ñufer PCK und Meals" : "1 PCK and meals runner",
     ],
     right: [
-      locale === "de" ? "1 Box-Schließer" : "1 box closer",
+      locale === "de" ? "1 Box-Schlie├ƒer" : "1 box closer",
       locale === "de" ? "2 Abpacker" : "2 unpackers",
-      locale === "de" ? "1 EOL Läufer" : "1 EOL runner",
+      locale === "de" ? "1 EOL L├ñufer" : "1 EOL runner",
       locale === "de" ? "1 PS" : "1 PS",
       locale === "de" ? "1. Waage" : "1st scale",
     ],
@@ -559,7 +559,7 @@ function rackEntryHoverTitle(entry: RackEntry, slotMeta: Map<string, RackSlotMet
     : kind;
   const titleName = entry.displayName || entry.ingredient || "-";
   return [
-    `${entry.recipe} · ${titleName}`,
+    `${entry.recipe} ┬À ${titleName}`,
     `${locale === "de" ? "Linie" : "Line"}: ${entry.line}`,
     `${locale === "de" ? "Fach" : "Slot"}: ${position} (${tierLabel(tier, locale)})`,
     `${locale === "de" ? "Station" : "Station"}: ${meta?.station || "-"}`,
@@ -568,7 +568,7 @@ function rackEntryHoverTitle(entry: RackEntry, slotMeta: Map<string, RackSlotMet
   ].join("\n");
 }
 
-// A: Farbcodierung nach Eintragstyp für das Rack-Band
+// A: Farbcodierung nach Eintragstyp f├╝r das Rack-Band
 function slotEntryKindColor(slotEntries: RackEntry[]): string {
   if (slotEntries.length === 0) return "bg-slate-100 text-slate-500";
   const counts = new Map<string, number>();
@@ -632,12 +632,12 @@ function rackPositionNumber(position: string) {
 
 function frontTierForSlotNumber(slotNumber: number, market: RackMarket): 1 | 2 | 3 {
   if (slotNumber <= 5) return 1;
-  // Vorzone 2-Tier: Slots 6–12 (beide Märkte identisch)
+  // Vorzone 2-Tier: Slots 6ÔÇô12 (beide M├ñrkte identisch)
   if (slotNumber <= 12) return slotNumber % 2 === 1 ? 1 : 2;
-  // 2-Tier-Pickfächer: DE ab Slot 103, Nordics ab Slot 105
+  // 2-Tier-Pickf├ñcher: DE ab Slot 103, Nordics ab Slot 105
   const twoTierCutoff = market === "de" ? 103 : 105;
   if (slotNumber >= twoTierCutoff) return slotNumber % 2 === 1 ? 1 : 2;
-  // 3-Tier-Zone: Slots 13–102 (DE) / 13–104 (Nordics)
+  // 3-Tier-Zone: Slots 13ÔÇô102 (DE) / 13ÔÇô104 (Nordics)
   const tier = ((slotNumber - 13) % 3 + 3) % 3;
   return (tier + 1) as 1 | 2 | 3;
 }
@@ -646,7 +646,7 @@ function ergonomicTierRank(meta: RackSlotMeta | undefined, flowRackPosition?: st
   if (meta?.preferredPick) return 0; // Greifzone = bestes Pick-Level
   if (meta?.level === 2) return 1;   // Mittelschiene = ergonomisch gut
   if (meta?.level === 3) return 2;   // Unterschiene = akzeptabel
-  if (meta?.level === 1) return 3;   // Oberschiene = ergonomisch schlecht (Überkopf-Griff)
+  if (meta?.level === 1) return 3;   // Oberschiene = ergonomisch schlecht (├£berkopf-Griff)
   if (flowRackPosition && market) {
     const slotNumber = rackPositionNumber(flowRackPosition);
     const tier = frontTierForSlotNumber(slotNumber, market);
@@ -671,59 +671,59 @@ function articleZoneTarget(entry: RackEntry) {
 function pickfaceWindowsForMarket(market: RackMarket): PickfaceWindow[] {
   if (market === "de") {
     return [
-      // Zuschaltbare Liner-Vorzone (Slots 13–27) → Blöcke 1 & 2.
+      // Zuschaltbare Liner-Vorzone (Slots 13ÔÇô27) ÔåÆ Bl├Âcke 1 & 2.
       { id: "zuschalt-liner-a", min: 13, max: 18, maxTier: 3, area: "chilled", gapPx: 14, zuschaltbar: true, blockNumber: 1 },
       { id: "zuschalt-liner-b", min: 19, max: 27, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 2 },
-      // Chilled Area – 3 Ebenen, jeder Picker eigenständig.
+      // Chilled Area ÔÇô 3 Ebenen, jeder Picker eigenst├ñndig.
       { id: "p1", min: 28, max: 36, pickerNumber: 1, maxTier: 3, area: "chilled", gapPx: 18 },
-      // Zuschaltbare Pufferzonen zwischen P1 und P2 (Slots 37–54) → Blöcke 3 & 4.
+      // Zuschaltbare Pufferzonen zwischen P1 und P2 (Slots 37ÔÇô54) ÔåÆ Bl├Âcke 3 & 4.
       { id: "zuschalt-p1p2-a", min: 37, max: 45, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 3 },
       { id: "zuschalt-p1p2-b", min: 46, max: 54, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 4 },
       { id: "p2", min: 55, max: 63, pickerNumber: 2, maxTier: 3, area: "chilled", gapPx: 18 },
-      // Zuschaltbare Pufferzonen zwischen P2 und P3 (Slots 64–84) → Blöcke 5, 6 & 7.
+      // Zuschaltbare Pufferzonen zwischen P2 und P3 (Slots 64ÔÇô84) ÔåÆ Bl├Âcke 5, 6 & 7.
       { id: "zuschalt-p2p3-a", min: 64, max: 72, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 5 },
       { id: "zuschalt-p2p3-b", min: 73, max: 78, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 6 },
       { id: "zuschalt-p2p3-c", min: 79, max: 84, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 7 },
-      // Picker 3: kleineres Fenster – darf bei Bedarf 1–2 Highrunner aufnehmen.
+      // Picker 3: kleineres Fenster ÔÇô darf bei Bedarf 1ÔÇô2 Highrunner aufnehmen.
       { id: "p3", min: 85, max: 90, pickerNumber: 3, maxTier: 3, area: "chilled", gapPx: 18, highRunnerOverflow: true },
-      // Physische Trennung Chilled → Mealkit.
+      // Physische Trennung Chilled ÔåÆ Mealkit.
       { id: "p4", min: 91, max: 102, pickerNumber: 4, maxTier: 3, area: "mealkit", gapPx: 28, wallBefore: true },
-      // Mealkit-Bereich Picker 5–8: nur 2 Ebenen (Tier 1 + Tier 2, keine Oberschiene).
+      // Mealkit-Bereich Picker 5ÔÇô8: nur 2 Ebenen (Tier 1 + Tier 2, keine Oberschiene).
       { id: "p5", min: 103, max: 112, pickerNumber: 5, maxTier: 2, area: "mealkit", gapPx: 18 },
-      // Zuschaltbarer Block 8 (Slots 113–120) zwischen P5 und P6.
+      // Zuschaltbarer Block 8 (Slots 113ÔÇô120) zwischen P5 und P6.
       { id: "zuschalt-p5p6", min: 113, max: 120, maxTier: 2, area: "mealkit", gapPx: 12, zuschaltbar: true, blockNumber: 8 },
       { id: "p6", min: 121, max: 128, pickerNumber: 6, maxTier: 2, area: "mealkit", gapPx: 12 },
-      // Picker 7–8: Gifts / Flyer / Eis – hinterer Bereich, 2 Ebenen.
+      // Picker 7ÔÇô8: Gifts / Flyer / Eis ÔÇô hinterer Bereich, 2 Ebenen.
       { id: "p7", min: 129, max: 136, pickerNumber: 7, maxTier: 2, area: "gifts", gapPx: 28 },
       { id: "p8", min: 137, max: 144, pickerNumber: 8, maxTier: 2, area: "gifts", gapPx: 18 },
     ];
   }
 
   // Nordics: 7 Picker + 7 zuschaltbare Pufferzonen = 14 Windows.
-  // Gleiche Struktur wie DE – Liner-Vorzone + Picker + Zuschaltbar-Buffer.
+  // Gleiche Struktur wie DE ÔÇô Liner-Vorzone + Picker + Zuschaltbar-Buffer.
   return [
-    // Zuschaltbare Liner-Vorzone (Slots 13–27) → Blöcke 1 & 2.
+    // Zuschaltbare Liner-Vorzone (Slots 13ÔÇô27) ÔåÆ Bl├Âcke 1 & 2.
     { id: "zuschalt-liner-a", min: 13, max: 18, maxTier: 3, area: "chilled", gapPx: 14, zuschaltbar: true, blockNumber: 1 },
     { id: "zuschalt-liner-b", min: 19, max: 27, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 2 },
-    // Chilled Area – 3 Ebenen.
+    // Chilled Area ÔÇô 3 Ebenen.
     { id: "p1", min: 28, max: 36, pickerNumber: 1, maxTier: 3, area: "chilled", gapPx: 18 },
-    // Zuschaltbare Pufferzonen zwischen P1 und P2 (Slots 37–54) → Blöcke 3 & 4.
+    // Zuschaltbare Pufferzonen zwischen P1 und P2 (Slots 37ÔÇô54) ÔåÆ Bl├Âcke 3 & 4.
     { id: "zuschalt-p1p2-a", min: 37, max: 45, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 3 },
     { id: "zuschalt-p1p2-b", min: 46, max: 54, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 4 },
     { id: "p2", min: 55, max: 63, pickerNumber: 2, maxTier: 3, area: "chilled", gapPx: 18 },
-    // Zuschaltbare Pufferzonen zwischen P2 und P3 (Slots 64–84) → Blöcke 5 & 6.
+    // Zuschaltbare Pufferzonen zwischen P2 und P3 (Slots 64ÔÇô84) ÔåÆ Bl├Âcke 5 & 6.
     { id: "zuschalt-p2p3-a", min: 64, max: 72, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 5 },
     { id: "zuschalt-p2p3-b", min: 73, max: 84, maxTier: 3, area: "chilled", gapPx: 12, zuschaltbar: true, blockNumber: 6 },
-    // Picker 3: etwas breiter als in DE – übernimmt bei Bedarf Highrunner-Overflow.
+    // Picker 3: etwas breiter als in DE ÔÇô ├╝bernimmt bei Bedarf Highrunner-Overflow.
     { id: "p3", min: 85, max: 93, pickerNumber: 3, maxTier: 3, area: "chilled", gapPx: 18, highRunnerOverflow: true },
-    // Physische Trennung Chilled → Mealkit.
+    // Physische Trennung Chilled ÔåÆ Mealkit.
     { id: "p4", min: 94, max: 104, pickerNumber: 4, maxTier: 3, area: "mealkit", gapPx: 28, wallBefore: true },
-    // Mealkit-Bereich: nur 2 Ebenen (twoTierCutoff = 105 für Nordics).
+    // Mealkit-Bereich: nur 2 Ebenen (twoTierCutoff = 105 f├╝r Nordics).
     { id: "p5", min: 105, max: 112, pickerNumber: 5, maxTier: 2, area: "mealkit", gapPx: 18 },
-    // Zuschaltbarer Block 7 (Slots 113–118) zwischen P5 und P6.
+    // Zuschaltbarer Block 7 (Slots 113ÔÇô118) zwischen P5 und P6.
     { id: "zuschalt-p5p6", min: 113, max: 118, maxTier: 2, area: "mealkit", gapPx: 12, zuschaltbar: true, blockNumber: 7 },
     { id: "p6", min: 119, max: 130, pickerNumber: 6, maxTier: 2, area: "mealkit", gapPx: 12 },
-    // Picker 7: Gifts / Eis – hinterer Bereich, 2 Ebenen.
+    // Picker 7: Gifts / Eis ÔÇô hinterer Bereich, 2 Ebenen.
     { id: "p7", min: 131, max: 144, pickerNumber: 7, maxTier: 2, area: "gifts", gapPx: 28 },
   ];
 }
@@ -775,15 +775,15 @@ function isPositionInPickfaceWindows(position: string, activePickfaceWindows: Pi
 }
 
 function pickfaceStartSlot(market: RackMarket) {
-  // DE: Box-Aufsteller (1–5) + 2 Liner MA (6–13) + zuschaltbare Liner-Vorzone bis Slot 27.
-  // Nordics: Box-Aufsteller (1–5) + Lager-Vorzone (6–27) ohne festen Picker — Pickface startet bei 28.
+  // DE: Box-Aufsteller (1ÔÇô5) + 2 Liner MA (6ÔÇô13) + zuschaltbare Liner-Vorzone bis Slot 27.
+  // Nordics: Box-Aufsteller (1ÔÇô5) + Lager-Vorzone (6ÔÇô27) ohne festen Picker ÔÇö Pickface startet bei 28.
   return market === "de" ? 28 : 28;
 }
 
 /**
- * Liefert alle physisch existierenden Slot-Nummern für den Markt:
+ * Liefert alle physisch existierenden Slot-Nummern f├╝r den Markt:
  * - Vorzone 1 bis (pickfaceStartSlot - 1)
- * - Alle Slots in jedem Pickface-Fenster (auch Lücken zwischen Fenstern bleiben raus)
+ * - Alle Slots in jedem Pickface-Fenster (auch L├╝cken zwischen Fenstern bleiben raus)
  */
 function fullHallSlotsForMarket(market: RackMarket): number[] {
   const set = new Set<number>();
@@ -832,14 +832,14 @@ function pickfacePenaltyForEntry(
   let penalty = 0;
 
   if (isPickfaceManagedEntry(entry, highRunnerRecipes) && !isPositionInPickfaceWindows(candidatePosition, activePickfaceWindows)) {
-    // Wenn ein Pickfenster wegen MA-Reduktion wegfällt, soll dort nicht automatisch neu verplant werden.
+    // Wenn ein Pickfenster wegen MA-Reduktion wegf├ñllt, soll dort nicht automatisch neu verplant werden.
     penalty += 55;
   }
 
   if (market === "de") {
     // Picker 1 (F28-F36): Meal + Eis Kernbereich
     if (kind === "ice") {
-      // Eis: Anfang (P1: F28-36), Mitte (P3: F85-90) ODER Ende (P7/P8: F129-144) – das Nächste gewinnt
+      // Eis: Anfang (P1: F28-36), Mitte (P3: F85-90) ODER Ende (P7/P8: F129-144) ÔÇô das N├ñchste gewinnt
       const iceDEtoStart  = distanceToRange(slotNumber, 28, 36);
       const iceDEtoMiddle = distanceToRange(slotNumber, 85, 90);
       const iceDEtoEnd    = distanceToRange(slotNumber, 129, 144);
@@ -848,14 +848,14 @@ function pickfacePenaltyForEntry(
       penalty += distanceToRange(slotNumber, 28, 36) * 0.12;
     }
 
-    // Picker 2 (F55-F63): nach Möglichkeit primär Meals
+    // Picker 2 (F55-F63): nach M├Âglichkeit prim├ñr Meals
     if (kind === "meal") {
       penalty += distanceToRange(slotNumber, 55, 63) * 0.18;
     } else if (slotNumber >= 55 && slotNumber <= 63) {
       penalty += 1.9;
     }
 
-    // Picker 3 (F85-F90): kompakt, gut für 1-2 Highrunner
+    // Picker 3 (F85-F90): kompakt, gut f├╝r 1-2 Highrunner
     if (isHighRunner) {
       penalty += distanceToRange(slotNumber, 85, 90) * 0.22;
     } else if (slotNumber >= 85 && slotNumber <= 90) {
@@ -870,14 +870,14 @@ function pickfacePenaltyForEntry(
     return penalty;
   }
 
-  // Nordics: ähnliche Logik wie im Hallenbild, aber mit weichen Prioritäten.
-  // Primäre Pickfaces je Picker-Zone.
+  // Nordics: ├ñhnliche Logik wie im Hallenbild, aber mit weichen Priorit├ñten.
+  // Prim├ñre Pickfaces je Picker-Zone.
   const nordicsMealPrimary: Array<[number, number, number]> = [
     [30, 36, 0.16],
     [57, 63, 0.18],
     [87, 90, 0.12],
   ];
-  // Zusätzliche Meal-Zonen im rechten Bereich (leichter gewichtet).
+  // Zus├ñtzliche Meal-Zonen im rechten Bereich (leichter gewichtet).
   const nordicsMealSecondary: Array<[number, number, number]> = [
     [114, 120, 0.08],
     [122, 128, 0.08],
@@ -897,7 +897,7 @@ function pickfacePenaltyForEntry(
     }
     if (Number.isFinite(mealPenalty)) penalty += mealPenalty;
   } else {
-    // In den Meal-Kernzonen möglichst keine Nicht-Meal-Artikel bündeln.
+    // In den Meal-Kernzonen m├Âglichst keine Nicht-Meal-Artikel b├╝ndeln.
     for (const [min, max] of nordicsMealPrimary) {
       if (slotNumber >= min && slotNumber <= max) penalty += 1.6;
     }
@@ -919,14 +919,14 @@ function pickfacePenaltyForEntry(
 }
 
 function thirdTierPenalty(meta: RackSlotMeta | undefined) {
-  // Etage 3 möglichst vermeiden, aber nicht sperren.
+  // Etage 3 m├Âglichst vermeiden, aber nicht sperren.
   return meta?.level === 3 ? 0.35 : 0;
 }
 
 /**
  * Berechnet je Linie und Pickface-Fenster, wie viele Artikel dort bereits liegen.
- * Wird für Picker-Load-Balancing genutzt: jeder aktive Picker soll gleich viele Picks haben.
- * Eis-Pickfaces bekommen einen Reduktionsfaktor (Eis dauert länger → weniger Ziel-Picks).
+ * Wird f├╝r Picker-Load-Balancing genutzt: jeder aktive Picker soll gleich viele Picks haben.
+ * Eis-Pickfaces bekommen einen Reduktionsfaktor (Eis dauert l├ñnger ÔåÆ weniger Ziel-Picks).
  */
 function buildPickerLoadContext(
   entries: RackEntry[],
@@ -949,7 +949,7 @@ function buildPickerLoadContext(
       pickerHasIce.set(key, true);
     }
     if (entryKind === "beverage") {
-      // Smoothies: leicht + schnell → Picker kann mehr verarbeiten
+      // Smoothies: leicht + schnell ÔåÆ Picker kann mehr verarbeiten
       pickerHasSmoothie.set(key, true);
     }
   }
@@ -957,8 +957,8 @@ function buildPickerLoadContext(
   return { pickerPickCount, pickerHasIce, pickerHasSmoothie };
 }
 
-/** Penalty wenn ein Picker-Fenster bereits überdurchschnittlich viele Picks hat.
- *  Eis-Fenster dürfen weniger Picks aufnehmen (Faktor 0.75). */
+/** Penalty wenn ein Picker-Fenster bereits ├╝berdurchschnittlich viele Picks hat.
+ *  Eis-Fenster d├╝rfen weniger Picks aufnehmen (Faktor 0.75). */
 function pickerLoadPenalty(
   candidatePosition: string,
   line: string,
@@ -973,10 +973,10 @@ function pickerLoadPenalty(
   if (!window) return 0;
   const key = `${line}:${window.id}`;
   const count = pickerPickCount.get(key) ?? 0;
-  // Eis: kalt + schwer → 60 % Kapazität; Smoothies: leicht + schnell → 125 % Kapazität
+  // Eis: kalt + schwer ÔåÆ 60 % Kapazit├ñt; Smoothies: leicht + schnell ÔåÆ 125 % Kapazit├ñt
   const capacityFactor = pickerHasIce.get(key) ? 0.60 : pickerHasSmoothie.get(key) ? 1.25 : 1.0;
   const target = avgPicksPerPicker * capacityFactor;
-  // Penalty steigt überproportional wenn der Picker schon über Ziel liegt.
+  // Penalty steigt ├╝berproportional wenn der Picker schon ├╝ber Ziel liegt.
   const overshoot = count - target;
   return overshoot > 0 ? overshoot * 0.4 : 0;
 }
@@ -1131,21 +1131,21 @@ function findBestAutoSlot(
     })
     .filter((candidate) => candidate.occupancy === 0);
 
-  // Eis: nie Oberschiene (level 1). Highrunner-Eis → Mittelschiene (level 2) bevorzugt.
+  // Eis: nie Oberschiene (level 1). Highrunner-Eis ÔåÆ Mittelschiene (level 2) bevorzugt.
   const highRunnerCandidates = (entryIsHighRunner && entryIsIce)
-    // Highrunner-Eis: lieber level 2, dann level 3 — nie level 1
+    // Highrunner-Eis: lieber level 2, dann level 3 ÔÇö nie level 1
     ? candidates.filter((candidate) => (candidate.meta?.level ?? 2) !== 1)
     : entryIsHighRunner
       ? candidates.filter((candidate) => candidate.meta?.preferredPick)
       : entryIsIce
         ? candidates.filter((candidate) => (candidate.meta?.level ?? 2) !== 1)
         : candidates;
-  // Fallback: Highrunner/Eis dürfen NIE auf die Oberschiene (level 1).
+  // Fallback: Highrunner/Eis d├╝rfen NIE auf die Oberschiene (level 1).
   const highRunnerFallback = (entryIsHighRunner || entryIsIce)
     ? candidates.filter((candidate) => (candidate.meta?.level ?? 2) !== 1)
     : candidates;
   const pool = highRunnerCandidates.length > 0 ? highRunnerCandidates : highRunnerFallback;
-  // Harte Regel: Alle Einträge nur in aktiven/freigegebenen Pickfaces platzieren
+  // Harte Regel: Alle Eintr├ñge nur in aktiven/freigegebenen Pickfaces platzieren
   const finalPool = pool.filter((candidate) => isPositionInPickfaceWindows(candidate.position, activePickfaceWindows));
 
   return finalPool.sort((a, b) =>
@@ -1328,15 +1328,15 @@ function rebalanceErgonomicEntries(
         return !lockedStations.has(candidateStation);
       })
       .filter((candidate) => {
-        // Highrunner-Eis → Mittelschiene (level 2) bevorzugt, nie Oberschiene (level 1)
+        // Highrunner-Eis ÔåÆ Mittelschiene (level 2) bevorzugt, nie Oberschiene (level 1)
         if (entryIsHighRunner && entryIsIce) return (candidate.meta?.level ?? 2) !== 1;
         // Highrunner: preferredPick zuerst; Fallback auf non-level-1, wenn alle preferredPick besetzt
         if (entryIsHighRunner) return !!candidate.meta?.preferredPick || (candidate.meta?.level ?? 2) !== 1;
         if (entryIsIce) return (candidate.meta?.level ?? 2) !== 1; // Eis nie auf Oberschiene
-        // Alle anderen: Oberschiene (level 1) als absolutes Last-Resort — nur wenn nichts anderes frei
+        // Alle anderen: Oberschiene (level 1) als absolutes Last-Resort ÔÇö nur wenn nichts anderes frei
         return true;
       });
-    // Für Highrunner: preferredPick-Slots bevorzugen; für alle: level 1 wirklich nur als letzter Ausweg
+    // F├╝r Highrunner: preferredPick-Slots bevorzugen; f├╝r alle: level 1 wirklich nur als letzter Ausweg
     const preferredCandidates = entryIsHighRunner
       ? candidates.filter((c) => c.meta?.preferredPick)
       : null;
@@ -1354,7 +1354,7 @@ function rebalanceErgonomicEntries(
       if (nonL1.length > 0) return nonL1;
       return candidates.filter((c) => c.position === currentPosition || c.occupancy === 0);
     })();
-    // Harte Regel: Alle Einträge nur in aktiven/freigegebenen Pickfaces platzieren
+    // Harte Regel: Alle Eintr├ñge nur in aktiven/freigegebenen Pickfaces platzieren
     const finalCandidatePool = candidatePool.filter((candidate) =>
       candidate.position === currentPosition || isPositionInPickfaceWindows(candidate.position, activePickfaceWindows));
 
@@ -1413,7 +1413,7 @@ function buildOperationalValidation(
     const lineEntries = entries.filter((entry) => entry.line === line);
     if (lineEntries.length === 0) continue;
 
-    // Regel: Highrunner → IMMER Mittelschiene (level 2 / preferredPick), NIE Oberschiene (level 1)
+    // Regel: Highrunner ÔåÆ IMMER Mittelschiene (level 2 / preferredPick), NIE Oberschiene (level 1)
     const highRunnersOnUpperShelf = lineEntries.filter((entry) => {
       if (!highRunnerRecipes.has(entry.recipe)) return false;
       return slotMeta.get(entry.flowRackPosition.toUpperCase())?.level === 1;
@@ -1421,7 +1421,7 @@ function buildOperationalValidation(
     if (highRunnersOnUpperShelf.length > 0) {
       issues.push({
         severity: "error",
-        message: `${line}: ${highRunnersOnUpperShelf.length} Highrunner auf der OBERSCHIENE – das ist nicht erlaubt! (${highRunnersOnUpperShelf.map((entry) => `${entry.recipe}@${entry.flowRackPosition}`).join(", ")}) → bitte auf Mittelschiene verlegen.`,
+        message: `${line}: ${highRunnersOnUpperShelf.length} Highrunner auf der OBERSCHIENE ÔÇô das ist nicht erlaubt! (${highRunnersOnUpperShelf.map((entry) => `${entry.recipe}@${entry.flowRackPosition}`).join(", ")}) ÔåÆ bitte auf Mittelschiene verlegen.`,
       });
     }
     const highRunnersOffMiddle = lineEntries.filter((entry) => {
@@ -1436,7 +1436,7 @@ function buildOperationalValidation(
       });
     }
 
-    // Regel: Eis darf NIE auf die Oberschiene (level 1) – schwerster und ungemütlichster Pick
+    // Regel: Eis darf NIE auf die Oberschiene (level 1) ÔÇô schwerster und ungem├╝tlichster Pick
     const iceOnUpperShelf = lineEntries.filter((entry) => {
       if (deriveEntryKind(entry) !== "ice") return false;
       return slotMeta.get(entry.flowRackPosition.toUpperCase())?.level === 1;
@@ -1444,7 +1444,7 @@ function buildOperationalValidation(
     if (iceOnUpperShelf.length > 0) {
       issues.push({
         severity: "error",
-        message: `${line}: ${iceOnUpperShelf.length} Eis-Artikel auf der OBERSCHIENE – verboten! Eis nur auf Mittel- oder Unterschiene. (${iceOnUpperShelf.map((entry) => `${entry.recipe}@${entry.flowRackPosition}`).join(", ")})`,
+        message: `${line}: ${iceOnUpperShelf.length} Eis-Artikel auf der OBERSCHIENE ÔÇô verboten! Eis nur auf Mittel- oder Unterschiene. (${iceOnUpperShelf.map((entry) => `${entry.recipe}@${entry.flowRackPosition}`).join(", ")})`,
       });
     }
 
@@ -1453,7 +1453,7 @@ function buildOperationalValidation(
     if (topTierEntries.length > 0 && emptyErgonomicSlots > 0) {
       issues.push({
         severity: "info",
-        message: `${line}: ${topTierEntries.length} Einträge liegen auf Etage 3, obwohl ${emptyErgonomicSlots} ergonomisch bessere Plätze frei sind.`,
+        message: `${line}: ${topTierEntries.length} Eintr├ñge liegen auf Etage 3, obwohl ${emptyErgonomicSlots} ergonomisch bessere Pl├ñtze frei sind.`,
       });
     }
 
@@ -1469,7 +1469,7 @@ function buildOperationalValidation(
       if (total > 0 && demand / total >= 0.45) {
         issues.push({
           severity: "warning",
-          message: `${line}: Station ${station} trägt ${Math.round((demand / total) * 100)}% der Picksumme. Prüfe Verteilung und Ergonomie.`,
+          message: `${line}: Station ${station} tr├ñgt ${Math.round((demand / total) * 100)}% der Picksumme. Pr├╝fe Verteilung und Ergonomie.`,
         });
       }
     }
@@ -1501,20 +1501,20 @@ function summarizeSlotViolations(
     const meta = slotMeta.get(position);
     const reasons = slotReasons.get(position) ?? [];
     if (highRunnerRecipes.has(entry.recipe) && meta?.level === 1) {
-      reasons.push("⛔ Highrunner auf Oberschiene – verboten!");
+      reasons.push("Ôøö Highrunner auf Oberschiene ÔÇô verboten!");
     } else if (highRunnerRecipes.has(entry.recipe) && !meta?.preferredPick) {
       reasons.push("Highrunner nicht auf Mittelschiene");
     }
     if (deriveEntryKind(entry) === "ice" && meta?.level === 1) {
-      reasons.push("⛔ Eis auf Oberschiene – verboten! (schwerer Pick)");
+      reasons.push("Ôøö Eis auf Oberschiene ÔÇô verboten! (schwerer Pick)");
     }
     if (meta?.level === 3 && emptyErgonomicSlots > 0) {
-      reasons.push("Etage 3 trotz besserer freier Plätze");
+      reasons.push("Etage 3 trotz besserer freier Pl├ñtze");
     }
     const station = meta?.station || "unknown";
     const stationShare = totalStationDemand > 0 ? (stationLoad.get(station) ?? 0) / totalStationDemand : 0;
     if (station !== "unknown" && stationShare >= 0.45) {
-      reasons.push(`Station ${station} trägt ${Math.round(stationShare * 100)}% der Last`);
+      reasons.push(`Station ${station} tr├ñgt ${Math.round(stationShare * 100)}% der Last`);
     }
     if (reasons.length > 0) slotReasons.set(position, [...new Set(reasons)]);
   }
@@ -1581,7 +1581,7 @@ export function RackView({ week, locale }: Props) {
   const [market, setMarket] = useState<RackMarket>("de");
   const [entries, setEntries] = useState<RackEntry[]>([]);
   const [templateEntries, setTemplateEntries] = useState<RackEntry[]>([]);
-  // Ref auf ungefilterte MultiLine-Einträge – wird für PDL-Neuanwendung benötigt
+  // Ref auf ungefilterte MultiLine-Eintr├ñge ÔÇô wird f├╝r PDL-Neuanwendung ben├Âtigt
   const rawEntriesRef = useRef<RackEntry[]>([]);
   const [pdlIds, setPdlIds] = useState<Set<string> | undefined>();
   const [boxfile, setBoxfile] = useState<RackBoxSnapshot | undefined>();
@@ -1626,7 +1626,7 @@ export function RackView({ week, locale }: Props) {
   // Upload-Panel: zugeklappt / Auto-Ladefehler
   const [uploadOpen, setUploadOpen] = useState(false);
   const [autoLoadFailed, setAutoLoadFailed] = useState(false);
-  // K: Planung bereinigen – Bestätigungs-Modal
+  // K: Planung bereinigen ÔÇô Best├ñtigungs-Modal
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearLogs, setClearLogs] = useState<Array<{ ts: number; market: string; week: string; entryCount: number; clearedBy: string }>>([]);
   // M: Manuelle Planung Filter
@@ -1656,14 +1656,14 @@ export function RackView({ week, locale }: Props) {
     setClearLogs([]);
     setHasManualEdits(false);
     setEnabledZuschaltbarPickfaceIds(new Set());
-    // Alle regulären Picker beim Marktwechsel sperren – User schaltet manuell frei.
+    // Alle regul├ñren Picker beim Marktwechsel sperren ÔÇô User schaltet manuell frei.
     setDisabledPickfaceIds(new Set(pickfaceWindowsForMarket(market).filter((w) => !w.zuschaltbar).map((w) => w.id)));
     if (relocatedHighlightTimerRef.current) {
       clearTimeout(relocatedHighlightTimerRef.current);
       relocatedHighlightTimerRef.current = null;
     }
     setRecentlyRelocatedEntryIds(new Set());
-    setStatus(locale === "de" ? `Automatischer Rack-Start für ${week} wird vorbereitet …` : `Preparing automatic rack startup for ${week} …`);
+    setStatus(locale === "de" ? `Automatischer Rack-Start f├╝r ${week} wird vorbereitet ÔÇª` : `Preparing automatic rack startup for ${week} ÔÇª`);
     setAutoLoadFailed(false);
   }, [market, week, locale, profile.lines]);
 
@@ -1679,7 +1679,7 @@ export function RackView({ week, locale }: Props) {
     let cancelled = false;
 
     async function loadAutomaticSources() {
-      setBusy(locale === "de" ? `Lade Standardquellen für ${week} …` : `Loading default sources for ${week} …`);
+      setBusy(locale === "de" ? `Lade Standardquellen f├╝r ${week} ÔÇª` : `Loading default sources for ${week} ÔÇª`);
       try {
         const [multilineFile, pdlFile] = await Promise.all([
           fetchPublicFile(AUTO_MULTILINE_URL, "MultiLine-latest.xlsx"),
@@ -1697,10 +1697,10 @@ export function RackView({ week, locale }: Props) {
 
         const { entries: nextEntries, slotMeta: nextSlotMeta } = workbookData;
 
-        // Rohe Einträge merken (für PDL-Neuanwendung bei manuell hochgeladenem PDL)
+        // Rohe Eintr├ñge merken (f├╝r PDL-Neuanwendung bei manuell hochgeladenem PDL)
         rawEntriesRef.current = nextEntries;
 
-        // Nur PDL-aktive Mahlzeiten dieser Woche + alle Festeinträge (Verpackung, Ice, usw.)
+        // Nur PDL-aktive Mahlzeiten dieser Woche + alle Festeintr├ñge (Verpackung, Ice, usw.)
         const filteredEntries = applyPdlFilter(nextEntries, nextPdlIds);
         const mealCount = filteredEntries.filter((e) => deriveEntryKind(e) === "meal").length;
         const totalMeals = nextEntries.filter((e) => deriveEntryKind(e) === "meal").length;
@@ -1713,12 +1713,12 @@ export function RackView({ week, locale }: Props) {
         setSlotMeta(nextSlotMeta);
         localStorage.setItem(`rack-workbook-loaded-at-${market}`, String(Date.now()));
         setWorkbookStale(false);
-        setSourceLabel(`${multilineFile.name} · ${pdlFile.name}`);
+        setSourceLabel(`${multilineFile.name} ┬À ${pdlFile.name}`);
         setStatus(locale === "de"
-          ? `✓ Rackfile KW${week} bereit: ${mealCount} von ${totalMeals} Mahlzeiten aus PDL. Jetzt Export klicken.`
-          : `✓ Rackfile ${week} ready: ${mealCount} of ${totalMeals} meals from PDL. Click export now.`);
+          ? `Ô£ô Rackfile KW${week} bereit: ${mealCount} von ${totalMeals} Mahlzeiten aus PDL. Jetzt Export klicken.`
+          : `Ô£ô Rackfile ${week} ready: ${mealCount} of ${totalMeals} meals from PDL. Click export now.`);
 
-        // Rezept-Manifest für LinePlanningView in Firestore schreiben (silent)
+        // Rezept-Manifest f├╝r LinePlanningView in Firestore schreiben (silent)
         try {
           const { getFirebase } = await import("./firebase");
           const { doc, setDoc } = await import("firebase/firestore");
@@ -1733,13 +1733,13 @@ export function RackView({ week, locale }: Props) {
             { week, market, updatedAt: Date.now(), meals },
             { merge: false },
           );
-        } catch { /* kein Firestore → still ignorieren */ }
+        } catch { /* kein Firestore ÔåÆ still ignorieren */ }
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
         setAutoLoadFailed(true);
         setStatus(locale === "de"
-          ? `Automatischer Rack-Start fehlgeschlagen: ${message}. Du kannst die Dateien unten weiterhin manuell überschreiben.`
+          ? `Automatischer Rack-Start fehlgeschlagen: ${message}. Du kannst die Dateien unten weiterhin manuell ├╝berschreiben.`
           : `Automatic rack startup failed: ${message}. You can still override files manually below.`);
       } finally {
         if (!cancelled) setBusy(null);
@@ -1752,7 +1752,7 @@ export function RackView({ week, locale }: Props) {
     };
   }, [market, week, locale, profile.lines]);
 
-  // G: Workbook älter als 7 Tage → Hinweis
+  // G: Workbook ├ñlter als 7 Tage ÔåÆ Hinweis
   useEffect(() => {
     const loadedAt = localStorage.getItem(`rack-workbook-loaded-at-${market}`);
     if (!loadedAt) return;
@@ -1817,8 +1817,8 @@ export function RackView({ week, locale }: Props) {
       else next.add(id);
       return next;
     });
-    // Beim Entsperren: Einträge in diesem Pickface-Bereich leeren,
-    // damit der Slot wirklich erst nach "Beste Linie bauen" befüllt wird.
+    // Beim Entsperren: Eintr├ñge in diesem Pickface-Bereich leeren,
+    // damit der Slot wirklich erst nach "Beste Linie bauen" bef├╝llt wird.
     if (willBeEnabled && window) {
       setEntries((prev) => prev.filter((entry) => {
         const n = rackPositionNumber(entry.flowRackPosition.toUpperCase());
@@ -1827,7 +1827,7 @@ export function RackView({ week, locale }: Props) {
     }
     const blockLabel = window?.blockNumber ? `Z${window.blockNumber}` : id.toUpperCase();
     setStatus(locale === "de"
-      ? `${blockLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt für alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Beste Linie bauen" oder manueller Verteilung.`
+      ? `${blockLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt f├╝r alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Beste Linie bauen" oder manueller Verteilung.`
       : `${blockLabel} ${willBeEnabled ? "enabled" : "locked"}. Applies to all lines in ${market.toUpperCase()}. Fill after clicking Build best line or by manual placement.`);
   }
 
@@ -1840,8 +1840,8 @@ export function RackView({ week, locale }: Props) {
       else next.add(id);
       return next;
     });
-    // Beim Entsperren: Einträge in diesem Pickface-Bereich leeren,
-    // damit der Slot wirklich erst nach "Beste Linie bauen" befüllt wird.
+    // Beim Entsperren: Eintr├ñge in diesem Pickface-Bereich leeren,
+    // damit der Slot wirklich erst nach "Beste Linie bauen" bef├╝llt wird.
     if (willBeEnabled && window) {
       setEntries((prev) => prev.filter((entry) => {
         const n = rackPositionNumber(entry.flowRackPosition.toUpperCase());
@@ -1850,7 +1850,7 @@ export function RackView({ week, locale }: Props) {
     }
     const pickerLabel = window?.pickerNumber ? `P${window.pickerNumber}` : id.toUpperCase();
     setStatus(locale === "de"
-      ? `${pickerLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt für alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Beste Linie bauen" oder manueller Verteilung.`
+      ? `${pickerLabel} ${willBeEnabled ? "freigeschaltet" : "gesperrt"}. Gilt f├╝r alle Linien im ${market.toUpperCase()}-Markt. Belegung erst nach "Beste Linie bauen" oder manueller Verteilung.`
       : `${pickerLabel} ${willBeEnabled ? "enabled" : "locked"}. Applies to all lines in ${market.toUpperCase()}. Fill after clicking Build best line or by manual placement.`);
   }
 
@@ -1890,7 +1890,7 @@ export function RackView({ week, locale }: Props) {
     [entries, slotMeta, highRunnerRecipes],
   );
 
-  // Meals die keinem aktiven Pickface-Fenster zugeordnet sind → müssen manuell verteilt werden
+  // Meals die keinem aktiven Pickface-Fenster zugeordnet sind ÔåÆ m├╝ssen manuell verteilt werden
   const unplacedMeals = useMemo(
     () => entries.filter(
       (entry) => deriveEntryKind(entry) === "meal" && !isPositionInPickfaceWindows(entry.flowRackPosition.toUpperCase(), activePickfaceWindows),
@@ -1914,7 +1914,7 @@ export function RackView({ week, locale }: Props) {
     if (comparison) return comparison;
     if (recommendationOnly && recommendationPreview) {
       return {
-        label: locale === "de" ? "Live-Empfehlung ohne Überschreiben" : "Live recommendation without overwrite",
+        label: locale === "de" ? "Live-Empfehlung ohne ├£berschreiben" : "Live recommendation without overwrite",
         before: entries,
         after: recommendationPreview,
       };
@@ -1966,7 +1966,7 @@ export function RackView({ week, locale }: Props) {
     return [...counts.entries()].sort((a, b) => b[1] - a[1]);
   }, [selectedEntries]);
 
-  // C: Geänderte Slots seit Template-Stand
+  // C: Ge├ñnderte Slots seit Template-Stand
   const changedSlots = useMemo(() => {
     if (!showDiffFromTemplate || templateEntries.length === 0) return new Set<string>();
     const tmpl = new Map<string, Set<string>>();
@@ -2028,12 +2028,12 @@ export function RackView({ week, locale }: Props) {
     if (movedCount === 0) return;
     setEntries(nextEntries);
     setStatus(locale === "de"
-      ? `${movedCount} Einträge automatisch neu verteilt: Ein Fach pro Eintrag als Standard, Modus ${staffingMode === "reduce" ? "Mitarbeiter senken" : staffingMode === "increase" ? "Mitarbeiter erhöhen" : "balanciert"}.`
+      ? `${movedCount} Eintr├ñge automatisch neu verteilt: Ein Fach pro Eintrag als Standard, Modus ${staffingMode === "reduce" ? "Mitarbeiter senken" : staffingMode === "increase" ? "Mitarbeiter erh├Âhen" : "balanciert"}.`
       : `Rebalanced ${movedCount} entries with staffing mode ${staffingMode}.`);
   }, [entries, market, highRunnerRecipes, slotMeta, preferredSlotsByRecipe, locale, staffingMode, recommendationOnly, hasManualEdits, lockedStationsByLine]);
 
   // Block-Freigaben/Sperren wirken nur als Regelrahmen.
-  // Die tatsächliche Umplanung startet erst auf Nutzeraktion (Automatisch oder manuell).
+  // Die tats├ñchliche Umplanung startet erst auf Nutzeraktion (Automatisch oder manuell).
 
   const entriesByLineAndSlot = useMemo(() => {
     const bucket = new Map<string, RackEntry[]>();
@@ -2058,11 +2058,11 @@ export function RackView({ week, locale }: Props) {
   }
 
   async function handleMultilineUpload(file: File) {
-    setBusy(locale === "de" ? "MultiLine wird geladen …" : "Loading MultiLine …");
+    setBusy(locale === "de" ? "MultiLine wird geladen ÔÇª" : "Loading MultiLine ÔÇª");
     try {
       const { parseRackWorkbook } = await loadRackWorkbookModule();
       const { entries: nextEntries, slotMeta: nextSlotMeta } = await parseRackWorkbook(file, market, activeLines);
-      // Rohe Einträge merken und PDL-Filter anwenden (falls PDL bereits geladen)
+      // Rohe Eintr├ñge merken und PDL-Filter anwenden (falls PDL bereits geladen)
       rawEntriesRef.current = nextEntries;
       const filteredEntries = pdlIds && pdlIds.size > 0
         ? applyPdlFilter(nextEntries, pdlIds)
@@ -2076,8 +2076,8 @@ export function RackView({ week, locale }: Props) {
       setSourceLabel(file.name);
       const mealCount = filteredEntries.filter((e) => deriveEntryKind(e) === "meal").length;
       setStatus(locale === "de"
-        ? `MultiLine importiert: ${file.name} · ${mealCount} Mahlzeiten`
-        : `MultiLine imported: ${file.name} · ${mealCount} meals`);
+        ? `MultiLine importiert: ${file.name} ┬À ${mealCount} Mahlzeiten`
+        : `MultiLine imported: ${file.name} ┬À ${mealCount} meals`);
     } catch (error) {
       setStatus(String(error));
     } finally {
@@ -2086,7 +2086,7 @@ export function RackView({ week, locale }: Props) {
   }
 
   async function handleRackfileUpload(file: File) {
-    setBusy(locale === "de" ? "Rackfile wird geladen …" : "Loading rackfile …");
+    setBusy(locale === "de" ? "Rackfile wird geladen ÔÇª" : "Loading rackfile ÔÇª");
     try {
       const nextEntries = await parseRackfileCsv(file);
       setEntries(nextEntries);
@@ -2102,11 +2102,11 @@ export function RackView({ week, locale }: Props) {
   }
 
   async function handlePdlUpload(file: File) {
-    setBusy(locale === "de" ? "PDL wird geprüft …" : "Loading PDL …");
+    setBusy(locale === "de" ? "PDL wird gepr├╝ft ÔÇª" : "Loading PDL ÔÇª");
     try {
       const ids = await parsePdlCsv(file, week);
       setPdlIds(ids);
-      // Einträge neu aus rohen MultiLine-Daten filtern (falls geladen)
+      // Eintr├ñge neu aus rohen MultiLine-Daten filtern (falls geladen)
       const base = rawEntriesRef.current.length > 0 ? rawEntriesRef.current : entries;
       const filtered = applyPdlFilter(base, ids);
       setEntries(filtered);
@@ -2114,8 +2114,8 @@ export function RackView({ week, locale }: Props) {
       setPicksPerWorker(picksPerWorkerForHallReference(filtered, slotMeta, market, 120));
       const mealCount = filtered.filter((e) => deriveEntryKind(e) === "meal").length;
       setStatus(locale === "de"
-        ? `PDL geladen: ${file.name} · ${mealCount} Mahlzeiten für ${week}`
-        : `PDL loaded: ${file.name} · ${mealCount} meals for ${week}`);
+        ? `PDL geladen: ${file.name} ┬À ${mealCount} Mahlzeiten f├╝r ${week}`
+        : `PDL loaded: ${file.name} ┬À ${mealCount} meals for ${week}`);
     } catch (error) {
       setStatus(String(error));
     } finally {
@@ -2124,7 +2124,7 @@ export function RackView({ week, locale }: Props) {
   }
 
   async function handleBoxfileUpload(file: File) {
-    setBusy(locale === "de" ? "Boxfile wird geprüft …" : "Loading boxfile …");
+    setBusy(locale === "de" ? "Boxfile wird gepr├╝ft ÔÇª" : "Loading boxfile ÔÇª");
     try {
       setBoxfile(await parseBoxfileCsv(file));
       setStatus(locale === "de" ? `Boxfile geladen: ${file.name}` : `Boxfile loaded: ${file.name}`);
@@ -2136,7 +2136,7 @@ export function RackView({ week, locale }: Props) {
   }
 
   async function handleCo2Upload(file: File) {
-    setBusy(locale === "de" ? "CO2 wird geprüft …" : "Loading CO2 …");
+    setBusy(locale === "de" ? "CO2 wird gepr├╝ft ÔÇª" : "Loading CO2 ÔÇª");
     try {
       setCo2MealIds(await parseCo2Csv(file, profile.boxPrefix));
       setStatus(locale === "de" ? `CO2 geladen: ${file.name}` : `CO2 loaded: ${file.name}`);
@@ -2149,7 +2149,7 @@ export function RackView({ week, locale }: Props) {
 
   // F: Koch-Plan CSV einlesen
   async function handleCookScheduleUpload(file: File) {
-    setBusy(locale === "de" ? "Koch-Plan wird eingelesen …" : "Loading cook schedule …");
+    setBusy(locale === "de" ? "Koch-Plan wird eingelesen ÔÇª" : "Loading cook schedule ÔÇª");
     try {
       const text = await file.text();
       const rows = text.split("\n").slice(1);
@@ -2170,7 +2170,7 @@ export function RackView({ week, locale }: Props) {
   // E: Plan in Firestore freigeben
   async function handleReleasePlan() {
     if (entries.length === 0) return;
-    setBusy(locale === "de" ? "Plan wird freigegeben …" : "Releasing plan …");
+    setBusy(locale === "de" ? "Plan wird freigegeben ÔÇª" : "Releasing plan ÔÇª");
     try {
       const { getFirebase } = await import("./firebase");
       const { doc, setDoc, collection, addDoc } = await import("firebase/firestore");
@@ -2185,7 +2185,7 @@ export function RackView({ week, locale }: Props) {
       await setDoc(doc(db, `apps/rezeptlogik/plans/${market}_${week.replace(/\W/g, "-")}`), payload);
       await addDoc(collection(db, "apps/rezeptlogik/planHistory"), payload);
       setPlanHistoryItems((prev) => [{ ts: payload.releasedAt, market, week, entryCount: entries.length }, ...prev].slice(0, 10));
-      setStatus(locale === "de" ? `✓ Plan für ${week} freigegeben (${entries.length} Einträge).` : `✓ Plan for ${week} released (${entries.length} entries).`);
+      setStatus(locale === "de" ? `Ô£ô Plan f├╝r ${week} freigegeben (${entries.length} Eintr├ñge).` : `Ô£ô Plan for ${week} released (${entries.length} entries).`);
     } catch (error) {
       setStatus(locale === "de" ? `Freigabe fehlgeschlagen: ${String(error)}` : `Release failed: ${String(error)}`);
     } finally {
@@ -2202,7 +2202,7 @@ export function RackView({ week, locale }: Props) {
     // damit "Beste Linie bauen" nach der Bereinigung weiterhin als Datenquelle dienen kann.
     setComparison(null);
     setShowClearConfirm(false);
-    setStatus(locale === "de" ? `Planung bereinigt (${snapshotCount} Einträge gelöscht).` : `Plan cleared (${snapshotCount} entries removed).`);
+    setStatus(locale === "de" ? `Planung bereinigt (${snapshotCount} Eintr├ñge gel├Âscht).` : `Plan cleared (${snapshotCount} entries removed).`);
     try {
       const { getFirebase } = await import("./firebase");
       const { collection, addDoc } = await import("firebase/firestore");
@@ -2219,7 +2219,7 @@ export function RackView({ week, locale }: Props) {
       await addDoc(collection(db, "apps/rezeptlogik/planClearLog"), payload);
       setClearLogs((prev) => [{ ts: payload.clearedAt, market, week, entryCount: snapshotCount, clearedBy }, ...prev].slice(0, 20));
     } catch {
-      // Log-Fehler still ignorieren – Plan ist bereits lokal bereinigt
+      // Log-Fehler still ignorieren ÔÇô Plan ist bereits lokal bereinigt
     }
   }
 
@@ -2240,7 +2240,7 @@ export function RackView({ week, locale }: Props) {
     }
   }
 
-  // H: Letzte freigegebene Pläne laden
+  // H: Letzte freigegebene Pl├ñne laden
   async function loadPlanHistory() {
     try {
       const { getFirebase } = await import("./firebase");
@@ -2253,14 +2253,14 @@ export function RackView({ week, locale }: Props) {
         return { ts: data.releasedAt, market: data.market, week: data.week, entryCount: data.entryCount };
       }));
     } catch {
-      // Firestore not configured yet – ignore silently
+      // Firestore not configured yet ÔÇô ignore silently
     }
   }
 
   function applyScenario(lines: string[]) {
     const source = templateEntries.length > 0 ? templateEntries : entries;
     if (source.length === 0) {
-      setStatus(locale === "de" ? "Noch keine Rack-Basis geladen. Warte kurz auf den Auto-Import oder wähle unten Dateien manuell aus." : "No rack base loaded yet. Wait for the automatic import or choose files manually below.");
+      setStatus(locale === "de" ? "Noch keine Rack-Basis geladen. Warte kurz auf den Auto-Import oder w├ñhle unten Dateien manuell aus." : "No rack base loaded yet. Wait for the automatic import or choose files manually below.");
       return;
     }
     const nextEntries = projectRackEntriesToLines(source, lines);
@@ -2309,7 +2309,7 @@ export function RackView({ week, locale }: Props) {
     const movedEntries = nextEntries.filter((e) => prevPositions.get(e.id) !== e.flowRackPosition).length;
     const nextWorkersFte = totalDemandPicks > 0 ? totalDemandPicks / safeNext : 0;
     setStatus(locale === "de"
-      ? `Mitarbeiter-Schlüssel auf ${safeNext} gesetzt (${nextWorkersFte.toFixed(1)} FTE). Rack wurde mit Modus ${nextMode === "reduce" ? "Mitarbeiter senken" : nextMode === "increase" ? "Mitarbeiter erhöhen" : "balanciert"} neu geplant (${movedEntries} Verschiebungen).`
+      ? `Mitarbeiter-Schl├╝ssel auf ${safeNext} gesetzt (${nextWorkersFte.toFixed(1)} FTE). Rack wurde mit Modus ${nextMode === "reduce" ? "Mitarbeiter senken" : nextMode === "increase" ? "Mitarbeiter erh├Âhen" : "balanciert"} neu geplant (${movedEntries} Verschiebungen).`
       : `Staffing factor set to ${safeNext} (${nextWorkersFte.toFixed(1)} FTE). Rack replanned in ${nextMode} mode (${movedEntries} moves).`);
   }
 
@@ -2366,13 +2366,13 @@ export function RackView({ week, locale }: Props) {
     const openedText = windowChanges.opened.map((window) => pickfaceWindowLabel(window, locale)).join(", ");
     const closedText = windowChanges.closed.map((window) => pickfaceWindowLabel(window, locale)).join(", ");
     const windowStatus = openedText
-      ? (locale === "de" ? `geöffnet: ${openedText}` : `opened: ${openedText}`)
+      ? (locale === "de" ? `ge├Âffnet: ${openedText}` : `opened: ${openedText}`)
       : closedText
         ? (locale === "de" ? `geschlossen: ${closedText}` : `closed: ${closedText}`)
-        : (locale === "de" ? "keine Pickface-Änderung" : "no pickface change");
+        : (locale === "de" ? "keine Pickface-├änderung" : "no pickface change");
 
     setStatus(locale === "de"
-      ? `Planung auf ${safeWorkers} MA gesetzt (${nextPicksPerWorker} Picks/MA, ${nextActiveWindows.length} aktive Pickfenster): ${windowStatus}. ${movedEntries} Einträge wurden automatisch neu verteilt.`
+      ? `Planung auf ${safeWorkers} MA gesetzt (${nextPicksPerWorker} Picks/MA, ${nextActiveWindows.length} aktive Pickfenster): ${windowStatus}. ${movedEntries} Eintr├ñge wurden automatisch neu verteilt.`
       : `Planning set to ${safeWorkers} workers (${nextPicksPerWorker} picks/worker, ${nextActiveWindows.length} active pick windows): ${windowStatus}. ${movedEntries} entries were rebalanced.`);
   }
 
@@ -2407,19 +2407,19 @@ export function RackView({ week, locale }: Props) {
     setRecommendationOnly(false);
     setEntries(nextEntries);
     setStatus(locale === "de"
-      ? `Optimierung angewendet: beste Linienbelegung für Modus ${staffingMode === "reduce" ? "Mitarbeiter senken" : staffingMode === "increase" ? "Mitarbeiter erhöhen" : "balanciert"}.`
+      ? `Optimierung angewendet: beste Linienbelegung f├╝r Modus ${staffingMode === "reduce" ? "Mitarbeiter senken" : staffingMode === "increase" ? "Mitarbeiter erh├Âhen" : "balanciert"}.`
       : `Applied best-line optimization for staffing mode ${staffingMode}.`);
   }
 
   function handlePillDragStart(entryId: string) {
     draggedEntryIdRef.current = entryId;
-    // kein setState hier – jeder Re-Render während dragstart bricht den Drag sofort ab
+    // kein setState hier ÔÇô jeder Re-Render w├ñhrend dragstart bricht den Drag sofort ab
     console.log(`[RackView] dragstart: id="${entryId}"`);
   }
 
   function handlePillDragEnd() {
     draggedEntryIdRef.current = null;
-    setDraggedEntryId(null); // hier ist State ok – Drag ist schon vorbei
+    setDraggedEntryId(null); // hier ist State ok ÔÇô Drag ist schon vorbei
     setHoveredSlotKey(null);
     console.log(`[RackView] dragend`);
     setStatus(`DEBUG dragend (kein drop gelandet)`);
@@ -2433,8 +2433,8 @@ export function RackView({ week, locale }: Props) {
       return;
     }
     const activeDraggedEntryId = (event ? event.dataTransfer.getData("text/plain") : "") || draggedEntryIdRef.current || draggedEntryId;
-    console.log(`[RackView] drop: id="${activeDraggedEntryId}" → ${line}/${flowRackPosition}`);
-    setStatus(`DEBUG drop: id="${activeDraggedEntryId}" → ${line}/${flowRackPosition}`);
+    console.log(`[RackView] drop: id="${activeDraggedEntryId}" ÔåÆ ${line}/${flowRackPosition}`);
+    setStatus(`DEBUG drop: id="${activeDraggedEntryId}" ÔåÆ ${line}/${flowRackPosition}`);
     if (!activeDraggedEntryId) return;
     const draggedEntry = entries.find((entry) => entry.id === activeDraggedEntryId);
     const targetEntries = entries.filter((entry) => entry.line === line && entry.flowRackPosition.toUpperCase() === flowRackPosition.toUpperCase() && entry.id !== activeDraggedEntryId);
@@ -2488,7 +2488,7 @@ export function RackView({ week, locale }: Props) {
     if (draggedEntry) {
       setStatus(
         relocatedCount > 0
-          ? `${draggedEntry.recipe} auf ${line}/${targetPosition} abgelegt. ${relocatedCount} bestehende Pill(en) wurden automatisch auf freie Fächer verteilt.`
+          ? `${draggedEntry.recipe} auf ${line}/${targetPosition} abgelegt. ${relocatedCount} bestehende Pill(en) wurden automatisch auf freie F├ñcher verteilt.`
           : `${draggedEntry.recipe} auf ${line}/${targetPosition} abgelegt.`
       );
     }
@@ -2520,7 +2520,7 @@ export function RackView({ week, locale }: Props) {
               <h2 className="text-2xl font-bold tracking-tight">{locale === "de" ? "Rack-Planung, Visualisierung und Validierung" : "Rack planning, visualization and validation"}</h2>
               <p className="max-w-3xl text-sm text-slate-200">
                 {locale === "de"
-                  ? "Beim Öffnen lädt das Tool die Standardquellen selbst und baut daraus direkt die Rackfile-Basis für die gewählte KW. MultiLine, PDL, Boxfile, CO2 oder ein bestehendes Rackfile kannst du unten nur noch optional als Override nachladen."
+                  ? "Beim ├ûffnen l├ñdt das Tool die Standardquellen selbst und baut daraus direkt die Rackfile-Basis f├╝r die gew├ñhlte KW. MultiLine, PDL, Boxfile, CO2 oder ein bestehendes Rackfile kannst du unten nur noch optional als Override nachladen."
                   : "On open, the tool loads the default sources automatically and builds the rackfile base for the selected week. MultiLine, PDL, boxfile, CO2 or an existing rackfile below are optional overrides only."}
               </p>
             </div>
@@ -2563,7 +2563,7 @@ export function RackView({ week, locale }: Props) {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{locale === "de" ? "Linien-Szenarien" : "Line scenarios"}</div>
-                  <div className="mt-1 text-sm text-slate-700">{locale === "de" ? "Plane Primär- und Backup-Linien vor. Ein Klick baut die Rackfile sofort für die Ersatzlinie neu auf." : "Pre-plan primary and backup lines. One click rebuilds the rackfile for the backup line."}</div>
+                  <div className="mt-1 text-sm text-slate-700">{locale === "de" ? "Plane Prim├ñr- und Backup-Linien vor. Ein Klick baut die Rackfile sofort f├╝r die Ersatzlinie neu auf." : "Pre-plan primary and backup lines. One click rebuilds the rackfile for the backup line."}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button className="btn" onClick={rebuildForSelectedLines} disabled={activeLines.length === 0 || (entries.length === 0 && templateEntries.length === 0)}>
@@ -2580,9 +2580,9 @@ export function RackView({ week, locale }: Props) {
                     className={`btn ${showDiffFromTemplate ? "btn-primary" : ""}`}
                     onClick={() => setShowDiffFromTemplate((v) => !v)}
                     disabled={templateEntries.length === 0}
-                    title={locale === "de" ? "Zeigt violette Punkte an geänderten Slots" : "Shows violet dots on changed slots"}
+                    title={locale === "de" ? "Zeigt violette Punkte an ge├ñnderten Slots" : "Shows violet dots on changed slots"}
                   >
-                    {locale === "de" ? "Δ Vergleich" : "Δ Diff"}
+                    {locale === "de" ? "╬ö Vergleich" : "╬ö Diff"}
                   </button>
                 </div>
               </div>
@@ -2593,7 +2593,7 @@ export function RackView({ week, locale }: Props) {
                 </div>
                 <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(255,255,255,0.96))] px-3 py-3 ring-1 ring-emerald-200">
                   <div className="text-[11px] uppercase tracking-[0.16em] text-emerald-700">{locale === "de" ? "Workbook-Metadaten" : "Workbook metadata"}</div>
-                  <div className="mt-1 text-sm font-semibold text-emerald-950">{slotMeta.size > 0 ? `${slotMeta.size} ${locale === "de" ? "Slots mit Layout-Semantik" : "slots with layout semantics"}` : (locale === "de" ? "Wird nach dem XLSX-Ladevorgang ergänzt" : "Filled after XLSX load")}</div>
+                  <div className="mt-1 text-sm font-semibold text-emerald-950">{slotMeta.size > 0 ? `${slotMeta.size} ${locale === "de" ? "Slots mit Layout-Semantik" : "slots with layout semantics"}` : (locale === "de" ? "Wird nach dem XLSX-Ladevorgang erg├ñnzt" : "Filled after XLSX load")}</div>
                 </div>
                 <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(14,165,233,0.14),rgba(255,255,255,0.96))] px-3 py-3 ring-1 ring-sky-200">
                   <div className="text-[11px] uppercase tracking-[0.16em] text-sky-700">{locale === "de" ? "Planungsmodus" : "Planning mode"}</div>
@@ -2628,18 +2628,18 @@ export function RackView({ week, locale }: Props) {
                   <input
                     type="text"
                     className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-800 outline-none ring-1 ring-slate-100 focus:ring-2 focus:ring-slate-400"
-                    placeholder={locale === "de" ? "Rezept-ID eingeben …" : "Enter recipe ID …"}
+                    placeholder={locale === "de" ? "Rezept-ID eingeben ÔÇª" : "Enter recipe ID ÔÇª"}
                     value={bottleneckRecipe}
                     onChange={(e) => setBottleneckRecipe(e.target.value)}
                   />
                   {bottleneckRecipe && (
-                    <button className="btn" onClick={() => setBottleneckRecipe("")}>{locale === "de" ? "Zurücksetzen" : "Clear"}</button>
+                    <button className="btn" onClick={() => setBottleneckRecipe("")}>{locale === "de" ? "Zur├╝cksetzen" : "Clear"}</button>
                   )}
                 </div>
                 {bottleneckSimEntries !== null && (
                   <div className="mt-2 text-sm text-rose-700">
                     {locale === "de"
-                      ? `Simulation: ${entries.length - bottleneckSimEntries.length} Eintrag/Einträge entfernt. ${bottleneckSimEntries.length} Einträge verbleiben.`
+                      ? `Simulation: ${entries.length - bottleneckSimEntries.length} Eintrag/Eintr├ñge entfernt. ${bottleneckSimEntries.length} Eintr├ñge verbleiben.`
                       : `Simulation: ${entries.length - bottleneckSimEntries.length} entry/entries removed. ${bottleneckSimEntries.length} remaining.`}
                   </div>
                 )}
@@ -2677,14 +2677,14 @@ export function RackView({ week, locale }: Props) {
                   >
                     <div className={`flex items-center gap-2 text-sm font-semibold ${headerText}`}>
                       <span className={`text-base ${autoLoadFailed ? "text-rose-600" : loadedCount >= 2 ? "text-emerald-600" : "text-slate-400"}`}>
-                        {autoLoadFailed ? "✗" : loadedCount >= 2 ? "✓" : "○"}
+                        {autoLoadFailed ? "Ô£ù" : loadedCount >= 2 ? "Ô£ô" : "Ôùï"}
                       </span>
                       <span>
                         {autoLoadFailed
                           ? (locale === "de" ? "Auto-Load fehlgeschlagen" : "Auto-load failed")
                           : locale === "de"
-                          ? `Datenquellen · ${loadedCount} von ${sources.length} geladen`
-                          : `Data sources · ${loadedCount} of ${sources.length} loaded`}
+                          ? `Datenquellen ┬À ${loadedCount} von ${sources.length} geladen`
+                          : `Data sources ┬À ${loadedCount} of ${sources.length} loaded`}
                       </span>
                       <div className="flex gap-1 ml-2">
                         {sources.map((s) => (
@@ -2696,26 +2696,26 @@ export function RackView({ week, locale }: Props) {
                         ))}
                       </div>
                     </div>
-                    <span className={`text-xs font-bold transition-transform duration-200 ${uploadOpen ? "rotate-180" : ""} ${headerText}`}>▼</span>
+                    <span className={`text-xs font-bold transition-transform duration-200 ${uploadOpen ? "rotate-180" : ""} ${headerText}`}>Ôû╝</span>
                   </button>
                   {uploadOpen && (
                     <div className="p-3 border-t border-slate-200">
                       <div className="mb-3 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-xs text-slate-500">
                         {locale === "de"
-                          ? "Standardquellen (MultiLine + PDL) werden automatisch geladen. Die folgenden Uploads sind nur für manuelle Overrides oder zusätzliche Validierung gedacht."
+                          ? "Standardquellen (MultiLine + PDL) werden automatisch geladen. Die folgenden Uploads sind nur f├╝r manuelle Overrides oder zus├ñtzliche Validierung gedacht."
                           : "Default sources (MultiLine + PDL) are loaded automatically. The uploads below are for manual overrides or additional validation only."}
                       </div>
                       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        <UploadCard label="MultiLine XLSX" hint={locale === "de" ? `${profile.sheet} · optional überschreiben` : `${profile.sheet} · optional override`} onPick={handleMultilineUpload} accept=".xlsx" />
+                        <UploadCard label="MultiLine XLSX" hint={locale === "de" ? `${profile.sheet} ┬À optional ├╝berschreiben` : `${profile.sheet} ┬À optional override`} onPick={handleMultilineUpload} accept=".xlsx" />
                         <UploadCard label="Rackfile CSV" hint={locale === "de" ? "optional: bestehendes Rackfile importieren" : "optional: import existing rackfile"} onPick={handleRackfileUpload} accept=".csv" />
-                        <UploadCard label="PDL CSV" hint={locale === "de" ? "optional: Meal-Soll überschreiben" : "optional: override meal target"} onPick={handlePdlUpload} accept=".csv" />
-                        <UploadCard label="Boxfile CSV" hint={locale === "de" ? "optional: ETL BOXFILE_VE für Zusatzchecks" : "optional: ETL BOXFILE_VE for extra checks"} onPick={handleBoxfileUpload} accept=".csv" />
+                        <UploadCard label="PDL CSV" hint={locale === "de" ? "optional: Meal-Soll ├╝berschreiben" : "optional: override meal target"} onPick={handlePdlUpload} accept=".csv" />
+                        <UploadCard label="Boxfile CSV" hint={locale === "de" ? "optional: ETL BOXFILE_VE f├╝r Zusatzchecks" : "optional: ETL BOXFILE_VE for extra checks"} onPick={handleBoxfileUpload} accept=".csv" />
                         <UploadCard label="CO2 CSV" hint={locale === "de" ? `optional: ETL CO_2 (${profile.boxPrefix})` : `optional: ETL CO_2 (${profile.boxPrefix})`} onPick={handleCo2Upload} accept=".csv" />
                         <UploadCard
                           label={locale === "de" ? "Koch-Plan CSV" : "Cook schedule CSV"}
                           hint={locale === "de"
-                            ? `optional: Rezept-Abgleich${cookScheduleMissingCount > 0 ? ` · ${cookScheduleMissingCount} fehlend` : cookScheduleRecipes ? " · ok" : ""}`
-                            : `optional: recipe cross-check${cookScheduleMissingCount > 0 ? ` · ${cookScheduleMissingCount} missing` : cookScheduleRecipes ? " · ok" : ""}`}
+                            ? `optional: Rezept-Abgleich${cookScheduleMissingCount > 0 ? ` ┬À ${cookScheduleMissingCount} fehlend` : cookScheduleRecipes ? " ┬À ok" : ""}`
+                            : `optional: recipe cross-check${cookScheduleMissingCount > 0 ? ` ┬À ${cookScheduleMissingCount} missing` : cookScheduleRecipes ? " ┬À ok" : ""}`}
                           onPick={handleCookScheduleUpload}
                           accept=".csv"
                         />
@@ -2731,13 +2731,13 @@ export function RackView({ week, locale }: Props) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{locale === "de" ? "Status" : "Status"}</div>
-                <div className="mt-1 inline-flex items-center rounded-full bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">{busy ? (locale === "de" ? "Lädt" : "Loading") : (locale === "de" ? "Bereit" : "Ready")}</div>
+                <div className="mt-1 inline-flex items-center rounded-full bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">{busy ? (locale === "de" ? "L├ñdt" : "Loading") : (locale === "de" ? "Bereit" : "Ready")}</div>
                 <div className="mt-2 text-sm font-medium text-slate-800">{busy ?? status}</div>
                 {sourceLabel && <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500"><span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">{locale === "de" ? "Quelle" : "Source"}</span><span className="rounded-full bg-white px-2.5 py-1 ring-1 ring-slate-200">{sourceLabel}</span></div>}
                 {/* G: Workbook-Veraltet-Hinweis */}
                 {workbookStale && (
                   <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
-                    ⚠ {locale === "de" ? "Workbook vor mehr als 7 Tagen geladen – bitte aktualisieren." : "Workbook loaded more than 7 days ago – please refresh."}
+                    ÔÜá {locale === "de" ? "Workbook vor mehr als 7 Tagen geladen ÔÇô bitte aktualisieren." : "Workbook loaded more than 7 days ago ÔÇô please refresh."}
                   </div>
                 )}
               </div>
@@ -2777,14 +2777,14 @@ export function RackView({ week, locale }: Props) {
               <MiniStat label={locale === "de" ? "Verpackung" : "Packaging"} value={summary.packaging} />
               <MiniStat label="Ice" value={summary.ice} />
               <MiniStat label="Loyalty" value={summary.loyalty} />
-              <MiniStat label={locale === "de" ? "Getränke" : "Beverage"} value={summary.beverage} />
+              <MiniStat label={locale === "de" ? "Getr├ñnke" : "Beverage"} value={summary.beverage} />
               <MiniStat label={locale === "de" ? "Protein" : "Protein"} value={summary.protein} />
               <MiniStat label={locale === "de" ? "Validierung" : "Validation"} value={validation.ok ? "OK" : validation.issues.filter((issue) => issue.severity === "error").length} accent={!validation.ok} />
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-3 ring-1 ring-slate-200">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{locale === "de" ? "Mitarbeiter-Schlüssel" : "Staffing factor"}</div>
-                <div className="mt-1 text-sm text-slate-600">{locale === "de" ? "Picks pro Mitarbeiter ist ein Planungs-Schlüssel (kein Zeitstempel): Gesamte Picksumme geteilt durch diesen Wert ergibt den geplanten MA-Bedarf." : "Picks per worker is a planning key (not a timestamp): total picks divided by this value equals planned staffing demand."}</div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{locale === "de" ? "Mitarbeiter-Schl├╝ssel" : "Staffing factor"}</div>
+                <div className="mt-1 text-sm text-slate-600">{locale === "de" ? "Picks pro Mitarbeiter ist ein Planungs-Schl├╝ssel (kein Zeitstempel): Gesamte Picksumme geteilt durch diesen Wert ergibt den geplanten MA-Bedarf." : "Picks per worker is a planning key (not a timestamp): total picks divided by this value equals planned staffing demand."}</div>
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
                   <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-700">{locale === "de" ? `Picks gesamt ${Math.round(totalDemandPicks)}` : `Total picks ${Math.round(totalDemandPicks)}`}</span>
                   <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">{locale === "de" ? `Geplant ${plannedWorkersRounded} MA` : `Planned ${plannedWorkersRounded} workers`}</span>
@@ -2801,7 +2801,7 @@ export function RackView({ week, locale }: Props) {
                 )}
                 <div className="mt-2 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
                   {locale === "de"
-                    ? "Harte Regel aktiv: Die ersten zwei Stationen sind nicht verhandelbar. Dort wird bei der Neuplanung keine Last hinzugefügt oder entfernt."
+                    ? "Harte Regel aktiv: Die ersten zwei Stationen sind nicht verhandelbar. Dort wird bei der Neuplanung keine Last hinzugef├╝gt oder entfernt."
                     : "Hard rule active: the first two stations are non-negotiable. Replanning does not add or remove workload there."}
                 </div>
               </div>
@@ -2810,7 +2810,7 @@ export function RackView({ week, locale }: Props) {
                   {([
                     { id: "reduce", label: locale === "de" ? "MA senken" : "Reduce workers" },
                     { id: "balanced", label: locale === "de" ? "Balanciert" : "Balanced" },
-                    { id: "increase", label: locale === "de" ? "MA erhöhen" : "Increase workers" },
+                    { id: "increase", label: locale === "de" ? "MA erh├Âhen" : "Increase workers" },
                   ] as Array<{ id: StaffingMode; label: string }>).map((option) => (
                     <button
                       key={option.id}
@@ -2898,7 +2898,7 @@ export function RackView({ week, locale }: Props) {
                 <div className="grid gap-3 xl:grid-cols-[1.15fr_0.85fr]">
                   <div className="relative overflow-hidden rounded-[26px] border border-slate-200 bg-[radial-gradient(circle_at_18%_20%,rgba(56,189,248,0.22),transparent_35%),radial-gradient(circle_at_85%_15%,rgba(167,139,250,0.2),transparent_40%),linear-gradient(135deg,rgba(15,23,42,0.95),rgba(15,118,110,0.86))] p-4 text-white shadow-[0_28px_55px_-34px_rgba(15,23,42,0.85)]">
                     <div className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-100">{locale === "de" ? "3D Slot Twin" : "3D slot twin"}</div>
-                    <div className="mt-2 text-lg font-black tracking-tight">{selectedFocus.line} · {selectedFocus.position.toUpperCase()}</div>
+                    <div className="mt-2 text-lg font-black tracking-tight">{selectedFocus.line} ┬À {selectedFocus.position.toUpperCase()}</div>
                     <div className="mt-1 text-xs text-sky-100/90">{selectedMeta?.station || (locale === "de" ? "ohne Station" : "no station")}</div>
                     <div className="mt-4 flex items-center gap-5">
                       <div className="[perspective:1100px]">
@@ -2924,13 +2924,13 @@ export function RackView({ week, locale }: Props) {
                       )}
                       {selectedKindMix.map(([kind, count]) => (
                         <span key={`${selectedFocus.line}-${selectedFocus.position}-${kind}`} className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${kindTone(kind as ReturnType<typeof deriveEntryKind>)}`}>
-                          {kind} · {count}
+                          {kind} ┬À {count}
                         </span>
                       ))}
                     </div>
                     <div className="mt-3 text-xs text-slate-600">
                       {locale === "de"
-                        ? "Direktmodus: Zieh eine Pill auf ein Fach. Ist es belegt, werden die bestehenden Pills automatisch auf freie Fächer verteilt."
+                        ? "Direktmodus: Zieh eine Pill auf ein Fach. Ist es belegt, werden die bestehenden Pills automatisch auf freie F├ñcher verteilt."
                         : "Direct mode: drop a pill onto a slot. If occupied, existing pills are auto-relocated to free slots."}
                     </div>
                   </div>
@@ -2972,7 +2972,7 @@ export function RackView({ week, locale }: Props) {
                       {selectedMeta?.type ? <span className="rounded-full bg-violet-100 px-2.5 py-1 text-violet-900">{selectedMeta.type}</span> : null}
                     </div>
                     <div className="mt-3 space-y-2 text-sm">
-                      {selectedViolations.length === 0 && <div className="rounded-xl bg-emerald-50 px-3 py-3 text-emerald-900 ring-1 ring-emerald-200">{locale === "de" ? "Für dieses Fach liegen aktuell keine Regelverletzungen vor." : "No rule violations for this slot right now."}</div>}
+                      {selectedViolations.length === 0 && <div className="rounded-xl bg-emerald-50 px-3 py-3 text-emerald-900 ring-1 ring-emerald-200">{locale === "de" ? "F├╝r dieses Fach liegen aktuell keine Regelverletzungen vor." : "No rule violations for this slot right now."}</div>}
                       {selectedViolations.map((reason) => <div key={reason} className="rounded-xl bg-rose-50 px-3 py-3 text-rose-900 ring-1 ring-rose-200">{reason}</div>)}
                     </div>
                   </div>
@@ -2981,7 +2981,7 @@ export function RackView({ week, locale }: Props) {
                   <div className="rounded-2xl bg-[linear-gradient(135deg,rgba(14,165,233,0.14),rgba(255,255,255,0.96)),radial-gradient(circle_at_top_right,rgba(59,130,246,0.18),transparent_40%)] p-4 ring-1 ring-sky-200">
                     <div className="text-xs font-black uppercase tracking-[0.18em] text-sky-800">{locale === "de" ? "Empfohlene Belegung" : "Recommended occupancy"}</div>
                     <div className="mt-3 space-y-2">
-                      {selectedRecommendedEntries.length === 0 && <div className="rounded-xl border border-dashed border-sky-200 bg-white/80 px-3 py-3 text-sm text-slate-500">{locale === "de" ? "Keine zusätzliche Empfehlung für dieses Fach." : "No additional recommendation for this slot."}</div>}
+                      {selectedRecommendedEntries.length === 0 && <div className="rounded-xl border border-dashed border-sky-200 bg-white/80 px-3 py-3 text-sm text-slate-500">{locale === "de" ? "Keine zus├ñtzliche Empfehlung f├╝r dieses Fach." : "No additional recommendation for this slot."}</div>}
                       {selectedRecommendedEntries.map((entry) => (
                         <div key={entry.id} className={`rounded-2xl border border-sky-200 bg-white/90 px-3 py-3 shadow-sm ${recentlyRelocatedEntryIds.has(entry.id) ? "ring-2 ring-amber-400 bg-amber-50" : ""}`} title={rackEntryHoverTitle(entry, slotMeta, locale)}>
                           <div className="font-semibold text-slate-900">{entry.recipe}</div>
@@ -2996,7 +2996,7 @@ export function RackView({ week, locale }: Props) {
                       <div className="mt-2 text-sm text-slate-100">{selectedMovedEntry.after.recipe}</div>
                       <div className="mt-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide">
                         <span className="rounded-full bg-white/10 px-2.5 py-1">{selectedMovedEntry.before.line} {selectedMovedEntry.before.flowRackPosition}</span>
-                        <span>→</span>
+                        <span>ÔåÆ</span>
                         <span className="rounded-full bg-sky-500/20 px-2.5 py-1 text-sky-100">{selectedMovedEntry.after.line} {selectedMovedEntry.after.flowRackPosition}</span>
                       </div>
                     </div>
@@ -3026,8 +3026,8 @@ export function RackView({ week, locale }: Props) {
                       <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white">{item.moved} {locale === "de" ? "Verschiebungen" : "moves"}</span>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                      <MiniStat label={locale === "de" ? "Mitte Δ" : "Middle Δ"} value={item.middleDelta > 0 ? `+${item.middleDelta}` : item.middleDelta} accent={item.middleDelta > 0} />
-                      <MiniStat label={locale === "de" ? "Etage 3 Δ" : "Tier 3 Δ"} value={item.topDelta > 0 ? `+${item.topDelta}` : item.topDelta} accent={item.topDelta > 0} />
+                      <MiniStat label={locale === "de" ? "Mitte ╬ö" : "Middle ╬ö"} value={item.middleDelta > 0 ? `+${item.middleDelta}` : item.middleDelta} accent={item.middleDelta > 0} />
+                      <MiniStat label={locale === "de" ? "Etage 3 ╬ö" : "Tier 3 ╬ö"} value={item.topDelta > 0 ? `+${item.topDelta}` : item.topDelta} accent={item.topDelta > 0} />
                     </div>
                   </div>
                 ))}
@@ -3059,7 +3059,7 @@ export function RackView({ week, locale }: Props) {
               <input
                 value={filterText}
                 onChange={(event) => setFilterText(event.target.value)}
-                placeholder={locale === "de" ? "Recipe, Linie, Slot …" : "Recipe, line, slot …"}
+                placeholder={locale === "de" ? "Recipe, Linie, Slot ÔÇª" : "Recipe, line, slot ÔÇª"}
                 className="w-52 rounded-lg border-slate-300 px-3 py-2 text-sm ring-1 ring-slate-300"
               />
             </div>
@@ -3124,7 +3124,7 @@ export function RackView({ week, locale }: Props) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wide text-slate-600">{locale === "de" ? "Linienansicht" : "Line map"}</h3>
-              <p className="mt-1 text-sm text-slate-500">{locale === "de" ? "Neue klare Etagenansicht: jedes Fach als echte 3er-Säule (z. B. 13, 14, 15 übereinander)." : "Clear tier view: each slot as a true 3-level stack."}</p>
+              <p className="mt-1 text-sm text-slate-500">{locale === "de" ? "Neue klare Etagenansicht: jedes Fach als echte 3er-S├ñule (z. B. 13, 14, 15 ├╝bereinander)." : "Clear tier view: each slot as a true 3-level stack."}</p>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -3147,7 +3147,7 @@ export function RackView({ week, locale }: Props) {
                 onClick={() => setDisplayTab("detail")}
                 title={locale === "de" ? "Fokus-Ansicht: Slot- und Rezeptdetails in der Mitte" : "Focus view: slot and recipe details center-stage"}
               >
-                {locale === "de" ? "🔍 Detail-Reiter" : "🔍 Detail tab"}
+                {locale === "de" ? "­ƒöì Detail-Reiter" : "­ƒöì Detail tab"}
               </button>
               <button
                 type="button"
@@ -3164,20 +3164,20 @@ export function RackView({ week, locale }: Props) {
           {unplacedMeals.length > 0 && (
             <div className="mt-4 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50 px-4 py-4 ring-1 ring-amber-200">
               <div className="flex items-start gap-3">
-                <span className="text-2xl" role="img" aria-label="Achtung">⚠️</span>
+                <span className="text-2xl" role="img" aria-label="Achtung">ÔÜá´©Å</span>
                 <div className="flex-1">
                   <div className="text-sm font-black uppercase tracking-wide text-amber-800">
-                    {locale === "de" ? `${unplacedMeals.length} Meal${unplacedMeals.length > 1 ? "s" : ""} ohne Pickplatz – manuell verteilen!` : `${unplacedMeals.length} meal${unplacedMeals.length > 1 ? "s" : ""} without a pickface slot – distribute manually!`}
+                    {locale === "de" ? `${unplacedMeals.length} Meal${unplacedMeals.length > 1 ? "s" : ""} ohne Pickplatz ÔÇô manuell verteilen!` : `${unplacedMeals.length} meal${unplacedMeals.length > 1 ? "s" : ""} without a pickface slot ÔÇô distribute manually!`}
                   </div>
                   <div className="mt-1 text-xs text-amber-700">
-                    {locale === "de" ? "Diese Mahlzeiten liegen außerhalb aller aktiven Pickfaces und wurden nicht automatisch verplant. Bitte händisch einem freien Slot zuweisen." : "These meals are outside all active pickfaces and were not auto-assigned. Please assign them manually to a free slot."}
+                    {locale === "de" ? "Diese Mahlzeiten liegen au├ƒerhalb aller aktiven Pickfaces und wurden nicht automatisch verplant. Bitte h├ñndisch einem freien Slot zuweisen." : "These meals are outside all active pickfaces and were not auto-assigned. Please assign them manually to a free slot."}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {unplacedMeals.map((entry) => (
                       <div
                         key={entry.id}
                         className="flex items-center gap-1.5 rounded-full bg-amber-200 px-3 py-1.5 text-xs font-bold text-amber-900 ring-1 ring-amber-300"
-                        title={`${entry.line} · ${entry.flowRackPosition} · ${entry.displayName || entry.ingredient}`}
+                        title={`${entry.line} ┬À ${entry.flowRackPosition} ┬À ${entry.displayName || entry.ingredient}`}
                       >
                         <span className="rounded-full bg-amber-800 px-1.5 py-0.5 text-[10px] font-black text-amber-50">{entry.line}</span>
                         <span>{entry.recipe}</span>
@@ -3205,9 +3205,9 @@ export function RackView({ week, locale }: Props) {
                     className="flex items-center gap-1.5 rounded-xl bg-slate-800 px-3 py-2 text-xs font-bold text-white hover:bg-slate-700 disabled:opacity-40"
                     disabled={lineEntries.length === 0}
                     onClick={() => downloadText(filename, exportRackfileCsv(lineEntries))}
-                    title={`${lineEntries.length} Einträge auf ${line}`}
+                    title={`${lineEntries.length} Eintr├ñge auf ${line}`}
                   >
-                    <span>📄</span>
+                    <span>­ƒôä</span>
                     <span>{line}</span>
                   </button>
                 );
@@ -3224,7 +3224,7 @@ export function RackView({ week, locale }: Props) {
                 )}
                 title={locale === "de" ? "Alle aktiven Linien zusammen exportieren" : "Export all active lines combined"}
               >
-                <span>📦</span>
+                <span>­ƒôª</span>
                 <span>{market === "de" ? "Alle DE" : "Alle Nordics"}</span>
               </button>
             </div>
@@ -3232,8 +3232,8 @@ export function RackView({ week, locale }: Props) {
 
           <div className="mt-4 space-y-6">
             {displayTab !== "detail" && (usedLines.length > 0 ? usedLines : activeLines).map((line) => {
-              // Physisches Hallenbild ist immer fix — nur die marktspezifischen Slots (keine
-              // metaSlots aus dem Workbook), damit DE-Liner-Zone (37–54, 64–84) nicht als
+              // Physisches Hallenbild ist immer fix ÔÇö nur die marktspezifischen Slots (keine
+              // metaSlots aus dem Workbook), damit DE-Liner-Zone (37ÔÇô54, 64ÔÇô84) nicht als
               // Spalten erscheint und der Unterschied zu Nordics sichtbar bleibt.
               const slots = fullHallSlotsForMarket(market);
               if (displayTab === "line") {
@@ -3308,8 +3308,8 @@ export function RackView({ week, locale }: Props) {
           {displayTab === "detail" && (
             <div className="mt-6 rounded-2xl border-2 border-dashed border-sky-200 bg-sky-50 px-5 py-6 text-center text-sm text-sky-700">
               {locale === "de"
-                ? "Detail-Modus aktiv – klicke einen Slot in der Linien- oder Visualisierungs-Ansicht, um hier die Details zu sehen."
-                : "Detail mode active – click a slot in the line or visual view to inspect it here."}
+                ? "Detail-Modus aktiv ÔÇô klicke einen Slot in der Linien- oder Visualisierungs-Ansicht, um hier die Details zu sehen."
+                : "Detail mode active ÔÇô click a slot in the line or visual view to inspect it here."}
             </div>
           )}
         </div>
@@ -3327,7 +3327,7 @@ export function RackView({ week, locale }: Props) {
                     <span className="text-sm font-semibold text-slate-800">{item.week}</span>
                     <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600">{item.market.toUpperCase()}</span>
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">{item.entryCount} {locale === "de" ? "Einträge" : "entries"} · {new Date(item.ts).toLocaleDateString(locale === "de" ? "de-DE" : "en-GB")}</div>
+                  <div className="mt-1 text-xs text-slate-500">{item.entryCount} {locale === "de" ? "Eintr├ñge" : "entries"} ┬À {new Date(item.ts).toLocaleDateString(locale === "de" ? "de-DE" : "en-GB")}</div>
                 </div>
               ))}
             </div>
@@ -3340,10 +3340,10 @@ export function RackView({ week, locale }: Props) {
         <section className="mx-auto max-w-[1600px] px-4 pb-4">
           <div className="rounded-[28px] border border-rose-200 bg-rose-50 p-4 ring-1 ring-rose-200">
             <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-rose-700">
-              <span>⚠</span>
-              <span>{locale === "de" ? "Bereinigungen – Protokoll" : "Clear log"}</span>
+              <span>ÔÜá</span>
+              <span>{locale === "de" ? "Bereinigungen ÔÇô Protokoll" : "Clear log"}</span>
             </div>
-            <div className="mt-1 text-xs text-rose-600">{locale === "de" ? "Jedes Bereinigen wird hier dokumentiert. Snapshot der Einträge ist in Firestore gespeichert." : "Every clear is logged. A full snapshot of entries is stored in Firestore."}</div>
+            <div className="mt-1 text-xs text-rose-600">{locale === "de" ? "Jedes Bereinigen wird hier dokumentiert. Snapshot der Eintr├ñge ist in Firestore gespeichert." : "Every clear is logged. A full snapshot of entries is stored in Firestore."}</div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {clearLogs.map((item) => (
                 <div key={item.ts} className="rounded-xl bg-white px-3 py-2 ring-1 ring-rose-200">
@@ -3351,7 +3351,7 @@ export function RackView({ week, locale }: Props) {
                     <span className="text-sm font-semibold text-slate-800">{item.week}</span>
                     <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">{item.market.toUpperCase()}</span>
                   </div>
-                  <div className="mt-1 text-xs text-rose-700">{item.entryCount} {locale === "de" ? "Einträge gelöscht" : "entries cleared"}</div>
+                  <div className="mt-1 text-xs text-rose-700">{item.entryCount} {locale === "de" ? "Eintr├ñge gel├Âscht" : "entries cleared"}</div>
                   <div className="mt-0.5 text-[10px] text-slate-500">{new Date(item.ts).toLocaleString(locale === "de" ? "de-DE" : "en-GB")}</div>
                   <div className="mt-0.5 text-[10px] text-slate-400">{locale === "de" ? "Von:" : "By:"} {item.clearedBy}</div>
                 </div>
@@ -3361,7 +3361,7 @@ export function RackView({ week, locale }: Props) {
         </section>
       )}
 
-      {/* K: Bestätigungs-Modal Planung bereinigen */}
+      {/* K: Best├ñtigungs-Modal Planung bereinigen */}
       {showClearConfirm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
@@ -3371,10 +3371,10 @@ export function RackView({ week, locale }: Props) {
             className="w-full max-w-sm rounded-[28px] bg-white p-6 shadow-2xl ring-2 ring-rose-300"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-1 text-lg font-black text-rose-700">⚠ {locale === "de" ? "Planung wirklich bereinigen?" : "Really clear the plan?"}</div>
+            <div className="mb-1 text-lg font-black text-rose-700">ÔÜá {locale === "de" ? "Planung wirklich bereinigen?" : "Really clear the plan?"}</div>
             <div className="mb-4 text-sm text-slate-600">
               {locale === "de"
-                ? `Alle ${entries.length} Einträge für ${market.toUpperCase()} ${week} werden gelöscht. Ein vollständiger Snapshot wird in Firestore gespeichert, sodass jederzeit nachvollzogen werden kann, wer bereinigt hat.`
+                ? `Alle ${entries.length} Eintr├ñge f├╝r ${market.toUpperCase()} ${week} werden gel├Âscht. Ein vollst├ñndiger Snapshot wird in Firestore gespeichert, sodass jederzeit nachvollzogen werden kann, wer bereinigt hat.`
                 : `All ${entries.length} entries for ${market.toUpperCase()} ${week} will be removed. A full snapshot is stored in Firestore so the action is always traceable.`}
             </div>
             <div className="flex gap-2">
@@ -3406,14 +3406,14 @@ export function RackView({ week, locale }: Props) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-1 flex items-center gap-2">
-              <span className="text-2xl" role="img" aria-label="Achtung">⚠️</span>
+              <span className="text-2xl" role="img" aria-label="Achtung">ÔÜá´©Å</span>
               <div className="text-sm font-black uppercase tracking-wide text-slate-800">
-                {locale === "de" ? "Vorher prüfen – Probleme im Rackplan" : "Check first – Issues in rack plan"}
+                {locale === "de" ? "Vorher pr├╝fen ÔÇô Probleme im Rackplan" : "Check first ÔÇô Issues in rack plan"}
               </div>
             </div>
             <p className="mb-4 text-xs text-slate-500">
               {locale === "de"
-                ? "Vor dem Optimieren wurden folgende Probleme erkannt. Fehler (rot) müssen behoben werden, Warnungen (gelb) sind optional."
+                ? "Vor dem Optimieren wurden folgende Probleme erkannt. Fehler (rot) m├╝ssen behoben werden, Warnungen (gelb) sind optional."
                 : "The following issues were found before optimizing. Errors (red) must be resolved; warnings (yellow) are optional."}
             </p>
             {prebuildBlocker.errors.length > 0 && (
@@ -3422,7 +3422,7 @@ export function RackView({ week, locale }: Props) {
                 <ul className="space-y-1">
                   {prebuildBlocker.errors.map((msg, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-xs text-red-800">
-                      <span className="mt-px shrink-0 text-red-500">●</span>
+                      <span className="mt-px shrink-0 text-red-500">ÔùÅ</span>
                       <span>{msg}</span>
                     </li>
                   ))}
@@ -3435,7 +3435,7 @@ export function RackView({ week, locale }: Props) {
                 <ul className="space-y-1">
                   {prebuildBlocker.warnings.map((msg, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-xs text-amber-800">
-                      <span className="mt-px shrink-0 text-amber-500">●</span>
+                      <span className="mt-px shrink-0 text-amber-500">ÔùÅ</span>
                       <span>{msg}</span>
                     </li>
                   ))}
@@ -3450,7 +3450,7 @@ export function RackView({ week, locale }: Props) {
                 {locale === "de" ? "Trotzdem bauen" : "Build anyway"}
               </button>
               <button className="btn flex-1" onClick={() => setPrebuildBlocker(null)}>
-                {locale === "de" ? "Abbrechen & prüfen" : "Cancel & review"}
+                {locale === "de" ? "Abbrechen & pr├╝fen" : "Cancel & review"}
               </button>
             </div>
           </div>
@@ -3483,7 +3483,7 @@ export function RackView({ week, locale }: Props) {
               {locale === "de" ? "URL kopieren" : "Copy URL"}
             </button>
             <button className="btn mt-2 w-full" onClick={() => setShowQrModal(false)}>
-              {locale === "de" ? "Schließen" : "Close"}
+              {locale === "de" ? "Schlie├ƒen" : "Close"}
             </button>
           </div>
         </div>
@@ -3502,7 +3502,7 @@ function UploadCard({ label, hint, accept, onPick }: { label: string; hint: stri
         </div>
         <div className="rounded-2xl bg-slate-950 px-3 py-2 text-lg font-black text-white shadow-[0_18px_30px_-24px_rgba(15,23,42,0.9)]">{label[0]}</div>
       </div>
-      <div className="mt-4 inline-flex rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Datei wählen</div>
+      <div className="mt-4 inline-flex rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Datei w├ñhlen</div>
       <input
         type="file"
         accept={accept}
@@ -3529,12 +3529,12 @@ function MiniStat({ label, value, accent = false }: { label: string; value: numb
 
 function frontColumnIndex(slotNumber: number, market: RackMarket) {
   if (slotNumber <= 5) return slotNumber;
-  // Vorzone 2-Tier: Slots 6–12, Paare (6,7)→6, (8,9)→7 … (12,13)→9
+  // Vorzone 2-Tier: Slots 6ÔÇô12, Paare (6,7)ÔåÆ6, (8,9)ÔåÆ7 ÔÇª (12,13)ÔåÆ9
   if (slotNumber <= 12) return 5 + Math.ceil((slotNumber - 5) / 2);
-  // 2-Tier-Pickfächer: DE ab Slot 103 → Spalten ab 40; Nordics ab 105 → Spalten ab 41
+  // 2-Tier-Pickf├ñcher: DE ab Slot 103 ÔåÆ Spalten ab 40; Nordics ab 105 ÔåÆ Spalten ab 41
   if (market === "de" && slotNumber >= 103) return 40 + Math.floor((slotNumber - 103) / 2);
   if (market !== "de" && slotNumber >= 105) return 41 + Math.floor((slotNumber - 105) / 2);
-  // 3-Tier-Zone: Slots 13+ → Spalten 10+
+  // 3-Tier-Zone: Slots 13+ ÔåÆ Spalten 10+
   return 9 + Math.floor((slotNumber - 13) / 3) + 1;
 }
 
@@ -3617,23 +3617,23 @@ function FrontRackGrid({
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "Linie von links nach rechts" : "Line from left to right"}</div>
             <div className="flex flex-wrap items-center gap-3">
-              {/* Legende für Zuschaltbar-Pickfaces – nur wenn Markt solche hat */}
+              {/* Legende f├╝r Zuschaltbar-Pickfaces ÔÇô nur wenn Markt solche hat */}
               {pickfaceWindowsForMarket(market).some((w) => w.zuschaltbar) && (
                 <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200 text-[11px] font-semibold text-slate-600">
                   <span className="flex items-center gap-1">
-                    <span className="inline-block rounded bg-red-100 px-1.5 py-0.5 text-red-900 ring-1 ring-red-300">🔒 Z#</span>
+                    <span className="inline-block rounded bg-red-100 px-1.5 py-0.5 text-red-900 ring-1 ring-red-300">­ƒöÆ Z#</span>
                     <span>{locale === "de" ? "gesperrt" : "locked"}</span>
                   </span>
                   <span className="text-slate-300">|</span>
                   <span className="flex items-center gap-1">
-                    <span className="inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-900 ring-1 ring-emerald-300">🔓 Z#</span>
+                    <span className="inline-block rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-900 ring-1 ring-emerald-300">­ƒöô Z#</span>
                     <span>{locale === "de" ? "freigeschaltet" : "unlocked"}</span>
                   </span>
-                  <span className="text-slate-400">·</span>
+                  <span className="text-slate-400">┬À</span>
                   <span className="text-slate-500">{locale === "de" ? "klicken zum Umschalten" : "click to toggle"}</span>
                 </div>
               )}
-              <div className="text-xs text-slate-500">{locale === "de" ? "Drag-and-drop direkt auf das gewünschte Fach" : "Drag and drop directly onto the target slot"}</div>
+              <div className="text-xs text-slate-500">{locale === "de" ? "Drag-and-drop direkt auf das gew├╝nschte Fach" : "Drag and drop directly onto the target slot"}</div>
             </div>
           </div>
 
@@ -3641,7 +3641,7 @@ function FrontRackGrid({
             {columns.map((column, index) => {
               const anchorPosition = pickColumnAnchor(column);
               const anchorMeta = anchorPosition ? slotMeta.get(anchorPosition) : undefined;
-              // Pickface-Zuordnung anhand der Slot-Nummern dieser Säule.
+              // Pickface-Zuordnung anhand der Slot-Nummern dieser S├ñule.
               const columnSlotNumbers = column.map((slot) => slot.slotNumber);
               const columnMinSlot = columnSlotNumbers.length > 0 ? Math.min(...columnSlotNumbers) : 0;
               const columnPickface = findPickfaceForSlotNumber(columnMinSlot, market);
@@ -3677,7 +3677,7 @@ function FrontRackGrid({
                         aria-hidden="true"
                         className="self-stretch mx-1 rounded-sm bg-slate-700 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]"
                         style={{ width: "18px" }}
-                        title="Physische Wand (Bereichstrennung Chilled → Mealkit)"
+                        title="Physische Wand (Bereichstrennung Chilled ÔåÆ Mealkit)"
                       />
                     ) : (
                       <div
@@ -3688,17 +3688,17 @@ function FrontRackGrid({
                     )
                   )}
                   <div className="flex w-[56px] shrink-0 flex-col gap-1" onDragOver={(e) => e.preventDefault()}>
-                    {/* Packaging-Badge (Slots 1–12): nur über erster Säule */}
+                    {/* Packaging-Badge (Slots 1ÔÇô12): nur ├╝ber erster S├ñule */}
                     {isPackagingSlot && index === 0 && (
                       <div
                         className="mb-1 rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 ring-1 ring-amber-300"
-                        title="Packaging-Vorzone · 3 Mitarbeiter · Slots 1–12"
+                        title="Packaging-Vorzone ┬À 3 Mitarbeiter ┬À Slots 1ÔÇô12"
                       >
                         3 MA
                       </div>
                     )}
-                    {/* Blöcke 1+2 werden jetzt als echte zuschaltbar-Fenster über den columnPickface-Branch gerendert */}
-                    {/* Picker-Badge oben über der ersten Säule eines neuen Pickfaces */}
+                    {/* Bl├Âcke 1+2 werden jetzt als echte zuschaltbar-Fenster ├╝ber den columnPickface-Branch gerendert */}
+                    {/* Picker-Badge oben ├╝ber der ersten S├ñule eines neuen Pickfaces */}
                     {columnPickface && (showSeparator || index === 0) && (
                       columnPickface.zuschaltbar ? (
                         <button
@@ -3706,10 +3706,10 @@ function FrontRackGrid({
                           onClick={() => onToggleZuschaltbarPickface(columnPickface.id)}
                           className={`mb-1 w-full rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider ring-1 transition ${isZuschaltbarLocked ? "bg-red-100 text-red-900 ring-red-300" : "bg-emerald-100 text-emerald-900 ring-emerald-300"}`}
                           title={isZuschaltbarLocked
-                            ? `Zuschaltbarer Block ${columnPickface.blockNumber} · gesperrt · Klick zum Freischalten (Slots ${columnPickface.min}–${columnPickface.max})`
-                            : `Zuschaltbarer Block ${columnPickface.blockNumber} · freigeschaltet · Klick zum Sperren (Slots ${columnPickface.min}–${columnPickface.max})`}
+                            ? `Zuschaltbarer Block ${columnPickface.blockNumber} ┬À gesperrt ┬À Klick zum Freischalten (Slots ${columnPickface.min}ÔÇô${columnPickface.max})`
+                            : `Zuschaltbarer Block ${columnPickface.blockNumber} ┬À freigeschaltet ┬À Klick zum Sperren (Slots ${columnPickface.min}ÔÇô${columnPickface.max})`}
                         >
-                          {isZuschaltbarLocked ? `🔒 Z${columnPickface.blockNumber}` : `🔓 Z${columnPickface.blockNumber}`}
+                          {isZuschaltbarLocked ? `­ƒöÆ Z${columnPickface.blockNumber}` : `­ƒöô Z${columnPickface.blockNumber}`}
                         </button>
                       ) : (
                         <button
@@ -3717,10 +3717,10 @@ function FrontRackGrid({
                           onClick={() => onTogglePickfaceDisabled(columnPickface.id)}
                           className={`mb-1 w-full rounded-md px-1 py-0.5 text-center text-[9px] font-bold uppercase tracking-wider ring-1 transition ${isPickfaceDisabledByOverride ? "bg-red-100 text-red-900 ring-red-300" : "bg-emerald-100 text-emerald-900 ring-emerald-300"}`}
                           title={isPickfaceDisabledByOverride
-                            ? `P${columnPickface.pickerNumber} · gesperrt · Klick zum Freischalten (Slots ${columnPickface.min}–${columnPickface.max})`
-                            : `P${columnPickface.pickerNumber} · aktiv · Klick zum Sperren (Slots ${columnPickface.min}–${columnPickface.max})`}
+                            ? `P${columnPickface.pickerNumber} ┬À gesperrt ┬À Klick zum Freischalten (Slots ${columnPickface.min}ÔÇô${columnPickface.max})`
+                            : `P${columnPickface.pickerNumber} ┬À aktiv ┬À Klick zum Sperren (Slots ${columnPickface.min}ÔÇô${columnPickface.max})`}
                         >
-                          {isPickfaceDisabledByOverride ? `🔒 P${columnPickface.pickerNumber}` : `🔓 P${columnPickface.pickerNumber}`}
+                          {isPickfaceDisabledByOverride ? `­ƒöÆ P${columnPickface.pickerNumber}` : `­ƒöô P${columnPickface.pickerNumber}`}
                         </button>
                       )
                     )}
@@ -3904,7 +3904,7 @@ function LineLaneBoard({
 
       <div className="mb-3 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">
         {locale === "de"
-          ? "Logik: 1-5 sind Box-Aufsteller (eine Ebene). Danach im DE-Liner-Bereich zweietagig. Ab Pick-Zone sind die Fächer in 3 Ebenen gestapelt."
+          ? "Logik: 1-5 sind Box-Aufsteller (eine Ebene). Danach im DE-Liner-Bereich zweietagig. Ab Pick-Zone sind die F├ñcher in 3 Ebenen gestapelt."
           : "Each card is one column: tier 1 bottom, tier 2 middle, tier 3 top."}
       </div>
 
@@ -4079,18 +4079,18 @@ function LineVisual({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <span className={lineBadge(line)}>{line}</span>
-            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${accent.chip}`}>{locale === "de" ? "Aktive Förderlinie" : "Active conveyor line"}</span>
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${accent.chip}`}>{locale === "de" ? "Aktive F├Ârderlinie" : "Active conveyor line"}</span>
           </div>
           <div>
             <h4 className={`text-xl font-black tracking-tight ${accent.text}`}>{locale === "de" ? `${line} Rack-Linie` : `${line} rack lane`}</h4>
             <p className="mt-1 text-sm text-slate-600">
               {locale === "de"
-                ? `Von ${slots.length > 0 ? `F${String(slots[0]).padStart(2, "0")}` : "-"} bis ${slots.length > 0 ? `F${String(slots[slots.length - 1]).padStart(2, "0")}` : "-"}. Die Fächer werden wie im Staffing echt dreietagig gebaut, also z. B. 13, 14, 15 übereinander.`
+                ? `Von ${slots.length > 0 ? `F${String(slots[0]).padStart(2, "0")}` : "-"} bis ${slots.length > 0 ? `F${String(slots[slots.length - 1]).padStart(2, "0")}` : "-"}. Die F├ñcher werden wie im Staffing echt dreietagig gebaut, also z. B. 13, 14, 15 ├╝bereinander.`
                 : `From ${slots.length > 0 ? `F${String(slots[0]).padStart(2, "0")}` : "-"} to ${slots.length > 0 ? `F${String(slots[slots.length - 1]).padStart(2, "0")}` : "-"}. Compartments are rendered as real three-tier stacks, for example 13, 14, 15 vertically.`}
             </p>
             <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide">
               <span className={`rounded-full px-2.5 py-1 ${accent.chip}`}>
-                {market === "de" ? (locale === "de" ? "DE mit Liner-Bühne" : "DE with liner stage") : (locale === "de" ? "Nordics ohne Liner" : "Nordics without liner")}
+                {market === "de" ? (locale === "de" ? "DE mit Liner-B├╝hne" : "DE with liner stage") : (locale === "de" ? "Nordics ohne Liner" : "Nordics without liner")}
               </span>
               <span className="rounded-full bg-white/70 px-2.5 py-1 text-slate-700 ring-1 ring-slate-200">
                 {locale === "de" ? "Drag-and-drop Planung" : "Drag-and-drop planning"}
@@ -4154,8 +4154,8 @@ function LineVisual({
 
       <div className="mt-5 rounded-[24px] border border-white/60 bg-white/75 p-3 ring-1 ring-white/50 backdrop-blur">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "ASL Überblick" : "ASL overview"}</div>
-          <div className="text-xs text-slate-500">{locale === "de" ? "Kompakte Säulenmatrix statt langer Scroll-Achse" : "Compact stacked matrix instead of a long scroll axis"}</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "ASL ├£berblick" : "ASL overview"}</div>
+          <div className="text-xs text-slate-500">{locale === "de" ? "Kompakte S├ñulenmatrix statt langer Scroll-Achse" : "Compact stacked matrix instead of a long scroll axis"}</div>
         </div>
 
         <div className="mb-4 rounded-[26px] border border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,252,235,0.82),rgba(255,255,255,0.98))] p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]">
@@ -4165,18 +4165,18 @@ function LineVisual({
               <h5 className="mt-1 text-lg font-black tracking-tight text-slate-950">
                 {market === "de"
                   ? (locale === "de" ? "Hallennachbau mit P2L-Logik" : "Floor reconstruction with P2L logic")
-                  : (locale === "de" ? "Hallennachbau für Dänemark / Schweden" : "Floor reconstruction for Denmark / Sweden")}
+                  : (locale === "de" ? "Hallennachbau f├╝r D├ñnemark / Schweden" : "Floor reconstruction for Denmark / Sweden")}
               </h5>
               <p className="mt-1 max-w-3xl text-sm text-slate-600">
                 {locale === "de"
-                  ? "Die Linie wird jetzt nicht nur als Rack gezeigt, sondern als interaktiver Hallenriss mit Stationsbändern, Materialzonen und klickbaren Arbeitsbereichen wie in der Vorlage."
+                  ? "Die Linie wird jetzt nicht nur als Rack gezeigt, sondern als interaktiver Hallenriss mit Stationsb├ñndern, Materialzonen und klickbaren Arbeitsbereichen wie in der Vorlage."
                   : "The lane now renders as an interactive floor blueprint with station bands, material zones and clickable work areas, aligned to the source layout."}
               </p>
             </div>
             <div className="rounded-[22px] bg-white px-3 py-2 text-right shadow-sm ring-1 ring-slate-200">
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "Fokus" : "Focus"}</div>
               <div className="mt-1 text-base font-black text-slate-950">{selectedFocus?.line === line ? selectedFocus.position.toUpperCase() : "-"}</div>
-              <div className="text-xs text-slate-500">{focusedMeta?.station || (locale === "de" ? "Noch kein Fach gewählt" : "No slot selected yet")}</div>
+              <div className="text-xs text-slate-500">{focusedMeta?.station || (locale === "de" ? "Noch kein Fach gew├ñhlt" : "No slot selected yet")}</div>
             </div>
           </div>
 
@@ -4192,7 +4192,7 @@ function LineVisual({
                     className={`rounded-2xl px-3 py-2 text-left text-xs font-semibold ring-1 transition hover:-translate-y-0.5 ${slotTypeTone(band.label)}`}
                   >
                     <div>{band.label}</div>
-                    <div className="mt-1 text-[10px] opacity-80">{band.columnCount} {locale === "de" ? "Säulen" : "columns"}</div>
+                    <div className="mt-1 text-[10px] opacity-80">{band.columnCount} {locale === "de" ? "S├ñulen" : "columns"}</div>
                   </button>
                 ))}
               </div>
@@ -4210,7 +4210,7 @@ function LineVisual({
                   >
                     <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{band.label}</div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-wide">
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-800">{band.columnCount} {locale === "de" ? "Säulen" : "cols"}</span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-800">{band.columnCount} {locale === "de" ? "S├ñulen" : "cols"}</span>
                       <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">{band.occupiedColumns} {locale === "de" ? "aktiv" : "active"}</span>
                       <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-900">{Math.round(band.totalDemand)} {locale === "de" ? "Picks" : "picks"}</span>
                     </div>
@@ -4236,7 +4236,7 @@ function LineVisual({
                           className={`h-full rounded-full ${pct >= 40 ? "bg-rose-400" : pct >= 25 ? "bg-amber-400" : "bg-emerald-400"}`}
                           style={{ width: `${Math.min(pct, 100)}%` }}
                         />
-                        <span className="absolute inset-0 flex items-center pl-2 text-[10px] font-bold text-slate-900">{pct}% · {workers} MA</span>
+                        <span className="absolute inset-0 flex items-center pl-2 text-[10px] font-bold text-slate-900">{pct}% ┬À {workers} MA</span>
                       </div>
                       <div className="w-12 text-right text-[10px] font-semibold text-slate-500">{station.demand} P</div>
                     </div>
@@ -4282,7 +4282,7 @@ function LineVisual({
               <div className="mt-4 rounded-[24px] border border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(248,250,252,0.98))] p-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "Rackband in Hallenansicht" : "Rack band inside floor view"}</div>
-                  <div className="text-xs text-slate-500">{locale === "de" ? "Klick auf eine Säule setzt direkt den Fokus im Detail unten." : "Clicking a column directly moves focus to the detailed stack below."}</div>
+                  <div className="text-xs text-slate-500">{locale === "de" ? "Klick auf eine S├ñule setzt direkt den Fokus im Detail unten." : "Clicking a column directly moves focus to the detailed stack below."}</div>
                 </div>
                 <div className="mt-3 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(6, Math.min(slotColumns.length || 6, 18))}, minmax(0, 1fr))` }}>
                   {slotColumns.map((column, columnIndex) => {
@@ -4304,9 +4304,9 @@ function LineVisual({
                             const cellColor = occupied ? slotEntryKindColor(slotEntries) : "bg-slate-100 text-slate-500";
                             // B: PDL-Warnung (Meal-Eintrag nicht in PDL)
                             const hasPdlWarning = !!pdlIds && slotEntries.some((e) => deriveEntryKind(e) === "meal" && !pdlIds.has(e.recipe));
-                            // C: Geändert seit Template
+                            // C: Ge├ñndert seit Template
                             const hasChange = changedSlots.has(slotKey);
-                            // I: Engpass-Simulation — betroffener Slot
+                            // I: Engpass-Simulation ÔÇö betroffener Slot
                             const isBottleneck = !!bottleneckRecipe && slotEntries.some((e) => e.recipe.toLowerCase() === bottleneckRecipe.trim().toLowerCase());
                             return (
                               <div
@@ -4315,7 +4315,7 @@ function LineVisual({
                               >
                                 {slot.position.replace("F", "")}
                                 {hasPdlWarning && <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber-400 ring-1 ring-white" title="PDL-Abweichung" />}
-                                {hasChange && !hasPdlWarning && <span className="absolute -bottom-1 -left-1 size-2 rounded-full bg-violet-500 ring-1 ring-white" title="Geändert" />}
+                                {hasChange && !hasPdlWarning && <span className="absolute -bottom-1 -left-1 size-2 rounded-full bg-violet-500 ring-1 ring-white" title="Ge├ñndert" />}
                               </div>
                             );
                           })}
@@ -4340,7 +4340,7 @@ function LineVisual({
                 <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{locale === "de" ? "Interaktives Know-how" : "Interactive know-how"}</div>
                 <div className="mt-2 space-y-2 text-sm text-slate-600">
                   <div>{locale === "de" ? "Klick auf Arbeitsband, Station oder Hallenzone springt direkt ins passende Fach." : "Click a work band, station or floor zone to jump into the matching slot."}</div>
-                  <div>{locale === "de" ? "Doppelklick unten bleibt der Detailmodus für Fach und Rezept." : "Double click in the rack stays the detail mode for slot and recipe."}</div>
+                  <div>{locale === "de" ? "Doppelklick unten bleibt der Detailmodus f├╝r Fach und Rezept." : "Double click in the rack stays the detail mode for slot and recipe."}</div>
                 </div>
               </div>
             </div>
@@ -4352,7 +4352,7 @@ function LineVisual({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-xs font-black uppercase tracking-[0.2em] text-emerald-800">{locale === "de" ? "Pick-Korridor" : "Pick corridor"}</div>
-                <div className="mt-1 text-sm text-emerald-950">{locale === "de" ? "Mittelschiene priorisieren, obere Etage nur wenn nötig." : "Prioritize the middle rail and use the top tier only when needed."}</div>
+                <div className="mt-1 text-sm text-emerald-950">{locale === "de" ? "Mittelschiene priorisieren, obere Etage nur wenn n├Âtig." : "Prioritize the middle rail and use the top tier only when needed."}</div>
               </div>
               <div className="rounded-2xl bg-emerald-700 px-3 py-2 text-right text-white shadow-sm">
                 <div className="text-[11px] uppercase tracking-wide text-emerald-100">{locale === "de" ? "Mittelschiene genutzt" : "Middle rail used"}</div>
@@ -4365,7 +4365,7 @@ function LineVisual({
                 <div className="mt-1 text-lg font-black text-emerald-950">{Math.max(lineEntries.filter((entry) => highRunnerRecipes.has(entry.recipe)).length - highRunnerOffMiddle, 0)}</div>
               </div>
               <div className="rounded-2xl bg-white/85 px-3 py-2 ring-1 ring-emerald-200">
-                <div className="font-semibold uppercase tracking-wide text-emerald-800">{locale === "de" ? "Außerhalb Mitte" : "Off middle"}</div>
+                <div className="font-semibold uppercase tracking-wide text-emerald-800">{locale === "de" ? "Au├ƒerhalb Mitte" : "Off middle"}</div>
                 <div className="mt-1 text-lg font-black text-rose-700">{highRunnerOffMiddle}</div>
               </div>
               <div className="rounded-2xl bg-white/85 px-3 py-2 ring-1 ring-emerald-200">
@@ -4375,7 +4375,7 @@ function LineVisual({
             </div>
             <div className="mt-3 rounded-2xl bg-white/85 px-3 py-3 ring-1 ring-emerald-200">
               <div className="text-[11px] font-black uppercase tracking-[0.18em] text-emerald-800">{locale === "de" ? "Optimierungsmodus" : "Optimization mode"}</div>
-              <div className="mt-1 text-sm text-emerald-950">{staffingMode === "reduce" ? (locale === "de" ? "Mitarbeiter senken: Last bündeln und Wege reduzieren." : "Reduce workers: consolidate load and shorten travel.") : staffingMode === "increase" ? (locale === "de" ? "Mitarbeiter erhöhen: Last breiter über Stationen verteilen." : "Increase workers: spread load across more stations.") : (locale === "de" ? "Balanciert: Ergonomie und Stationslast ausgleichen." : "Balanced: even out ergonomics and station load.")}</div>
+              <div className="mt-1 text-sm text-emerald-950">{staffingMode === "reduce" ? (locale === "de" ? "Mitarbeiter senken: Last b├╝ndeln und Wege reduzieren." : "Reduce workers: consolidate load and shorten travel.") : staffingMode === "increase" ? (locale === "de" ? "Mitarbeiter erh├Âhen: Last breiter ├╝ber Stationen verteilen." : "Increase workers: spread load across more stations.") : (locale === "de" ? "Balanciert: Ergonomie und Stationslast ausgleichen." : "Balanced: even out ergonomics and station load.")}</div>
             </div>
           </div>
 
@@ -4393,7 +4393,7 @@ function LineVisual({
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {stationLoads.length === 0 && (
                 <div className="rounded-2xl border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500">
-                  {locale === "de" ? "Noch keine Stationslast verfügbar." : "No station load available yet."}
+                  {locale === "de" ? "Noch keine Stationslast verf├╝gbar." : "No station load available yet."}
                 </div>
               )}
               {stationLoads.map((station) => (
@@ -4405,7 +4405,7 @@ function LineVisual({
                     </div>
                     <div className="space-y-2 text-right">
                       <div className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                        {station.entries} {locale === "de" ? "Einträge" : "entries"}
+                        {station.entries} {locale === "de" ? "Eintr├ñge" : "entries"}
                       </div>
                       <div className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white">
                         {locale === "de" ? `${(station.demand / picksPerWorker).toFixed(1)} MA` : `${(station.demand / picksPerWorker).toFixed(1)} FTE`}
@@ -4429,8 +4429,8 @@ function LineVisual({
               <div className="font-bold uppercase tracking-wide">{tierLabel(tier as 1 | 2 | 3, locale)}</div>
               <div className="mt-1 opacity-80">
                 {tier < 3
-                  ? (locale === "de" ? "Direkte Arbeitszone in der Säule." : "Primary working zone in the column.")
-                  : (locale === "de" ? "Obere Etage, möglichst sparsam belegen." : "Top tier, use sparingly when possible.")}
+                  ? (locale === "de" ? "Direkte Arbeitszone in der S├ñule." : "Primary working zone in the column.")
+                  : (locale === "de" ? "Obere Etage, m├Âglichst sparsam belegen." : "Top tier, use sparingly when possible.")}
               </div>
             </div>
           ))}

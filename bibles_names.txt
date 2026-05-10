@@ -1,0 +1,7 @@
+generatedAt
+locale
+sheetCount
+sheets
+spreadsheetId
+spreadsheetTitle
+timeZone

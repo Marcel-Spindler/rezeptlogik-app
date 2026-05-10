@@ -5,10 +5,14 @@ import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, DEFAULT_STATION_DEVICE_COUNTS, DEFAULT_STATION_POOLS, computeWeekLoad, fmtMin, getBaseVerdenVolume, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools, normalizePoolName, saveStationDeviceCounts, saveStationPools, tokenToStation, workflowSteps } from "./equipment";
 import { loadDynamicModule } from "./dynamicImport";
 import { PlanningView } from "./PlanningView";
+import { PlanningOasisView } from "./PlanningOasisView";
 import { WhatIfView } from "./WhatIfView";
+import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
 import { formatDateTime, marketToLocale, marketVariantLabel, MARKET_LANGUAGE_LABEL, tl, type UiLocale } from "./i18n";
+import { useRecipePlanningIntel } from "./planningOasisData";
 
 const RackView = lazy(() => loadDynamicModule("rack-view", () => import("./RackView").then((module) => ({ default: module.RackView }))));
+const RackV2View = lazy(() => loadDynamicModule("rack-v2-view", () => import("./RackV2View").then((module) => ({ default: module.RackV2View }))));
 const LinePlanningView = lazy(() => loadDynamicModule("line-planning", () => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView }))));
 
 const MARKETS: Market[] = ["BENL", "DKSE", "DE"];
@@ -352,20 +356,52 @@ function usePersistent<T>(key: string, defaultVal: T): [T, React.Dispatch<React.
   return [state, wrapped];
 }
 
+type AppView = "recipe" | "equipment" | "breakdown" | "planning" | "woche" | "rack" | "rack2" | "ket" | "phase2";
+type AppSurface = "full" | "kitchen";
+
+const ALL_VIEWS: readonly AppView[] = ["recipe", "equipment", "breakdown", "planning", "woche", "rack", "rack2", "ket", "phase2"] as const;
+
+function parseTruthyParam(value: string | null): boolean {
+  const v = (value ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function resolveSurfaceFromUrl(): AppSurface {
+  const params = new URLSearchParams(window.location.search);
+  const surface = (params.get("surface") ?? "").toLowerCase();
+  const mode = (params.get("mode") ?? "").toLowerCase();
+  if (surface === "kitchen" || mode === "kitchen" || parseTruthyParam(params.get("kitchen"))) return "kitchen";
+  return "full";
+}
+
+function buildKitchenShareUrl(week: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set("surface", "kitchen");
+  url.searchParams.set("view", "breakdown");
+  url.searchParams.set("week", week);
+  return url.toString();
+}
+
 export default function App() {
+  const surface = useMemo<AppSurface>(() => resolveSurfaceFromUrl(), []);
+  const kitchenMode = surface === "kitchen";
+
   const [data, setData] = useState<DataBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedWeek, setSelectedWeek] = usePersistent<string>("week", "");
   const [selectedRecipe, setSelectedRecipe] = usePersistent<string | null>("recipe", null);
-  const [view, setView] = usePersistent<"recipe" | "equipment" | "planning" | "woche" | "rack" | "ket" | "phase2">("view", "recipe");
+  const [view, setView] = usePersistent<AppView>("view", "recipe");
+  const [kitchenLinkCopied, setKitchenLinkCopied] = useState(false);
   // URL-Parameter ?view=ket und ?week=... haben Vorrang vor gespeichertem Zustand.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const param = params.get("view");
     const weekParam = params.get("week");
-    const valid = ["recipe", "equipment", "planning", "woche", "rack", "ket", "phase2"] as const;
-    if ((valid as readonly string[]).includes(param ?? "")) {
-      setView(param as typeof valid[number]);
+    if (kitchenMode) {
+      setView("breakdown");
+      setSelectedRecipe(null);
+    } else if ((ALL_VIEWS as readonly string[]).includes(param ?? "")) {
+      setView(param as AppView);
     }
     if (weekParam) {
       setSelectedWeek(weekParam);
@@ -373,7 +409,7 @@ export default function App() {
       setSearchText("");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [kitchenMode]);
   const [upliftPercent, setUpliftPercent] = usePersistent<number>("uplift", 0);
   const [searchText, setSearchText] = useState<string>("");
   // Markt-Selektion global mitlesen (wird in RecipeDetail gespeichert)
@@ -513,17 +549,20 @@ export default function App() {
     <Shell locale={locale}>
       <div className="grid grid-cols-12 gap-4">
         {/* Sidebar: KW + Rezeptliste */}
+        {!kitchenMode && (
         <aside className="col-span-12 md:col-span-4 lg:col-span-3 space-y-3">
           <div className="card p-1.5 flex flex-wrap w-full rounded-lg bg-slate-100 ring-1 ring-slate-200 gap-0.5">
             {([
               ["recipe", tl(locale, "Rezept")],
               ["woche", tl(locale, "Σ Wochenbestellung")],
               ["equipment", tl(locale, "Equipment")],
-              ["planning", tl(locale, "Wochenplaner")],
+              ["breakdown", "Breakdown+"],
+              ["planning", "Planning OASE"],
               ["rack", "Rack"],
-              ["ket", "Linienplanung"],
+              ["rack2", "Rack v2"],
+              ["ket", "Linien-Fokus"],
               ["phase2", "What-if & Diff"]
-            ] as ["recipe"|"equipment"|"planning"|"woche"|"rack"|"ket"|"phase2", string][]).map(([k, l]) => (
+            ] as ["recipe"|"equipment"|"breakdown"|"planning"|"woche"|"rack"|"rack2"|"ket"|"phase2", string][]).map(([k, l]) => (
               <button key={k} onClick={() => setView(k)}
                 className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md ${
                   view === k ? "bg-white shadow ring-1 ring-slate-300" : "text-slate-500 hover:text-slate-800"
@@ -631,13 +670,56 @@ export default function App() {
             </ul>
           </div>
         </aside>
+        )}
 
         {/* Hauptbereich */}
-        <main className="col-span-12 md:col-span-8 lg:col-span-9">
+        <main className={kitchenMode ? "col-span-12" : "col-span-12 md:col-span-8 lg:col-span-9"}>
+          {kitchenMode && (
+            <div className="card p-4 mb-3 bg-gradient-to-r from-amber-50 via-white to-emerald-50 ring-1 ring-amber-200">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-amber-700">Kuechenmodus</div>
+                  <div className="text-sm font-semibold text-slate-800">Nur Breakdown-Rechner aktiv</div>
+                </div>
+                <div className="flex items-end gap-2">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {tl(locale, "Kalenderwoche")}
+                    <select
+                      className="mt-1 block min-w-[16rem] rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-2 py-2 text-sm"
+                      value={selectedWeek}
+                      onChange={e => { setSelectedWeek(e.target.value); setSelectedRecipe(null); setSearchText(""); }}
+                    >
+                      {data.weeks.map(w => {
+                        const n = data.weekRecipes.filter(r => r.hfWeek === w).filter(isProducedInVerden).length;
+                        return <option key={w} value={w}>{w}  ({n} produzierte Rezepte)</option>;
+                      })}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className={`mb-0.5 rounded-lg px-3 py-2 text-xs font-semibold ring-1 ${kitchenLinkCopied ? "bg-emerald-100 text-emerald-800 ring-emerald-300" : "bg-white text-slate-700 ring-slate-300"}`}
+                    onClick={() => {
+                      const url = buildKitchenShareUrl(selectedWeek);
+                      navigator.clipboard.writeText(url).then(() => {
+                        setKitchenLinkCopied(true);
+                        setTimeout(() => setKitchenLinkCopied(false), 2000);
+                      });
+                    }}
+                  >
+                    {kitchenLinkCopied ? "Link kopiert" : "Kuechen-Link kopieren"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {kitchenMode && <BreakdownEquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
+          {!kitchenMode && (
+            <>
           {view === "equipment" && <EquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
+          {view === "breakdown" && <BreakdownEquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
           {view === "woche" && <WocheZutatenView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
           {view === "planning" && (
-            <PlanningView
+            <PlanningOasisView
               data={data}
               week={selectedWeek}
               locale={locale}
@@ -647,6 +729,7 @@ export default function App() {
                 setSelectedRecipe(code);
                 setView("recipe");
               }}
+              defaultSection="cockpit"
             />
           )}
           {view === "rack" && (
@@ -654,10 +737,31 @@ export default function App() {
               <RackView week={selectedWeek} locale="de" />
             </Suspense>
           )}
-          {view === "ket" && (
-            <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
-              <LinePlanningView week={selectedWeek} locale={locale} />
+          {view === "rack2" && (
+            <Suspense fallback={<div className="card p-6 text-slate-500">Rack v2 wird geladen …</div>}>
+              <RackV2View
+                week={selectedWeek}
+                locale="de"
+                weekRecipes={data.weekRecipes}
+                recipes={data.recipes}
+                cookSchedules={data.cookSchedules}
+                processSpecs={data.processSpecs}
+              />
             </Suspense>
+          )}
+          {view === "ket" && (
+            <PlanningOasisView
+              data={data}
+              week={selectedWeek}
+              locale={locale}
+              upliftPercent={upliftPercent}
+              selectedRecipe={selectedRecipe}
+              onSelectRecipe={code => {
+                setSelectedRecipe(code);
+                setView("recipe");
+              }}
+              defaultSection="lines"
+            />
           )}
           {view === "phase2" && (
             <WhatIfView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />
@@ -667,6 +771,8 @@ export default function App() {
                             cookSchedules={data.cookSchedules} processSpecs={data.processSpecs ?? {}}
                             upliftPercent={upliftPercent} />
             : <div className="card p-6 text-slate-500">{tl(locale, "Kein Rezept ausgewählt.")}</div>)}
+            </>
+          )}
         </main>
       </div>
       <footer className="mt-6 text-xs text-slate-400">
@@ -1217,6 +1323,7 @@ function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, upliftPer
 function OverviewTab({ wr, recipe, market, md, portionsTotal, upliftPercent, locale }:
   { wr: WeekRecipe; recipe: Recipe; market: Market; md?: Recipe["markets"][Market]; portionsTotal: number; upliftPercent: number; locale: UiLocale }) {
   const baseTotal = getBaseVerdenVolume(wr);
+  const planningIntel = useRecipePlanningIntel(wr.code);
   return (
     <div className="grid md:grid-cols-2 gap-3">
       <div className="card p-4">
@@ -1258,6 +1365,92 @@ function OverviewTab({ wr, recipe, market, md, portionsTotal, upliftPercent, loc
           </dl>
         ) : <div className="text-slate-500 text-sm">{tl(locale, "Keine Daten für diesen Markt.")}</div>}
       </div>
+
+      <div className="card p-4 md:col-span-2 bg-gradient-to-r from-sky-50 via-white to-emerald-50 border border-sky-200">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h3 className="text-sm font-semibold text-slate-700">Factory Live Intel aus Planning-Sheet</h3>
+          <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-300">{wr.hfWeek}</span>
+        </div>
+        {!planningIntel && (
+          <div className="mt-3 text-sm text-slate-500">
+            Für dieses Rezept gibt es im aktuellen Planning-Sheet noch keine Work-Order- oder LinePlating-Zuordnung.
+          </div>
+        )}
+        {planningIntel && (
+          <div className="mt-3 grid lg:grid-cols-[0.9fr_1.1fr] gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-2 gap-2">
+              <IntelMiniStat label="Work Orders" value={fmtNum(planningIntel.workOrders.length)} />
+              <IntelMiniStat label="Sub-Rezepte" value={fmtNum(planningIntel.uniqueSubRecipes.length)} />
+              <IntelMiniStat label="WO Target Σ" value={fmtNum(planningIntel.totalTargetPortions)} />
+              <IntelMiniStat label="LinePlating Σ" value={fmtNum(planningIntel.platingRows.reduce((sum, row) => sum + row.totalAmount, 0))} />
+              <IntelMiniStat label="Forecast Σ" value={fmtNum(planningIntel.forecastTotal)} />
+              <IntelMiniStat label="PDL Σ" value={fmtNum(planningIntel.pdlPortions)} />
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Rolle</div>
+                <div className={`mt-1 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ring-1 ${planningIntel.planningRole === "hybrid" ? "bg-sky-50 text-sky-800 ring-sky-200" : planningIntel.planningRole === "supplied" ? "bg-amber-50 text-amber-800 ring-amber-200" : "bg-emerald-50 text-emerald-800 ring-emerald-200"}`}>
+                  {planningIntel.planningRole === "hybrid" ? "Hybrid / Übergang" : planningIntel.planningRole === "supplied" ? "Zugeliefertes Meal" : "Eigene Fabrikproduktion"}
+                </div>
+              </div>
+              {planningIntel.platingRows.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">LinePlating</div>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {planningIntel.platingRows.map(row => (
+                      <span key={`${row.sourceTab}-${row.platingDay}`} className="rounded-full bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800 ring-1 ring-violet-200">
+                        {row.platingDay}: {fmtNum(row.totalAmount)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {planningIntel.statuses.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Status-Mix</div>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {planningIntel.statuses.map(item => (
+                      <span key={item.status} className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
+                        {item.status}: {fmtNum(item.count)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {planningIntel.methods.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Cook Methods</div>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {planningIntel.methods.slice(0, 10).map(method => (
+                      <span key={method} className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-200">
+                        {method}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {planningIntel.uniqueSubRecipes.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Sheet-Sub-Rezepte</div>
+                  <div className="mt-1 text-sm text-slate-700">
+                    {planningIntel.uniqueSubRecipes.slice(0, 8).join(" · ")}
+                    {planningIntel.uniqueSubRecipes.length > 8 ? ` · +${planningIntel.uniqueSubRecipes.length - 8} weitere` : ""}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function IntelMiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-lg font-black tabular-nums text-slate-900">{value}</div>
     </div>
   );
 }
@@ -1512,7 +1705,12 @@ function TreeCanvas({ roots, code, recipeName, week, market }: {
 
   function toggleExpanded(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+    setExpanded(prev => {
+      const s = new Set(prev);
+      if (s.has(id)) s.delete(id);
+      else s.add(id);
+      return s;
+    });
   }
 
   function expandAll() {

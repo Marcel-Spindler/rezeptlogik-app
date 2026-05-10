@@ -124,6 +124,7 @@ const TEXTS: Record<string, Partial<Record<UiLocale, string>>> = {
   "Shelf-Life-Risiko der Woche": { nl: "Shelf-life-risico van de week", en: "Shelf-life risk of the week" },
   "kritisch": { nl: "kritiek", en: "critical" },
   "Wochenrhythmus Donnerstag bis Sonntag": { nl: "Weekritme donderdag tot zondag", en: "Weekly rhythm Thursday to Sunday" },
+  "Wochenrhythmus Montag bis Sonntag": { nl: "Weekritme maandag tot zondag", en: "Weekly rhythm Monday to Sunday" },
   "Konflikte & Engpässe": { nl: "Conflicten en bottlenecks", en: "Conflicts & bottlenecks" },
   "Rezept-Zuordnung": { nl: "Recepttoewijzing", en: "Recipe assignment" },
   "Code": { nl: "Code", en: "Code" },

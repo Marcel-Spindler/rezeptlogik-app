@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { loadData } from "./dataSource";
+import { usePlanningOasisData } from "./planningOasisData";
 import type { WeekRecipe } from "./types";
 import type { UiLocale } from "./i18n";
 
@@ -114,6 +115,8 @@ type KetWO = {
   comments: string;
 };
 
+type AutoPlanMode = "balanced" | "subrecipe-first" | "fulfillment-smart";
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  PURE HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -163,6 +166,18 @@ function nameShort(name: string, max = 30): string {
 
 function fmtNum(n: number): string {
   return n.toLocaleString("de-DE");
+}
+
+function planningRoleTone(role: "factory" | "hybrid" | "supplied" | undefined): string {
+  if (role === "hybrid") return "bg-sky-50 text-sky-800 ring-sky-200";
+  if (role === "supplied") return "bg-amber-50 text-amber-800 ring-amber-200";
+  return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+}
+
+function planningRoleLabel(role: "factory" | "hybrid" | "supplied" | undefined): string {
+  if (role === "hybrid") return "Hybrid";
+  if (role === "supplied") return "Zulieferung";
+  return "Eigene Produktion";
 }
 
 function slotDuration(slotKey: string): number {
@@ -376,6 +391,7 @@ function RecipePill({
   recipe, compact = false, dimmed = false,
   scheduledDays,
   scheduledPortions,
+  planningRole,
   onDragStart,
 }: {
   recipe: LinePlanRecipe;
@@ -383,6 +399,7 @@ function RecipePill({
   dimmed?: boolean;
   scheduledDays?: string[];
   scheduledPortions?: number;
+  planningRole?: "factory" | "hybrid" | "supplied";
   onDragStart?: () => void;
 }) {
   const tone = recipeTone(recipe.code);
@@ -424,6 +441,9 @@ function RecipePill({
             </div>
             <div className="mt-1.5 text-xs font-semibold tabular-nums">
               &#x2211; {fmtNum(recipe.totalPlanned)} Portionen
+            </div>
+            <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${planningRoleTone(planningRole)}`}>
+              {planningRoleLabel(planningRole)}
             </div>
             {scheduledDays && scheduledDays.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1 items-center">
@@ -790,6 +810,7 @@ function KetDayColumn({
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function LinePlanningView({ week, locale }: { week: string; locale: UiLocale }) {
+  const { data: planningOasis } = usePlanningOasisData();
   const [subTab, setSubTab] = useState<"lineplanning" | "ket">("lineplanning");
   const [recipes, setRecipes] = useState<LinePlanRecipe[]>([]);
   const [schedule, dispatch] = useReducer(scheduleReducer, {});
@@ -813,10 +834,14 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
   const [comments, setComments] = useState<Record<string, string>>({});
   const [targetMealsBySlot, setTargetMealsBySlot] = useState<Record<string, number>>({});
   const [lineCapacityByLane, setLineCapacityByLane] = useState<Record<string, number>>(defaultLineCapacityMap);
+  const [platingLineCount, setPlatingLineCount] = useState<1 | 2 | 3>(3);
+  const [autoPlanMode, setAutoPlanMode] = useState<AutoPlanMode>("fulfillment-smart");
   const [autoPlanNotice, setAutoPlanNotice] = useState<string>("");
   const dragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ketDragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const weekStr = week.split("-W")[1] ?? week;
+  const activeLineIdx = useMemo(() => Array.from({ length: platingLineCount }, (_, idx) => idx), [platingLineCount]);
+  const weekIntel = planningOasis?.weeks[week] ?? null;
 
   // ─── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -923,13 +948,27 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
           doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`),
           (snap) => {
             if (!snap.exists()) return;
-            const d = snap.data() as { schedule?: ScheduleMap; comments?: Record<string, string>; ketOverrides?: Record<string, { day?: string; status?: string }>; targetMealsBySlot?: Record<string, number>; lineCapacityByLane?: Record<string, number> };
+            const d = snap.data() as {
+              schedule?: ScheduleMap;
+              comments?: Record<string, string>;
+              ketOverrides?: Record<string, { day?: string; status?: string }>;
+              targetMealsBySlot?: Record<string, number>;
+              lineCapacityByLane?: Record<string, number>;
+              platingLineCount?: number;
+              autoPlanMode?: AutoPlanMode;
+            };
             if (d.schedule) dispatch({ type: "load", schedule: d.schedule });
             if (d.comments) setComments(d.comments);
             if (d.ketOverrides) setKetOverrides(d.ketOverrides);
             if (d.targetMealsBySlot) setTargetMealsBySlot(d.targetMealsBySlot);
             if (d.lineCapacityByLane) {
               setLineCapacityByLane({ ...defaultLineCapacityMap(), ...d.lineCapacityByLane });
+            }
+            if (d.platingLineCount && d.platingLineCount >= 1 && d.platingLineCount <= 3) {
+              setPlatingLineCount(d.platingLineCount as 1 | 2 | 3);
+            }
+            if (d.autoPlanMode === "balanced" || d.autoPlanMode === "subrecipe-first" || d.autoPlanMode === "fulfillment-smart") {
+              setAutoPlanMode(d.autoPlanMode);
             }
           },
           () => { /* silent – offline / keine Rechte */ }
@@ -954,6 +993,8 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
         ketOverrides,
         targetMealsBySlot,
         lineCapacityByLane,
+        platingLineCount,
+        autoPlanMode,
       });
       setSaveOk(true);
       setTimeout(() => setSaveOk(false), 3000);
@@ -987,6 +1028,8 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
         ketOverrides: {},
         targetMealsBySlot: {},
         lineCapacityByLane,
+        platingLineCount,
+        autoPlanMode,
       });
     } catch (err) {
       alert(`Bereinigen fehlgeschlagen: ${(err as Error).message}`);
@@ -1044,7 +1087,16 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
   function autoPlanFromTargets() {
     const next: ScheduleMap = { ...schedule };
     const producedByRecipe = new Map<string, number>();
-    const defaultTargetMh = LINES.reduce((sum, _line, li) => sum + Math.max(0, lineCapacityByLane[String(li)] ?? 0), 0);
+    const defaultTargetMh = activeLineIdx.reduce((sum, li) => sum + Math.max(0, lineCapacityByLane[String(li)] ?? 0), 0);
+
+    // Bereits inaktive Linien in jedem Slot leeren, damit 1/2-Linienmodus sauber bleibt.
+    for (const day of DAYS) {
+      for (const slot of SLOTS) {
+        for (let li = platingLineCount; li < LINES.length; li++) {
+          delete next[`${day}|${slot.key}|${li}`];
+        }
+      }
+    }
 
     for (const [key, recipe] of Object.entries(next)) {
       if (!recipe) continue;
@@ -1059,7 +1111,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
         const targetMh = Math.max(0, targetMealsBySlot[targetKey] ?? defaultTargetMh);
         if (targetMh <= 0) continue;
 
-        const freeLineIdx = Array.from({ length: LINES.length }, (_, li) => li)
+        const freeLineIdx = [...activeLineIdx]
           .filter((li) => !next[`${day}|${slot.key}|${li}`] && (lineCapacityByLane[String(li)] ?? 0) > 0)
           .sort((a, b) => Number(a === LINES.length - 1) - Number(b === LINES.length - 1));
 
@@ -1083,7 +1135,32 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
             const fitScore = 1 - Math.min(1, Math.abs(missingMh - recipeMh) / Math.max(targetMh, recipeMh, 1));
             const volumeScore = Math.min(1, remaining / Math.max(slotPortions, 1));
             const lineFitScore = lineTarget > 0 ? 1 - Math.min(1, Math.abs(lineTarget - recipeMh) / Math.max(lineTarget, recipeMh, 1)) : fitScore;
-            const score = fitScore * 0.45 + lineFitScore * 0.25 + volumeScore * 0.3;
+
+            // Fulfillment- und Plating-Denkweise: Fr priorisiert Nordics + BENL + Teil DE; So Rest-DE.
+            const totalPlanned = Math.max(1, recipe.totalPlanned);
+            const fridayDemand = recipe.nordics + recipe.bnl + recipe.de * 0.5;
+            const sundayDemand = recipe.de * 0.5;
+            let dayDemandScore = 0;
+            if (day === "Freitag") dayDemandScore = fridayDemand / totalPlanned;
+            else if (day === "Sonntag") dayDemandScore = sundayDemand / totalPlanned;
+            else dayDemandScore = Math.max(0, (recipe.de * 0.15) / totalPlanned);
+
+            const recipeWos = ketWOs.filter(wo => (wo.recipeName.match(/FV\d{4}[A-Z]/)?.[0] ?? "") === recipe.code);
+            const longSubCount = recipeWos.reduce((sum, wo) => {
+              const joined = wo.cookMethods.join(" /").toUpperCase();
+              const isLong = /BRAISER|BLAST CHILLER|MARINADE|THAW|IMMERSION BLENDER|PLANETARY MIXER/.test(joined);
+              return sum + (isLong ? 1 : 0);
+            }, 0);
+            const longSubScore = Math.min(1, longSubCount / 6);
+            const isEarlyCookDay = day === "Montag" || day === "Dienstag" || day === "Mittwoch" || day === "Donnerstag";
+
+            let modeBoost = 0;
+            if (autoPlanMode === "subrecipe-first" && isEarlyCookDay) modeBoost = longSubScore;
+            if (autoPlanMode === "fulfillment-smart") {
+              modeBoost = dayDemandScore * 0.75 + (isEarlyCookDay ? longSubScore * 0.5 : 0);
+            }
+
+            const score = fitScore * 0.38 + lineFitScore * 0.22 + volumeScore * 0.2 + dayDemandScore * 0.12 + modeBoost * 0.08;
 
             if (score > bestScore) {
               bestScore = score;
@@ -1102,7 +1179,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
 
     dispatch({ type: "load", schedule: next });
     setAutoPlanNotice(assignments > 0
-      ? `${assignments} Slots automatisch belegt (Ziel-Meals/h berücksichtigt).`
+      ? `${assignments} Slots automatisch belegt (${platingLineCount} Linie(n), Modus: ${autoPlanMode}).`
       : "Keine neuen Slots belegt. Prüfe Ziel-Meals/h und Restvolumen.");
     setTimeout(() => setAutoPlanNotice(""), 3500);
   }
@@ -1192,7 +1269,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
   function mealsPerHour(day: PlanDay, slotKey: string): number {
     const duration = slotDuration(slotKey);
     let total = 0;
-    for (let li = 0; li < LINES.length; li++) {
+    for (const li of activeLineIdx) {
       const r = schedule[`${day}|${slotKey}|${li}`];
       if (r) total += portionsInSlot(r, slotKey);
     }
@@ -1284,6 +1361,16 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
               <span><strong>{recipes.length}</strong> Rezepte</span>
               <span><strong>{Object.values(schedule).filter(Boolean).length}</strong> Slots belegt</span>
             </div>
+            {weekIntel && (
+              <div className="mt-2 flex flex-wrap gap-2 text-[10px]">
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-800 ring-1 ring-emerald-200">Eigene {fmtNum(weekIntel.factoryRecipeCount)}</span>
+                <span className="rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-800 ring-1 ring-sky-200">Hybrid {fmtNum(weekIntel.hybridRecipeCount)}</span>
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-800 ring-1 ring-amber-200">Zulieferung {fmtNum(weekIntel.suppliedRecipeCount)}</span>
+                {!weekIntel.hasTruthData && (
+                  <span className="rounded-full bg-violet-50 px-2 py-0.5 font-semibold text-violet-800 ring-1 ring-violet-200">WO {fmtNum(weekIntel.workOrderCount)} · Target {fmtNum(weekIntel.totalTargetPortions)}</span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {/* Sub-tab switcher */}
@@ -1354,6 +1441,12 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
             <span>{dataWarning}</span>
           </div>
         )}
+        {weekIntel && !weekIntel.hasTruthData && (
+          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 ring-1 ring-amber-200 flex items-start gap-2">
+            <span className="shrink-0">⚠️</span>
+            <span>Für diese KW fehlen aktuell Truth-/PDL-Daten im Export. Linien- und KET-Zahlen laufen, PDL/Forecast bleiben bis zum passenden KW-Export leer.</span>
+          </div>
+        )}
         {showHelp && (
           <div className="mt-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4 text-xs text-slate-700 space-y-3">
             <div className="font-bold text-sm text-slate-800 mb-1">Bedienung – Factor OPS Planner · Linienplanung</div>
@@ -1404,7 +1497,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                     const mh = mealsPerHour(day, slot.key);
                     const slotComment = comments[`${day}|${slot.key}`] ?? "";
                     const targetKey = `${day}|${slot.key}`;
-                    const fallbackTarget = LINES.reduce((sum, _line, li) => sum + Math.max(0, lineCapacityByLane[String(li)] ?? 0), 0);
+                    const fallbackTarget = activeLineIdx.reduce((sum, li) => sum + Math.max(0, lineCapacityByLane[String(li)] ?? 0), 0);
                     const targetMh = Math.max(0, targetMealsBySlot[targetKey] ?? fallbackTarget);
                     const deltaMh = mh - targetMh;
                     return (
@@ -1419,6 +1512,14 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                           {LINES.map((_, li) => {
                             const cellKey = `${day}|${slot.key}|${li}`;
                             const r = schedule[cellKey] ?? null;
+                            const disabledLine = li >= platingLineCount;
+                            if (disabledLine) {
+                              return (
+                                <div key={cellKey} className="min-h-[5rem] rounded-xl border border-dashed border-slate-200 bg-slate-100/70 flex items-center justify-center text-[10px] font-semibold text-slate-400">
+                                  deaktiviert
+                                </div>
+                              );
+                            }
                             return (
                               <DropCell
                                 key={cellKey}
@@ -1521,15 +1622,40 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                           const value = Math.max(0, Number(e.target.value) || 0);
                           setLineCapacityByLane(prev => ({ ...prev, [String(li)]: value }));
                         }}
-                        className="w-20 rounded-md border border-slate-300 px-2 py-1 text-right font-semibold text-slate-700"
+                        className={`w-20 rounded-md border px-2 py-1 text-right font-semibold ${li >= platingLineCount ? "border-slate-200 bg-slate-100 text-slate-400" : "border-slate-300 text-slate-700"}`}
+                        disabled={li >= platingLineCount}
                       />
                       <span className="text-[10px] text-slate-400">/h</span>
                     </div>
                   </label>
                 ))}
               </div>
+              <div className="mt-3 space-y-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">Plating-Linien aktiv</div>
+                <div className="flex gap-1">
+                  {[1, 2, 3].map(count => (
+                    <button
+                      key={count}
+                      onClick={() => setPlatingLineCount(count as 1 | 2 | 3)}
+                      className={`flex-1 rounded-md px-2 py-1 text-xs font-semibold ${platingLineCount === count ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                    >
+                      {count} Linie{count > 1 ? "n" : ""}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">Automatik-Modus</div>
+                <select
+                  value={autoPlanMode}
+                  onChange={e => setAutoPlanMode(e.target.value as AutoPlanMode)}
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700"
+                >
+                  <option value="fulfillment-smart">Fulfillment smart (Fr NORD+BENL+DE, So Rest-DE)</option>
+                  <option value="subrecipe-first">Lange Sub-Rezepte zuerst (Mo-Do)</option>
+                  <option value="balanced">Balanced</option>
+                </select>
+              </div>
               <div className="mt-2 text-[10px] text-slate-500">
-                Wird als Auto-Plan-Ziel je Slot genutzt, wenn kein individuelles Slot-Ziel eingetragen ist.
+                Linienzahl + Modus werden von der Auto-Planung berücksichtigt und mitgespeichert.
               </div>
             </div>
 
@@ -1561,6 +1687,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                   <RecipePill
                     key={recipe.code}
                     recipe={recipe}
+                    planningRole={planningOasis?.recipes[recipe.code]?.planningRole}
                     scheduledDays={scheduledDaysByCode.has(recipe.code)
                       ? [...DAYS].filter(d => scheduledDaysByCode.get(recipe.code)!.has(d))
                       : undefined}
@@ -1597,7 +1724,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
               <div className="space-y-1.5">
                 {DAYS.map(day => {
                   const totalMh = SLOTS.reduce((sum, slot) => sum + mealsPerHour(day, slot.key), 0);
-                  const maxMh = SLOTS.reduce((sum, slot) => sum + LINES.length * slot.duration * 30, 0); // rough max
+                  const maxMh = SLOTS.reduce((sum, slot) => sum + platingLineCount * slot.duration * 30, 0); // rough max
                   const pct = Math.min(100, (totalMh / (maxMh / 60)) * 100);
                   return (
                     <div key={day}>

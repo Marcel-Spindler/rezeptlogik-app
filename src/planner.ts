@@ -1,8 +1,8 @@
-import type { DataBundle, Station, WeekRecipe } from "./types";
+import type { DataBundle, ProcessSpec, Station, SubRecipe, WeekRecipe } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, computeWeekLoad, getStationCapacityView, normalizePoolName } from "./equipment";
 
-export const PLANNER_DAYS = ["Do", "Fr", "So", "Mo", "Di", "Mi"] as const;
+export const PLANNER_DAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] as const;
 export const PLANNER_SHIFTS = ["S1", "S2", "S3"] as const;
 export const SHIFT_CAPACITY_MIN = DEFAULT_SHIFT_MIN;
 export const PLANNER_STORAGE_KEY = "rezeptlogik-planner-v1";
@@ -40,6 +40,8 @@ export interface RecipeAssignment {
   subRecipeName?: string;
   day: PlannerDay;
   shift: PlannerShift;
+  /** Reihenfolge innerhalb Tag+Schicht (1..n), unabhängig von Uhrzeit. */
+  order?: number;
   /** Minuten ab 06:00 (0 … 1440). Optional – fallback = Schicht-Startminute */
   startMin?: number;
   note?: string;
@@ -164,12 +166,17 @@ function sanitizeScenario(input: unknown): PlannerScenario | null {
         : undefined;
       const subRecipeId = typeof row.subRecipeId === "string" && row.subRecipeId ? row.subRecipeId : undefined;
       const subRecipeName = typeof row.subRecipeName === "string" && row.subRecipeName ? row.subRecipeName : undefined;
+      const rawOrder = row.order;
+      const order = typeof rawOrder === "number" && Number.isFinite(rawOrder)
+        ? Math.max(1, Math.round(rawOrder))
+        : undefined;
       assignments[key] = {
         recipeCode: row.recipeCode,
         subRecipeId,
         subRecipeName,
         day: row.day,
         shift: row.shift,
+        order,
         startMin,
         note: typeof row.note === "string" && row.note.trim() ? row.note.trim() : undefined
       };
@@ -234,6 +241,17 @@ export function assignRecipe(
   recipe: WeekRecipe,
   assignment?: Omit<RecipeAssignment, "recipeCode">
 ): PlannerStorage {
+  function nextOrderForSlot(assignments: Record<string, RecipeAssignment>, day: PlannerDay, shift: PlannerShift): number {
+    let maxOrder = 0;
+    for (const row of Object.values(assignments)) {
+      if (row.day !== day || row.shift !== shift) continue;
+      if (typeof row.order === "number" && Number.isFinite(row.order)) {
+        maxOrder = Math.max(maxOrder, Math.round(row.order));
+      }
+    }
+    return Math.max(1, maxOrder + 1);
+  }
+
   return upsertWeekState(storage, week, prev => ({
     ...prev,
     scenarios: prev.scenarios.map(s => {
@@ -241,7 +259,16 @@ export function assignRecipe(
       const key = assignmentKey(recipe.code, assignment?.subRecipeId);
       const assignments = { ...s.assignments };
       if (!assignment) delete assignments[key];
-      else assignments[key] = { recipeCode: recipe.code, ...assignment };
+      else {
+        const existing = assignments[key];
+        const keepsSlot = !!existing && existing.day === assignment.day && existing.shift === assignment.shift;
+        const order = typeof assignment.order === "number" && Number.isFinite(assignment.order)
+          ? Math.max(1, Math.round(assignment.order))
+          : keepsSlot && typeof existing?.order === "number"
+            ? existing.order
+            : nextOrderForSlot(assignments, assignment.day, assignment.shift);
+        assignments[key] = { recipeCode: recipe.code, ...assignment, order };
+      }
       return { ...s, assignments };
     })
   }));
@@ -496,6 +523,254 @@ function recipePlanningHints(data: DataBundle, week: string, recipeCode: string)
   return { thaw, preproduction, seafood };
 }
 
+/**
+ * Lead-Time-Klasse eines Subrezepts (in "Tagen vor Plating-Tag", die diese
+ * Komponente fuer die Vorproduktion benoetigt). Hoehere Klasse = frueher in der
+ * Woche eingeplant.
+ *
+ *  4 = Inbound / sehr lange Vorlaufprozesse (Brining, Curing, Ferment).
+ *  3 = Saucen / Marinaden / Slow-Cook / Butter-Family / lange Hold-Zeiten.
+ *  2 = Blast-Chiller / chilled Hold (8-24 h Vorlauf).
+ *  1 = Standard-Vorbereitung am Vortag (Cutting, Chilled Prep).
+ *  0 = Hot-Cook / Finishing (am Plating-Tag selbst).
+ */
+function subRecipeLeadClass(sub: SubRecipe, spec?: ProcessSpec): number {
+  const cat = (sub.category ?? "").toLowerCase();
+  const family = (spec?.productFamily ?? "").toLowerCase();
+  const maxHold = Math.max(0, ...Object.values(spec?.holdTimeMin ?? {}).map(v => v ?? 0));
+
+  // Inbound / lange Vorbereitung (>= 2 Tage)
+  if (/brine|cure|ferment|marinade .*(over|long)|raw .*(receive|inbound)/i.test(cat)) return 4;
+  if (maxHold >= 24 * 60) return 4;
+
+  // Saucen, Slow-Cook, Butter-Family, lange Holds (>= 12 h)
+  if (/sauce|broth|stock|gravy|braise|sous vide|slow cook|butter|marinade/i.test(cat)) return 3;
+  if (family === "butter") return 3;
+  if (maxHold >= 12 * 60) return 3;
+
+  // Blast-Chiller / chilled Hold (>= 4 h)
+  if (/blast chiller|chill hold|cold hold|portion .*(chill)/i.test(cat)) return 2;
+  if (maxHold >= 4 * 60) return 2;
+
+  // Hot Cook / Finishing
+  if (/grill|fry|sear|roast|pan cook|wok|hot finish|griddle/i.test(cat)) return 0;
+
+  // Standard chilled Vorbereitung
+  return 1;
+}
+
+function defaultPlatingDayForRecipe(weekRecipe: WeekRecipe): PlannerDay {
+  // Wenn es einen DE-Sonntagssplit gibt und der DE-Anteil ueberwiegt → Plating So.
+  // Sonst Plating am Freitag (DK/SE + BENL + DE Split 1).
+  const total = weekRecipe.verdenVolume.BENL + weekRecipe.verdenVolume.DKSE + weekRecipe.verdenVolume.DE;
+  if (total <= 0) return "Fr";
+  const deShare = weekRecipe.verdenVolume.DE / total;
+  // Heuristik: ueberwiegender DE-Anteil → ein Teil laeuft Sonntag; wir wollen
+  // dass die Komponenten bis Fr UND Sa fertig sind. Wir nehmen den FRUEHEREN
+  // Plating-Tag (Fr) als Deadline, damit Komponenten fuer beide Splits da sind.
+  if (deShare >= 0.6) return "Fr"; // bewusst Fr, weil Fr-Split 1 zuerst raus muss
+  return "Fr";
+}
+
+function shiftDaysBackward(day: PlannerDay, days: number): PlannerDay {
+  const idx = PLANNER_DAYS.indexOf(day);
+  if (idx < 0) return day;
+  const target = Math.max(0, idx - Math.max(0, days));
+  const candidate = PLANNER_DAYS[target] ?? day;
+  // Sa/So → Kueche zu, also auf den letzten Mo–Fr davor zurueckfallen.
+  if (isKitchenOpen(candidate)) return candidate;
+  for (let i = target - 1; i >= 0; i--) {
+    const d = PLANNER_DAYS[i];
+    if (d && isKitchenOpen(d)) return d;
+  }
+  return "Mo";
+}
+
+/**
+ * Batch-Split Plan: pro Woche und Rezept werden die Mengen auf die beiden
+ * Fulfillment-Tage (Fr / So) aufgeteilt, und je Charge wird das aus der
+ * MHD-Regel (Fisch 9 Tage, sonst 13 Tage; Kunde will 7 Tage Rest) gueltige
+ * Produktionsfenster berechnet.
+ *
+ * Hintergrund: Wenn DE am Sonntag (DE Split 2) gefulfillt wird, dann darf
+ * Fisch nicht am Mo produziert werden, weil sonst beim Kunden weniger als
+ * 7 Tage Rest-MHD ankommen. Folge: dieselbe SKU muss auf zwei Produktionstage
+ * verteilt werden, z.B. 1000 Stk Di (fuer Fr-Fulfillment) und 1000 Stk Sa
+ * (fuer So-Fulfillment).
+ */
+export interface BatchSplit {
+  fulfillmentDay: PlannerDay;
+  fulfillmentLabel: string;
+  portions: number;
+  earliestProductionDay: PlannerDay;
+  latestProductionDay: PlannerDay;
+  recommendedProductionDay: PlannerDay;
+  reason: string;
+}
+
+export interface BatchSplitPlan {
+  recipeCode: string;
+  recipeName: string;
+  isSeafood: boolean;
+  shelfLifeDays: number;
+  customerTargetDays: number;
+  totalPortions: number;
+  batches: BatchSplit[];
+}
+
+const CUSTOMER_TARGET_DAYS = 7;
+
+function recipeIsSeafood(data: DataBundle, recipeCode: string): boolean {
+  const recipe = data.recipes[recipeCode];
+  if (!recipe) return false;
+  return Object.values(recipe.grossIngredients)
+    .flatMap(rows => rows ?? [])
+    .some(row => /salmon|shrimp|prawn|fish|seafood|cod|tuna|trout|hering|herring/i.test(`${row.ingredient ?? ""} ${row.ingredientId ?? ""}`));
+}
+
+/**
+ * Sa und So ist die Kueche in Verden NICHT besetzt. Produktion findet
+ * ausschliesslich Mo–Fr statt. Fulfillment-Verladungen am Fr/So sind davon
+ * unabhaengig, weil sie nur Versand sind.
+ */
+export const KITCHEN_OPEN_DAYS: ReadonlyArray<PlannerDay> = ["Mo", "Di", "Mi", "Do", "Fr"];
+export const KITCHEN_CLOSED_DAYS: ReadonlyArray<PlannerDay> = ["Sa", "So"];
+
+export function isKitchenOpen(day: PlannerDay): boolean {
+  return KITCHEN_OPEN_DAYS.includes(day);
+}
+
+/** Findet den letzten Kueche-offen-Tag im Index-Bereich [earliestIdx..latestIdx]. */
+function clampToKitchenOpenIdx(earliestIdx: number, latestIdx: number): { lo: number; hi: number } | null {
+  let lo = -1;
+  let hi = -1;
+  for (let i = earliestIdx; i <= latestIdx; i++) {
+    const d = PLANNER_DAYS[i];
+    if (d && isKitchenOpen(d)) {
+      if (lo === -1) lo = i;
+      hi = i;
+    }
+  }
+  if (lo === -1) return null;
+  return { lo, hi };
+}
+
+function recommendedProdDayInWindow(
+  fulfillmentDay: PlannerDay,
+  earliestIdx: number,
+  latestIdx: number
+): PlannerDay {
+  // Operativ bevorzugt: so spaet wie moeglich vor Fulfillment (max. MHD beim
+  // Kunden), aber NUR an einem Kueche-offen-Tag (Mo–Fr) und nicht am
+  // Fulfillment-Tag selbst (Plating-Last).
+  const fulfillIdx = PLANNER_DAYS.indexOf(fulfillmentDay);
+  const upper = Math.min(latestIdx, fulfillIdx - 1);
+  const clamped = clampToKitchenOpenIdx(earliestIdx, Math.max(earliestIdx, upper));
+  if (clamped) return PLANNER_DAYS[clamped.hi];
+  // Fallback: gesamtes Fenster nur Sa/So → letzter Mo–Fr-Tag davor.
+  for (let i = Math.min(latestIdx, PLANNER_DAYS.length - 1); i >= 0; i--) {
+    const d = PLANNER_DAYS[i];
+    if (d && isKitchenOpen(d)) return d;
+  }
+  return fulfillmentDay;
+}
+
+export function computeBatchSplitPlan(data: DataBundle, week: string): BatchSplitPlan[] {
+  const rows = data.weekRecipes.filter(r => {
+    if (r.hfWeek !== week) return false;
+    const code = (r.code ?? "").toUpperCase();
+    if (!(code.startsWith("FE") || code.startsWith("FV"))) return false;
+    return (r.verdenVolume.BENL + r.verdenVolume.DKSE + r.verdenVolume.DE) > 0;
+  });
+
+  const plans: BatchSplitPlan[] = [];
+  for (const wr of rows) {
+    const dkse = wr.verdenVolume.DKSE ?? 0;
+    const benl = wr.verdenVolume.BENL ?? 0;
+    const de = wr.verdenVolume.DE ?? 0;
+    const deFri = Math.round(de / 2);
+    const deSun = Math.max(0, de - deFri);
+    const friPortions = dkse + benl + deFri;
+    const sunPortions = deSun;
+    const totalPortions = friPortions + sunPortions;
+    if (totalPortions <= 0) continue;
+
+    const isSeafood = recipeIsSeafood(data, wr.code);
+    const shelfLifeDays = isSeafood ? 9 : 13;
+    const maxGapDays = Math.max(1, shelfLifeDays - CUSTOMER_TARGET_DAYS);
+
+    const batches: BatchSplit[] = [];
+
+    if (friPortions > 0) {
+      const fulfillIdx = PLANNER_DAYS.indexOf("Fr");
+      const earliestIdxRaw = Math.max(0, fulfillIdx - maxGapDays);
+      const latestIdxRaw = fulfillIdx; // bis einschliesslich Fr (Plating)
+      const clamped = clampToKitchenOpenIdx(earliestIdxRaw, latestIdxRaw);
+      const earliestIdx = clamped ? clamped.lo : earliestIdxRaw;
+      const latestIdx = clamped ? clamped.hi : latestIdxRaw;
+      const earliest = PLANNER_DAYS[earliestIdx];
+      const latest = PLANNER_DAYS[latestIdx];
+      const recommended = recommendedProdDayInWindow("Fr", earliestIdx, latestIdx);
+      batches.push({
+        fulfillmentDay: "Fr",
+        fulfillmentLabel: "Fulfillment 1 (DK/SE + BENL + DE Split 1)",
+        portions: friPortions,
+        earliestProductionDay: earliest,
+        latestProductionDay: latest,
+        recommendedProductionDay: recommended,
+        reason: isSeafood
+          ? `Fisch MHD 9d → fruehestens ${earliest}, empfohlen ${recommended} (Mo–Fr)`
+          : `MHD 13d → Produktion ${earliest}–${latest} (Mo–Fr), empfohlen ${recommended}`
+      });
+    }
+
+    if (sunPortions > 0) {
+      const fulfillIdx = PLANNER_DAYS.indexOf("So");
+      const earliestIdxRaw = Math.max(0, fulfillIdx - maxGapDays);
+      const latestIdxRaw = fulfillIdx;
+      const clamped = clampToKitchenOpenIdx(earliestIdxRaw, latestIdxRaw);
+      const earliestIdx = clamped ? clamped.lo : earliestIdxRaw;
+      const latestIdx = clamped ? clamped.hi : latestIdxRaw;
+      const earliest = PLANNER_DAYS[earliestIdx];
+      const latest = PLANNER_DAYS[latestIdx];
+      const recommended = recommendedProdDayInWindow("So", earliestIdx, latestIdx);
+      const kitchenClosedTail = !clamped || clamped.hi < latestIdxRaw;
+      batches.push({
+        fulfillmentDay: "So",
+        fulfillmentLabel: "Fulfillment 2 (DE Split 2)",
+        portions: sunPortions,
+        earliestProductionDay: earliest,
+        latestProductionDay: latest,
+        recommendedProductionDay: recommended,
+        reason: isSeafood
+          ? `Fisch MHD 9d, Sa/So Kueche zu → Produktion zwingend ${recommended} (Vorlauf 2 Tage in den Versand am So)`
+          : kitchenClosedTail
+            ? `MHD 13d, Sa/So Kueche zu → spaetestmoeglich ${recommended}, Fenster ${earliest}–${latest}`
+            : `MHD 13d → Produktion ${earliest}–${latest}, empfohlen ${recommended}`
+      });
+    }
+
+    plans.push({
+      recipeCode: wr.code,
+      recipeName: wr.recipeName,
+      isSeafood,
+      shelfLifeDays,
+      customerTargetDays: CUSTOMER_TARGET_DAYS,
+      totalPortions,
+      batches
+    });
+  }
+
+  // Sortiere: Multi-Batch zuerst (Split-Faelle), dann Seafood, dann Rest.
+  return plans.sort((a, b) => {
+    const aMulti = a.batches.length > 1 ? 0 : 1;
+    const bMulti = b.batches.length > 1 ? 0 : 1;
+    if (aMulti !== bMulti) return aMulti - bMulti;
+    if (a.isSeafood !== b.isSeafood) return a.isSeafood ? -1 : 1;
+    return b.totalPortions - a.totalPortions;
+  });
+}
+
 export function suggestAssignments(
   data: DataBundle,
   week: string,
@@ -509,60 +784,110 @@ export function suggestAssignments(
   const shiftCapacityMin = options?.shiftCapacityMin ?? SHIFT_CAPACITY_MIN;
   const suggestions: Record<string, PlannerSuggestedAssignment> = {};
 
-  for (const recipe of analysis.recipes.filter(row => !row.assigned)) {
-    const loadRecipe = analysis.recipes.find(row => row.recipeCode === recipe.recipeCode);
-    if (!loadRecipe) continue;
+  // Mutable Last-Snapshots, damit Sub-Vorschlaege die schon vorgeschlagenen
+  // Slots beruecksichtigen (vermeidet, dass alle in denselben Slot fallen).
+  const stationLoad: Record<string, Partial<Record<Station, number>>> = JSON.parse(JSON.stringify(analysis.stationLoadBySlot));
+  const poolLoad: Record<string, Record<string, number>> = JSON.parse(JSON.stringify(analysis.poolLoadBySlot));
+
+  function pickShiftForSlot(day: PlannerDay, perStation: Partial<Record<Station, number>>): { shift: PlannerShift; overload: number; peak: number } {
+    let best: { shift: PlannerShift; overload: number; peak: number } | undefined;
+    for (const shift of activeShifts) {
+      const slotKey = `${day}__${shift}`;
+      let overload = 0;
+      let peak = 0;
+      for (const station of STATIONS) {
+        const added = perStation[station] ?? 0;
+        if (added <= 0) continue;
+        const current = stationLoad[slotKey]?.[station] ?? 0;
+        const cap = getStationCapacityView(current + added, stationDeviceCounts[station] ?? 1, shiftCapacityMin);
+        peak = Math.max(peak, cap.utilizationPct);
+        overload += Math.max(0, cap.utilizationPct - 100) * 10;
+      }
+      if (!best || overload + peak < best.overload + best.peak) best = { shift, overload, peak };
+    }
+    return best ?? { shift: activeShifts[0] ?? "S1", overload: 0, peak: 0 };
+  }
+
+  function commitLoad(day: PlannerDay, shift: PlannerShift, perStation: Partial<Record<Station, number>>) {
+    const slotKey = `${day}__${shift}`;
+    const current = stationLoad[slotKey] ?? {};
+    const poolCurrent = poolLoad[slotKey] ?? {};
+    for (const station of STATIONS) {
+      const added = perStation[station] ?? 0;
+      if (added <= 0) continue;
+      current[station] = (current[station] ?? 0) + added;
+      const poolName = normalizePoolName(stationPools[station], station);
+      poolCurrent[poolName] = (poolCurrent[poolName] ?? 0) + added;
+    }
+    stationLoad[slotKey] = current;
+    poolLoad[slotKey] = poolCurrent;
+  }
+
+  for (const recipe of analysis.recipes) {
     const recipeLoad = computeWeekLoad(data, week, { portionMultiplier: options?.portionMultiplier }).recipes.find(r => r.weekRecipe.code === recipe.recipeCode);
     if (!recipeLoad) continue;
+    const platingDay = defaultPlatingDayForRecipe(recipeLoad.weekRecipe);
     const hints = recipePlanningHints(data, week, recipe.recipeCode);
-    const preferredDays: PlannerDay[] = hints.thaw || hints.seafood
-      ? ["Do", "Fr", "So", "Mo", "Di", "Mi"]
-      : hints.preproduction
-        ? ["Do", "Fr", "So", "Mo", "Di", "Mi"]
-        : ["Fr", "So", "Do", "Mo", "Di", "Mi"];
 
-    let best: PlannerSuggestedAssignment | undefined;
-    for (const day of PLANNER_DAYS) {
-      for (const shift of activeShifts) {
-        const slotKey = `${day}__${shift}`;
-        let overloadPenalty = 0;
-        let peakUtilization = 0;
-        for (const station of STATIONS) {
-          const current = analysis.stationLoadBySlot[slotKey]?.[station] ?? 0;
-          const added = recipeLoad.perStationMin[station] ?? 0;
-          if (added <= 0) continue;
-          const capacity = getStationCapacityView(current + added, stationDeviceCounts[station] ?? 1, shiftCapacityMin);
-          peakUtilization = Math.max(peakUtilization, capacity.utilizationPct);
-          overloadPenalty += Math.max(0, capacity.utilizationPct - 100) * 10;
-        }
-        const poolLoads = new Map<string, number>();
-        for (const station of STATIONS) {
-          const added = recipeLoad.perStationMin[station] ?? 0;
-          if (added <= 0) continue;
-          const poolName = normalizePoolName(stationPools[station], station);
-          poolLoads.set(poolName, (poolLoads.get(poolName) ?? (analysis.poolLoadBySlot[slotKey]?.[poolName] ?? 0)) + added);
-        }
-        for (const [poolName, total] of poolLoads.entries()) {
-          const members = STATIONS.filter(candidate => normalizePoolName(stationPools[candidate], candidate) === poolName);
-          const devices = members.reduce((sum, candidate) => sum + Math.max(1, Math.floor(stationDeviceCounts[candidate] ?? 1)), 0);
-          const capacity = getStationCapacityView(total, devices, shiftCapacityMin);
-          overloadPenalty += Math.max(0, capacity.utilizationPct - 100) * 12;
-          peakUtilization = Math.max(peakUtilization, capacity.utilizationPct);
-        }
-        const dayPenalty = preferredDays.indexOf(day) >= 0 ? preferredDays.indexOf(day) * 5 : 30;
-        const shiftPenalty = activeShifts.indexOf(shift) * 1.5;
-        const score = overloadPenalty + peakUtilization + dayPenalty + shiftPenalty;
-        const reason = overloadPenalty > 0
-          ? `niedrigste Ueberlast fuer ${day} ${shift}`
-          : hints.thaw || hints.seafood
-            ? `THAW/Seafood bevorzugt frueh: ${day} ${shift}`
-            : hints.preproduction
-              ? `Prep-/Chiller-Profil bevorzugt ${day} ${shift}`
-              : `geringste Last in ${day} ${shift}`;
-        if (!best || score < best.score) best = { recipeCode: recipe.recipeCode, day, shift, score, reason };
-      }
+    // Pro Sub-Rezept Lead-Klasse → Tag bestimmen.
+    const subPlan: Array<{ sub: typeof recipeLoad.subs[number]; day: PlannerDay; leadClass: number }> = [];
+    let earliestLeadClass = 0;
+    for (const sub of recipeLoad.subs) {
+      const leadClass = subRecipeLeadClass(
+        { id: sub.subRecipeId, name: sub.subRecipeName, category: sub.category } as SubRecipe,
+        sub.spec
+      );
+      const subDay = shiftDaysBackward(platingDay, leadClass);
+      subPlan.push({ sub, day: subDay, leadClass });
+      earliestLeadClass = Math.max(earliestLeadClass, leadClass);
     }
-    if (best) suggestions[recipe.recipeCode] = best;
+
+    // 1) Vorschlag fuer das Hauptrezept = Plating-Tag (der "letzte Touch") –
+    //    fuer Hot-Cook/Finishing-Profile bleibt es am Plating-Tag. Wenn das
+    //    Rezept aber NUR aus Vorlauf-Komponenten besteht, ziehen wir den
+    //    Hauptslot mit nach vorne.
+    const mainDay = recipeLoad.subs.length === 0
+      ? platingDay
+      : (subPlan.every(p => p.leadClass >= 2) ? shiftDaysBackward(platingDay, Math.min(2, earliestLeadClass)) : platingDay);
+    const mainPick = pickShiftForSlot(mainDay, recipeLoad.perStationMin);
+    if (!recipe.assigned) {
+      suggestions[recipe.recipeCode] = {
+        recipeCode: recipe.recipeCode,
+        day: mainDay,
+        shift: mainPick.shift,
+        score: mainPick.overload + mainPick.peak,
+        reason: hints.seafood
+          ? `Seafood (MHD 9d): Plating ${mainDay} ${mainPick.shift}, Komponenten Mo–Mi`
+          : hints.preproduction
+            ? `Vorprod-Profil: Plating ${mainDay}, Lead bis Mo`
+            : `Plating ${mainDay} ${mainPick.shift}; Subs rueckwaerts`
+      };
+    }
+    commitLoad(mainDay, mainPick.shift, recipeLoad.perStationMin);
+
+    // 2) Pro-Sub-Vorschlaege (Schluessel = recipeCode::subId), nur wenn nicht
+    //    bereits zugeordnet.
+    for (const plan of subPlan) {
+      const key = assignmentKey(recipe.recipeCode, plan.sub.subRecipeId);
+      const existing = scenario.assignments[key];
+      if (existing) continue;
+      const pick = pickShiftForSlot(plan.day, plan.sub.minutesPerStation);
+      const reasonByClass: Record<number, string> = {
+        4: `Inbound/Lange Vorlauf (KW-1): ${plan.day} ${pick.shift}`,
+        3: `Sauce/Marinade/Slow-Cook: ${plan.day} ${pick.shift} (3 Tage vor Plating)`,
+        2: `Blast-Chiller/Hold: ${plan.day} ${pick.shift} (2 Tage vor Plating)`,
+        1: `Vortags-Prep: ${plan.day} ${pick.shift}`,
+        0: `Hot-Cook/Finishing: am Plating-Tag ${plan.day} ${pick.shift}`
+      };
+      suggestions[key] = {
+        recipeCode: recipe.recipeCode,
+        day: plan.day,
+        shift: pick.shift,
+        score: pick.overload + pick.peak,
+        reason: reasonByClass[plan.leadClass] ?? `geplant fuer ${plan.day} ${pick.shift}`
+      };
+      commitLoad(plan.day, pick.shift, plan.sub.minutesPerStation);
+    }
   }
 
   return suggestions;
