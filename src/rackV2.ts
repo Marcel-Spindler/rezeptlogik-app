@@ -216,12 +216,12 @@ export function rackV2PackagingZoneForEntry(entry: RackEntry): RackV2PackagingZo
 
 export function rackV2PackagingAllowedSlots(market: RackV2MarketId, zone: RackV2PackagingZone): number[] {
   if (market === "DE") {
-    if (zone === "box") return [2, 3, 4, 5];
-    if (zone === "liner") return [6, 8, 10, 12, 7, 9, 11];
+    if (zone === "box") return [2, 3, 5];          // DE: Kartons fest auf F2, F3, F5
+    if (zone === "liner") return [6, 8, 10, 12];   // DE: Liner fest auf Tier-2-Positionen
     return [1];
   }
-  if (zone === "box") return [2, 3, 4];
-  if (zone === "liner") return [6, 8, 10, 12, 7, 9, 11];
+  if (zone === "box") return [2, 3, 4];            // Nordics: Kartonage fest auf F2, F3, F4
+  if (zone === "liner") return [];                 // Nordics: kein Liner
   return [1, 5];
 }
 
@@ -353,7 +353,7 @@ function rackV2IsSmoothieLike(entry: RackEntry): boolean {
   const hay = [entry.recipe, entry.sku, entry.ingredient, entry.displayName]
     .map((value) => String(value ?? "").toLowerCase())
     .join(" ");
-  return hay.includes("smoothie") || hay.includes("smoot") || hay.includes("drink");
+  return hay.includes("smoothie") || hay.includes("drink");
 }
 
 export function rackV2EffectivePickQuantity(entry: RackEntry): number {
@@ -364,7 +364,7 @@ export function rackV2EffectivePickQuantity(entry: RackEntry): number {
   return base;
 }
 
-function rackV2EntryFingerprint(entry: RackEntry): string {
+export function rackV2EntryFingerprint(entry: RackEntry): string {
   return [
     entry.recipe,
     String(entry.sku ?? "").toLowerCase(),
@@ -374,7 +374,8 @@ function rackV2EntryFingerprint(entry: RackEntry): string {
 }
 
 function rackV2AllocationTier(block: RackV2Block, preferredTier: 1 | 2 | 3): Array<1 | 2 | 3> {
-  const order: Array<1 | 2 | 3> = preferredTier === 2 ? [2, 1, 3] : preferredTier === 1 ? [1, 2, 3] : [3, 2, 1];
+  // Tier-Reihenfolge: 2=Mittelschiene (ergonomisch best), 1=Unterschiene, 3=Oberschiene nur Not
+  const order: Array<1 | 2 | 3> = preferredTier === 2 ? [2, 1, 3] : [1, 2, 3];
   return order.filter((tier) => tier <= block.maxTier);
 }
 
@@ -427,13 +428,12 @@ export function rackV2AutoFillLayout(
   }
 
   const sortedMeals = [...meals].sort((left, right) => (right.quantity ?? 0) - (left.quantity ?? 0));
+  // Highrunner (oberstes Drittel nach Menge) → Tier 2 (Mittelschiene)
+  // Alles andere (inkl. Mid + Low) → Tier 1 (Unterschiene), Tier 3 nur im Notfall
   const highCount = Math.ceil(sortedMeals.length / 3);
-  const lowStart = sortedMeals.length - Math.ceil(sortedMeals.length / 3);
-  const runnerClass = new Map<string, "high" | "mid" | "low">();
+  const runnerClass = new Map<string, "high" | "low">();
   sortedMeals.forEach((entry, index) => {
-    if (index < highCount) runnerClass.set(entry.id, "high");
-    else if (index >= lowStart) runnerClass.set(entry.id, "low");
-    else runnerClass.set(entry.id, "mid");
+    runnerClass.set(entry.id, index < highCount ? "high" : "low");
   });
 
   function allocate(block: RackV2Block | undefined, preferredTier: 1 | 2 | 3): { slot: number; tier: 1 | 2 | 3 } | null {
@@ -465,9 +465,26 @@ export function rackV2AutoFillLayout(
   const midBlock = activeBlocks.find((block) => block.minSlot <= 90 && block.maxSlot >= 85) ?? activeBlocks[Math.floor(activeBlocks.length / 2)];
 
   ice.forEach((entry, index) => {
-    const primary = market === "DE" ? (index % 2 === 0 ? firstBlock : lastBlock) : lastBlock;
-    const allocated = allocate(primary, 2) ?? allocate(midBlock, 2) ?? allocate(firstBlock, 2);
-    if (allocated) place(entry, allocated.slot, allocated.tier);
+    // DE: Dreier Eis (qty 3) verteilt auf Vorne → Mitte → Hinten
+    // Nordics: Eis immer ganz hinten
+    const iceTargets = market === "DE"
+      ? [firstBlock, midBlock, lastBlock]
+      : [lastBlock, midBlock];
+    const primary = iceTargets[index % iceTargets.length];
+    const allocated =
+      allocate(primary, 2) ??
+      allocate(midBlock, 2) ??
+      allocate(firstBlock, 2) ??
+      allocate(lastBlock, 2);
+    if (!allocated) return;
+    merged.push({
+      ...entry,
+      flowRackPosition: rackV2NormalizeSlot(allocated.slot),
+      tier: allocated.tier,
+      quantity: market === "DE" ? 3 : 1, // Nordics: Eis = 1 Stück = 1 Fach
+      line: "",
+      sort: allocated.slot,
+    });
   });
 
   const giftsTargets = activeBlocks.filter((block) => block.area === "gifts");
@@ -488,14 +505,18 @@ export function rackV2AutoFillLayout(
 
   let cursor = 0;
   for (const entry of sortedMeals) {
-    const preferredTier: 1 | 2 | 3 = runnerClass.get(entry.id) === "high" ? 2 : runnerClass.get(entry.id) === "low" ? 1 : 3;
+    // Highrunner → Tier 2 (Mittelschiene), alle anderen → Tier 1 (Unterschiene)
+    // Tier 3 (Oberschiene) nur als absoluter Notfall via rackV2AllocationTier-Fallback
+    const preferredTier: 1 | 2 | 3 = runnerClass.get(entry.id) === "high" ? 2 : 1;
     let placed = false;
     for (let attempt = 0; attempt < activeBlocks.length && !placed; attempt += 1) {
       const block = activeBlocks[(cursor + attempt) % activeBlocks.length];
       const allocated = allocate(block, preferredTier);
       if (!allocated) continue;
       place(entry, allocated.slot, allocated.tier);
-      cursor = (cursor + attempt + 1) % Math.max(activeBlocks.length, 1);
+      // Block dicht befüllen ("so wenig Racks wie möglich") → Cursor bleibt auf
+      // aktuellem Block bis er voll ist, erst dann Schritt zum nächsten
+      cursor = (cursor + attempt) % Math.max(activeBlocks.length, 1);
       placed = true;
     }
   }

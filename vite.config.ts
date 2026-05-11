@@ -11,7 +11,6 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes("node_modules/exceljs")) return "excel-workbook-vendor";
-          if (id.endsWith("/src/rackWorkbook.ts")) return "rack-workbook";
           return undefined;
         },
       },

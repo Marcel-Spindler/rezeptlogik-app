@@ -122,6 +122,12 @@ function fmtNum(value: number, digits = 0) {
   return value.toLocaleString("de-DE", { maximumFractionDigits: digits });
 }
 
+/** Known protein ingredient IDs with their GN-tray specs. Extend when new PTN items are added. */
+const PTN_ID_TRAY_SPECS: Record<string, { pcsPerTray: number; pieceKg: number }> = {
+  "PTN-00-139317-3": { pcsPerTray: 30, pieceKg: 0.160 }, // Chicken Breast B/S 160g
+  "PTN-00-139968-1": { pcsPerTray: 28, pieceKg: 0.140 }, // Salmon Skinless Boneless 140g
+};
+
 function norm(value: string | null | undefined) {
   return String(value ?? "")
     .toLowerCase()
@@ -258,18 +264,21 @@ function ingredientRowTubsByMode(
 
 function inferTubProfile(equipmentRaw: string, capacityKg: number | null): TubProfile {
   if (capacityKg && capacityKg > 0) {
-    if (capacityKg <= 8) return { type: "Kleinwanne", nominalKg: capacityKg };
-    if (capacityKg <= 15) return { type: "Mittelwanne", nominalKg: capacityKg };
-    if (capacityKg <= 30) return { type: "Grosswanne", nominalKg: capacityKg };
-    return { type: "Bulk-Wanne", nominalKg: capacityKg };
+    if (capacityKg <= 10) return { type: "Kleinwanne",    nominalKg: capacityKg };
+    if (capacityKg <= 25) return { type: "Mittelwanne",   nominalKg: capacityKg };
+    if (capacityKg <= 60) return { type: "Grosswanne",    nominalKg: capacityKg };
+    if (capacityKg <= 120) return { type: "XL-Wanne",     nominalKg: capacityKg };
+    return { type: "Bulk-Container", nominalKg: capacityKg };
   }
-
+  // Defaults aus Bible-Daten: Braiser 68–100 kg, V-Mag 90 kg, Verimixer bis 105 kg
   const equipment = norm(equipmentRaw);
-  if (equipment.includes("braiser")) return { type: "Grosswanne", nominalKg: 25 };
-  if (equipment.includes("middle") || equipment.includes("kitchen")) return { type: "Mittelwanne", nominalKg: 12 };
-  if (equipment.includes("mixer")) return { type: "Mittelwanne", nominalKg: 10 };
-  if (equipment.includes("marinade") || equipment.includes("brine")) return { type: "Kleinwanne", nominalKg: 8 };
-  return { type: "Standardwanne", nominalKg: 10 };
+  if (equipment.includes("braiser"))                                         return { type: "XL-Wanne",    nominalKg: 80  };
+  if (equipment.includes("middle") || equipment.includes("kitchen"))         return { type: "XL-Wanne",    nominalKg: 95  };
+  if (equipment.includes("vmag") || equipment.includes("v-mag") || equipment.includes("debox")) return { type: "XL-Wanne", nominalKg: 90 };
+  if (equipment.includes("mixer"))                                           return { type: "Grosswanne",  nominalKg: 40  };
+  if (equipment.includes("marinade") || equipment.includes("brine"))         return { type: "XL-Wanne",    nominalKg: 90  };
+  if (equipment.includes("oven"))                                            return { type: "Grosswanne",  nominalKg: 60  };
+  return { type: "Standardwanne", nominalKg: 40 };
 }
 
 function tokenize(value: string): string[] {
@@ -691,12 +700,14 @@ function buildRows(
 // ═══════════════════════════════════════════════════════════════════════════
 
 const WANNEN: { label: string; kg: number }[] = [
-  { label: "2 kg", kg: 2 },
-  { label: "5 kg", kg: 5 },
-  { label: "10 kg", kg: 10 },
-  { label: "15 kg", kg: 15 },
-  { label: "25 kg", kg: 25 },
-  { label: "40 kg", kg: 40 },
+  { label: "5 kg",   kg: 5   },
+  { label: "10 kg",  kg: 10  },
+  { label: "15 kg",  kg: 15  },
+  { label: "25 kg",  kg: 25  },
+  { label: "40 kg",  kg: 40  },
+  { label: "60 kg",  kg: 60  },
+  { label: "80 kg",  kg: 80  },
+  { label: "120 kg", kg: 120 },
 ];
 
 const MARKET_PRIO_NEW: Market[] = ["DE", "BENL", "DKSE"];
@@ -779,9 +790,10 @@ function wrCatBadge(cat: string): string {
 
 function wrTubCellCls(count: number): string {
   if (count <= 0) return "text-slate-300";
-  if (count <= 4) return "bg-emerald-50 text-emerald-700 font-semibold ring-1 ring-emerald-200 rounded-lg";
-  if (count <= 9) return "bg-amber-50 text-amber-700 rounded-lg";
-  return "bg-slate-100 text-slate-400 rounded-lg";
+  if (count === 1) return "bg-emerald-50 text-emerald-700 font-semibold ring-1 ring-emerald-200 rounded-lg";
+  if (count <= 3) return "bg-sky-50 text-sky-700 font-semibold ring-1 ring-sky-200 rounded-lg";
+  if (count <= 6) return "bg-amber-50 text-amber-700 rounded-lg";
+  return "bg-rose-50 text-rose-600 rounded-lg";
 }
 
 function wrFmtKg(kg: number): string {
@@ -836,6 +848,16 @@ function wrParsePcs(value: unknown): number | null {
   if (!m) return null;
   const n = Number(m[1].replace(",", "."));
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Extracts piece weight in kg from ingredient name, e.g. "Chicken Breast – 160g" → 0.16 */
+function wrExtractPieceWeightKgFromName(name: string): number | null {
+  const m = (name || "").match(/\b(\d+(?:[.,]\d+)?)\s*(g|kg)\b/i);
+  if (!m) return null;
+  const val = parseFloat(m[1].replace(",", "."));
+  const unit = m[2].toLowerCase();
+  if (!isFinite(val) || val <= 0) return null;
+  return unit === "kg" ? val : val / 1000;
 }
 
 function wrFindHeader(rows: string[][], patterns: RegExp[]): number {
@@ -1029,12 +1051,22 @@ function wrBuildHintsFromDumps(master: unknown, bibles: unknown): {
       const headerIdx = wrFindHeader(rows.slice(0, 20), [/subrecipe\s*sku/i, /max\s*raw.*kg/i]);
       if (headerIdx >= 0 && rows[headerIdx]) {
         const headers = rows[headerIdx];
+        const catIdx = wrCol(headers, [/^category/i]);
         const skuIdx = wrCol(headers, [/subrecipe\s*sku/i]);
         const capIdx = wrCol(headers, [/max\s*raw.*kg/i]);
         if (skuIdx >= 0 && capIdx >= 0) {
           for (let i = headerIdx + 1; i < rows.length; i += 1) {
             const row = rows[i];
-            upsertCapacity(row[skuIdx] ?? "", wrParseKgLoose(row[capIdx]), "BRAISER");
+            const sku = String(row[skuIdx] ?? "").trim();
+            const cap = wrParseKgLoose(row[capIdx]);
+            // Register specific sub-recipe SKU if it's not just a dash placeholder
+            const nameToUse = sku && sku !== "-" ? sku : catIdx >= 0 ? String(row[catIdx] ?? "").trim() : "";
+            upsertCapacity(nameToUse, cap, "BRAISER");
+            // Also register category as a separate fuzzy-matchable key
+            if (catIdx >= 0) {
+              const cat = String(row[catIdx] ?? "").trim();
+              if (cat && cat !== nameToUse) upsertCapacity(cat, cap, "BRAISER");
+            }
           }
         }
       }
@@ -1075,6 +1107,8 @@ function wrResolveCapacityHint(map: Map<string, WRCapacityHint>, sub1: string, s
 }
 
 function wrLookupPieceKg(pieceMap: Map<string, number>, ingredientName: string, ingredientId: string): number | null {
+  // ID-based lookup first (most reliable)
+  if (ingredientId && PTN_ID_TRAY_SPECS[ingredientId]) return PTN_ID_TRAY_SPECS[ingredientId].pieceKg;
   const keys = [norm(ingredientName), norm(ingredientId), norm(String(ingredientName).split("/")[0])].filter(Boolean);
   for (const key of keys) {
     const direct = pieceMap.get(key);
@@ -1088,16 +1122,50 @@ function wrLookupPieceKg(pieceMap: Map<string, number>, ingredientName: string, 
   return null;
 }
 
-function wrLookupTrayPcs(trayHints: WRTrayHint[], ingredientName: string): number | null {
-  const key = norm(ingredientName);
-  if (!key) return null;
-  let best: { score: number; pcs: number } | null = null;
+function wrLookupTrayPcs(trayHints: WRTrayHint[], ingredientName: string, ingredientId?: string): number | null {
+  // ID-based lookup: exact match, no fuzzy logic needed
+  if (ingredientId && PTN_ID_TRAY_SPECS[ingredientId]) return PTN_ID_TRAY_SPECS[ingredientId].pcsPerTray;
+  const keyTokens = new Set(tokenize(ingredientName));
+  if (keyTokens.size === 0) return null;
+  // Containment match: all hint tokens must appear in the ingredient name.
+  // Prefer the most-specific hint (most tokens) to avoid "breast" beating "chicken breast".
+  let best: { hintSize: number; pcs: number } | null = null;
   for (const hint of trayHints) {
-    const score = overlapScore(hint.key, key);
-    if (score < 0.45) continue;
-    if (!best || score > best.score) best = { score, pcs: hint.pcsPerTray };
+    const hintTokens = new Set(tokenize(hint.key));
+    if (hintTokens.size === 0) continue;
+    let overlap = 0;
+    for (const t of hintTokens) { if (keyTokens.has(t)) overlap++; }
+    if (overlap < hintTokens.size) continue; // require 100% containment
+    if (!best || hintTokens.size > best.hintSize) best = { hintSize: hintTokens.size, pcs: hint.pcsPerTray };
   }
   return best ? best.pcs : null;
+}
+
+function equipmentColorScheme(eq: string | null): {
+  bg: string;
+  headerBg: string;
+  border: string;
+  badge: string;
+  text: string;
+  icon: string;
+} {
+  if (!eq) return { bg: "bg-slate-50", headerBg: "bg-slate-100", border: "border-slate-300", badge: "bg-slate-200 text-slate-700", text: "text-slate-600", icon: "🍳" };
+  const e = eq.toUpperCase();
+  if (e.includes("BRAISER"))
+    return { bg: "bg-orange-50", headerBg: "bg-gradient-to-r from-orange-100 to-amber-50", border: "border-orange-400", badge: "bg-orange-100 text-orange-800", text: "text-orange-800", icon: "🔥" };
+  if (e.includes("MIDDLE-KITCHEN") || e.includes("VERIMIXER") || e.includes("PLANETARY") || e.includes("HOBART"))
+    return { bg: "bg-violet-50", headerBg: "bg-gradient-to-r from-violet-100 to-purple-50", border: "border-violet-400", badge: "bg-violet-100 text-violet-800", text: "text-violet-800", icon: "🌀" };
+  if (e.includes("VEGGIE-DEBOX") || e.includes("VEGGIE DEBOX"))
+    return { bg: "bg-emerald-50", headerBg: "bg-gradient-to-r from-emerald-100 to-green-50", border: "border-emerald-400", badge: "bg-emerald-100 text-emerald-800", text: "text-emerald-800", icon: "🥦" };
+  if (e.includes("PROTEIN-DEBOX") || e.includes("V-MAG") || e.includes("VMAG"))
+    return { bg: "bg-sky-50", headerBg: "bg-gradient-to-r from-sky-100 to-blue-50", border: "border-sky-400", badge: "bg-sky-100 text-sky-800", text: "text-sky-800", icon: "🥩" };
+  if (e.includes("OVEN"))
+    return { bg: "bg-amber-50", headerBg: "bg-gradient-to-r from-amber-100 to-yellow-50", border: "border-amber-400", badge: "bg-amber-100 text-amber-800", text: "text-amber-800", icon: "♨️" };
+  if (e.includes("BLAST"))
+    return { bg: "bg-blue-50", headerBg: "bg-gradient-to-r from-blue-100 to-indigo-50", border: "border-blue-400", badge: "bg-blue-100 text-blue-800", text: "text-blue-800", icon: "❄️" };
+  if (e.includes("IMMERSION") || e.includes("BLENDER"))
+    return { bg: "bg-teal-50", headerBg: "bg-gradient-to-r from-teal-100 to-cyan-50", border: "border-teal-400", badge: "bg-teal-100 text-teal-800", text: "text-teal-800", icon: "💧" };
+  return { bg: "bg-indigo-50", headerBg: "bg-gradient-to-r from-indigo-100 to-blue-50", border: "border-indigo-300", badge: "bg-indigo-100 text-indigo-800", text: "text-indigo-800", icon: "⚙️" };
 }
 
 export function BreakdownEquipmentView({
@@ -1128,6 +1196,32 @@ export function BreakdownEquipmentView({
   const [capacityHints, setCapacityHints] = useState<Map<string, WRCapacityHint>>(new Map());
   const [pieceWeightKg, setPieceWeightKg] = useState<Map<string, number>>(new Map());
   const [trayHints, setTrayHints] = useState<WRTrayHint[]>([]);
+
+  // Welche Wannengrößen in den Spalten anzeigen (Default: 40/60/80/120 kg)
+  const [activeWannen, setActiveWannen] = useState<Set<number>>(
+    () => new Set([40, 60, 80, 120])
+  );
+
+  // Welche Ingredient-Zeilen haben die Override-Eingaben offen
+  const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
+
+  function toggleOverrideRow(key: string) {
+    setExpandedOverrides((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleWanne(kg: number) {
+    setActiveWannen((prev) => {
+      const next = new Set(prev);
+      if (next.has(kg)) next.delete(kg);
+      else next.add(kg);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1190,7 +1284,7 @@ export function BreakdownEquipmentView({
         code: wr.code,
         name: wr.recipeName,
         portions: wr.totalVerdenVolume > 0 ? wr.totalVerdenVolume : 500,
-        mode: "fertig",
+        mode: "roh",
       },
     ]);
     setSearch("");
@@ -1249,10 +1343,17 @@ export function BreakdownEquipmentView({
   }
 
   function rowTrayCount(row: WR_IngRow): number | null {
-    if (row.totalKg != null) return null;
-    if (!isEachUom(row.uom) || !row.inferredPcsPerTray || row.inferredPcsPerTray <= 0) return null;
-    if (row.totalQty <= 0) return null;
-    return Math.ceil(row.totalQty / row.inferredPcsPerTray);
+    if (!row.inferredPcsPerTray || row.inferredPcsPerTray <= 0) return null;
+    // EA case: piece count is totalQty directly
+    if (row.totalKg == null && isEachUom(row.uom) && row.totalQty > 0) {
+      return Math.ceil(row.totalQty / row.inferredPcsPerTray);
+    }
+    // kg case: piece items measured in g/kg — derive piece count via piece weight
+    if (row.totalKg != null && row.totalKg > 0 && row.pieceKgHint != null && row.pieceKgHint > 0) {
+      const pieces = row.totalKg / row.pieceKgHint;
+      return Math.ceil(pieces / row.inferredPcsPerTray);
+    }
+    return null;
   }
 
   function rowTubCountByWanne(row: WR_IngRow, wanneKg: number): number | null {
@@ -1777,8 +1878,16 @@ export function BreakdownEquipmentView({
         const overrideKey = `${entry.code}::${pathKey}::${ingKey}`;
         const addQ = (item.grossQuantityPerPortion || 0) * portionsEffective;
         const baseKg = wrToKg(addQ, item.uom);
+        // Piece weight for EA items (to derive kg)
         const pieceKg = baseKg == null && isEachUom(item.uom)
           ? wrLookupPieceKg(pieceWeightKg, item.ingredient || "", item.ingredientId || "")
+          : null;
+        // Tray hint for ALL items (proteins may be in g/kg UOM, not EA)
+        const trayPcsHint = wrLookupTrayPcs(trayHints, item.ingredient || "", item.ingredientId || "");
+        // Piece weight for kg-based piece items (needed to compute piece count → GN tray count)
+        const gnPieceKg = baseKg != null && trayPcsHint != null
+          ? (wrLookupPieceKg(pieceWeightKg, item.ingredient || "", item.ingredientId || "")
+             ?? wrExtractPieceWeightKgFromName(item.ingredient || ""))
           : null;
         const addK = baseKg ?? (pieceKg != null ? addQ * pieceKg : null);
         const prev = ingMap.get(ingKey);
@@ -1795,10 +1904,8 @@ export function BreakdownEquipmentView({
             overrideKey,
             totalQty: addQ,
             totalKg: addK,
-            pieceKgHint: pieceKg,
-            inferredPcsPerTray: isEachUom(item.uom)
-              ? wrLookupTrayPcs(trayHints, item.ingredient || "")
-              : null,
+            pieceKgHint: pieceKg ?? gnPieceKg,
+            inferredPcsPerTray: trayPcsHint,
           });
         }
       }
@@ -1862,56 +1969,56 @@ export function BreakdownEquipmentView({
   const totalPathCount = mealAggs.reduce((sum, meal) => sum + meal.paths.length, 0);
 
   return (
-    <div className="space-y-4 pb-10">
-      <div className="card p-4">
+    <div className="space-y-5 pb-12">
+      {/* === MEAL SELECTION PANEL === */}
+      <div className="card overflow-hidden">
         <button
           onClick={() => setPanelOpen((v) => !v)}
-          className="w-full flex items-center justify-between text-left"
+          className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-white hover:bg-slate-50/80 transition-colors text-left"
         >
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-slate-800">Meal-Auswahl</span>
+          <div className="flex items-center gap-2.5">
+            <span className="text-sm font-bold text-slate-800 tracking-tight">🍽 Meal-Auswahl</span>
             {entries.length > 0 && (
-              <span className="text-[11px] bg-verden-50 text-verden-800 px-2 py-0.5 rounded-full tabular-nums">
-                {entries.length} Meals
+              <span className="text-[11px] font-semibold bg-indigo-600 text-white px-2 py-0.5 rounded-full tabular-nums">
+                {entries.length} ausgewählt
               </span>
             )}
           </div>
-          <span className="text-slate-400 text-xs">{panelOpen ? "▾" : "▸"}</span>
+          <span className="text-slate-400 text-sm">{panelOpen ? "▾" : "▸"}</span>
         </button>
 
         {panelOpen && (
-          <div className="mt-3 border-t border-slate-100 pt-3 space-y-3">
+          <div className="border-t border-slate-100 px-4 py-3 space-y-3">
             {weekRecipes.length === 0 ? (
               <p className="text-sm text-slate-500">Keine Rezepte für Woche {week}.</p>
             ) : (
               <>
                 <input
                   type="search"
-                  placeholder="Rezept oder Code suchen ..."
+                  placeholder="Rezept oder Code suchen …"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="w-full rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-3 py-2 text-sm"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-300 focus:outline-none transition"
                 />
                 {suggestions.length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                     {suggestions.map((wr) => (
                       <button
                         key={wr.code}
                         onClick={() => addRecipe(wr)}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+                        className="group rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left hover:border-indigo-400 hover:shadow-sm transition-all"
                       >
-                        <div className="text-[10px] font-mono text-slate-500">{wr.code}</div>
+                        <div className="text-[10px] font-mono text-slate-400 group-hover:text-indigo-500 transition-colors">{wr.code}</div>
                         <div className="text-sm font-semibold text-slate-800 leading-snug truncate">{wr.recipeName}</div>
-                        <div className="text-[11px] text-slate-500 tabular-nums">
-                          {wr.totalVerdenVolume.toLocaleString("de-DE")} Portionen
-                          {wr.preference ? ` · ${wr.preference}` : ""}
+                        <div className="text-[11px] text-slate-400 tabular-nums mt-0.5">
+                          {wr.totalVerdenVolume.toLocaleString("de-DE")} Port.{wr.preference ? ` · ${wr.preference}` : ""}
                         </div>
                       </button>
                     ))}
                   </div>
                 )}
                 {needle && suggestions.length === 0 && (
-                  <p className="text-sm text-slate-400">Kein Rezept gefunden.</p>
+                  <p className="text-sm text-slate-400 italic">Kein Rezept gefunden.</p>
                 )}
               </>
             )}
@@ -1919,6 +2026,7 @@ export function BreakdownEquipmentView({
         )}
       </div>
 
+      {/* === ENTRIES LIST === */}
       {entries.length > 0 && (
         <div className="space-y-2">
           {entries.map((entry) => {
@@ -1927,30 +2035,24 @@ export function BreakdownEquipmentView({
                 ? Math.round(entry.portions * (1 + upliftPercent / 100))
                 : entry.portions;
             return (
-              <div key={entry.code} className="card p-3 flex flex-wrap items-center gap-3 border-l-4 border-l-indigo-400">
-                <div className="flex-1 min-w-[180px]">
+              <div key={entry.code} className="card flex flex-wrap items-center gap-3 px-4 py-3 border-l-[3px] border-l-indigo-500">
+                <div className="flex-1 min-w-[160px]">
                   <div className="text-[10px] font-mono text-slate-400">{entry.code}</div>
-                  <div className="text-sm font-semibold text-slate-800 leading-snug">{entry.name}</div>
-                  <div className="text-[11px] text-slate-500 tabular-nums">
-                    {entry.mode === "fertig" ? "Fertigware" : "Rohware"} · effektiv {effective.toLocaleString("de-DE")} Portionen
+                  <div className="text-sm font-semibold text-slate-800">{entry.name}</div>
+                  <div className="text-[11px] text-slate-400 tabular-nums">
+                    {entry.mode === "fertig" ? "Fertigware" : "Rohware"} · eff. {effective.toLocaleString("de-DE")} Port.
                   </div>
                 </div>
-
-                <div className="flex rounded-lg ring-1 ring-slate-300 overflow-hidden text-xs shrink-0">
+                <div className="flex rounded-lg ring-1 ring-slate-200 overflow-hidden text-xs shrink-0">
                   <button
                     onClick={() => patchEntry(entry.code, { mode: "fertig" })}
-                    className={`px-3 py-2 ${entry.mode === "fertig" ? "bg-indigo-600 text-white" : "bg-white text-slate-600"}`}
-                  >
-                    Fertigware
-                  </button>
+                    className={`px-3 py-1.5 transition-colors ${entry.mode === "fertig" ? "bg-indigo-600 text-white font-semibold" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                  >Fertigware</button>
                   <button
                     onClick={() => patchEntry(entry.code, { mode: "roh" })}
-                    className={`px-3 py-2 ${entry.mode === "roh" ? "bg-indigo-600 text-white" : "bg-white text-slate-600"}`}
-                  >
-                    Rohware
-                  </button>
+                    className={`px-3 py-1.5 border-l border-slate-200 transition-colors ${entry.mode === "roh" ? "bg-indigo-600 text-white font-semibold" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                  >Rohware</button>
                 </div>
-
                 <div className="flex items-center gap-1.5 shrink-0">
                   <input
                     type="number"
@@ -1958,263 +2060,266 @@ export function BreakdownEquipmentView({
                     step={50}
                     value={entry.portions}
                     onChange={(e) => patchEntry(entry.code, { portions: Math.max(0, Number(e.target.value)) })}
-                    className="w-24 rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-2 py-1.5 text-sm text-center tabular-nums"
+                    className="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-center tabular-nums focus:bg-white focus:ring-2 focus:ring-indigo-300 focus:outline-none"
                   />
-                  <span className="text-xs text-slate-500">Portionen</span>
+                  <span className="text-xs text-slate-400">Port.</span>
                 </div>
-
                 <button
                   onClick={() => removeRecipe(entry.code)}
-                  aria-label="Rezept entfernen"
-                  className="text-slate-300 hover:text-rose-500 text-xl leading-none"
-                >
-                  ×
-                </button>
+                  aria-label="Entfernen"
+                  className="text-slate-200 hover:text-rose-400 text-xl leading-none shrink-0 transition-colors"
+                >×</button>
               </div>
             );
           })}
         </div>
       )}
 
+      {/* === BREAKDOWN OVERVIEW === */}
       {mealAggs.length > 0 && (
-        <div className="space-y-3">
-          <div className="card p-3 flex flex-wrap items-center justify-between gap-2 bg-[linear-gradient(135deg,_rgba(14,165,233,0.08),_rgba(248,250,252,1)_36%,_rgba(16,185,129,0.08))]">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-slate-800">Wannen-Rechnung (Meal → Sub → SubSub)</span>
-              <span className="text-[11px] bg-white text-slate-700 px-2 py-0.5 rounded-full ring-1 ring-slate-200 tabular-nums">
-                {wrFmtKg(totalKgAll)} gesamt
-              </span>
-              <span className="text-[11px] bg-white text-slate-600 px-2 py-0.5 rounded-full ring-1 ring-slate-200 tabular-nums">
-                {totalPathCount} Sub-Pfade
-              </span>
+        <div className="space-y-4">
+          {/* Toolbar */}
+          <div className="card overflow-hidden">
+            <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 flex flex-wrap items-center gap-4 justify-between">
+              <div>
+                <div className="text-[9px] font-bold text-slate-500 tracking-widest uppercase">Breakdown Rechner</div>
+                <div className="flex items-baseline gap-3 mt-0.5 flex-wrap">
+                  <span className="text-2xl font-black text-white tabular-nums">{wrFmtKg(totalKgAll)}</span>
+                  <span className="text-xs text-slate-400 tabular-nums">{totalPathCount} Sub-Pfade</span>
+                  <span className="text-xs text-slate-400 tabular-nums">{mealAggs.length} Meals</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button onClick={exportAllMealsSettings} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-lg transition-colors">JSON</button>
+                <button onClick={() => { void exportAllMealsExcel(); }} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-lg transition-colors">Excel</button>
+                <button onClick={exportAllMealsGsheet} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-lg transition-colors">GSheet</button>
+                <button onClick={exportAllMealsPdf} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-lg transition-colors">PDF</button>
+                <div className="w-px h-4 bg-white/20 mx-0.5" />
+                <button onClick={handleImportJsonClick} className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 px-2 py-1 rounded-lg border border-emerald-500/30 transition-colors">↑ Import</button>
+              </div>
             </div>
-            <div className="flex items-center gap-1 flex-wrap">
-              <button
-                onClick={exportAllMealsSettings}
-                className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50"
-                title="Alle Meals als JSON exportieren"
-              >
-                Export JSON
-              </button>
-              <button
-                onClick={() => { void exportAllMealsExcel(); }}
-                className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50"
-                title="Alle Meals als Excel exportieren"
-              >
-                Export Excel
-              </button>
-              <button
-                onClick={exportAllMealsGsheet}
-                className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50"
-                title="Alle Meals als TSV für Google Sheets exportieren"
-              >
-                Export GSheet
-              </button>
-              <button
-                onClick={exportAllMealsPdf}
-                className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50"
-                title="Alle Meals als druckbare PDF-Ansicht exportieren"
-              >
-                Export PDF
-              </button>
-              <div className="border-l border-slate-300" />
-              <button
-                onClick={handleImportJsonClick}
-                className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded ring-1 ring-emerald-300 text-emerald-700 hover:bg-emerald-100"
-                title="JSON-Export laden (Einstellungen wiederherstellen)"
-              >
-                Import JSON
-              </button>
-              {WANNEN.map((w) => (
-                <span key={w.kg} className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-200 text-slate-600">
-                  {w.label}
-                </span>
-              ))}
+            {/* Wannen selector */}
+            <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Container:</span>
+              {WANNEN.map((w) => {
+                const active = activeWannen.has(w.kg);
+                return (
+                  <button
+                    key={w.kg}
+                    onClick={() => toggleWanne(w.kg)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg ring-1 transition-all ${
+                      active ? "bg-indigo-600 text-white ring-indigo-600 shadow-sm" : "bg-white text-slate-400 ring-slate-200 hover:ring-indigo-300 hover:text-indigo-600"
+                    }`}
+                  >
+                    {w.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
+          {/* Meal cards */}
           {mealAggs.map((meal) => (
-            <div key={meal.code} className="card p-3 space-y-3 border-l-4 border-l-indigo-400">
-              <div className="flex flex-wrap items-center gap-2 justify-between">
-                <div>
-                  <div className="text-[10px] font-mono text-slate-500">{meal.code}</div>
-                  <div className="text-sm font-semibold text-slate-800 leading-snug">{meal.name}</div>
-                  <div className="text-[11px] text-slate-500 tabular-nums">
-                    Input {meal.portionsInput.toLocaleString("de-DE")} · effektiv {Math.round(meal.portionsEffective).toLocaleString("de-DE")} · {meal.mode === "fertig" ? "Fertigware" : "Rohware"}
+            <div key={meal.code} className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
+              {/* Meal header */}
+              <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 flex flex-wrap items-start gap-4 justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-mono text-slate-400 tracking-widest">{meal.code}</div>
+                  <div className="text-lg font-black text-white leading-tight truncate">{meal.name}</div>
+                  <div className="text-xs text-slate-400 mt-1 tabular-nums">
+                    {meal.mode === "fertig" ? "Fertigware" : "Rohware"}
+                    <span className="mx-1.5 text-slate-600">·</span>
+                    Input: <span className="text-slate-300">{meal.portionsInput.toLocaleString("de-DE")}</span>
+                    <span className="mx-1.5 text-slate-600">·</span>
+                    Eff.: <span className="text-slate-300">{Math.round(meal.portionsEffective).toLocaleString("de-DE")}</span> Port.
                   </div>
                 </div>
-                <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full tabular-nums">
-                  {wrFmtKg(meal.totalKg)}
-                </span>
-                <div className="flex items-center gap-1 flex-wrap">
-                  <button
-                    onClick={() => exportMealSettings(meal)}
-                    className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50"
-                    title="Dieses Meal als JSON exportieren"
-                  >
-                    JSON
-                  </button>
-                  <button
-                    onClick={() => { void exportMealExcel(meal); }}
-                    className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50"
-                    title="Dieses Meal als Excel exportieren"
-                  >
-                    Excel
-                  </button>
-                  <button
-                    onClick={() => exportMealGsheet(meal)}
-                    className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50"
-                    title="Dieses Meal als TSV für Google Sheets exportieren"
-                  >
-                    GSheet
-                  </button>
-                  <button
-                    onClick={() => exportMealPdf(meal)}
-                    className="text-[10px] bg-white px-2 py-0.5 rounded ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50"
-                    title="Dieses Meal als druckbare PDF-Ansicht exportieren"
-                  >
-                    PDF
-                  </button>
-                  <div className="border-l border-slate-300" />
-                  <button
-                    onClick={handleImportJsonClick}
-                    className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded ring-1 ring-emerald-300 text-emerald-700 hover:bg-emerald-100"
-                    title="JSON-Export für dieses Meal laden"
-                  >
-                    Import
-                  </button>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <div className="text-right">
+                    <div className="text-2xl font-black text-white tabular-nums">{wrFmtKg(meal.totalKg)}</div>
+                    <div className="text-[8px] text-slate-500 uppercase tracking-widest">Gesamt</div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap justify-end">
+                    <button onClick={() => exportMealSettings(meal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">JSON</button>
+                    <button onClick={() => { void exportMealExcel(meal); }} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">Excel</button>
+                    <button onClick={() => exportMealGsheet(meal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">GSheet</button>
+                    <button onClick={() => exportMealPdf(meal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">PDF</button>
+                  </div>
                 </div>
               </div>
 
+              {/* Paths */}
               {meal.paths.length === 0 ? (
-                <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                  Keine Zutaten-Daten für dieses Meal gefunden.
-                </div>
+                <div className="px-5 py-4 text-sm text-slate-400 italic bg-slate-50">Keine Zutaten-Daten gefunden.</div>
               ) : (
-                meal.paths.map((path, idx) => (
-                  <div key={`${meal.code}-${idx}`} className="rounded-xl border border-slate-200 overflow-hidden">
-                    <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-100">
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-indigo-500">Sub1</span>
-                      <span className="text-xs font-semibold text-slate-800">{path.sub1}</span>
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-violet-500 ml-2">Sub2</span>
-                      <span className="text-xs text-slate-700">{path.sub2}</span>
-                      <span className="text-[9px] font-bold uppercase tracking-widest text-fuchsia-500 ml-2">Sub3</span>
-                      <span className="text-xs text-slate-700">{path.sub3}</span>
-                      {path.capacityKgHint != null && (
-                        <span className="text-[10px] bg-white ring-1 ring-slate-200 rounded-full px-2 py-0.5 text-slate-600">
-                          Bible Ref {wrFmtKg(path.capacityKgHint)}
-                        </span>
-                      )}
-                      {path.equipmentHint && (
-                        <span className="text-[10px] bg-white ring-1 ring-slate-200 rounded-full px-2 py-0.5 text-slate-600">
-                          {path.equipmentHint}
-                        </span>
-                      )}
-                      <span className="ml-auto text-[11px] text-slate-500 tabular-nums">{wrFmtKg(path.totalKg)}</span>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-slate-100">
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Artikel</th>
-                            <th className="text-right px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Gesamt kg</th>
-                            {WANNEN.map((w) => (
-                              <th
-                                key={w.kg}
-                                className="text-center px-2 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap"
-                              >
-                                {w.label}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {path.rows.map((row, i) => (
-                            <tr key={row.overrideKey || `${row.ingredientId}-${i}`} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                              <td className="px-3 py-2.5">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${wrCatBadge(row.category)}`}>
-                                    {row.category}
-                                  </span>
-                                  <span className="text-sm text-slate-800 leading-snug">{row.name}</span>
-                                  <span className="text-[10px] font-mono text-slate-400">{row.ingredientId}</span>
-                                </div>
-                                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={0.1}
-                                    value={overrides[row.overrideKey]?.qty ?? ""}
-                                    placeholder={`Menge (${row.uom})`}
-                                    onChange={(e) => {
-                                      const value = e.target.value.trim();
-                                      patchOverride(row.overrideKey, { qty: value === "" ? undefined : Number(value) });
-                                    }}
-                                    className="w-28 rounded-md border border-slate-200 px-1.5 py-1 text-[11px] text-slate-600"
-                                    title="Individuelle Mengen-Override"
-                                  />
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    step={0.1}
-                                    value={overrides[row.overrideKey]?.kg ?? ""}
-                                    placeholder="kg Override"
-                                    onChange={(e) => {
-                                      const value = e.target.value.trim();
-                                      patchOverride(row.overrideKey, { kg: value === "" ? undefined : Number(value) });
-                                    }}
-                                    className="w-24 rounded-md border border-slate-200 px-1.5 py-1 text-[11px] text-slate-600"
-                                    title="Individuelle kg-Override"
-                                  />
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    step={1}
-                                    value={overrides[row.overrideKey]?.pcsPerTray ?? ""}
-                                    placeholder="PCS/Tray"
-                                    onChange={(e) => {
-                                      const value = e.target.value.trim();
-                                      patchOverride(row.overrideKey, { pcsPerTray: value === "" ? undefined : Number(value) });
-                                    }}
-                                    className="w-24 rounded-md border border-slate-200 px-1.5 py-1 text-[11px] text-slate-600"
-                                    title="Individuelle PCS pro Tray"
-                                  />
-                                </div>
-                              </td>
-                              <td className="px-3 py-2.5 text-right tabular-nums text-slate-700 whitespace-nowrap">
-                                {row.totalKg !== null ? wrFmtKg(row.totalKg) : wrFmtQty(row.totalQty, row.uom)}
-                              </td>
-                              {WANNEN.map((w) => {
-                                if (row.totalKg === null || row.totalKg <= 0) {
-                                  const pcsPerTray = row.inferredPcsPerTray ?? wrLookupTrayPcs(trayHints, row.name);
-                                  const canUseTray = pcsPerTray != null && isEachUom(row.uom) && row.totalQty > 0;
-                                  return (
-                                    <td key={w.kg} className="px-2 py-2.5 text-center">
-                                      <span className="text-[11px] text-slate-300">
-                                        {canUseTray && w.kg === WANNEN[0].kg
-                                          ? `Tray x${Math.ceil(row.totalQty / (pcsPerTray as number))}`
-                                          : "—"}
-                                      </span>
-                                    </td>
-                                  );
-                                }
-                                const count = Math.ceil(row.totalKg / w.kg);
+                <div className="divide-y divide-slate-100">
+                  {meal.paths.map((path, idx) => {
+                    const visibleWannen = WANNEN.filter((w) => activeWannen.has(w.kg));
+                    const bibleKg = path.capacityKgHint;
+                    const batchCount = bibleKg && bibleKg > 0 && path.totalKg > 0
+                      ? Math.ceil(path.totalKg / bibleKg)
+                      : null;
+                    const crumbs = [path.sub1, path.sub2, path.sub3]
+                      .filter((s) => s && s !== "—" && s !== "Ohne Sub-Rezept")
+                      .filter(Boolean);
+                    const eq = path.equipmentHint;
+                    const colors = equipmentColorScheme(eq);
+                    return (
+                      <div key={`${meal.code}-${idx}`} className={colors.bg}>
+                        {/* Path header */}
+                        <div className={`px-4 py-3 border-l-[4px] ${colors.border} ${colors.headerBg} flex flex-wrap items-center gap-4`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {crumbs.length > 0 ? crumbs.map((crumb, ci) => (
+                                <span key={ci} className="flex items-center gap-1">
+                                  {ci > 0 && <span className="text-slate-300 text-xs select-none">›</span>}
+                                  <span className={`text-xs font-bold leading-snug ${ci === 0 ? "text-slate-800" : "text-slate-600"}`}>{crumb}</span>
+                                </span>
+                              )) : (
+                                <span className="text-xs font-semibold text-slate-500 italic">Ohne Sub-Rezept</span>
+                              )}
+                            </div>
+                            {eq && (
+                              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                                <span className="text-[10px]">{colors.icon}</span>
+                                {eq.split(",").map((e, ei) => (
+                                  <span key={ei} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${colors.badge}`}>{e.trim()}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-stretch gap-4 shrink-0">
+                            {batchCount != null && (
+                              <div className="text-center">
+                                <div className={`text-3xl font-black tabular-nums leading-none ${colors.text}`}>{batchCount}</div>
+                                <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Batches</div>
+                              </div>
+                            )}
+                            {bibleKg != null && (
+                              <div className="text-center border-l border-slate-200/60 pl-4">
+                                <div className="text-sm font-bold text-slate-700 tabular-nums">{wrFmtKg(bibleKg)}</div>
+                                <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Bible</div>
+                              </div>
+                            )}
+                            <div className="text-center border-l border-slate-200/60 pl-4">
+                              <div className="text-sm font-bold text-slate-800 tabular-nums">{wrFmtKg(path.totalKg)}</div>
+                              <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Total</div>
+                            </div>
+                          </div>
+                        </div>
+                        {/* Ingredient table */}
+                        <div className="overflow-x-auto bg-white">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-100">
+                                <th className="text-left px-4 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">Zutat</th>
+                                <th className="text-right px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">Total</th>
+                                {visibleWannen.map((w) => (
+                                  <th key={w.kg} className="text-center px-2 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">{w.label}</th>
+                                ))}
+                                <th className="w-8" />
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {path.rows.map((row, ri) => {
+                                const rowKey = row.overrideKey || `${row.ingredientId}-${ri}`;
+                                const overrideOpen = expandedOverrides.has(rowKey);
+                                const hasOverride = overrides[row.overrideKey]?.qty != null
+                                  || overrides[row.overrideKey]?.kg != null
+                                  || overrides[row.overrideKey]?.pcsPerTray != null;
                                 return (
-                                  <td key={w.kg} className="px-2 py-2.5 text-center">
-                                    <span className={`inline-block min-w-[34px] px-1.5 py-0.5 text-sm tabular-nums ${wrTubCellCls(count)}`}>
-                                      ×{count}
-                                    </span>
-                                  </td>
+                                  <tr key={rowKey} className="hover:bg-slate-50/80 transition-colors">
+                                    <td className="px-4 py-2.5">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded shrink-0 uppercase tracking-wide ${wrCatBadge(row.category)}`}>
+                                          {row.category}
+                                        </span>
+                                        <span className="text-sm text-slate-800 font-medium leading-snug truncate">{row.name}</span>
+                                        <span className="text-[9px] font-mono text-slate-300 shrink-0">{row.ingredientId !== "-" ? row.ingredientId : ""}</span>
+                                      </div>
+                                      {overrideOpen && (
+                                        <div className="mt-2 flex flex-wrap gap-2 pl-1 pt-2 border-t border-slate-100">
+                                          <div className="flex flex-col gap-0.5">
+                                            <label className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide">Menge ({row.uom})</label>
+                                            <input type="number" min={0} step={0.1} value={overrides[row.overrideKey]?.qty ?? ""} placeholder="—"
+                                              onChange={(e) => { const v = e.target.value.trim(); patchOverride(row.overrideKey, { qty: v === "" ? undefined : Number(v) }); }}
+                                              className="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:ring-1 focus:ring-indigo-300 focus:outline-none" />
+                                          </div>
+                                          <div className="flex flex-col gap-0.5">
+                                            <label className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide">kg Override</label>
+                                            <input type="number" min={0} step={0.1} value={overrides[row.overrideKey]?.kg ?? ""} placeholder="—"
+                                              onChange={(e) => { const v = e.target.value.trim(); patchOverride(row.overrideKey, { kg: v === "" ? undefined : Number(v) }); }}
+                                              className="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:ring-1 focus:ring-indigo-300 focus:outline-none" />
+                                          </div>
+                                          <div className="flex flex-col gap-0.5">
+                                            <label className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide">PCS/Tray</label>
+                                            <input type="number" min={1} step={1} value={overrides[row.overrideKey]?.pcsPerTray ?? ""} placeholder="—"
+                                              onChange={(e) => { const v = e.target.value.trim(); patchOverride(row.overrideKey, { pcsPerTray: v === "" ? undefined : Number(v) }); }}
+                                              className="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:ring-1 focus:ring-indigo-300 focus:outline-none" />
+                                          </div>
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
+                                      {row.totalKg !== null ? wrFmtKg(row.totalKg) : wrFmtQty(row.totalQty, row.uom)}
+                                    </td>
+                                    {(() => {
+                                      const gnCount = rowTrayCount(row);
+                                      if (gnCount != null) {
+                                        // GN tray item: show single spanning cell with tray badge
+                                        return (
+                                          <td colSpan={visibleWannen.length} className="px-2 py-2.5 text-center">
+                                            <span className={`inline-flex items-center gap-1.5 justify-center min-w-[80px] h-7 px-3 text-sm font-bold tabular-nums rounded-lg ${wrTubCellCls(gnCount)}`}>
+                                              <span className="text-[10px]">🍽️</span>
+                                              ×{gnCount}
+                                              <span className="text-[9px] font-semibold opacity-70 ml-0.5">GN</span>
+                                            </span>
+                                            {row.inferredPcsPerTray != null && (
+                                              <div className="text-[8px] text-slate-400 mt-0.5">{row.inferredPcsPerTray} pcs/Blech</div>
+                                            )}
+                                          </td>
+                                        );
+                                      }
+                                      // Normal Wannen display
+                                      return visibleWannen.map((w) => {
+                                        if (row.totalKg === null || row.totalKg <= 0) {
+                                          return (
+                                            <td key={w.kg} className="px-2 py-2.5 text-center">
+                                              <span className="text-[10px] text-slate-300">—</span>
+                                            </td>
+                                          );
+                                        }
+                                        const count = Math.ceil(row.totalKg / w.kg);
+                                        return (
+                                          <td key={w.kg} className="px-2 py-2.5 text-center">
+                                            <span className={`inline-flex items-center justify-center min-w-[40px] h-7 px-2 text-sm font-bold tabular-nums rounded-lg ${wrTubCellCls(count)}`}>
+                                              ×{count}
+                                            </span>
+                                          </td>
+                                        );
+                                      });
+                                    })()}
+                                    <td className="px-2 py-2.5 text-center">
+                                      <button
+                                        onClick={() => toggleOverrideRow(rowKey)}
+                                        title="Werte anpassen"
+                                        className={`inline-flex items-center justify-center w-6 h-6 rounded-md text-[11px] transition-colors ${
+                                          hasOverride ? "bg-indigo-100 text-indigo-600 ring-1 ring-indigo-300"
+                                            : overrideOpen ? "bg-slate-100 text-slate-600"
+                                            : "text-slate-200 hover:text-slate-500 hover:bg-slate-100"
+                                        }`}
+                                      >✎</button>
+                                    </td>
+                                  </tr>
                                 );
                               })}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           ))}
@@ -2222,17 +2327,21 @@ export function BreakdownEquipmentView({
       )}
 
       {entries.length > 0 && mealAggs.length === 0 && (
-        <div className="card p-6 text-center text-slate-500">
-          Keine Zutaten-Daten für die ausgewählten Rezepte gefunden.
+        <div className="card px-6 py-8 text-center">
+          <div className="text-3xl mb-2">🔍</div>
+          <p className="text-sm font-semibold text-slate-600">Keine Zutaten-Daten gefunden</p>
+          <p className="text-xs text-slate-400 mt-1">Die ausgewählten Rezepte haben für diese Woche keine Zutaten-Einträge.</p>
         </div>
       )}
 
       {entries.length === 0 && (
-        <div className="card p-6 text-center">
-          <p className="text-sm text-slate-500">Wähle oben Meals aus und gib die gewünschte Stückzahl ein.</p>
-          <p className="text-xs text-slate-400 mt-1">
-            Fertigware = Zielportionen (Uplift addiert) · Rohware = direkt gerechnet
+        <div className="card px-6 py-10 text-center">
+          <div className="text-4xl mb-3">📋</div>
+          <p className="text-sm font-semibold text-slate-700">Meal auswählen</p>
+          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+            Wähle oben ein oder mehrere Rezepte aus und gib die gewünschte Portionszahl ein.
           </p>
+          <p className="text-[11px] text-slate-300 mt-2">Fertigware = Zielportionen mit Uplift · Rohware = direkt</p>
         </div>
       )}
     </div>

@@ -248,7 +248,11 @@ export function computeWeekLoad(data: DataBundle, week: string, options?: { port
 
   for (const wr of wrs) {
     const recipe = data.recipes[wr.code];
-    if (!recipe) continue;
+    if (!recipe) {
+      // Kein Recipe-Eintrag vorhanden → trotzdem im Kalender zeigen (0 Stationslast)
+      recipeLoads.push({ weekRecipe: wr, subs: [], perStationMin: {}, totalActiveMin: 0 });
+      continue;
+    }
     // Sub-Rezepte über alle Märkte deduplizieren (selber id)
     const seen = new Map<string, SubRecipe>();
     for (const m of MARKETS) {

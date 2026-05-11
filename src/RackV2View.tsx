@@ -18,6 +18,7 @@ import {
   rackV2BuildAssignment,
   rackV2DynamicRoleLabels,
   rackV2EffectivePickQuantity,
+  rackV2EntryFingerprint,
   rackV2ForezoneSlotsForTier,
   rackV2ForezoneForMarket,
   rackV2HallLayoutWorkers,
@@ -101,20 +102,11 @@ function actorName(): string {
   return window.location.hostname || "unknown";
 }
 
-function entryFingerprint(entry: RackEntry): string {
-  return [
-    entry.recipe,
-    String(entry.sku ?? "").toLowerCase(),
-    String(entry.uniCode ?? "").toLowerCase(),
-    String(entry.ingredient ?? "").toLowerCase(),
-  ].join("|");
-}
-
 function dedupePoolEntries(entries: RackEntry[]): RackEntry[] {
   const seen = new Set<string>();
   const out: RackEntry[] = [];
   for (const entry of entries) {
-    const key = `${entryFingerprint(entry)}|${String(entry.flowRackPosition).toLowerCase()}`;
+    const key = `${rackV2EntryFingerprint(entry)}|${String(entry.flowRackPosition).toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(entry);
@@ -131,10 +123,12 @@ async function fetchAsFile(url: string): Promise<File> {
 
 async function loadV2Entries(): Promise<EntriesByDataMarket> {
   const file = await fetchAsFile(AUTO_MULTILINE_URL);
-  const lineIds = RACK_V2_LINES.map((line) => line.id);
   const out: EntriesByDataMarket = { de: [], nordics: [] };
   for (const dataMarket of ["de", "nordics"] as RackMarket[]) {
-    const parsed = await parseMultilineExcel(file, dataMarket, lineIds);
+    const marketLineIds = RACK_V2_LINES
+      .filter((line) => RACK_V2_MARKET_TO_DATA[line.defaultMarket] === dataMarket)
+      .map((line) => line.id);
+    const parsed = await parseMultilineExcel(file, dataMarket, marketLineIds);
     out[dataMarket] = dedupePoolEntries(parsed);
   }
   return out;
@@ -510,12 +504,12 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     return map;
   }, [currentEntries]);
 
-  const usedFingerprints = useMemo(() => new Set(currentEntries.map(entryFingerprint)), [currentEntries]);
+  const usedFingerprints = useMemo(() => new Set(currentEntries.map(rackV2EntryFingerprint)), [currentEntries]);
 
   const poolEntries = useMemo(() => {
     const term = search.trim().toLowerCase();
     return currentDataPool
-      .filter((entry) => !usedFingerprints.has(entryFingerprint(entry)))
+      .filter((entry) => !usedFingerprints.has(rackV2EntryFingerprint(entry)))
       .filter((entry) => {
         if (!term) return true;
         const hay = `${entry.recipe} ${entry.sku} ${entry.ingredient} ${entry.displayName}`.toLowerCase();
@@ -602,12 +596,16 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     if (expectedTier && tier !== expectedTier) return `F${slot} liegt fest auf Ebene ${expectedTier}.`;
     if (inForezone && isPackagingLike(entry)) {
       const packagingZone = rackV2PackagingZoneForEntry(entry);
-      const allowedSlots = rackV2PackagingAllowedSlots(currentMarket, packagingZone);
-      if (allowedSlots.length > 0 && !allowedSlots.includes(slot)) {
-        if (packagingZone === "box") return "Kartons duerfen nur auf die vorgesehenen Packaging-Faecher.";
-        if (packagingZone === "liner") return "Liner duerfen nur auf die vorgesehenen Packaging-Faecher.";
-        return "Packaging passt nicht auf dieses Fach.";
-      }
+        const allowedSlots = rackV2PackagingAllowedSlots(currentMarket, packagingZone);
+        if (allowedSlots.length === 0) {
+          if (packagingZone === "liner") return "Liner sind bei diesem Markt nicht erlaubt (nur DE).";
+          return "Dieser Packaging-Typ ist auf diesem Markt nicht erlaubt.";
+        }
+        if (!allowedSlots.includes(slot)) {
+          if (packagingZone === "box") return "Kartons duerfen nur auf die vorgesehenen Packaging-Faecher.";
+          if (packagingZone === "liner") return "Liner duerfen nur auf die vorgesehenen Packaging-Faecher.";
+          return "Packaging passt nicht auf dieses Fach.";
+        }
     }
     if (block && !currentActiveBlockIds.has(block.id)) return `${block.label} ist nicht aktiv.`;
     if (block && tier > block.maxTier) return `Tier ${tier} ist in ${block.label} nicht erlaubt.`;
@@ -666,7 +664,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
         plan.entries,
         currentDataPool,
         currentMarket,
-        Object.fromEntries(Array.from(currentActiveBlockIds).map((id) => [id, true])),
+        Object.fromEntries(rackV2BlocksForMarket(currentMarket).map((block) => [block.id, currentActiveBlockIds.has(block.id)])),
       ),
     }));
   }
@@ -719,6 +717,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
   }
 
   function openRework() {
+    if (currentLinePlan.releaseStatus !== "released") return;
     setLinePlan(currentLine.id, (plan) => ({
       ...plan,
       releaseStatus: "rework",
@@ -1002,12 +1001,11 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                         </button>
                         <div className="mt-2 text-[10px] text-slate-500">Empfehlung: {recommended ? "ein" : "aus"}</div>
                         <div className="mt-3 space-y-1">
-                          {[3, 2, 1].map((tierValue) => {
+                          {[3, 2, 1].filter((t) => t <= block.maxTier).map((tierValue) => {
                             const tier = tierValue as 1 | 2 | 3;
-                            const disabledTier = tier > block.maxTier;
                             const blockSlots = rackV2BlockSlotsForTier(block, tier);
                             return (
-                              <div key={`${block.id}-${tier}`} className={`rounded-md p-2 ring-1 ${tierTone(tier)} ${disabledTier ? "opacity-40" : ""}`}>
+                              <div key={`${block.id}-${tier}`} className={`rounded-md p-2 ring-1 ${tierTone(tier)}`}>
                                 <div className="mb-1 text-[10px] font-bold">Tier {tier}</div>
                                 <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(blockSlots.length, 1)}, minmax(0, 1fr))` }}>
                                   {blockSlots.map((slot) => {
@@ -1016,11 +1014,11 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                                       <div
                                         key={`${block.id}-${slot}-${tier}`}
                                         onDragOver={(event) => {
-                                          if (currentLocked || disabledTier) return;
+                                          if (currentLocked) return;
                                           event.preventDefault();
                                         }}
                                         onDrop={(event) => {
-                                          if (currentLocked || disabledTier) return;
+                                          if (currentLocked) return;
                                           event.preventDefault();
                                           if (!dragPayload) return;
                                           const source = dragPayload.source === "board"

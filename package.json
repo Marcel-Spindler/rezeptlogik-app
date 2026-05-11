@@ -16,6 +16,7 @@
     "rackfile:plan": "tsx scripts/rackfile-tool.ts plan",
     "rackfile:generate": "tsx scripts/rackfile-tool.ts generate",
     "push:firestore": "tsx scripts/push-firestore.ts",
+    "sync:factor:forecast": "tsx scripts/sync-factor-forecast.ts",
     "deploy": "npm run build && firebase deploy --only hosting"
   },
   "dependencies": {

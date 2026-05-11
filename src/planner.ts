@@ -44,6 +44,8 @@ export interface RecipeAssignment {
   order?: number;
   /** Minuten ab 06:00 (0 … 1440). Optional – fallback = Schicht-Startminute */
   startMin?: number;
+  /** Optionales Soll pro Zuordnung (Main/Sub) für Wochenboard-Dialog. */
+  targetPortions?: number;
   note?: string;
 }
 
@@ -170,6 +172,10 @@ function sanitizeScenario(input: unknown): PlannerScenario | null {
       const order = typeof rawOrder === "number" && Number.isFinite(rawOrder)
         ? Math.max(1, Math.round(rawOrder))
         : undefined;
+      const rawTarget = row.targetPortions;
+      const targetPortions = typeof rawTarget === "number" && Number.isFinite(rawTarget)
+        ? Math.max(0, Math.round(rawTarget))
+        : undefined;
       assignments[key] = {
         recipeCode: row.recipeCode,
         subRecipeId,
@@ -178,6 +184,7 @@ function sanitizeScenario(input: unknown): PlannerScenario | null {
         shift: row.shift,
         order,
         startMin,
+        targetPortions,
         note: typeof row.note === "string" && row.note.trim() ? row.note.trim() : undefined
       };
     }

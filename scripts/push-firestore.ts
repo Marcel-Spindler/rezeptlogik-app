@@ -15,6 +15,19 @@ const db = admin.firestore();
 // Geteiltes Projekt → alle App-Daten unter apps/rezeptlogik/<collection>/<doc>
 const APP_ROOT = db.collection("apps").doc("rezeptlogik");
 
+async function clearCollection(collName: string) {
+  const coll = APP_ROOT.collection(collName);
+  const refs = await coll.listDocuments();
+  if (refs.length === 0) return;
+  const CHUNK = 400;
+  for (let i = 0; i < refs.length; i += CHUNK) {
+    const batch = db.batch();
+    for (const ref of refs.slice(i, i + CHUNK)) batch.delete(ref);
+    await batch.commit();
+  }
+  console.log(`  ${collName}: ${refs.length} alte Docs gelöscht`);
+}
+
 async function batchedSet<T extends Record<string, unknown>>(collName: string, docs: { id: string; data: T }[]) {
   const coll = APP_ROOT.collection(collName);
   const CHUNK = 400;
@@ -33,6 +46,8 @@ async function main() {
   await APP_ROOT.set({ generatedAt: bundle.generatedAt, weeks: bundle.weeks }, { merge: true });
 
   console.log(`Push weekRecipes (${bundle.weekRecipes.length}) …`);
+  // Erst alles löschen: alter Merge-Ansatz ließ orphan-Docs zurück.
+  await clearCollection("weekRecipes");
   await batchedSet("weekRecipes", bundle.weekRecipes.map((w, i) => ({
     id: `${w.hfWeek}__${w.code}__${i}`, data: w as any
   })));

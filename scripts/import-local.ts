@@ -1,6 +1,6 @@
 // Liest die XLSX (Meal Selection) und die CSVs aus dem konfigurierten
 // Rezeptlogik-Quellordner und schreibt eine konsolidierte public/data/data.json.
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
@@ -9,9 +9,31 @@ import type {
   SubRecipe, Ingredient, GrossIngredient, CookSchedule,
   RecipeStructure, DetailedSubRecipe, DetailedIngredient, ShelfLifeInfo
 } from "../src/types.ts";
-
-const DETAILED_CSV = "export-sub-recipes-by-recipe-detailed.csv";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
+
+// Detaillierte Sub-Rezept CSVs: werden automatisch per Glob aus SOURCE_DIR erkannt.
+// Alle Dateien "export-sub-recipes-by-recipe-detailed*.csv" werden zusammengeführt.
+// Neue Exporte (z. B. (4), (5) …) werden automatisch eingeschlossen.
+function findDetailedCsvs(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter(f => /^export-sub-recipes-by-recipe-detailed.*\.csv$/i.test(f))
+    .sort()
+    .map(f => f);
+}
+
+// Kombinierter Recipes-Export: neueste Datei "export-recipes (N).csv" oder Basis-Datei
+function findCombinedRecipeCsv(dir: string): string | null {
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir)
+    .filter(f => /^export-recipes.*\.csv$/i.test(f))
+    .sort();
+  // Höchste Nummer gewinnt; bei Gleichstand alphabetisch letztes
+  return files.at(-1) ?? null;
+}
+
+// Aggregiertes Gross-Ingredients-CSV (Vorrang vor Per-Markt-Dateien)
+const AGGREGATED_GROSS_CSV = "export-gross-aggregated-ingredients-by-recipe.csv";
 
 function resolveSourceDir(): string {
   const configured = process.env.REZEPTLOGIK_SOURCE_DIR?.trim();
@@ -145,19 +167,32 @@ async function loadMealSelection(): Promise<{ weekRecipes: WeekRecipe[]; weeks: 
   return { weekRecipes: out, weeks };
 }
 
-// ---------- 2) Recipes (CSV je Markt) ----------
+// ---------- 2) Recipes (CSV je Markt oder kombiniert) ----------
+function detectMarket(fullName: string): Market | null {
+  if (/\[BNL\]|\[BENL\]/i.test(fullName)) return "BENL";
+  if (/\[DKSE\]|\[NORD\]/i.test(fullName)) return "DKSE";
+  if (/\[DE\]/i.test(fullName)) return "DE";
+  return null;
+}
+
 function loadRecipes(): Record<string, Recipe> {
   const recipes: Record<string, Recipe> = {};
 
-  for (const market of Object.keys(RECIPE_CSVS) as Market[]) {
-    const path = join(SOURCE_DIR, RECIPE_CSVS[market]);
-    if (!existsSync(path)) { console.warn(`fehlt: ${path}`); continue; }
-    const rows = readCsv<Record<string, string>>(path);
+  const combinedFile = findCombinedRecipeCsv(SOURCE_DIR);
+  const combinedPath = combinedFile ? join(SOURCE_DIR, combinedFile) : null;
+  const usesCombined = combinedPath !== null && existsSync(combinedPath);
 
+  if (usesCombined) {
+    console.log(`  Kombiniertes CSV: ${combinedFile}`);
+  }
+
+  function processRecipeRows(rows: Record<string, string>[], fixedMarket?: Market) {
     for (const row of rows) {
       const fullName = row["Recipe name"] ?? "";
       const { code, base } = parseRecipeName(fullName);
       if (!code) continue;
+      const market = fixedMarket ?? detectMarket(fullName);
+      if (!market) continue;
 
       if (!recipes[code]) {
         recipes[code] = { code, baseName: base, markets: {}, grossIngredients: {} };
@@ -211,11 +246,87 @@ function loadRecipes(): Record<string, Recipe> {
       });
     }
   }
+
+  if (usesCombined) {
+    processRecipeRows(readCsv<Record<string, string>>(combinedPath));
+  } else {
+    for (const market of Object.keys(RECIPE_CSVS) as Market[]) {
+      const path = join(SOURCE_DIR, RECIPE_CSVS[market]);
+      if (!existsSync(path)) { console.warn(`fehlt: ${path}`); continue; }
+      processRecipeRows(readCsv<Record<string, string>>(path), market);
+    }
+  }
   return recipes;
 }
 
 // ---------- 3) Gross Ingredients (CSV je Markt) ----------
+// ---------- 3) Gross Ingredients (CSV je Markt, Detailed-CSV oder aggregiert) ----------
 function loadGross(recipes: Record<string, Recipe>) {
+  // Vorrang 1: Detaillierte Sub-Rezept-CSVs — enthalten Sub-Rezept 1-4 Namen + Ingredient-Infos
+  // Diese Dateien erlauben das Sub-Rezept-Matching in getSubRecipeInfo().
+  const detailedCsvs = findDetailedCsvs(SOURCE_DIR);
+  if (detailedCsvs.length > 0) {
+    console.log(`  Gross-Ingredients aus Detailed-CSVs: ${detailedCsvs.join(", ")}`);
+    for (const csvFile of detailedCsvs) {
+      const path = join(SOURCE_DIR, csvFile);
+      const rows = readCsv<Record<string, string>>(path);
+      for (const row of rows) {
+        const fullName = (row["Recipe Name"] ?? "").trim();
+        if (!fullName) continue;
+        const { code } = parseRecipeName(fullName);
+        if (!code) continue;
+        const market = parseDetailedMarket(fullName);
+        if (!market) continue; // Nur Hauptrezepte mit Markt-Tag ([DE], [BNL], [DKSE])
+        if (!recipes[code]) {
+          recipes[code] = { code, baseName: parseRecipeName(fullName).base, markets: {}, grossIngredients: {} };
+        }
+        const arr = (recipes[code].grossIngredients[market] ??= []);
+        const ingredientId = row["Ingredient ID"] || "";
+        // Kategorie aus Ingredient-ID ableiten (z.B. "PHF" aus "PHF-00-139175-3")
+        const catMatch = ingredientId.match(/^([A-Z]{2,4})-/);
+        arr.push({
+          subRecipe1: row["Sub-Recipe 1 Name"] || undefined,
+          subRecipe2: row["Sub-Recipe 2 Name"] || undefined,
+          subRecipe3: row["Sub-Recipe 3 Name"] || undefined,
+          ingredient: row["Ingredient"] || "",
+          ingredientId,
+          ingredientCategory: catMatch ? catMatch[1] : undefined,
+          grossQuantityPerPortion: num(row["Gross Ingredient Qty"]),
+          uom: row["Ingredient UOM"] || ""
+        });
+      }
+    }
+    return;
+  }
+
+  // Vorrang 2: Aggregiertes Gross-CSV (kein Sub-Rezept-Info, aber Fallback wenn keine Detailed-CSVs)
+  const aggregatedPath = join(SOURCE_DIR, AGGREGATED_GROSS_CSV);
+  if (existsSync(aggregatedPath)) {
+    // Neues Format: MSKU Recipe Name, CSKU Name, CSKU Code, Ingredient Category, Gross Qty, UoM, MSKU Code
+    console.log(`  Aggregiertes Gross-CSV (kein Sub-Rezept-Info): ${AGGREGATED_GROSS_CSV}`);
+    const rows = readCsv<Record<string, string>>(aggregatedPath);
+    for (const row of rows) {
+      const fullName = row["MSKU Recipe Name"] ?? "";
+      const { code } = parseRecipeName(fullName);
+      if (!code) continue;
+      const market = detectMarket(fullName);
+      if (!market) continue;
+      if (!recipes[code]) {
+        recipes[code] = { code, baseName: parseRecipeName(fullName).base, markets: {}, grossIngredients: {} };
+      }
+      const arr = (recipes[code].grossIngredients[market] ??= []);
+      arr.push({
+        ingredient: row["CSKU Name"] || "",
+        ingredientId: row["CSKU Code"] || "",
+        ingredientCategory: row["Ingredient Category"] || undefined,
+        grossQuantityPerPortion: num(row["Gross Qty"]),
+        uom: row["UoM"] || ""
+      });
+    }
+    return;
+  }
+
+  // Fallback: alte per-Markt-Dateien
   for (const market of Object.keys(GROSS_CSVS) as Market[]) {
     const path = join(SOURCE_DIR, GROSS_CSVS[market]);
     if (!existsSync(path)) { console.warn(`fehlt: ${path}`); continue; }
@@ -328,12 +439,20 @@ function buildSubTree(rows: Record<string, string>[], level: number): DetailedSu
   return nodes;
 }
 
-function loadDetailedStructures(recipes: Record<string, Recipe>): Record<string, RecipeStructure> {
-  const path = join(SOURCE_DIR, DETAILED_CSV);
-  if (!existsSync(path)) { console.warn(`Detailed-CSV fehlt: ${path}`); return {}; }
-
-  const rows = readCsv<Record<string, string>>(path);
-  console.log(`  Detailed CSV: ${rows.length} Zeilen`);
+function loadDetailedStructures(): Record<string, RecipeStructure> {
+  // Alle passenden Detailed-CSVs automatisch per Glob erkennen und zusammenführen.
+  // Neue Exporte (z. B. (4), (5) …) werden ohne Konfigurationsänderung eingeschlossen.
+  const detailedCsvs = findDetailedCsvs(SOURCE_DIR);
+  if (detailedCsvs.length === 0) console.warn("Keine Detailed-CSVs gefunden!");
+  let rows: Record<string, string>[] = [];
+  for (const csvFile of detailedCsvs) {
+    const path = join(SOURCE_DIR, csvFile);
+    const fileRows = readCsv<Record<string, string>>(path);
+    console.log(`  Detailed CSV ${csvFile}: ${fileRows.length} Zeilen`);
+    rows = rows.concat(fileRows);
+  }
+  if (rows.length === 0) { console.warn("Keine Detailed-CSVs gefunden!"); return {}; }
+  console.log(`  Detailed CSVs gesamt: ${rows.length} Zeilen`);
 
   // Gruppen: { code → { market → rows[] } }
   const grouped = new Map<string, Map<Market, { recipeId: string; name: string; rows: Record<string, string>[] }>>();
@@ -369,52 +488,9 @@ function loadDetailedStructures(recipes: Record<string, Recipe>): Record<string,
     }
 
     structures[code] = struct;
-
-    // Fehlende Rezeptstämme aus Detailed-CSV ergänzen (z. B. FV0426A)
-    if (!recipes[code]) {
-      const r: Recipe = { code, baseName: firstEntry.name, markets: {}, grossIngredients: {} };
-
-      for (const [market, { rows: mRows, name }] of mMap) {
-        // Sub-Rezepte für markets[market].subRecipes ableiten (erste Ebene)
-        const subIds = new Map<string, SubRecipe>();
-        for (const row of mRows) {
-          const subId   = (row["Sub-Recipe 1 ID"] ?? "").trim();
-          const subName = (row["Sub-Recipe 1 Name"] ?? "").trim();
-          const subCat  = (row["Sub-Recipe 1 Recipe Categories"] ?? "").trim();
-          if (subId && !subIds.has(subId)) {
-            subIds.set(subId, { id: subId, name: subName, category: subCat });
-          }
-        }
-        // GrossIngredients befüllen
-        const arr = (r.grossIngredients[market] ??= []);
-        const giSeen = new Set<string>();
-        for (const row of mRows) {
-          const ingId   = (row["Ingredient ID"] ?? "").trim();
-          if (!ingId || giSeen.has(ingId)) continue;
-          giSeen.add(ingId);
-          arr.push({
-            subRecipe1: (row["Sub-Recipe 1 Name"] ?? "").trim() || undefined,
-            subRecipe2: (row["Sub-Recipe 2 Name"] ?? "").trim() || undefined,
-            subRecipe3: (row["Sub-Recipe 3 Name"] ?? "").trim() || undefined,
-            ingredient: (row["Ingredient"] ?? "").trim(),
-            ingredientId: ingId,
-            grossQuantityPerPortion: numStr(row["Gross Ingredient Qty"]),
-            uom: (row["Ingredient UOM"] ?? "").trim()
-          });
-        }
-        const md: RecipeMarketDetails = {
-          market,
-          msku: "",
-          recipeNameLocal: name,
-          subRecipes: [...subIds.values()],
-          ingredients: []
-        };
-        r.markets[market] = md;
-      }
-
-      recipes[code] = r;
-      console.log(`  → Rezept aus Detailed-CSV ergänzt: ${code}`);
-    }
+    // Detailed-CSVs liefern NUR die Baumstruktur (structures).
+    // Neue Recipe-Einträge werden hier NICHT angelegt – die planbaren Meals
+    // kommen ausschließlich aus dem Ramp-Up-XLSX (weekRecipes).
   }
 
   console.log(`  Strukturen geladen: ${Object.keys(structures).length} Rezepte`);
@@ -456,11 +532,11 @@ async function main() {
   const { weekRecipes, weeks } = await loadMealSelection();
   console.log(`  ${weekRecipes.length} Zeilen, ${weeks.length} Wochen`);
 
-  console.log("Lese Recipes (3 Märkte) …");
+  console.log("Lese Recipes …");
   const recipes = loadRecipes();
   console.log(`  ${Object.keys(recipes).length} Rezept-Codes`);
 
-  console.log("Lese Gross-Ingredients (3 Märkte) …");
+  console.log("Lese Gross-Ingredients …");
   loadGross(recipes);
 
   console.log("Lese Cook Schedules (Site VF) …");
@@ -476,7 +552,7 @@ async function main() {
   }
 
   console.log("Lese Detailed Recipe Structures …");
-  const structures = loadDetailedStructures(recipes);
+  const structures = loadDetailedStructures();
 
   // ---- Codes harmonisieren: FE… (Meal Selection) ↔ FV… (Recipes) per 4-stelliger Nummer ----
   const recipeByDigits: Record<string, Recipe> = {};

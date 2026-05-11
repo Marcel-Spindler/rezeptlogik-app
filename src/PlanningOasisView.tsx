@@ -1,12 +1,13 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import type { DataBundle, WeekRecipe } from "./types";
 import { PlanningView } from "./PlanningView";
-import { tl, type UiLocale } from "./i18n";
+import type { UiLocale } from "./i18n";
 import { usePlanningOasisData } from "./planningOasisData";
+import { loadFactorDailyMeta, type FactorDailyMeta } from "./planningTruthData";
 
 const LinePlanningSection = lazy(() => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView })));
 
-type OasisSection = "cockpit" | "planner" | "lines" | "recipes";
+type OasisSection = "cockpit" | "lines" | "recipes";
 
 function fmtNum(n: number, digits = 0): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
@@ -60,6 +61,11 @@ export function PlanningOasisView({
 
   const { data: oasisData, loading, error } = usePlanningOasisData();
 
+  const [factorDailyMeta, setFactorDailyMeta] = useState<FactorDailyMeta | null>(null);
+  useEffect(() => {
+    loadFactorDailyMeta().then(setFactorDailyMeta).catch(() => setFactorDailyMeta(null));
+  }, []);
+
   const weekMeals = useMemo(() => {
     return data.weekRecipes
       .filter(row => row.hfWeek === week)
@@ -69,6 +75,10 @@ export function PlanningOasisView({
   }, [data.weekRecipes, week]);
 
   const weekIntel = oasisData?.weeks[week] ?? null;
+  const weekForecastFallback = useMemo(
+    () => weekMeals.reduce((sum, m) => sum + m.totalVerdenVolume, 0),
+    [weekMeals]
+  );
   const focusedCode = selectedRecipe && weekMeals.some(item => item.code === selectedRecipe)
     ? selectedRecipe
     : weekMeals[0]?.code ?? null;
@@ -92,6 +102,14 @@ export function PlanningOasisView({
             <span className="rounded-full bg-white px-3 py-1 ring-1 ring-sky-300 font-semibold">{fmtNum(weekMeals.length)} Meals Verden</span>
             {weekIntel && <span className="rounded-full bg-white px-3 py-1 ring-1 ring-emerald-300 font-semibold">{fmtNum(weekIntel.workOrderCount)} Work Orders</span>}
             {weekIntel && <span className="rounded-full bg-white px-3 py-1 ring-1 ring-violet-300 font-semibold">{fmtNum(weekIntel.forecastTotal)} Forecast</span>}
+            {factorDailyMeta && (
+              <span
+                title={`Quelle: ${factorDailyMeta.sourceFile}\nHeruntergeladen: ${new Date(factorDailyMeta.downloadedAt).toLocaleString("de-DE")}`}
+                className={`rounded-full px-3 py-1 ring-1 font-semibold ${factorDailyMeta.week === week ? "bg-teal-50 ring-teal-400 text-teal-800" : "bg-orange-50 ring-orange-300 text-orange-700"}`}
+              >
+                ⚡ Factor Daily {factorDailyMeta.week}{factorDailyMeta.week !== week ? " ≠ KW" : ""} · {fmtNum(factorDailyMeta.rowCount)} Boxen
+              </span>
+            )}
           </div>
         </div>
 
@@ -100,7 +118,7 @@ export function PlanningOasisView({
           <OasisStat label="Rezepte im Sheet" value={fmtNum(weekIntel?.recipes.length ?? 0)} tone="sky" />
           <OasisStat label="WO Target Portions" value={fmtNum(weekIntel?.totalTargetPortions ?? 0)} tone="emerald" />
           <OasisStat label="LinePlating Σ" value={fmtNum(weekIntel?.platingTotal ?? 0)} tone="violet" />
-          <OasisStat label="Forecast Σ" value={fmtNum(weekIntel?.forecastTotal ?? 0)} tone="sky" />
+          <OasisStat label="Forecast Σ" value={fmtNum(weekIntel?.forecastTotal ?? weekForecastFallback)} tone="sky" />
           <OasisStat label="PDL Portionen" value={fmtNum(weekIntel?.pdlPortions ?? 0)} tone="emerald" />
           <OasisStat label="Eigene PDL" value={fmtNum(weekIntel?.factoryPdlPortions ?? 0)} tone="emerald" />
           <OasisStat label="Hybrid PDL" value={fmtNum(weekIntel?.hybridPdlPortions ?? 0)} tone="sky" />
@@ -110,7 +128,6 @@ export function PlanningOasisView({
         <div className="mt-4 flex flex-wrap gap-2">
           {([
             ["cockpit", "Cockpit"],
-            ["planner", tl(locale, "Wochenplaner")],
             ["lines", "Linienplanung"],
             ["recipes", "Rezept-Fokus"]
           ] as [OasisSection, string][]).map(([key, label]) => (
@@ -241,17 +258,6 @@ export function PlanningOasisView({
             </div>
           </div>
         </div>
-      )}
-
-      {section === "planner" && (
-        <PlanningView
-          data={data}
-          week={week}
-          locale={locale}
-          upliftPercent={upliftPercent}
-          selectedRecipe={selectedRecipe}
-          onSelectRecipe={onSelectRecipe}
-        />
       )}
 
       {section === "lines" && (

@@ -224,7 +224,7 @@ function parseForecastRows(rows: string[][], recipes: Map<string, TruthRecipeAcc
   }
 }
 
-function parsePdlRows(rows: Array<Record<string, string>>, source: "de" | "nor", recipes: Map<string, TruthRecipeAccumulator>, weeks: Map<string, TruthWeekAccumulator>) {
+function parsePdlRows(rows: Array<Record<string, string>>, source: "de" | "nor" | "daily", recipes: Map<string, TruthRecipeAccumulator>, weeks: Map<string, TruthWeekAccumulator>) {
   for (const row of rows) {
     const week = normalizeCell(row.hf_week || row.hellofresh_week);
     const mealSwap = normalizeCell(row.meal_swap);
@@ -256,7 +256,8 @@ function parsePdlRows(rows: Array<Record<string, string>>, source: "de" | "nor",
       if (productionDate) weekInfo.productionDates.add(productionDate);
 
       if (source === "de") recipe.aliases.add(`DE-${digitToken}`);
-      else recipe.aliases.add(`NOR-${digitToken}`);
+      else if (source === "nor") recipe.aliases.add(`NOR-${digitToken}`);
+      // "daily" fügt kein Alias-Präfix hinzu (gemischte DE/NOR-Quelle)
     }
   }
 }
@@ -305,18 +306,47 @@ function finalize(recipes: Map<string, TruthRecipeAccumulator>, weeks: Map<strin
   };
 }
 
+// ─── Factor Daily Meta ────────────────────────────────────────────────────────
+
+export interface FactorDailyMeta {
+  week: string;
+  sourceFile: string;
+  downloadedAt: string;
+  rowCount: number;
+}
+
+let factorDailyMetaPromise: Promise<FactorDailyMeta | null> | null = null;
+
+export function loadFactorDailyMeta(): Promise<FactorDailyMeta | null> {
+  if (!factorDailyMetaPromise) {
+    factorDailyMetaPromise = fetch(`/data/factor-daily-meta.json?ts=${Date.now()}`, { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<FactorDailyMeta>) : null))
+      .catch(() => null);
+  }
+  return factorDailyMetaPromise;
+}
+
+// ─── Dataset laden ────────────────────────────────────────────────────────────
+
 export function loadPlanningTruthDataset(): Promise<PlanningTruthDataset> {
   if (!planningTruthPromise) {
     planningTruthPromise = Promise.all([
       fetchCsvRows("/data/gsheet-truth-export/Running Forecast - All Markets.csv"),
       fetchCsvObjects("/data/gsheet-truth-export/Factor_DE - PDL Forecast.csv"),
       fetchCsvObjects("/data/gsheet-truth-export/Factor_Nor - PDL Forecast.csv"),
-    ]).then(([forecastRows, pdlDeRows, pdlNorRows]) => {
+      // Factor Daily: wird täglich um 07:30 per sync:factor:forecast aktualisiert.
+      // Graceful fallback auf [] wenn noch kein Download stattgefunden hat.
+      fetchCsvObjects("/data/gsheet-truth-export/Factor_Daily - PDL Forecast.csv").catch(() => []),
+    ]).then(([forecastRows, pdlDeRows, pdlNorRows, pdlDailyRows]) => {
       const recipes = new Map<string, TruthRecipeAccumulator>();
       const weeks = new Map<string, TruthWeekAccumulator>();
       parseForecastRows(forecastRows, recipes, weeks);
       parsePdlRows(pdlDeRows, "de", recipes, weeks);
       parsePdlRows(pdlNorRows, "nor", recipes, weeks);
+      if (pdlDailyRows.length > 0) {
+        parsePdlRows(pdlDailyRows, "daily", recipes, weeks);
+        console.log(`[PlanningTruth] Factor Daily geladen: ${pdlDailyRows.length} Zeilen`);
+      }
       return finalize(recipes, weeks);
     });
   }

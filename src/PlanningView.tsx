@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import type { DataBundle, ShelfLifeInfo, WeekRecipe } from "./types";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import type { DataBundle, DetailedSubRecipe, ProcessSpec, Recipe, ShelfLifeInfo, WeekRecipe } from "./types";
 import { STATIONS } from "./types";
-import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, loadStationDeviceCounts, loadStationPools } from "./equipment";
+import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools } from "./equipment";
 import {
   assignmentKey,
   PLANNER_DAYS,
@@ -26,6 +26,7 @@ import {
 } from "./planner";
 import { tl, type UiLocale } from "./i18n";
 import { usePlanningOasisData } from "./planningOasisData";
+import { exportAsTSV, exportAsExcel, exportAsPDF } from "./planExport";
 
 const PLANNER_UI_SETTINGS_STORAGE_KEY = "rezeptlogik-planner-ui-settings-v1";
 
@@ -35,7 +36,38 @@ type PlannerUiSettings = {
   showAutoSuggestions: boolean;
   showStationConflicts: boolean;
   showPoolConflicts: boolean;
+  autoSplitProfileId: string;
 };
+
+type AutoFulfillmentBatch = {
+  day: PlannerDay;
+  portions: number;
+};
+
+type AutoFulfillmentProfile = {
+  id: string;
+  label: string;
+  mode: "mhd-smart" | "fixed";
+  fallbackWeights?: Partial<Record<PlannerDay, number>>;
+};
+
+const AUTO_FULFILLMENT_PROFILES: readonly AutoFulfillmentProfile[] = [
+  {
+    id: "mhd-smart",
+    label: "MHD Smart (Fr/So aus Batch-Plan)",
+    mode: "mhd-smart"
+  },
+  {
+    id: "growth-fr-sa-so",
+    label: "Growth (Fr/Sa/So)",
+    mode: "fixed",
+    fallbackWeights: {
+      Fr: 0.55,
+      Sa: 0.2,
+      So: 0.25
+    }
+  }
+] as const;
 
 const SHIFT_MODEL_PRESETS = [
   {
@@ -101,7 +133,6 @@ const SHIFT_MODEL_AREAS = [
 ] as const;
 
 function fmtNum(n: number, digits = 0): string {
-
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
 }
 
@@ -121,8 +152,9 @@ function pickLowestLoadSlot(
   slotLoads: Map<string, number>,
   activeShifts: readonly PlannerShift[]
 ): { day: PlannerDay; shift: PlannerShift } | null {
+  const kitchenDays = ["Mo", "Di", "Mi", "Do", "Fr"] as const;
   let best: { day: PlannerDay; shift: PlannerShift; load: number } | null = null;
-  for (const day of PLANNER_DAYS) {
+  for (const day of kitchenDays) {
     for (const shift of activeShifts) {
       const key = slotValue(day, shift);
       const load = slotLoads.get(key) ?? 0;
@@ -155,7 +187,8 @@ function loadPlannerUiSettings(): PlannerUiSettings {
       shiftCount: 1,
       showAutoSuggestions: true,
       showStationConflicts: true,
-      showPoolConflicts: true
+      showPoolConflicts: true,
+      autoSplitProfileId: "mhd-smart"
     };
   }
   try {
@@ -166,7 +199,8 @@ function loadPlannerUiSettings(): PlannerUiSettings {
         shiftCount: 1,
         showAutoSuggestions: true,
         showStationConflicts: true,
-        showPoolConflicts: true
+        showPoolConflicts: true,
+        autoSplitProfileId: "mhd-smart"
       };
     }
     const parsed = JSON.parse(raw) as Partial<PlannerUiSettings>;
@@ -179,7 +213,10 @@ function loadPlannerUiSettings(): PlannerUiSettings {
       shiftCount: shiftCount >= 1 && shiftCount <= 3 ? shiftCount : 1,
       showAutoSuggestions: parsed.showAutoSuggestions ?? true,
       showStationConflicts: parsed.showStationConflicts ?? true,
-      showPoolConflicts: parsed.showPoolConflicts ?? true
+      showPoolConflicts: parsed.showPoolConflicts ?? true,
+      autoSplitProfileId: AUTO_FULFILLMENT_PROFILES.some((profile) => profile.id === parsed.autoSplitProfileId)
+        ? String(parsed.autoSplitProfileId)
+        : "mhd-smart"
     };
   } catch {
     return {
@@ -187,9 +224,95 @@ function loadPlannerUiSettings(): PlannerUiSettings {
       shiftCount: 1,
       showAutoSuggestions: true,
       showStationConflicts: true,
-      showPoolConflicts: true
+      showPoolConflicts: true,
+      autoSplitProfileId: "mhd-smart"
     };
   }
+}
+
+function plannerDayIndex(day: PlannerDay): number {
+  return PLANNER_DAYS.indexOf(day);
+}
+
+function pickLowestLoadSlotForDay(
+  slotLoads: Map<string, number>,
+  day: PlannerDay,
+  activeShifts: readonly PlannerShift[]
+): { day: PlannerDay; shift: PlannerShift } | null {
+  let best: { day: PlannerDay; shift: PlannerShift; load: number } | null = null;
+  for (const shift of activeShifts) {
+    const key = slotValue(day, shift);
+    const load = slotLoads.get(key) ?? 0;
+    if (!best || load < best.load) {
+      best = { day, shift, load };
+    }
+  }
+  return best ? { day: best.day, shift: best.shift } : null;
+}
+
+function normalizeBatches(raw: AutoFulfillmentBatch[], totalTarget: number): AutoFulfillmentBatch[] {
+  const cleaned = raw
+    .filter((row) => row.portions > 0)
+    .sort((a, b) => plannerDayIndex(a.day) - plannerDayIndex(b.day));
+  if (cleaned.length === 0 || totalTarget <= 0) return [];
+  const sum = cleaned.reduce((acc, row) => acc + row.portions, 0);
+  if (sum <= 0) return [];
+  const scaled = cleaned.map((row) => ({
+    day: row.day,
+    portions: Math.max(0, Math.round((row.portions / sum) * totalTarget))
+  }));
+  const drift = totalTarget - scaled.reduce((acc, row) => acc + row.portions, 0);
+  if (drift !== 0 && scaled[0]) scaled[0].portions += drift;
+  return scaled.filter((row) => row.portions > 0);
+}
+
+function fixedBatchesFromProfile(totalTarget: number, profile: AutoFulfillmentProfile): AutoFulfillmentBatch[] {
+  const weights = profile.fallbackWeights ?? { Fr: 1 };
+  const raw = Object.entries(weights)
+    .map(([day, weight]) => ({ day: day as PlannerDay, portions: Math.max(0, Number(weight) || 0) }))
+    .filter((row) => row.portions > 0);
+  if (raw.length === 0) return [{ day: "Fr", portions: totalTarget }];
+  return normalizeBatches(raw, totalTarget);
+}
+
+function serializeBatchesForNote(batches: AutoFulfillmentBatch[]): string {
+  return batches.map((row) => `${row.day}:${row.portions}`).join("|");
+}
+
+function resolveAutoBatches(
+  recipeCode: string,
+  totalTarget: number,
+  profile: AutoFulfillmentProfile,
+  batchSplitByRecipe: Map<string, AutoFulfillmentBatch[]>
+): AutoFulfillmentBatch[] {
+  if (totalTarget <= 0) return [];
+  if (profile.mode === "fixed") return fixedBatchesFromProfile(totalTarget, profile);
+  const fromPlanner = batchSplitByRecipe.get(recipeCode) ?? [];
+  if (fromPlanner.length > 0) return normalizeBatches(fromPlanner, totalTarget);
+  return [{ day: "Fr", portions: totalTarget }];
+}
+
+function kitchenDayBackshift(day: PlannerDay, steps: number): PlannerDay {
+  const kitchenDays: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do", "Fr"];
+  const idx = plannerDayIndex(day);
+  const targetIdx = Math.max(0, idx - Math.max(0, steps));
+  for (let i = targetIdx; i >= 0; i -= 1) {
+    const candidate = PLANNER_DAYS[i];
+    if (candidate && kitchenDays.includes(candidate)) return candidate;
+  }
+  return "Mo";
+}
+
+function subLeadDaysBeforeNeed(category: string, spec?: ProcessSpec): number {
+  const cat = String(category ?? "").toLowerCase();
+  const family = String(spec?.productFamily ?? "").toLowerCase();
+  const maxHoldMin = Math.max(0, ...Object.values(spec?.holdTimeMin ?? {}).map((v) => Number(v) || 0));
+
+  if (/brine|cure|ferment|inbound|raw receive/.test(cat) || maxHoldMin >= 24 * 60) return 3;
+  if (/sauce|marinade|broth|stock|slow cook|braise|butter/.test(cat) || family === "butter" || maxHoldMin >= 12 * 60) return 2;
+  if (/blast chiller|chill|cold hold|portion/.test(cat) || maxHoldMin >= 4 * 60) return 1;
+  if (/grill|fry|sear|wok|hot finish|plating|oven/.test(cat)) return 1;
+  return 1;
 }
 
 function shiftCountLabel(shiftCount: number): string {
@@ -259,6 +382,507 @@ function planningRoleLabel(role: "factory" | "hybrid" | "supplied" | undefined):
   return "Eigene Produktion";
 }
 
+function stableHash(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+function recipeHue(seed: string): number {
+  // Golden-ratio-based distribution: spreads hues maximally for any number of recipes
+  const goldenRatio = 0.618033988749895;
+  const h = ((stableHash(seed) & 0x7fffffff) * goldenRatio) % 1;
+  return Math.round(h * 360);
+}
+
+function weekBoardRecipeTone(recipeCode: string): {
+  hue: number;
+  row: CSSProperties;
+  sticky: CSSProperties;
+  subRow: CSSProperties;
+  subSticky: CSSProperties;
+  slotActive: CSSProperties;
+  slotIdle: CSSProperties;
+  subPill: CSSProperties;
+  mainPill: CSSProperties;
+  infoButton: CSSProperties;
+  code: CSSProperties;
+  title: CSSProperties;
+  badge: CSSProperties;
+} {
+  const hue = recipeHue(recipeCode);
+  return {
+    hue,
+    row: {
+      background: `linear-gradient(90deg, hsl(${hue} 66% 93%) 0%, hsl(${hue} 44% 97%) 26%, hsl(${hue} 35% 99%) 100%)`
+    },
+    sticky: {
+      background: `linear-gradient(90deg, hsl(${hue} 70% 91%) 0%, hsl(${hue} 48% 97%) 100%)`,
+      boxShadow: `inset 4px 0 0 hsl(${hue} 74% 52%)`
+    },
+    subRow: {
+      background: `linear-gradient(90deg, hsl(${hue} 42% 97%) 0%, hsl(${hue} 26% 99%) 100%)`
+    },
+    subSticky: {
+      backgroundColor: `hsl(${hue} 50% 98%)`
+    },
+    slotActive: {
+      backgroundColor: "#ffffff",
+      borderColor: `hsl(${hue} 44% 74%)`
+    },
+    slotIdle: {
+      backgroundColor: `hsl(${hue} 46% 98%)`,
+      borderColor: `hsl(${hue} 24% 86%)`
+    },
+    subPill: {
+      backgroundColor: `hsl(${hue} 84% 92%)`,
+      color: `hsl(${hue} 62% 26%)`,
+      boxShadow: `inset 0 0 0 1px hsl(${hue} 60% 66%)`
+    },
+    mainPill: {
+      backgroundColor: `hsl(${hue} 72% 38%)`,
+      color: "#ffffff",
+      boxShadow: `inset 0 0 0 1px hsl(${hue} 78% 28%)`
+    },
+    infoButton: {
+      backgroundColor: `hsl(${hue} 52% 98%)`,
+      color: `hsl(${hue} 60% 28%)`,
+      boxShadow: `inset 0 0 0 1px hsl(${hue} 48% 70%)`
+    },
+    code: {
+      color: `hsl(${hue} 44% 32%)`
+    },
+    title: {
+      color: `hsl(${hue} 52% 22%)`
+    },
+    badge: {
+      backgroundColor: `hsl(${hue} 74% 90%)`,
+      color: `hsl(${hue} 64% 24%)`,
+      border: `1px solid hsl(${hue} 54% 70%)`
+    }
+  };
+}
+
+function normalizeText(value: string | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeUom(value: string | undefined): string {
+  return normalizeText(value).replace(/\s+/g, "");
+}
+
+function isEachUom(uom: string | undefined): boolean {
+  const token = normalizeUom(uom);
+  return token === "ea" || token === "each" || token === "pcs" || token === "pc" || token === "piece" || token === "pieces";
+}
+
+function toKgEquivalent(value: number, uom: string | undefined): number | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const token = normalizeUom(uom);
+  if (!token) return null;
+  if (token === "kg" || token === "kilogram" || token === "kilograms") return value;
+  if (token === "g" || token === "gram" || token === "grams") return value / 1000;
+  if (token === "mg") return value / 1_000_000;
+  if (token === "l" || token === "lt" || token === "liter" || token === "litre") return value;
+  if (token === "ml") return value / 1000;
+  return null;
+}
+
+function collectSubRecipeYieldPct(subRecipes: DetailedSubRecipe[], result: Map<string, number>) {
+  for (const sub of subRecipes) {
+    for (const ingredient of sub.ingredients) {
+      const key = `${sub.id}::${ingredient.id}`;
+      // yieldPct is stored as decimal ratio (0.0–1.0), not as percentage
+      const v = Number(ingredient.yieldPct);
+      const ratio = Number.isFinite(v) && v > 0 ? (v > 1 ? v / 100 : v) : 1;
+      if (!result.has(key)) result.set(key, ratio);
+    }
+    if (sub.subRecipes.length > 0) collectSubRecipeYieldPct(sub.subRecipes, result);
+  }
+}
+
+function findRecipeSubRecipe(recipe: Recipe, subRecipeId: string) {
+  for (const market of Object.values(recipe.markets)) {
+    for (const sub of market?.subRecipes ?? []) {
+      if (sub.id === subRecipeId) return sub;
+    }
+  }
+  return null;
+}
+
+// ── Parsing-Helfer für Bible/Master-GSheet-Hinweise ──────────────────────────
+
+function infoNorm(value: string): string {
+  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9äöüß]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function infoParseNum(value: unknown): number | null {
+  const text = String(value ?? "").trim().replace(/\./g, "").replace(",", ".");
+  const m = text.match(/-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function infoParseKg(value: unknown): number | null {
+  const text = String(value ?? "").trim();
+  const n = infoParseNum(text);
+  if (n == null || n <= 0) return null;
+  if (text.toLowerCase().includes(" g") || /^\d+\s*g\b/.test(text.toLowerCase())) return n / 1000;
+  return n;
+}
+
+function infoParsePcs(value: unknown): number | null {
+  const m = String(value ?? "").trim().toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*pcs/);
+  if (!m) return null;
+  const n = Number(m[1].replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function infoToCells(rowValues: unknown): string[] {
+  if (!Array.isArray(rowValues)) return [];
+  return rowValues.map((cell) => String(cell ?? "").trim());
+}
+
+function infoDetectHeaderRow(rows: string[][], patterns: RegExp[]): number {
+  let bestIdx = -1, bestScore = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const nonEmpty = row.filter((c) => c.length > 0).length;
+    if (nonEmpty < 3) continue;
+    const text = row.join(" | ").toLowerCase();
+    const score = patterns.reduce((s, p) => s + (p.test(text) ? 1 : 0), 0) * 10 + nonEmpty;
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+function infoFindColIdx(headers: string[], patterns: RegExp[]): number {
+  for (let i = 0; i < headers.length; i++) {
+    if (patterns.some((p) => p.test(headers[i].toLowerCase()))) return i;
+  }
+  return -1;
+}
+
+function infoTokenize(value: string): string[] {
+  return infoNorm(value).split(" ").filter((t) => t.length > 1);
+}
+
+/** Baut Kapazitäts- und Tray-Hinweise aus den GSheet-Dump-JSONs auf. */
+function buildInfoHintsFromDumps(master: unknown, bibles: unknown): InfoHints {
+  const capacityHints = new Map<string, InfoCapacityHint>();
+  const pieceWeightKg = new Map<string, number>();
+  const trayHints: InfoTrayHint[] = [];
+
+  function upsertCap(name: string, cap: number | null, equipment: string | null) {
+    const key = infoNorm(name);
+    if (!key || !cap || cap <= 0) return;
+    const existing = capacityHints.get(key);
+    if (!existing || cap < existing.capacityKg) capacityHints.set(key, { key, capacityKg: cap, equipment });
+  }
+
+  type GSheetDump = { sheets?: Array<{ title?: string; values?: unknown[] }> };
+  const masterSheets = Array.isArray((master as GSheetDump)?.sheets) ? (master as GSheetDump).sheets! : [];
+  const bibleSheets  = Array.isArray((bibles  as GSheetDump)?.sheets) ? (bibles  as GSheetDump).sheets! : [];
+
+  for (const sheet of masterSheets) {
+    const title = String(sheet.title ?? "");
+    const rows = Array.isArray(sheet.values) ? sheet.values.map(infoToCells) : [];
+
+    if (/bd_master|breakdown_sup|bd_supervisors/i.test(title)) {
+      const hIdx = infoDetectHeaderRow(rows.slice(0, 40), [/sub\s*recipe/i, /bible\s*ref/i, /kg/i]);
+      if (hIdx >= 0 && rows[hIdx]) {
+        const headers = rows[hIdx];
+        const subIdx    = infoFindColIdx(headers, [/sub\s*recipe/i]);
+        const subSubIdx = infoFindColIdx(headers, [/sub\s*-?sub\s*recipe/i]);
+        const refIdx    = infoFindColIdx(headers, [/bible\s*ref/i]);
+        const totalIdx  = infoFindColIdx(headers, [/total\s*size.*kg/i]);
+        const brkIdx    = infoFindColIdx(headers, [/batch\s*breakdown.*kg/i]);
+        const areaIdx   = infoFindColIdx(headers, [/area\s*associated/i, /^area/i]);
+        if (subIdx >= 0 || subSubIdx >= 0) {
+          for (let i = hIdx + 1; i < rows.length; i++) {
+            const row = rows[i];
+            const sub = (subIdx >= 0 ? row[subIdx] : "") || (subSubIdx >= 0 ? row[subSubIdx] : "");
+            if (!sub) continue;
+            const area = areaIdx >= 0 ? (row[areaIdx] || null) : null;
+            upsertCap(sub, infoParseKg(refIdx >= 0 ? row[refIdx] : null) ?? infoParseKg(brkIdx >= 0 ? row[brkIdx] : null) ?? infoParseKg(totalIdx >= 0 ? row[totalIdx] : null), area);
+          }
+        }
+      }
+    }
+
+    if (/middle-kitchen/i.test(title) && !/bible/i.test(title)) {
+      const hIdx = infoDetectHeaderRow(rows.slice(0, 30), [/sku\s*subrecipes/i, /max\s*capacity.*kg/i]);
+      if (hIdx >= 0 && rows[hIdx]) {
+        const headers = rows[hIdx];
+        const skuIdx = infoFindColIdx(headers, [/sku\s*subrecipes/i]);
+        const capIdx = infoFindColIdx(headers, [/max\s*capacity.*kg/i]);
+        if (skuIdx >= 0 && capIdx >= 0) {
+          for (let i = hIdx + 1; i < rows.length; i++) upsertCap(rows[i][skuIdx] ?? "", infoParseKg(rows[i][capIdx]), "MIDDLE-KITCHEN");
+        }
+      }
+    }
+
+    if (/braiser/i.test(title) && !/bible/i.test(title)) {
+      const hIdx = infoDetectHeaderRow(rows.slice(0, 30), [/subrecipe\s*sku/i, /max\s*raw.*kg/i]);
+      if (hIdx >= 0 && rows[hIdx]) {
+        const headers = rows[hIdx];
+        const skuIdx = infoFindColIdx(headers, [/subrecipe\s*sku/i]);
+        const capIdx = infoFindColIdx(headers, [/max\s*raw.*kg/i]);
+        if (skuIdx >= 0 && capIdx >= 0) {
+          for (let i = hIdx + 1; i < rows.length; i++) upsertCap(rows[i][skuIdx] ?? "", infoParseKg(rows[i][capIdx]), "BRAISER");
+        }
+      }
+    }
+  }
+
+  for (const sheet of bibleSheets) {
+    const title = String(sheet.title ?? "");
+    const rows = Array.isArray(sheet.values) ? sheet.values.map(infoToCells) : [];
+
+    if (/protein-debox/i.test(title)) {
+      const hIdx = infoDetectHeaderRow(rows.slice(0, 30), [/protein\s*type/i, /cut/i, /est\.?\s*pieces/i]);
+      if (hIdx >= 0 && rows[hIdx]) {
+        const headers = rows[hIdx];
+        const protIdx    = infoFindColIdx(headers, [/protein\s*type/i]);
+        const cutIdx     = infoFindColIdx(headers, [/^cut/i]);
+        const trayIdx    = infoFindColIdx(headers, [/tray\s*spec/i]);
+        const piecesIdx  = infoFindColIdx(headers, [/est\.?\s*pieces/i]);
+        const weightIdx  = infoFindColIdx(headers, [/weight.*kg/i]);
+        for (let i = hIdx + 1; i < rows.length; i++) {
+          const row = rows[i];
+          const cut     = cutIdx  >= 0 ? row[cutIdx]  : "";
+          const protein = protIdx >= 0 ? row[protIdx] : "";
+          const label   = cut || protein;
+          if (!label) continue;
+          const pcsFromTray = trayIdx   >= 0 ? infoParsePcs(row[trayIdx])        : null;
+          const piecesNum   = piecesIdx >= 0 ? infoParseNum(row[piecesIdx])       : null;
+          const trayPcs = pcsFromTray ?? piecesNum;
+          if (trayPcs && trayPcs > 0) {
+            const key = infoNorm(label);
+            if (!trayHints.some((h) => h.key === key)) trayHints.push({ key, pcsPerTray: trayPcs });
+            if (protein && cut) {
+              const key2 = infoNorm(`${protein} ${cut}`);
+              if (!trayHints.some((h) => h.key === key2)) trayHints.push({ key: key2, pcsPerTray: trayPcs });
+            }
+          }
+          const rowWeight = weightIdx >= 0 ? infoParseKg(row[weightIdx]) : null;
+          if (rowWeight && piecesNum && piecesNum > 0) pieceWeightKg.set(infoNorm(label), rowWeight / piecesNum);
+        }
+      }
+    }
+
+    if (/veggie-debox/i.test(title)) {
+      const hIdx = infoDetectHeaderRow(rows.slice(0, 30), [/item_/i, /capacity\s*wanne/i]);
+      if (hIdx >= 0 && rows[hIdx]) {
+        const headers = rows[hIdx];
+        const itemIdx = infoFindColIdx(headers, [/item_/i]);
+        const capIdx  = infoFindColIdx(headers, [/capacity\s*wanne/i]);
+        if (itemIdx >= 0 && capIdx >= 0) {
+          for (let i = hIdx + 1; i < rows.length; i++) upsertCap(rows[i][itemIdx] ?? "", infoParseKg(rows[i][capIdx]), "VEGGIE-DEBOX");
+        }
+      }
+    }
+
+    if (/braiser\s*bible/i.test(title)) {
+      const hIdx = infoDetectHeaderRow(rows.slice(0, 20), [/subrecipe\s*sku/i, /max\s*raw.*kg/i]);
+      if (hIdx >= 0 && rows[hIdx]) {
+        const headers = rows[hIdx];
+        const catIdx = infoFindColIdx(headers, [/^category/i]);
+        const skuIdx = infoFindColIdx(headers, [/subrecipe\s*sku/i]);
+        const capIdx = infoFindColIdx(headers, [/max\s*raw.*kg/i]);
+        if (skuIdx >= 0 && capIdx >= 0) {
+          for (let i = hIdx + 1; i < rows.length; i++) {
+            const row = rows[i];
+            const sku = row[skuIdx] ?? "";
+            const cat = catIdx >= 0 ? (row[catIdx] ?? "") : "";
+            const name = sku && sku !== "-" ? sku : cat;
+            upsertCap(name, infoParseKg(row[capIdx]), "BRAISER");
+            if (cat && cat !== name) upsertCap(cat, infoParseKg(row[capIdx]), "BRAISER");
+          }
+        }
+      }
+    }
+
+    if (/middle-kitchen\s*bible/i.test(title)) {
+      const hIdx = infoDetectHeaderRow(rows.slice(0, 20), [/sku\s*subrecipes/i, /max\s*capacity.*kg/i]);
+      if (hIdx >= 0 && rows[hIdx]) {
+        const headers = rows[hIdx];
+        const skuIdx = infoFindColIdx(headers, [/sku\s*subrecipes/i]);
+        const capIdx = infoFindColIdx(headers, [/max\s*capacity.*kg/i]);
+        if (skuIdx >= 0 && capIdx >= 0) {
+          for (let i = hIdx + 1; i < rows.length; i++) upsertCap(rows[i][skuIdx] ?? "", infoParseKg(rows[i][capIdx]), "MIDDLE-KITCHEN");
+        }
+      }
+    }
+  }
+
+  return { capacityHints, pieceWeightKg, trayHints };
+}
+
+function resolveInfoCapacityHint(hints: Map<string, InfoCapacityHint>, subRecipeName: string): InfoCapacityHint | null {
+  const key = infoNorm(subRecipeName);
+  if (!key) return null;
+  const direct = hints.get(key);
+  if (direct) return direct;
+  let best: { score: number; hint: InfoCapacityHint } | null = null;
+  for (const hint of hints.values()) {
+    const aTokens = new Set(infoTokenize(hint.key));
+    const bTokens = new Set(infoTokenize(key));
+    if (aTokens.size === 0 || bTokens.size === 0) continue;
+    let overlap = 0;
+    for (const t of aTokens) { if (bTokens.has(t)) overlap++; }
+    const score = overlap / Math.max(aTokens.size, bTokens.size);
+    if (score > 0 && (!best || score > best.score)) best = { score, hint };
+  }
+  return best && best.score >= 0.4 ? best.hint : null;
+}
+
+function lookupInfoTrayPcs(trayHints: InfoTrayHint[], ingredientName: string): number | null {
+  const keyTokens = new Set(infoTokenize(ingredientName));
+  if (keyTokens.size === 0) return null;
+  let best: { hintSize: number; pcs: number } | null = null;
+  for (const hint of trayHints) {
+    const hintTokens = new Set(infoTokenize(hint.key));
+    if (hintTokens.size === 0) continue;
+    let overlap = 0;
+    for (const t of hintTokens) { if (keyTokens.has(t)) overlap++; }
+    if (overlap < hintTokens.size) continue; // 100% containment required
+    if (!best || hintTokens.size > best.hintSize) best = { hintSize: hintTokens.size, pcs: hint.pcsPerTray };
+  }
+  return best ? best.pcs : null;
+}
+
+function getSubRecipeInfo(
+  data: DataBundle,
+  recipeCode: string,
+  subRecipeId: string,
+  targetPortions: number,
+  hints: InfoHints
+): SubRecipeInfoView | null {
+  const recipe = data.recipes[recipeCode];
+  if (!recipe) return null;
+  const subRecipe = findRecipeSubRecipe(recipe, subRecipeId);
+  if (!subRecipe) return null;
+  const structure = data.structures?.[recipeCode];
+  const yieldByIngredient = new Map<string, number>();
+  for (const roots of Object.values(structure?.markets ?? {})) {
+    collectSubRecipeYieldPct(roots ?? [], yieldByIngredient);
+  }
+
+  const profile = getSubRecipeMassProfile(subRecipe, recipe);
+  const profileYield = Number(profile.yieldRatio ?? 1);
+  const fallbackYield = profileYield > 0 ? profileYield : 1;
+  const normalizedSubName = normalizeText(subRecipe.name);
+
+  // Kapazität aus Bible-Hinweisen (höchste Priorität) → PFEI-ProcessSpec → unbekannt
+  const capHint = resolveInfoCapacityHint(hints.capacityHints, subRecipe.name);
+  const processSpec = data.processSpecs?.[subRecipeId];
+  const capacityKg = capHint?.capacityKg ?? processSpec?.batchSizeKg ?? null;
+  const equipment   = capHint?.equipment ?? processSpec?.primaryStation ?? null;
+  const capacitySource: "bible" | "process-spec" | "unknown" =
+    capHint ? "bible" : processSpec?.batchSizeKg ? "process-spec" : "unknown";
+
+  // Markt-Priorität (DE → BENL → DKSE) – nur eine Markt-Variante nehmen, keine Doppelzählung
+  const MARKET_PRIO = ["DE", "BENL", "DKSE"] as const;
+  let grossList: Array<{ subRecipe1?: string; subRecipe2?: string; subRecipe3?: string; ingredient: string; ingredientId: string; grossQuantityPerPortion: number; uom: string }> | undefined;
+  for (const mkt of MARKET_PRIO) {
+    const list = recipe.grossIngredients[mkt];
+    if (list && list.length > 0) { grossList = list; break; }
+  }
+  if (!grossList) {
+    const fallback = Object.values(recipe.grossIngredients).find((l) => l && l.length > 0);
+    grossList = fallback ?? [];
+  }
+
+  const aggregated = new Map<string, SubRecipeInfoIngredientRow>();
+
+  for (const row of grossList) {
+    const matchesSub = [row.subRecipe1, row.subRecipe2, row.subRecipe3]
+      .some((name) => normalizeText(name) === normalizedSubName);
+    if (!matchesSub) continue;
+
+    const ingredientId = row.ingredientId || row.ingredient;
+    const key = `${ingredientId}::${normalizeUom(row.uom)}`;
+    const rawPerPortion = Number(row.grossQuantityPerPortion) || 0;
+    const rawTotal = Math.max(0, rawPerPortion * targetPortions);
+    const rawKg = toKgEquivalent(rawTotal, row.uom);
+    const ingredientYield = yieldByIngredient.get(`${subRecipeId}::${ingredientId}`) ?? fallbackYield;
+    const finishedTotal = rawTotal * ingredientYield;
+
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.rawTotal += rawTotal;
+      if (existing.rawKg !== null && rawKg !== null) existing.rawKg += rawKg;
+      else if (rawKg === null) existing.rawKg = null;
+      existing.finishedTotal += finishedTotal;
+    } else {
+      aggregated.set(key, {
+        ingredientId,
+        ingredientName: row.ingredient,
+        uom: row.uom,
+        yieldRatio: ingredientYield,
+        rawTotal,
+        rawKg,
+        finishedTotal,
+        containerType: "",
+        containerCount: 0,
+        proBatchKg: null
+      });
+    }
+  }
+
+  // batchCount zuerst aus Gesamt-Rohgewicht aller Zutaten berechnen –
+  // alle kg-Zutaten teilen sich dieselben Wannen (kein per-Zutat-Ansatz)
+  const preRows = Array.from(aggregated.values());
+  const totalRawKg = preRows.reduce((sum, row) => sum + (row.rawKg ?? 0), 0);
+  const batchCount = capacityKg && capacityKg > 0 && totalRawKg > 0
+    ? Math.ceil(totalRawKg / capacityKg)
+    : null;
+
+  const ingredientRows = preRows.map((row) => {
+    // EA-Artikel: Tray-Anzahl aus Bible-Hinweisen (nicht hardcoded 25 Stk)
+    if (isEachUom(row.uom)) {
+      const pcsPerTray = lookupInfoTrayPcs(hints.trayHints, row.ingredientName) ?? 25;
+      const trays = Math.max(1, Math.ceil(row.rawTotal / pcsPerTray));
+      return { ...row, containerType: `Tray (${pcsPerTray} Stk)`, containerCount: trays };
+    }
+
+    // Kg-Artikel: alle teilen sich batchCount Wannen (nicht per-Zutat aufteilen)
+    const rawKg = row.rawKg;
+    if (rawKg !== null && rawKg > 0) {
+      if (batchCount !== null && capacityKg && capacityKg > 0) {
+        return { ...row, containerType: `Wanne (${fmtNum(capacityKg, 1)} kg)`, containerCount: batchCount };
+      }
+      return { ...row, containerType: "Wanne (Kapazität unbekannt)", containerCount: 0 };
+    }
+
+    return { ...row, containerType: "Manuell", containerCount: 0 };
+  });
+
+  const totalFinishedKg = ingredientRows.reduce((sum, row) => sum + (toKgEquivalent(row.finishedTotal, row.uom) ?? 0), 0);
+  // totalContainerCount = EA-Tray-Anzahlen; Wannen (batchCount) stehen im Footer-Badge
+  const totalContainerCount = ingredientRows
+    .filter((r) => isEachUom(r.uom))
+    .reduce((s, r) => s + r.containerCount, 0);
+
+  return {
+    recipeCode,
+    subRecipeId,
+    subRecipeName: subRecipe.name,
+    targetPortions,
+    yieldRatio: fallbackYield,
+    ingredientRows,
+    totalRawKg,
+    totalFinishedKg,
+    totalContainerCount,
+    capacityKg,
+    equipment,
+    batchCount,
+    capacitySource
+  };
+}
+
 export function PlanningView(
   { data, week, locale, upliftPercent = 0, selectedRecipe, onSelectRecipe }:
   { data: DataBundle; week: string; locale: UiLocale; upliftPercent?: number; selectedRecipe?: string | null; onSelectRecipe?: (recipeCode: string) => void }
@@ -274,6 +898,22 @@ export function PlanningView(
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   const [dragOverUnplanned, setDragOverUnplanned] = useState(false);
   const [expandedRecipes, setExpandedRecipes] = useState<Set<string>>(new Set());
+  const [expandedBoardRecipes, setExpandedBoardRecipes] = useState<Set<string>>(new Set());
+  const [boardEditor, setBoardEditor] = useState<WeekBoardEditorState | null>(null);
+  const [subRecipeInfoRequest, setSubRecipeInfoRequest] = useState<SubRecipeInfoRequest | null>(null);
+  const [infoHints, setInfoHints] = useState<InfoHints>(() => ({
+    capacityHints: new Map(),
+    pieceWeightKg: new Map(),
+    trayHints: []
+  }));
+  const [boardDraft, setBoardDraft] = useState<WeekBoardEditorDraft>({
+    shift: "S1",
+    targetPortions: 0,
+    reason: "Planned",
+    splitSpec: "",
+    notes: ""
+  });
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   useEffect(() => {
     savePlannerStorage(storage);
   }, [storage]);
@@ -282,6 +922,26 @@ export function PlanningView(
     if (typeof window === "undefined") return;
     window.localStorage.setItem(PLANNER_UI_SETTINGS_STORAGE_KEY, JSON.stringify(uiSettings));
   }, [uiSettings]);
+
+  // Kapazitäts- und Tray-Hinweise aus den GSheet-Dumps laden (für Info-Modal)
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const [masterRes, biblesRes] = await Promise.all([
+          fetch("/data/gsheet-dump-NEW_MASTER_SUPERVISORS_WORKLOAD_PLANNING.json"),
+          fetch("/data/gsheet-dump-Bibles_K_Operations_Manager_Supervisors.json"),
+        ]);
+        if (!masterRes.ok || !biblesRes.ok) return;
+        const [masterDump, biblesDump] = await Promise.all([masterRes.json(), biblesRes.json()]);
+        if (!active) return;
+        setInfoHints(buildInfoHintsFromDumps(masterDump, biblesDump));
+      } catch {
+        // Hinweise optional – Berechnung arbeitet auch ohne
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const weekState = useMemo(() => getWeekState(storage, week), [storage, week]);
   const scenario = useMemo(() => getActiveScenario(storage, week), [storage, week]);
@@ -305,6 +965,17 @@ export function PlanningView(
   }, [data, week, scenario, activeShifts, portionMultiplier, stationDeviceCounts, stationPools, uiSettings.showAutoSuggestions]);
   const split = useMemo(() => getWeekSplit(data, week), [data, week]);
   const batchSplitPlan = useMemo(() => computeBatchSplitPlan(data, week), [data, week]);
+  const autoProfile = useMemo(() => {
+    return AUTO_FULFILLMENT_PROFILES.find((profile) => profile.id === uiSettings.autoSplitProfileId)
+      ?? AUTO_FULFILLMENT_PROFILES[0];
+  }, [uiSettings.autoSplitProfileId]);
+  const batchSplitByRecipe = useMemo(() => {
+    const map = new Map<string, AutoFulfillmentBatch[]>();
+    for (const plan of batchSplitPlan) {
+      map.set(plan.recipeCode, plan.batches.map((batch) => ({ day: batch.fulfillmentDay, portions: batch.portions })));
+    }
+    return map;
+  }, [batchSplitPlan]);
   const weekIntel = planningOasis?.weeks[week] ?? null;
   const shelfRisk = useMemo(() => {
     const seen = new Set<string>();
@@ -330,6 +1001,16 @@ export function PlanningView(
   const recipeLookup = useMemo(() => Object.fromEntries(
     data.weekRecipes.filter(r => r.hfWeek === week).map(r => [r.code, r])
   ) as Record<string, WeekRecipe>, [data.weekRecipes, week]);
+  const subRecipeInfo = useMemo(() => {
+    if (!subRecipeInfoRequest) return null;
+    return getSubRecipeInfo(
+      data,
+      subRecipeInfoRequest.recipeCode,
+      subRecipeInfoRequest.subRecipeId,
+      subRecipeInfoRequest.targetPortions,
+      infoHints
+    );
+  }, [data, subRecipeInfoRequest, infoHints]);
 
   const assignmentsBySlot = useMemo(() => {
     const buckets: Record<string, Array<{ code: string; name: string; activeMin: number }>> = {};
@@ -350,41 +1031,116 @@ export function PlanningView(
       subRecipeId?: string;
       name: string;
       activeMin: number;
+      targetPortions?: number;
       order: number;
       shift: PlannerShift;
       kind: "main" | "sub";
       subCount: number; // für main-tile: Anzahl noch enthaltener Subs
+      batchLabel?: string;
+      /** Batch-Index 0-basiert (nur bei Split-Rezepten) */
+      batchIndex?: number;
+      /** Gesamt-Batch-Anzahl dieses Rezepts in der Woche */
+      batchTotal?: number;
+      /** Lead-Zeit in Küchentagen (nur kind=sub) */
+      leadDays?: number;
+      /** Bedarfstag des Haupt-Rezepts (= Ausgabe/Fulfillment-Start, kind=sub) */
+      mainDay?: PlannerDay;
+      category?: string;
+      /** Ghost-Pill: automatisch aus BatchSplitPlan (noch nicht manuell bestätigt) */
+      suggested?: boolean;
+      /** Fulfillment-Tag (nur bei Ghost-Tiles, z.B. "Fr" oder "So") */
+      fulfillmentDay?: PlannerDay;
+      /** Empfohlener Produktionstag (nur bei Ghost-Tiles) */
+      recommendedProdDay?: PlannerDay;
+      /** Alle Sub-Rezepte bereits einzeln verplant → Ghost-Tile wird als solide Plating-Pille angezeigt */
+      allSubsDone?: boolean;
     };
     const buckets: Record<string, Tile[]> = {};
     for (const recipe of analysis.recipes) {
-      if (recipe.assigned && recipe.activeMin > 0) {
+      if (recipe.assigned) {
+        const mainAssignment = recipe.assigned;
         const remainingSubs = recipe.subRecipes.filter(s => !s.assigned).length;
-        (buckets[slotValue(recipe.assigned.day, recipe.assigned.shift)] ??= []).push({
-          key: recipe.recipeCode,
-          code: recipe.recipeCode,
-          name: recipe.recipeName,
-          activeMin: Math.max(15, recipe.activeMin),
-          order: recipe.assigned.order ?? Number.MAX_SAFE_INTEGER,
-          shift: recipe.assigned.shift,
-          kind: "main",
-          subCount: remainingSubs
+        const targetPortions = Math.max(0, Math.round(mainAssignment.targetPortions ?? 0));
+        const parsedNote = parseBoardNote(mainAssignment.note);
+        const splitSpec = extractSplitSpecFromNotes(parsedNote.notes);
+        const batches = parseSplitSpecToBatches(splitSpec, mainAssignment.day, targetPortions);
+        const visibleBatches = batches.length > 0
+          ? batches
+          : [{ day: mainAssignment.day, portions: targetPortions > 0 ? targetPortions : Math.max(1, Math.round(recipe.activeMin)) }];
+        const totalBatchPortions = Math.max(1, visibleBatches.reduce((sum, batch) => sum + batch.portions, 0));
+
+        visibleBatches.forEach((batch, index) => {
+          const slot = slotValue(batch.day, mainAssignment.shift);
+          const weight = Math.max(0.15, batch.portions / totalBatchPortions);
+          (buckets[slot] ??= []).push({
+            key: `${recipe.recipeCode}::batch-${index + 1}-${batch.day}`,
+            code: recipe.recipeCode,
+            name: recipe.recipeName,
+            activeMin: recipe.activeMin > 0 ? Math.max(15, Math.round(recipe.activeMin * weight)) : 0,
+            targetPortions: batch.portions,
+            order: (mainAssignment.order ?? Number.MAX_SAFE_INTEGER) + index * 0.01,
+            shift: mainAssignment.shift,
+            kind: "main",
+            subCount: remainingSubs,
+            batchLabel: visibleBatches.length > 1 ? `B${index + 1}` : undefined,
+            batchIndex: visibleBatches.length > 1 ? index : undefined,
+            batchTotal: visibleBatches.length > 1 ? visibleBatches.length : undefined
+          });
         });
       }
       for (const sub of recipe.subRecipes) {
         if (!sub.assigned) continue;
+        const subLeadDays = subLeadDaysBeforeNeed(sub.category, data.processSpecs?.[sub.subRecipeId]);
         (buckets[slotValue(sub.assigned.day, sub.assigned.shift)] ??= []).push({
           key: `${recipe.recipeCode}::${sub.subRecipeId}`,
           code: recipe.recipeCode,
           subRecipeId: sub.subRecipeId,
           name: `${sub.subRecipeName} (${recipe.recipeName})`,
           activeMin: Math.max(15, sub.activeMin),
+          targetPortions: sub.assigned.targetPortions,
           order: sub.assigned.order ?? Number.MAX_SAFE_INTEGER,
           shift: sub.assigned.shift,
           kind: "sub",
-          subCount: 0
+          subCount: 0,
+          leadDays: subLeadDays,
+          mainDay: recipe.assigned?.day,
+          category: sub.category
         });
       }
     }
+    // Ghost-Pills / Derived Plating-Pills: unverplante Hauptrezepte → Empfehlung aus BatchSplitPlan
+    // Wenn alle Sub-Rezepte bereits einzeln verplant sind → solide Plating-Pille statt Ghost
+    const defaultShift = activeShifts[0] ?? "1st Shift";
+    for (const recipe of analysis.recipes) {
+      if (recipe.assigned) continue; // bereits manuell verplant → durch Fix 1 als solide Pille abgedeckt
+      const plan = batchSplitPlan.find(p => p.recipeCode === recipe.recipeCode);
+      if (!plan) continue;
+      const subsWithWork = recipe.subRecipes.filter(s => s.activeMin > 0);
+      const allSubsDone = subsWithWork.length > 0 && subsWithWork.every(s => !!s.assigned);
+      const totalBatches = plan.batches.length;
+      plan.batches.forEach((batch, index) => {
+        const slot = slotValue(batch.fulfillmentDay, defaultShift);
+        (buckets[slot] ??= []).push({
+          key: `${recipe.recipeCode}::suggest-${index}`,
+          code: recipe.recipeCode,
+          name: recipe.recipeName,
+          activeMin: 0,
+          targetPortions: batch.portions,
+          order: Number.MAX_SAFE_INTEGER - 1,
+          shift: defaultShift,
+          kind: "main",
+          subCount: recipe.subRecipes.filter(s => !s.assigned).length,
+          batchLabel: totalBatches > 1 ? `B${index + 1}` : undefined,
+          batchIndex: totalBatches > 1 ? index : undefined,
+          batchTotal: totalBatches > 1 ? totalBatches : undefined,
+          suggested: true,
+          fulfillmentDay: batch.fulfillmentDay,
+          recommendedProdDay: batch.recommendedProductionDay,
+          allSubsDone,
+        });
+      });
+    }
+
     for (const rows of Object.values(buckets)) {
       rows.sort((a, b) => {
         if (a.order !== b.order) return a.order - b.order;
@@ -393,7 +1149,7 @@ export function PlanningView(
       });
     }
     return buckets;
-  }, [analysis.recipes]);
+  }, [analysis.recipes, batchSplitPlan, activeShifts]);
 
   const stationsBySlot = useMemo(() => {
     return Object.fromEntries(
@@ -568,15 +1324,47 @@ export function PlanningView(
 
       const targetRecipe = analysisNow.recipes.find(r => r.recipeCode === targetCode);
       if (!targetRecipe) return prev;
+      const recipe = recipeLookup[targetCode];
+      if (!recipe) return prev;
 
       const nextAssignments = { ...currentScenario.assignments };
 
-      // First assign unplanned subs (longest first)
+      const existingMain = nextAssignments[assignmentKey(targetCode)];
+      const mainTarget = Math.max(0, Math.round(existingMain?.targetPortions ?? recipe.totalVerdenVolume ?? 0));
+      const batches = resolveAutoBatches(targetCode, mainTarget, autoProfile, batchSplitByRecipe);
+      const platingDay = batches[0]?.day ?? existingMain?.day ?? "Fr";
+
+      if (!targetRecipe.assigned) {
+        const slot = pickLowestLoadSlotForDay(slotLoads, platingDay, activeShifts)
+          ?? pickLowestLoadSlot(slotLoads, activeShifts);
+        if (slot) {
+          nextAssignments[assignmentKey(targetCode)] = {
+            recipeCode: targetCode,
+            day: slot.day,
+            shift: slot.shift,
+            order: nextOrder(slot.day, slot.shift),
+            targetPortions: mainTarget,
+            note: buildBoardNote("Auto/MainFirst", `split=${serializeBatchesForNote(batches)}`)
+          };
+          addLoad(slot.day, slot.shift);
+        }
+      } else if (existingMain) {
+        nextAssignments[assignmentKey(targetCode)] = {
+          ...existingMain,
+          targetPortions: mainTarget,
+          note: buildBoardNote("Auto/MainFirst", `split=${serializeBatchesForNote(batches)}`)
+        };
+      }
+
       const openSubs = targetRecipe.subRecipes
         .filter(s => !s.assigned && s.activeMin > 0)
         .sort((a, b) => b.activeMin - a.activeMin);
+
       for (const sub of openSubs) {
-        const slot = pickLowestLoadSlot(slotLoads, activeShifts);
+        const leadDays = subLeadDaysBeforeNeed(sub.category, data.processSpecs?.[sub.subRecipeId]);
+        const preferredSubDay = kitchenDayBackshift(platingDay, leadDays);
+        const slot = pickLowestLoadSlotForDay(slotLoads, preferredSubDay, activeShifts)
+          ?? pickLowestLoadSlot(slotLoads, activeShifts);
         if (!slot) continue;
         nextAssignments[assignmentKey(targetCode, sub.subRecipeId)] = {
           recipeCode: targetCode,
@@ -584,23 +1372,11 @@ export function PlanningView(
           subRecipeName: sub.subRecipeName,
           day: slot.day,
           shift: slot.shift,
-          order: nextOrder(slot.day, slot.shift)
+          order: nextOrder(slot.day, slot.shift),
+          targetPortions: mainTarget,
+          note: buildBoardNote("Auto/SubFromMain", `main=${mainTarget}||split=${serializeBatchesForNote(batches)}`)
         };
         addLoad(slot.day, slot.shift);
-      }
-
-      // Then assign main if unplanned
-      if (!targetRecipe.assigned) {
-        const slot = pickLowestLoadSlot(slotLoads, activeShifts);
-        if (slot) {
-          nextAssignments[assignmentKey(targetCode)] = {
-            recipeCode: targetCode,
-            day: slot.day,
-            shift: slot.shift,
-            order: nextOrder(slot.day, slot.shift)
-          };
-          addLoad(slot.day, slot.shift);
-        }
       }
 
       return {
@@ -668,31 +1444,39 @@ export function PlanningView(
         }
       }
 
-      const unassignedSubs = analysisNow.recipes
-        .flatMap((recipe) =>
-          recipe.subRecipes
-            .filter((sub) => !sub.assigned && sub.activeMin > 0)
-            .map((sub) => ({
-              recipeCode: recipe.recipeCode,
-              subRecipeId: sub.subRecipeId,
-              subRecipeName: sub.subRecipeName,
-              activeMin: sub.activeMin
-            }))
-        )
-        .sort((a, b) => b.activeMin - a.activeMin || a.recipeCode.localeCompare(b.recipeCode));
+      const recipesByLoad = [...analysisNow.recipes]
+        .sort((a, b) => b.totalActiveMin - a.totalActiveMin || a.recipeCode.localeCompare(b.recipeCode));
 
-      for (const sub of unassignedSubs) {
-        const slot = pickLowestLoadSlot(slotLoads, activeShifts);
-        if (!slot) continue;
-        nextAssignments[assignmentKey(sub.recipeCode, sub.subRecipeId)] = {
-          recipeCode: sub.recipeCode,
-          subRecipeId: sub.subRecipeId,
-          subRecipeName: sub.subRecipeName,
-          day: slot.day,
-          shift: slot.shift,
-          order: nextOrder(slot.day, slot.shift)
-        };
-        addLoad(slot.day, slot.shift);
+      for (const recipeSummary of recipesByLoad) {
+        const weekRecipe = recipeLookup[recipeSummary.recipeCode];
+        if (!weekRecipe) continue;
+        const mainKey = assignmentKey(recipeSummary.recipeCode);
+        const existingMain = nextAssignments[mainKey] ?? recipeSummary.assigned;
+        const mainTarget = Math.max(0, Math.round(existingMain?.targetPortions ?? weekRecipe.totalVerdenVolume ?? 0));
+        const batches = resolveAutoBatches(recipeSummary.recipeCode, mainTarget, autoProfile, batchSplitByRecipe);
+        const platingDay = batches[0]?.day ?? existingMain?.day ?? "Fr";
+
+        if (!existingMain) {
+          const slot = pickLowestLoadSlotForDay(slotLoads, platingDay, activeShifts)
+            ?? pickLowestLoadSlot(slotLoads, activeShifts);
+          if (slot) {
+            nextAssignments[mainKey] = {
+              recipeCode: recipeSummary.recipeCode,
+              day: slot.day,
+              shift: slot.shift,
+              order: nextOrder(slot.day, slot.shift),
+              targetPortions: mainTarget,
+              note: buildBoardNote("Auto/MainFirst", `split=${serializeBatchesForNote(batches)}`)
+            };
+            addLoad(slot.day, slot.shift);
+          }
+        } else if (existingMain) {
+          nextAssignments[mainKey] = {
+            ...existingMain,
+            targetPortions: mainTarget,
+            note: buildBoardNote("Auto/MainFirst", `split=${serializeBatchesForNote(batches)}`)
+          };
+        }
       }
 
       const refreshedAnalysis = analyzePlan(data, week, {
@@ -705,20 +1489,35 @@ export function PlanningView(
         stationPools
       });
 
-      const unassignedMains = refreshedAnalysis.recipes
-        .filter((recipe) => !recipe.assigned && recipe.activeMin > 0)
-        .sort((a, b) => b.activeMin - a.activeMin || a.recipeCode.localeCompare(b.recipeCode));
+      for (const recipeSummary of refreshedAnalysis.recipes) {
+        const mainAssigned = nextAssignments[assignmentKey(recipeSummary.recipeCode)];
+        if (!mainAssigned) continue;
+        const mainTarget = Math.max(0, Math.round(mainAssigned.targetPortions ?? 0));
+        const batches = resolveAutoBatches(recipeSummary.recipeCode, mainTarget, autoProfile, batchSplitByRecipe);
+        const needDay = batches[0]?.day ?? mainAssigned.day;
 
-      for (const main of unassignedMains) {
-        const slot = pickLowestLoadSlot(slotLoads, activeShifts);
-        if (!slot) continue;
-        nextAssignments[assignmentKey(main.recipeCode)] = {
-          recipeCode: main.recipeCode,
-          day: slot.day,
-          shift: slot.shift,
-          order: nextOrder(slot.day, slot.shift)
-        };
-        addLoad(slot.day, slot.shift);
+        const subsToAssign = recipeSummary.subRecipes
+          .filter((sub) => !sub.assigned && sub.activeMin > 0)
+          .sort((a, b) => b.activeMin - a.activeMin);
+
+        for (const sub of subsToAssign) {
+          const leadDays = subLeadDaysBeforeNeed(sub.category, data.processSpecs?.[sub.subRecipeId]);
+          const preferredSubDay = kitchenDayBackshift(needDay, leadDays);
+          const slot = pickLowestLoadSlotForDay(slotLoads, preferredSubDay, activeShifts)
+            ?? pickLowestLoadSlot(slotLoads, activeShifts);
+          if (!slot) continue;
+          nextAssignments[assignmentKey(recipeSummary.recipeCode, sub.subRecipeId)] = {
+            recipeCode: recipeSummary.recipeCode,
+            subRecipeId: sub.subRecipeId,
+            subRecipeName: sub.subRecipeName,
+            day: slot.day,
+            shift: slot.shift,
+            order: nextOrder(slot.day, slot.shift),
+            targetPortions: mainTarget,
+            note: buildBoardNote("Auto/SubFromMain", `main=${mainTarget}||split=${serializeBatchesForNote(batches)}`)
+          };
+          addLoad(slot.day, slot.shift);
+        }
       }
 
       return {
@@ -736,263 +1535,578 @@ export function PlanningView(
     });
   }
 
+  function openWeekBoardEditor(input: WeekBoardEditorState) {
+    const key = assignmentKey(input.recipeCode, input.subRecipeId);
+    const existing = scenario.assignments[key];
+    const recipe = recipeLookup[input.recipeCode];
+    const fallbackTarget = Math.max(0, Math.round(recipe?.totalVerdenVolume ?? 0));
+    const parsedNote = parseBoardNote(existing?.note);
+    const splitSpec = extractSplitSpecFromNotes(parsedNote.notes);
+    setBoardDraft({
+      shift: existing?.shift ?? input.shift,
+      targetPortions: existing?.targetPortions ?? fallbackTarget,
+      reason: parsedNote.reason,
+      splitSpec,
+      notes: stripSplitSpecFromNotes(parsedNote.notes)
+    });
+    setBoardEditor(input);
+  }
+
+  function saveWeekBoardEditor() {
+    if (!boardEditor) return;
+    const recipe = recipeLookup[boardEditor.recipeCode];
+    if (!recipe) {
+      setBoardEditor(null);
+      return;
+    }
+    const targetPortions = Math.max(0, Math.round(boardDraft.targetPortions || 0));
+    const splitForNote = boardEditor.subRecipeId ? "" : boardDraft.splitSpec;
+    setStorage((prev) => assignRecipe(prev, week, scenario.id, recipe, {
+      day: boardEditor.day,
+      shift: boardDraft.shift,
+      subRecipeId: boardEditor.subRecipeId,
+      subRecipeName: boardEditor.subRecipeName,
+      targetPortions,
+      note: buildBoardNote(boardDraft.reason, composeBoardNotes(boardDraft.notes, splitForNote))
+    }));
+    setBoardEditor(null);
+  }
+
+  function clearWeekBoardEditorAssignment() {
+    if (!boardEditor) return;
+    setStorage((prev) => removeAssignment(prev, week, scenario.id, boardEditor.recipeCode, boardEditor.subRecipeId));
+    setBoardEditor(null);
+  }
+
   return (
     <div className="space-y-3">
-      {/* ── TOP: Wochenboard mit Drag & Drop ──────────────────────────────── */}
-      <div className="card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <div>
-            <h2 className="text-lg font-bold text-slate-800">Wochenboard · {week}</h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Rezepte oben in Tag/Schicht-Karten ziehen · zwischen Slots verschieben · zurück nach 'Offen' zum Entfernen
-            </p>
-            {weekIntel && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {weekIntel.hasTruthData ? (
-                  <>
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200">Eigene PDL {fmtNum(weekIntel.factoryPdlPortions)}</span>
-                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800 ring-1 ring-sky-200">Hybrid {fmtNum(weekIntel.hybridPdlPortions)}</span>
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 ring-1 ring-amber-200">Zulieferung {fmtNum(weekIntel.suppliedPdlPortions)}</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 ring-1 ring-emerald-200">Work Orders {fmtNum(weekIntel.workOrderCount)}</span>
-                    <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-800 ring-1 ring-violet-200">WO Target {fmtNum(weekIntel.totalTargetPortions)}</span>
-                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-800 ring-1 ring-sky-200">LinePlating {fmtNum(weekIntel.platingTotal)}</span>
-                  </>
+      <div className="card overflow-hidden p-0">
+        <div className="border-b border-slate-200 bg-[linear-gradient(130deg,_rgba(241,245,249,1),_rgba(255,255,255,1)_40%,_rgba(236,253,245,0.65))] px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-[30px] leading-none font-semibold tracking-tight text-slate-900">Manufacturing Planning Calendar</h2>
+              <p className="mt-2 text-xs text-slate-500">Wochenboard für Main- und Sub-Rezepte. Klick auf eine Zelle öffnet den Stückzahl-Dialog.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-300">{analysis.plannedCount} geplant</span>
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-300">{unplanned.length} offen</span>
+              <label className="flex items-center gap-1 rounded-md bg-white px-2 py-1 ring-1 ring-slate-300">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Auto-Profil</span>
+                <select
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+                  value={uiSettings.autoSplitProfileId}
+                  onChange={(event) => setUiSettings((prev) => ({ ...prev, autoSplitProfileId: event.target.value }))}
+                >
+                  {AUTO_FULFILLMENT_PROFILES.map((profile) => (
+                    <option key={profile.id} value={profile.id}>{profile.label}</option>
+                  ))}
+                </select>
+              </label>
+              <button className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800" onClick={handleAutoPlanWeekBoard}>
+                Auto: Meals + Subs
+              </button>
+              <button
+                className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-100 disabled:opacity-40"
+                onClick={() => {
+                  if (analysis.plannedCount === 0) return;
+                  if (window.confirm(`Kalender für Szenario '${scenario.name}' wirklich leeren? ${analysis.plannedCount} Zuordnung(en) gehen verloren.`)) {
+                    setStorage(prev => resetScenario(prev, week, scenario.id));
+                  }
+                }}
+                disabled={analysis.plannedCount === 0}
+              >
+                Kalender leeren
+              </button>
+              {/* Export-Dropdown */}
+              <div className="relative">
+                <button
+                  className="rounded-md bg-verde-600 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 flex items-center gap-1 disabled:opacity-40"
+                  disabled={analysis.plannedCount === 0}
+                  onClick={() => setExportMenuOpen(prev => !prev)}
+                >
+                  ↓ Export
+                </button>
+                {exportMenuOpen && (
+                  <div
+                    className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border border-slate-200 bg-white shadow-lg"
+                    onMouseLeave={() => setExportMenuOpen(false)}
+                  >
+                    <button
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      onClick={() => { setExportMenuOpen(false); exportAsTSV(analysis, data, week, portionMultiplier); }}
+                    >
+                      📄 TSV (Excel-kompatibel)
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      onClick={() => { setExportMenuOpen(false); exportAsExcel(analysis, data, week, portionMultiplier); }}
+                    >
+                      📊 Excel (.xls, 3 Tabs)
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      onClick={() => { setExportMenuOpen(false); exportAsPDF(analysis, data, week, portionMultiplier); }}
+                    >
+                      🖨 PDF / Drucken
+                    </button>
+                  </div>
                 )}
               </div>
-            )}
-            {weekIntel && !weekIntel.hasTruthData && (
-              <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200">
-                Für diese KW fehlen aktuell Truth-/PDL-Daten im Export. KET- und LinePlating-Zahlen werden trotzdem angezeigt, PDL bleibt bis zum passenden KW-Export 0.
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 ring-1 ring-slate-200">
-              {analysis.plannedCount} geplant
-            </span>
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
-              {unplanned.length} offen
-            </span>
-            <span className="rounded-full bg-verden-50 px-2 py-0.5 text-[10px] font-semibold text-verden-700 ring-1 ring-verden-200">
-              {shiftPresetShortLabel(locale, activePreset.id)}
-            </span>
-            <button
-              className="rounded-lg bg-verden-600 text-white ring-1 ring-verden-700 hover:bg-verden-700 px-3 py-1 text-xs font-semibold"
-              onClick={handleAutoPlanWeekBoard}
-              title={locale === "de"
-                ? "Verplant offene Sub-Meals zuerst nach Dauer (lang -> kurz), danach offene Haupt-Meals."
-                : "Plans open sub-meals first by duration (long -> short), then open main meals."}
-            >
-              {locale === "de" ? "Auto: Meals + Subs" : "Auto: Meals + Subs"}
-            </button>
-            <button
-              className="rounded-lg bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 px-3 py-1 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
-              onClick={() => {
-                if (analysis.plannedCount === 0) return;
-                if (window.confirm(`Kalender für Szenario '${scenario.name}' wirklich leeren? ${analysis.plannedCount} Zuordnung(en) gehen verloren.`)) {
-                  setStorage(prev => resetScenario(prev, week, scenario.id));
-                }
-              }}
-              disabled={analysis.plannedCount === 0}
-              title="Alle Rezepte aus dem Kalender entfernen"
-            >
-              🗑 Kalender leeren
-            </button>
+            </div>
           </div>
         </div>
 
-        {/* Verfügbare Rezepte – horizontale Drag-Leiste */}
-        <div
-          className={`rounded-xl ring-1 p-2 mb-3 transition-all ${dragOverUnplanned ? "ring-2 ring-rose-400 bg-rose-50" : "ring-slate-200 bg-slate-50"}`}
-          onDragOver={e => {
-            const code = draggingCode;
-            if (!code) return;
-            const key = draggingSubId ? `${code}::${draggingSubId}` : code;
-            if (!scenario.assignments[key]) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            if (!dragOverUnplanned) setDragOverUnplanned(true);
-          }}
-          onDragLeave={() => setDragOverUnplanned(false)}
-          onDrop={handleDropOnUnplanned}
-        >
-          <div className="flex items-center justify-between gap-2 mb-1.5 px-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              Verfügbare Rezepte · {unplanned.length}
-            </div>
-            <div className="text-[10px] text-slate-400">
-              {dragOverUnplanned ? "Loslassen -> aus Plan nehmen" : "↓ in Tag/Schicht ziehen"}
-            </div>
-          </div>
-          {unplanned.length === 0 ? (
-            <div className="px-2 py-3 text-center text-xs text-emerald-700 bg-emerald-50 rounded-md ring-1 ring-emerald-200">
-              ✓ Alle Rezepte verplant
-            </div>
-          ) : (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {unplanned.map(recipe => {
-                const isExpanded = expandedRecipes.has(recipe.recipeCode);
-                const openSubs = recipe.subRecipes.filter(s => !s.assigned && s.activeMin > 0);
-                const hasMain = !recipe.assigned;
-                const recipeIntel = planningOasis?.recipes[recipe.recipeCode] ?? null;
-                const totalRemaining = (hasMain ? recipe.activeMin : 0)
-                  + (recipe.assigned ? 0 : 0); // activeMin already excludes standalone subs
+        <div className="overflow-x-auto">
+          <table className="min-w-[1780px] w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-white border-b border-slate-300">
+                <th className="sticky left-0 z-20 bg-white px-3 py-2 text-left font-semibold text-slate-700 min-w-[320px]" rowSpan={2}>Recipes</th>
+                <th className="sticky left-[320px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Forecast</th>
+                <th className="sticky left-[410px] z-20 bg-white px-2 py-2 text-center font-semibold text-slate-700 min-w-[70px]" rowSpan={2}>WIP</th>
+                <th className="sticky left-[480px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Mapped</th>
+                {PLANNER_DAYS.map((day) => (
+                  <th key={day} colSpan={activeShifts.length} className="border-l border-slate-300 px-2 py-2 text-center font-semibold text-slate-700 min-w-[170px]">{day}</th>
+                ))}
+              </tr>
+              <tr className="bg-white border-b border-slate-300">
+                {PLANNER_DAYS.flatMap((day) => activeShifts.map((shift) => (
+                  <th key={`${day}-${shift}`} className="border-l border-slate-200 px-1 py-1 text-center font-medium text-slate-500">
+                    {shift === "S1" ? "1st Shift" : shift === "S2" ? "2nd Shift" : "3rd Shift"}
+                  </th>
+                )))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="bg-[linear-gradient(90deg,_rgba(226,232,240,0.85),_rgba(241,245,249,0.9))]">
+                <td colSpan={4 + PLANNER_DAYS.length * activeShifts.length} className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  {week} (Current) Recipes
+                </td>
+              </tr>
+              {analysis.recipes.map((recipe) => {
+                const wr = recipeLookup[recipe.recipeCode];
+                const forecast = wr?.totalVerdenVolume ?? 0;
+                const isExpanded = expandedBoardRecipes.has(recipe.recipeCode);
+                const mainMapped = recipe.assigned?.targetPortions ?? (recipe.assigned ? forecast : 0);
+                const tone = weekBoardRecipeTone(recipe.recipeCode);
                 return (
-                  <div
-                    key={recipe.recipeCode}
-                    className={`shrink-0 w-48 rounded-lg border bg-white transition-all ${draggingCode === recipe.recipeCode && !draggingSubId ? "opacity-40" : ""} ${selectedRecipe === recipe.recipeCode ? "border-verden-500 bg-verden-50 shadow" : "border-slate-200 hover:border-verden-300 hover:shadow-sm"}`}
-                  >
-                    {/* Hauptrezept-Karte */}
-                    <div className="px-2 py-1.5">
-                      <button
-                        draggable={hasMain}
-                        onDragStart={hasMain ? (e => handleDragStart(e, recipe.recipeCode)) : undefined}
-                        onDragEnd={handleDragEnd}
-                        onClick={() => onSelectRecipe?.(recipe.recipeCode)}
-                        title={hasMain
-                          ? `${recipe.recipeName}${openSubs.length < recipe.subRecipes.length ? ` (${recipe.subRecipes.length - openSubs.length} Sub bereits geplant)` : ""}`
-                          : `${recipe.recipeName} · Hauptrezept geplant – nur noch Subs offen`}
-                        className={`w-full text-left ${hasMain ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-mono text-[10px] text-slate-500">{hasMain ? "⋮⋮" : "✓"} {recipe.recipeCode}</span>
-                          <span className="text-[10px] font-semibold text-slate-500">{openSubs.length} Subs offen</span>
-                        </div>
-                        <div className="text-xs font-medium leading-tight text-slate-800 line-clamp-2">{recipe.recipeName}</div>
-                        <div className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold ring-1 ${planningRoleTone(recipeIntel?.planningRole)}`}>
-                          {planningRoleLabel(recipeIntel?.planningRole)}
-                        </div>
-                        <div className="mt-0.5 text-[10px] text-slate-500 truncate">
-                          {recipe.topStations.map(s => s.station).join(" · ") || "—"}
-                        </div>
-                      </button>
-                      <div className="mt-1 flex gap-1">
-                        <button
-                          className="flex-1 text-[10px] font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 rounded px-1 py-0.5 ring-1 ring-amber-300"
-                          title={`Dieses Rezept + ${openSubs.length} Sub(s) automatisch verplanen`}
-                          onClick={() => handleAutoplanRecipe(recipe.recipeCode)}
-                        >
-                          ⚡ Auto
-                        </button>
-                        {recipe.subRecipes.length > 0 && (
+                  <>
+                    <tr key={recipe.recipeCode} className="border-b border-slate-300" style={tone.row}>
+                      <td className="sticky left-0 z-10 border-r border-slate-200 px-3 py-2 align-top" style={tone.sticky}>
+                        <div className="flex items-start gap-2">
                           <button
-                            className="flex-1 text-[10px] font-semibold text-verden-700 hover:text-verden-900 bg-verden-50 hover:bg-verden-100 rounded px-1 py-0.5 ring-1 ring-verden-200"
-                            onClick={() => setExpandedRecipes(prev => {
+                            className="mt-0.5 rounded border border-slate-300 bg-white px-1 text-[10px] leading-4 text-slate-600 hover:bg-slate-100"
+                            onClick={() => setExpandedBoardRecipes((prev) => {
                               const next = new Set(prev);
                               if (next.has(recipe.recipeCode)) next.delete(recipe.recipeCode);
                               else next.add(recipe.recipeCode);
                               return next;
                             })}
                           >
-                            {isExpanded ? "▾" : "▸"} {openSubs.length}/{recipe.subRecipes.length} Subs
+                            {isExpanded ? "▾" : "▸"}
                           </button>
-                        )}
-                      </div>
-                    </div>
-                    {/* Sub-Rezept-Pillen */}
-                    {isExpanded && recipe.subRecipes.length > 0 && (
-                      <div className="border-t border-slate-200 bg-slate-50/50 px-1.5 py-1.5 space-y-1 max-h-48 overflow-y-auto">
-                        {recipe.subRecipes.map(sub => {
-                          const isPlanned = !!sub.assigned;
-                          return (
-                            <button
-                              key={sub.subRecipeId}
-                              draggable={!isPlanned}
-                              onDragStart={!isPlanned ? (e => { e.stopPropagation(); handleDragStart(e, recipe.recipeCode, sub.subRecipeId); }) : undefined}
-                              onDragEnd={handleDragEnd}
-                              title={isPlanned
-                                ? `${sub.subRecipeName} bereits in ${sub.assigned!.day} ${sub.assigned!.shift} geplant – aus Kalender ziehen zum Entfernen`
-                                : `${sub.subRecipeName} · ${sub.category} – ziehen, um Sub separat zu planen`}
-                              className={`w-full text-left rounded px-1.5 py-1 text-[10px] ring-1 transition-all ${isPlanned ? "bg-emerald-50 ring-emerald-200 text-emerald-800 cursor-not-allowed" : draggingSubId === sub.subRecipeId ? "opacity-40 bg-amber-50 ring-amber-300" : "bg-white ring-slate-200 hover:ring-amber-400 hover:bg-amber-50 cursor-grab active:cursor-grabbing"}`}
-                            >
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="font-semibold leading-tight line-clamp-1">{isPlanned ? "✓ " : "⋮⋮ "}{sub.subRecipeName}</span>
-                                <span className="font-mono tabular-nums shrink-0">{sub.category || "Sub"}</span>
+                          <div className="min-w-0">
+                            <div className="inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px]" style={tone.badge}>{recipe.recipeCode}</div>
+                            <button className="mt-1 block text-left text-sm font-semibold hover:text-verden-700" style={tone.title} onClick={() => onSelectRecipe?.(recipe.recipeCode)}>{recipe.recipeName}</button>
+                            <div className="mt-0.5 text-[10px] text-slate-500">
+                              {recipe.subRecipes.length} Sub-Rezepte
+                              {!isExpanded && recipe.subRecipes.some(s => !s.assigned && s.activeMin > 0) && (
+                                <span className="ml-1 font-bold text-amber-500" title="Unverplante Sub-Rezepte">!</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{fmtNum(forecast)}</td>
+                      <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-2 text-center text-slate-400" style={tone.sticky}>-</td>
+                      <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{mainMapped > 0 ? fmtNum(mainMapped) : "-"}</td>
+
+                      {PLANNER_DAYS.flatMap((day) => activeShifts.map((shift) => {
+                        const slot = slotValue(day, shift);
+                        const rows = assignmentsByDayShift[slot] ?? [];
+                        const mainTiles = rows.filter((row) => row.code === recipe.recipeCode && row.kind === "main");
+                        const subTiles = rows.filter((row) => row.code === recipe.recipeCode && row.kind === "sub");
+                        const hasReal = mainTiles.some(t => !t.suggested);
+                        const hasAny = mainTiles.length > 0;
+                        return (
+                          <td key={`${recipe.recipeCode}-${day}-${shift}`} className="border-l border-slate-200 p-1 align-top">
+                            <div className="min-h-[66px] rounded border p-1 hover:border-slate-300" style={hasReal ? tone.slotActive : tone.slotIdle} onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift })}>
+                              <div className="space-y-1">
+                                {mainTiles.map((mainTile) => {
+                                  // Ghost-Pill / Plating-Pill: aus BatchSplitPlan
+                                  if (mainTile.suggested) {
+                                    // Alle Sub-Rezepte verplant → solide Plating-Pille
+                                    if (mainTile.allSubsDone) {
+                                      const platLabel = `${mainTile.batchLabel ? mainTile.batchLabel + " " : ""}Plating ${fmtNum(mainTile.targetPortions ?? forecast)}`;
+                                      return (
+                                        <div key={mainTile.key}>
+                                          <button
+                                            onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift }); }}
+                                            className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold"
+                                            style={tone.mainPill}
+                                            title={`Alle Sub-Rezepte verplant → Plating am ${mainTile.fulfillmentDay}: ${fmtNum(mainTile.targetPortions ?? forecast)} Portionen. Klick zum Bestätigen.`}
+                                          >
+                                            {platLabel}
+                                          </button>
+                                        </div>
+                                      );
+                                    }
+                                    // Ghost-Pill: noch nicht alle Subs verplant
+                                    const ghostLabel = `${mainTile.batchLabel ? mainTile.batchLabel + " " : ""}${fmtNum(mainTile.targetPortions ?? forecast)} · Plating ${mainTile.fulfillmentDay}`;
+                                    return (
+                                      <div key={mainTile.key}>
+                                        <button
+                                          onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift }); }}
+                                          className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-semibold"
+                                          style={{
+                                            backgroundColor: `hsl(${tone.hue} 64% 93%)`,
+                                            color: `hsl(${tone.hue} 58% 28%)`,
+                                            outline: `1.5px dashed hsl(${tone.hue} 52% 52%)`,
+                                            outlineOffset: '-1.5px',
+                                          }}
+                                          title={`Deadline: ${fmtNum(mainTile.targetPortions ?? forecast)} Portionen platen → Versand ${mainTile.fulfillmentDay} · empfohlene Produktion: ${mainTile.recommendedProdDay ?? "–"}`}
+                                        >
+                                          {ghostLabel}
+                                        </button>
+                                      </div>
+                                    );
+                                  }
+                                  const isSplit = !!mainTile.batchLabel;
+                                  const bIdx = mainTile.batchIndex ?? 0;
+                                  const bTotal = mainTile.batchTotal ?? 1;
+                                  const isFirst = bIdx === 0;
+                                  const isLast = bIdx === bTotal - 1;
+                                  // Richtungspfeil: zeigt woher/wohin der Batch geht
+                                  const chevronLeft  = !isFirst ? "‹ " : "";
+                                  const chevronRight = !isLast  ? " ›" : "";
+                                  // Connector-Bar: horizontaler farbiger Streifen über dem Pill
+                                  const connBar: CSSProperties | null = isSplit ? {
+                                    background: isFirst
+                                      ? `linear-gradient(90deg, hsl(${tone.hue} 68% 52%) 55%, transparent 100%)`
+                                      : isLast
+                                        ? `linear-gradient(90deg, transparent 0%, hsl(${tone.hue} 68% 52%) 45%)`
+                                        : `hsl(${tone.hue} 68% 52%)`,
+                                    opacity: 0.55,
+                                  } : null;
+                                  return (
+                                    <div key={mainTile.key} className="space-y-0.5">
+                                      {connBar && <div className="-mx-1 h-0.5 rounded-full" style={connBar} />}
+                                      <button
+                                        onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift }); }}
+                                        className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold"
+                                        style={tone.mainPill}
+                                        title={isSplit ? `Batch ${bIdx + 1} von ${bTotal} · ${mainTile.batchLabel}` : undefined}
+                                      >
+                                        <span className="opacity-60">{chevronLeft}</span>
+                                        {mainTile.batchLabel ? `${mainTile.batchLabel} ` : ""}Plan:{fmtNum(mainTile.targetPortions ?? forecast)} | Min:{fmtMin(mainTile.activeMin)}
+                                        <span className="opacity-60">{chevronRight}</span>
+                                      </button>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                              <div className="text-[9px] text-slate-500 truncate">{sub.category}</div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                              {!hasAny && <div className="pt-4 text-center text-[10px] text-slate-300">+ Add plan</div>}
+                            </div>
+                          </td>
+                        );
+                      }))}
+                    </tr>
+
+                    {isExpanded && recipe.subRecipes.map((sub) => {
+                      const subMapped = sub.assigned?.targetPortions ?? (sub.assigned ? forecast : 0);
+                      return (
+                        <tr key={`${recipe.recipeCode}-${sub.subRecipeId}`} className="border-b border-slate-200" style={tone.subRow}>
+                          <td className="sticky left-0 z-10 border-r border-slate-200 px-3 py-1.5" style={tone.subSticky}>
+                            <div className="pl-8">
+                              <div className="font-mono text-[10px]" style={tone.code}>{sub.subRecipeId}</div>
+                              <div className="text-xs font-semibold" style={tone.title}>{sub.subRecipeName}</div>
+                              <div className="text-[10px] text-slate-500">{sub.category}</div>
+                            </div>
+                          </td>
+                          <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{fmtNum(forecast)}</td>
+                          <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-1.5 text-center text-slate-400" style={tone.subSticky}>-</td>
+                          <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{subMapped > 0 ? fmtNum(subMapped) : "-"}</td>
+                          {PLANNER_DAYS.flatMap((day) => activeShifts.map((shift) => {
+                            const isAssigned = sub.assigned?.day === day && sub.assigned?.shift === shift;
+                            return (
+                              <td key={`${sub.subRecipeId}-${day}-${shift}`} className="border-l border-slate-200 p-1 align-top">
+                                <div className="min-h-[50px] rounded border p-1 hover:border-slate-300" style={isAssigned ? tone.slotActive : tone.slotIdle} onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName })}>
+                                  {isAssigned ? (
+                                    <div className="flex items-center gap-1">
+                                      {(() => {
+                                        const subLeadDays = subLeadDaysBeforeNeed(sub.category, data.processSpecs?.[sub.subRecipeId]);
+                                        const leadLabel = subLeadDays > 0 ? `D-${subLeadDays}` : null;
+                                        const leadTooltip = leadLabel && recipe.assigned?.day
+                                          ? `${sub.category} → ${leadLabel} vor Bedarfstag ${recipe.assigned.day}`
+                                          : undefined;
+                                        return (
+                                          <>
+                                            <button onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName }); }} className="min-w-0 flex-1 rounded-full px-2 py-0.5 text-left text-[10px] font-bold" style={tone.subPill} title={leadTooltip}>
+                                              {fmtNum(sub.assigned?.targetPortions ?? forecast)}
+                                              {leadLabel && <span className="ml-1 rounded-full bg-white/50 px-1 text-[9px] font-bold opacity-80">{leadLabel}</span>}
+                                            </button>
+                                            <button
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                setSubRecipeInfoRequest({
+                                                  recipeCode: recipe.recipeCode,
+                                                  recipeName: recipe.recipeName,
+                                                  subRecipeId: sub.subRecipeId,
+                                                  subRecipeName: sub.subRecipeName,
+                                                  day,
+                                                  shift,
+                                                  targetPortions: sub.assigned?.targetPortions ?? forecast,
+                                                  leadDays: subLeadDays,
+                                                  mainDay: recipe.assigned?.day,
+                                                  category: sub.category
+                                                });
+                                              }}
+                                              className="h-5 w-5 shrink-0 rounded-full text-[10px] font-bold"
+                                              style={tone.infoButton}
+                                              title={leadTooltip ?? "Sub-Info"}
+                                            >
+                                              i
+                                            </button>
+                                          </>
+                                        );
+                                      })()}
+                                    </div>
+                                  ) : (
+                                    <div className="pt-3 text-center text-[10px] text-slate-300">+ Add plan</div>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          }))}
+                        </tr>
+                      );
+                    })}
+                  </>
                 );
               })}
-            </div>
-          )}
-        </div>
-
-        {/* Wochenboard ohne Zeitachse: nur Tag + Schicht + Reihenfolge */}
-        <div className="grid gap-2 overflow-x-auto md:grid-cols-4 xl:grid-cols-7">
-          {PLANNER_DAYS.map(day => {
-            const dayTotal = activeShifts.reduce((sum, shift) => sum + (assignmentsByDayShift[slotValue(day, shift)]?.length ?? 0), 0);
-            return (
-              <div key={day} className="min-w-[180px] rounded-lg bg-slate-50 ring-1 ring-slate-200 p-1.5">
-                <div className="text-center text-xs font-bold uppercase tracking-wide text-slate-700 bg-white rounded-md py-1 mb-1 ring-1 ring-slate-200">
-                  {day} <span className="text-[10px] font-normal text-slate-500">· {dayTotal}</span>
-                </div>
-                <div className="space-y-1.5">
-                  {activeShifts.map(shift => {
-                    const slot = slotValue(day, shift);
-                    const items = assignmentsByDayShift[slot] ?? [];
-                    const isDragOver = dragOverSlot === slot;
-                    const isDragActive = draggingCode !== null;
-                    return (
-                      <div
-                        key={slot}
-                        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOverSlot !== slot) setDragOverSlot(slot); }}
-                        onDragLeave={() => { if (dragOverSlot === slot) setDragOverSlot(null); }}
-                        onDrop={e => handleDropOnSlot(e, day, shift)}
-                        className={`rounded-md p-1 ring-1 min-h-[74px] transition-all ${isDragOver ? "ring-2 ring-verden-500 bg-verden-50" : isDragActive ? "ring-dashed ring-slate-300 bg-white" : "ring-slate-200 bg-white"}`}
-                      >
-                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{shift} · {items.length}</div>
-                        <div className="space-y-1">
-                          {items.map(item => {
-                            const isSelected = selectedRecipe === item.code;
-                            const isSub = item.kind === "sub";
-                            const isDragging = draggingCode === item.code && (draggingSubId ?? null) === (item.subRecipeId ?? null);
-                            const recipeIntel = planningOasis?.recipes[item.code] ?? null;
-                            return (
-                              <button
-                                key={item.key}
-                                draggable
-                                onDragStart={e => { e.stopPropagation(); handleDragStart(e, item.code, item.subRecipeId); }}
-                                onDragEnd={handleDragEnd}
-                                onClick={() => onSelectRecipe?.(item.code)}
-                                title={`${item.name} · ${isSub ? "Sub-Rezept" : `Hauptkachel (${item.subCount} Sub${item.subCount === 1 ? "" : "s"} enthalten)`} · ${fmtMin(item.activeMin)}`}
-                                className={`w-full rounded-md px-1.5 py-1 text-left ring-1 cursor-grab active:cursor-grabbing transition-opacity ${isDragging ? "opacity-30" : ""} ${isSub
-                                  ? (isSelected ? "bg-amber-600 text-white ring-amber-700 shadow" : "bg-amber-50 ring-amber-300 hover:ring-amber-500 text-amber-900")
-                                  : (isSelected ? "bg-verden-600 text-white ring-verden-700 shadow" : "bg-white ring-verden-300 hover:ring-verden-500 text-slate-800")}`}
-                              >
-                                <div className="flex items-center justify-between gap-1 leading-none">
-                                  <span className="font-mono text-[9px] opacity-70">#{item.order} · {isSub ? "▸" : "⋮⋮"} {item.code}</span>
-                                  <span className="text-[9px] font-mono opacity-70">{fmtMin(item.activeMin)}</span>
-                                </div>
-                                <div className="text-[10px] font-semibold leading-tight mt-0.5 line-clamp-2">{item.name}</div>
-                                <div className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-semibold ring-1 ${planningRoleTone(recipeIntel?.planningRole)}`}>
-                                  {planningRoleLabel(recipeIntel?.planningRole)}
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {items.length === 0 && (
-                          <div className="text-[10px] text-slate-300 text-center py-2 pointer-events-none">
-                            {isDragOver ? "hier ablegen" : "leer"}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+            </tbody>
+          </table>
         </div>
       </div>
+
+      {boardEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setBoardEditor(null)}>
+          <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl ring-1 ring-slate-300" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between rounded-t-xl bg-emerald-700 px-4 py-2 text-white">
+              <div className="text-sm font-semibold">{boardEditor.subRecipeId ? "Create sub-recipe work order" : "Create recipe work order"}</div>
+              <button className="text-lg leading-none" onClick={() => setBoardEditor(null)}>×</button>
+            </div>
+            <div className="space-y-3 px-4 py-3">
+              <div className="rounded bg-slate-100 px-3 py-2">
+                <div className="text-[11px] text-slate-500">Recipe</div>
+                <div className="text-sm font-semibold text-slate-900">{boardEditor.recipeCode} {analysis.recipes.find((row) => row.recipeCode === boardEditor.recipeCode)?.recipeName ?? ""}</div>
+                {boardEditor.subRecipeId && <div className="mt-1 text-xs text-slate-700">{boardEditor.subRecipeName ?? boardEditor.subRecipeId}</div>}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-600">
+                  Scheduled day
+                  <input className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardEditor.day} readOnly />
+                </label>
+                <div>
+                  <div className="text-xs font-semibold text-slate-600">Shift</div>
+                  <div className="mt-1 grid grid-cols-3 gap-1">
+                    {activeShifts.map((shift) => (
+                      <button key={`edit-${shift}`} className={`rounded border px-2 py-2 text-sm font-semibold ${boardDraft.shift === shift ? "border-emerald-700 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600"}`} onClick={() => setBoardDraft((prev) => ({ ...prev, shift }))}>
+                        {shift === "S1" ? "1st shift" : shift === "S2" ? "2nd shift" : "3rd shift"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-600">
+                  Target
+                  <input type="number" min={0} className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardDraft.targetPortions} onChange={(event) => setBoardDraft((prev) => ({ ...prev, targetPortions: Math.max(0, Number(event.target.value) || 0) }))} />
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  Creation Reason
+                  <select className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardDraft.reason} onChange={(event) => setBoardDraft((prev) => ({ ...prev, reason: event.target.value }))}>
+                    <option value="Planned">Planned</option>
+                    <option value="Forecast">Forecast adjustment</option>
+                    <option value="Urgent">Urgent fix</option>
+                  </select>
+                </label>
+              </div>
+              {!boardEditor.subRecipeId && (
+                <label className="text-xs font-semibold text-slate-600">
+                  Split spec (optional, e.g. Fr:1200|Sa:900|So:700)
+                  <input
+                    className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                    placeholder="Fr:1200|Sa:900|So:700"
+                    value={boardDraft.splitSpec}
+                    onChange={(event) => setBoardDraft((prev) => ({ ...prev, splitSpec: event.target.value.trim() }))}
+                  />
+                </label>
+              )}
+              <label className="text-xs font-semibold text-slate-600">
+                Notes
+                <textarea className="mt-1 h-20 w-full resize-none rounded border border-slate-300 px-2 py-2 text-sm" placeholder="Add notes about this work order" value={boardDraft.notes} onChange={(event) => setBoardDraft((prev) => ({ ...prev, notes: event.target.value }))} />
+              </label>
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+              <button className="rounded border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700" onClick={clearWeekBoardEditorAssignment}>Remove assignment</button>
+              <div className="flex gap-2">
+                <button className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700" onClick={() => setBoardEditor(null)}>Cancel</button>
+                <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white" onClick={saveWeekBoardEditor}>Save & Lock</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {subRecipeInfoRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setSubRecipeInfoRequest(null)}>
+          <div className="w-full max-w-4xl rounded-xl bg-white shadow-2xl ring-1 ring-slate-300" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between rounded-t-xl bg-amber-600 px-4 py-2 text-white">
+              <div className="text-sm font-semibold">Subrezept-Info · {subRecipeInfoRequest.subRecipeName}</div>
+              <button className="text-lg leading-none" onClick={() => setSubRecipeInfoRequest(null)}>×</button>
+            </div>
+            <div className="space-y-3 px-4 py-3">
+              {/* ── Meta-Info ──────────────────────────────────────────────── */}
+              <div className="grid gap-2 rounded bg-slate-50 px-3 py-2 text-xs text-slate-700 md:grid-cols-4">
+                <div><span className="font-semibold">Rezept:</span> {subRecipeInfoRequest.recipeCode}</div>
+                <div><span className="font-semibold">Tag/Schicht:</span> {subRecipeInfoRequest.day} / {subRecipeInfoRequest.shift}</div>
+                <div><span className="font-semibold">Menge:</span> {fmtNum(subRecipeInfoRequest.targetPortions)} Portionen</div>
+                <div><span className="font-semibold">Yield:</span> {subRecipeInfo ? `${fmtNum(subRecipeInfo.yieldRatio * 100, 1)}%` : "-"}</div>
+              </div>
+
+              {/* ── Equipment & Kapazität ──────────────────────────────────── */}
+              {subRecipeInfo && (
+                <div className="grid gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-900 md:grid-cols-4">
+                  <div>
+                    <span className="font-semibold">Equipment:</span>{" "}
+                    {subRecipeInfo.equipment ?? <span className="italic text-orange-400">unbekannt</span>}
+                  </div>
+                  <div>
+                    <span className="font-semibold">Kapazität/Batch:</span>{" "}
+                    {subRecipeInfo.capacityKg != null
+                      ? `${fmtNum(subRecipeInfo.capacityKg, 1)} kg`
+                      : <span className="italic text-orange-400">unbekannt</span>}
+                    <span className="ml-1 text-[10px] font-normal text-orange-500">
+                      ({subRecipeInfo.capacitySource === "bible" ? "Bible" : subRecipeInfo.capacitySource === "process-spec" ? "PFEI" : "–"})
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold">Rohware gesamt:</span>{" "}
+                    {fmtNum(subRecipeInfo.totalRawKg, 2)} kg
+                  </div>
+                  <div>
+                    <span className="font-semibold">Batches:</span>{" "}
+                    {subRecipeInfo.batchCount != null
+                      ? <span className="font-bold text-orange-800">{subRecipeInfo.batchCount}</span>
+                      : <span className="italic text-orange-400">–</span>}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Lead-Zeit-Erklärung ─────────────────────────────────────── */}
+              {(() => {
+                const ld = subRecipeInfoRequest.leadDays;
+                const mDay = subRecipeInfoRequest.mainDay;
+                const cat = subRecipeInfoRequest.category;
+                if (!ld && !mDay) return null;
+
+                const ruleExplanation =
+                  ld >= 3 ? "Kategorie erfordert ≥ 3 Tage Vorlauf (Brine / Cure / Ferment / Lagerzeit ≥ 24 h)" :
+                  ld === 2 ? "Kategorie erfordert 2 Tage Vorlauf (Sauce / Marinade / Slow Cook / Lagerzeit ≥ 12 h)" :
+                  "Kategorie erfordert 1 Tag Vorlauf (Grill / Blast Chiller / Portion / Standardprozess)";
+
+                return (
+                  <div className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+                    <span className="mt-0.5 shrink-0 rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-bold text-white">D-{ld}</span>
+                    <div className="space-y-1">
+                      <div className="font-semibold">Warum liegt dieses Sub hier?</div>
+                      <div>{ruleExplanation}</div>
+                      {cat && <div className="text-sky-700">Kategorie: <span className="font-semibold">{cat}</span></div>}
+                      {mDay && (
+                        <div>
+                          Bedarfstag (Fulfillment-Start): <span className="font-semibold">{mDay}</span>
+                          {" → "} Sub fertig bis: <span className="font-semibold">{subRecipeInfoRequest.day}</span>
+                          {" "}({ld} Küchentag{ld !== 1 ? "e" : ""} früher)
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ── Zutaten-Tabelle ─────────────────────────────────────────── */}
+              {subRecipeInfo && subRecipeInfo.ingredientRows.length > 0 ? (
+                <>
+                  <div className="overflow-x-auto rounded border border-slate-200">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-slate-50 text-slate-600">
+                        <tr>
+                          <th className="px-2 py-1.5 text-left font-semibold">Artikel</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">Menge (roh)</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">kg (roh)</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">Yield</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">Fertigware</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">kg/Batch</th>
+                          <th className="px-2 py-1.5 text-left font-semibold">Container</th>
+                          <th className="px-2 py-1.5 text-right font-semibold">Anz.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {subRecipeInfo.ingredientRows.map((row) => (
+                          <tr key={`${row.ingredientId}-${row.uom}`} className="border-t border-slate-100 hover:bg-slate-50">
+                            <td className="px-2 py-1.5 text-slate-800">{row.ingredientName}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
+                              {fmtNum(row.rawTotal, 1)} {row.uom}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">
+                              {row.rawKg != null ? `${fmtNum(row.rawKg, 2)} kg` : "–"}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+                              {fmtNum(row.yieldRatio * 100, 1)}%
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
+                              {fmtNum(row.finishedTotal, 1)} {row.uom}
+                            </td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-sky-700 font-semibold">
+                              {row.proBatchKg != null ? `${fmtNum(row.proBatchKg, 2)} kg` : "–"}
+                            </td>
+                            <td className="px-2 py-1.5 text-slate-600">{row.containerType}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-900">
+                              {row.containerCount > 0 ? fmtNum(row.containerCount) : "–"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="border-t-2 border-slate-200 bg-amber-50 text-xs font-semibold text-amber-900">
+                        <tr>
+                          <td className="px-2 py-1.5">Gesamt</td>
+                          <td className="px-2 py-1.5" />
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(subRecipeInfo.totalRawKg, 2)} kg</td>
+                          <td className="px-2 py-1.5" />
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(subRecipeInfo.totalFinishedKg, 2)} kg</td>
+                          <td className="px-2 py-1.5" />
+                          <td className="px-2 py-1.5">
+                            {subRecipeInfo.batchCount != null && (
+                              <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px]">
+                                {subRecipeInfo.batchCount} Wanne{subRecipeInfo.batchCount !== 1 ? "n" : ""}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{subRecipeInfo.totalContainerCount > 0 ? `${fmtNum(subRecipeInfo.totalContainerCount)} Tray${subRecipeInfo.totalContainerCount !== 1 ? "s" : ""}` : "–"}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Für dieses Subrezept wurden keine passenden Artikel im Gross-Ingredients-Dump gefunden.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="card p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1249,15 +2363,18 @@ export function PlanningView(
                 </tr>
               </thead>
               <tbody>
-                {batchSplitPlan.slice(0, 30).map(plan => plan.batches.map((batch, idx) => (
+                {batchSplitPlan.slice(0, 30).map(plan => {
+                  const tone = weekBoardRecipeTone(plan.recipeCode);
+                  return plan.batches.map((batch, idx) => (
                   <tr
                     key={`${plan.recipeCode}-${batch.fulfillmentDay}`}
-                    className={`border-b border-slate-100 ${plan.batches.length > 1 ? "bg-amber-50/40" : ""}`}
+                    className="border-b border-slate-100"
+                    style={plan.batches.length > 1 ? tone.subRow : tone.row}
                   >
                     {idx === 0 ? (
                       <td className="py-1.5 pr-2 align-top" rowSpan={plan.batches.length}>
-                        <div className="font-mono font-semibold text-slate-800">{plan.recipeCode}</div>
-                        <div className="text-[11px] text-slate-500">{plan.recipeName}</div>
+                        <div className="inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold" style={tone.badge}>{plan.recipeCode}</div>
+                        <div className="mt-1 text-[11px]" style={tone.title}>{plan.recipeName}</div>
                         {plan.batches.length > 1 && (
                           <span className="pill bg-amber-100 text-amber-800 mt-1">Split-Pflicht</span>
                         )}
@@ -1271,17 +2388,17 @@ export function PlanningView(
                       </td>
                     ) : null}
                     <td className="py-1.5 pr-2">
-                      <div className="font-semibold text-slate-800">{batch.fulfillmentDay}</div>
+                      <div className="font-semibold" style={tone.code}>{batch.fulfillmentDay}</div>
                       <div className="text-[10px] text-slate-500">{batch.fulfillmentLabel}</div>
                     </td>
                     <td className="py-1.5 pr-2 text-right tabular-nums font-semibold">{fmtNum(batch.portions)}</td>
                     <td className="py-1.5 pr-2">{batch.earliestProductionDay}–{batch.latestProductionDay}</td>
                     <td className="py-1.5 pr-2">
-                      <span className="pill bg-emerald-100 text-emerald-800">{batch.recommendedProductionDay}</span>
+                      <span className="pill" style={tone.subPill}>{batch.recommendedProductionDay}</span>
                     </td>
                     <td className="py-1.5 pr-2 text-[11px] text-slate-600">{batch.reason}</td>
                   </tr>
-                )))}
+                ));})}
               </tbody>
             </table>
             {batchSplitPlan.length > 30 && (
@@ -1313,12 +2430,17 @@ export function PlanningView(
                 Geräte: {fmtNum(conflict.deviceCount)} · Kapazität: {fmtMin(conflict.capacityMin)} · Auslastung: {fmtNum(conflict.utilizationPct, 0)}%
               </div>
               <div className="mt-1 space-y-1 text-xs text-amber-900">
-                {conflict.assignments.map(row => (
-                  <div key={row.recipeCode} className="flex items-center justify-between gap-2">
-                    <span>{row.recipeCode} · {row.recipeName}</span>
+                {conflict.assignments.map((row, index) => {
+                  const tone = weekBoardRecipeTone(row.recipeCode);
+                  return (
+                  <div key={`${row.recipeCode}-${index}`} className="flex items-center justify-between gap-2">
+                    <span>
+                      <span className="mr-1 inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px]" style={tone.badge}>{row.recipeCode}</span>
+                      <span>{row.recipeName}</span>
+                    </span>
                     <span className="font-semibold tabular-nums">{fmtMin(row.minutes)}</span>
                   </div>
-                ))}
+                );})}
               </div>
             </div>
           ))}
@@ -1336,7 +2458,10 @@ export function PlanningView(
               <div className="mt-1 space-y-1 text-xs text-rose-900">
                 {conflict.assignments.slice(0, 6).map((row, index) => (
                   <div key={`${row.recipeCode}-${row.station}-${index}`} className="flex items-center justify-between gap-2">
-                    <span>{row.recipeCode} · {row.station} · {row.recipeName}</span>
+                    <span>
+                      <span className="mr-1 inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px]" style={weekBoardRecipeTone(row.recipeCode).badge}>{row.recipeCode}</span>
+                      {row.station} · {row.recipeName}
+                    </span>
                     <span className="font-semibold tabular-nums">{fmtMin(row.minutes)}</span>
                   </div>
                 ))}
@@ -1366,11 +2491,14 @@ export function PlanningView(
             <tbody>
               {analysis.recipes.map(recipe => {
                 const current = recipe.assigned ? slotValue(recipe.assigned.day, recipe.assigned.shift) : "";
+                const tone = weekBoardRecipeTone(recipe.recipeCode);
                 return (
-                  <tr key={recipe.recipeCode} className={`border-b last:border-0 ${selectedRecipe === recipe.recipeCode ? "bg-verden-50" : ""}`}>
-                    <td className="py-1.5 pr-2 font-mono text-xs text-slate-500">{recipe.recipeCode}</td>
+                  <tr key={recipe.recipeCode} className="border-b last:border-0" style={selectedRecipe === recipe.recipeCode ? tone.row : tone.subRow}>
                     <td className="py-1.5 pr-2">
-                      <button className="text-left hover:text-verden-700" onClick={() => onSelectRecipe?.(recipe.recipeCode)}>
+                      <span className="inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px]" style={tone.badge}>{recipe.recipeCode}</span>
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <button className="text-left hover:text-verden-700" style={tone.title} onClick={() => onSelectRecipe?.(recipe.recipeCode)}>
                         {recipe.recipeName}
                       </button>
                     </td>
@@ -1382,7 +2510,7 @@ export function PlanningView(
                       <td className="py-1.5 pr-2 text-xs text-slate-600">
                         {suggestions[recipe.recipeCode] ? (
                           <div className="space-y-1">
-                            <button className="btn" onClick={() => applySuggestion(recipe.recipeCode)}>
+                            <button className="btn" style={tone.subPill} onClick={() => applySuggestion(recipe.recipeCode)}>
                               {suggestions[recipe.recipeCode].day} · {suggestions[recipe.recipeCode].shift}
                             </button>
                             <div className="text-[10px] text-slate-500">{suggestions[recipe.recipeCode].reason}</div>
@@ -1435,4 +2563,142 @@ function ToggleChip({ label, enabled, onClick, locale }: { label: string; enable
       </span>
     </button>
   );
+}
+
+type WeekBoardEditorState = {
+  recipeCode: string;
+  day: PlannerDay;
+  shift: PlannerShift;
+  subRecipeId?: string;
+  subRecipeName?: string;
+};
+
+type WeekBoardEditorDraft = {
+  shift: PlannerShift;
+  targetPortions: number;
+  reason: string;
+  splitSpec: string;
+  notes: string;
+};
+
+type SubRecipeInfoRequest = {
+  recipeCode: string;
+  recipeName: string;
+  subRecipeId: string;
+  subRecipeName: string;
+  day: PlannerDay;
+  shift: PlannerShift;
+  targetPortions: number;
+  /** Lead-Zeit in Küchentagen vor dem Bedarfstag (Fulfillment-Start) */
+  leadDays: number;
+  /** Tag des Haupt-Rezepts (= Plating / Need-Day), damit klar ist warum der Sub hier liegt */
+  mainDay?: PlannerDay;
+  category: string;
+};
+
+type SubRecipeInfoIngredientRow = {
+  ingredientId: string;
+  ingredientName: string;
+  uom: string;
+  yieldRatio: number;
+  rawTotal: number;
+  rawKg: number | null;
+  finishedTotal: number;
+  containerType: string;
+  containerCount: number;
+  proBatchKg: number | null;
+};
+
+type SubRecipeInfoView = {
+  recipeCode: string;
+  subRecipeId: string;
+  subRecipeName: string;
+  targetPortions: number;
+  yieldRatio: number;
+  ingredientRows: SubRecipeInfoIngredientRow[];
+  totalRawKg: number;
+  totalFinishedKg: number;
+  totalContainerCount: number;
+  capacityKg: number | null;
+  equipment: string | null;
+  batchCount: number | null;
+  capacitySource: "bible" | "process-spec" | "unknown";
+};
+
+// ── Bible/Master-Hint-Typen für Sub-Rezept-Info-Modal ─────────────────────────
+type InfoCapacityHint = {
+  key: string;
+  capacityKg: number;
+  equipment: string | null;
+};
+
+type InfoTrayHint = {
+  key: string;
+  pcsPerTray: number;
+};
+
+type InfoHints = {
+  capacityHints: Map<string, InfoCapacityHint>;
+  pieceWeightKg: Map<string, number>;
+  trayHints: InfoTrayHint[];
+};
+
+function parseBoardNote(note?: string): { reason: string; notes: string } {
+  const raw = String(note ?? "").trim();
+  if (!raw) return { reason: "Planned", notes: "" };
+  const [reasonPart, ...rest] = raw.split("||");
+  const reason = reasonPart.startsWith("reason=") ? reasonPart.slice(7).trim() : "Planned";
+  const notesPart = rest.find((part) => part.startsWith("notes=")) ?? "";
+  const notes = notesPart ? notesPart.slice(6).trim() : "";
+  return { reason: reason || "Planned", notes };
+}
+
+function buildBoardNote(reason: string, notes: string): string | undefined {
+  const cleanReason = reason.trim();
+  const cleanNotes = notes.trim();
+  if (!cleanReason && !cleanNotes) return undefined;
+  return `reason=${cleanReason || "Planned"}||notes=${cleanNotes}`;
+}
+
+function extractSplitSpecFromNotes(notes: string): string {
+  const raw = String(notes ?? "").trim();
+  if (!raw) return "";
+  const match = /(?:^|\s)split=([^\s]+)/i.exec(raw);
+  return match?.[1]?.trim() ?? "";
+}
+
+function stripSplitSpecFromNotes(notes: string): string {
+  return String(notes ?? "")
+    .replace(/(?:^|\s)split=[^\s]+/ig, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function composeBoardNotes(rawNotes: string, splitSpec: string): string {
+  const notes = stripSplitSpecFromNotes(rawNotes);
+  const split = splitSpec.trim();
+  if (notes && split) return `${notes} split=${split}`;
+  if (split) return `split=${split}`;
+  return notes;
+}
+
+function parseSplitSpecToBatches(splitSpec: string, fallbackDay: PlannerDay, totalTarget: number): AutoFulfillmentBatch[] {
+  const tokens = splitSpec
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) return totalTarget > 0 ? [{ day: fallbackDay, portions: totalTarget }] : [];
+
+  const parsed: AutoFulfillmentBatch[] = [];
+  for (const token of tokens) {
+    const [rawDay, rawPortions] = token.split(":");
+    if (!rawDay || !rawPortions) continue;
+    const day = rawDay.trim() as PlannerDay;
+    if (!(PLANNER_DAYS as readonly string[]).includes(day)) continue;
+    const portions = Math.max(0, Math.round(Number(rawPortions) || 0));
+    if (portions <= 0) continue;
+    parsed.push({ day, portions });
+  }
+  if (parsed.length === 0) return totalTarget > 0 ? [{ day: fallbackDay, portions: totalTarget }] : [];
+  return normalizeBatches(parsed, totalTarget > 0 ? totalTarget : parsed.reduce((s, row) => s + row.portions, 0));
 }

@@ -1,111 +1,19 @@
 Recipe name,MSKU Code,Recipe Type,Recipe Yield,Recipe Yield UOM,Ingredient Name,Ingredient Type,Ingredient ID,Ingredient Quantity,Ingredient UOM,Preparation,Sub-Recipe ID,Sub-Recipe Categories,Instructions,Allergen Contains,Recipe Score,Sub-Recipe Yield,Portion Qty,Portion Method,Method Color,Method Type,Sub-Allergens,Sub-Recipe EA to OZ,Sub-Recipe OZ to LBS,Sub-Recipe Raw Ingredient Weight (oz),Sub-Recipe Raw Ingredient Weight (lbs),Primary Packaging Sku Code,Compartment Name,Secondary Packaging Sku Codes
-FV0024A - Chicken in tomato cream sauce [BNL],REC-013938-4-007,R,1,portions,Sauce - Sun-Dried Tomato Sauce - Less Salt,S,,140,grams,,SUB-013571-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
+FV0090A - Ratatouille of zucchini and pepper [BNL],REC-013827-4-002,R,1,portions,Mixed veg - Ratatouille Vegetable Batch,S,,255,grams,,SUB-013764-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
 
 2 Compartment
 
 MAIN COMPARTMENT
-tomato cream sauce =  140g
-chicken = 1 EA 160g raw, 120g cooked
+ratatouille 255g
+sunflower seed crunch 10g
 
-","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.88017,1,SCOOP,white,LEVEL,,,0.30865,5.61072,0.35067,PCK-00-151923-5,Main,
-FV0024A - Chicken in tomato cream sauce [BNL],REC-013938-4-007,R,1,portions,Chicken breast - Sun-Dried Tomato Chicken Batch - Grilled 160g,S,,1,each,,SUB-013572-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,,,,0.7011,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,6.0375,0.37734,PCK-00-151923-5,Main,
-FV0024A - Chicken in tomato cream sauce [BNL],REC-013938-4-007,R,1,portions,Cooked Courgette Noodles - No Salt,S,,100,grams,,SUB-013573-4-001,HAND MARINADE / OVEN / BLAST CHILLER,"2ND COMPARTMENT
-Zucchini noodles -  100g
+",SCHWEFELDIOXIDE UND SULFITE,,0.86355,2,SCOOP,grey,LEVEL,,,0.56218,10.41617,0.65101,PCK-00-151923-5,Main,
+FV0090A - Ratatouille of zucchini and pepper [BNL],REC-013827-4-002,R,1,portions,Sunflower seeds - Vegetable Ratatouille Toasted Seed Garnish,S,,10,grams,,SUB-013826-4-001,HAND MARINADE / OVEN / BLAST CHILLER,,,,0.98148,1,SCOOP,black,LEVEL,,,0.02205,0.3594,0.02246,PCK-00-151923-5,Main,
+FV0090A - Ratatouille of zucchini and pepper [BNL],REC-013827-4-002,R,1,portions,Polenta less fat,S,,140,grams,,SUB-031689-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"2ND COMPARTMENT
+Polenta - 140g
 
-NET WEIGHT: 360g",,,0.68363,1,SCOOP,grey,NATURAL,,,0.22046,5.15981,0.32249,PCK-00-151923-5,2nd,
-
-FV0024A - Chicken in tomato cream sauce [DE],REC-013938-4-005,R,1,portions,Sauce - Sun-Dried Tomato Sauce - Less Salt,S,,140,grams,,SUB-013571-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
-(From the bottom to the top)
-
-2 Compartment
-
-MAIN COMPARTMENT
-tomato cream sauce =  140g
-chicken = 1 EA 160g raw, 120g cooked
-
-","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.88017,1,SCOOP,white,LEVEL,,,0.30865,5.61072,0.35067,PCK-00-151923-5,Main,
-FV0024A - Chicken in tomato cream sauce [DE],REC-013938-4-005,R,1,portions,Chicken breast - Sun-Dried Tomato Chicken Batch - Grilled 160g,S,,1,each,,SUB-013572-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,,,,0.7011,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,6.0375,0.37734,PCK-00-151923-5,Main,
-FV0024A - Chicken in tomato cream sauce [DE],REC-013938-4-005,R,1,portions,Cooked Courgette Noodles - No Salt,S,,100,grams,,SUB-013573-4-001,HAND MARINADE / OVEN / BLAST CHILLER,"2ND COMPARTMENT
-Zucchini noodles -  100g
-
-NET WEIGHT: 360g",,,0.68363,1,SCOOP,grey,NATURAL,,,0.22046,5.15981,0.32249,PCK-00-151923-5,2nd,
-
-FV0024A - Chicken in tomato cream sauce [DKSE],REC-013938-4-006,R,1,portions,Sauce - Sun-Dried Tomato Sauce - Less Salt,S,,140,grams,,SUB-013571-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
-(From the bottom to the top)
-
-2 Compartment
-
-MAIN COMPARTMENT
-tomato cream sauce =  140g
-chicken = 1 EA 160g raw, 120g cooked
-
-","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.88017,1,SCOOP,white,LEVEL,,,0.30865,5.61072,0.35067,PCK-00-151923-5,Main,
-FV0024A - Chicken in tomato cream sauce [DKSE],REC-013938-4-006,R,1,portions,Chicken breast - Sun-Dried Tomato Chicken Batch - Grilled 160g,S,,1,each,,SUB-013572-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,,,,0.7011,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,6.0375,0.37734,PCK-00-151923-5,Main,
-FV0024A - Chicken in tomato cream sauce [DKSE],REC-013938-4-006,R,1,portions,Cooked Courgette Noodles - No Salt,S,,100,grams,,SUB-013573-4-001,HAND MARINADE / OVEN / BLAST CHILLER,"2ND COMPARTMENT
-Zucchini noodles -  100g
-
-NET WEIGHT: 360g",,,0.68363,1,SCOOP,grey,NATURAL,,,0.22046,5.15981,0.32249,PCK-00-151923-5,2nd,
-
-FV0035A - Salmon with pesto [BNL],REC-013940-4-007,R,1,portions,Spinach - Creamed Spinach,S,,115,grams,,SUB-013867-4-001,HAND MIX / BLAST CHILLER,"***PLATING INSTRUCTIONS***
-(From the bottom to the top)
-
-2 Compartment
-
-MAIN COMPARTMENT
-115g = creamed spinach 
-1 EA (119g cooked)  = salmon 
-30g (black scoop) = pesto sauce
-
- 
-
-NET WEIGHT: 361g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.84,1,SCOOP,grey,LEVEL,,,0.25353,4.82918,0.30182,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [BNL],REC-013940-4-007,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,,,,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [BNL],REC-013940-4-007,R,1,portions,Sauce - Pesto,S,,30,grams,,SUB-013665-4-001,IMMERSION BLENDER / BLAST CHILLER,,"MANDELN, MILCH (EINSCHLIESSLICH LAKTOSE), SCHALENFRÜCHTE",,0.95726,1,SCOOP,black,LEVEL,,,0.06614,1.10547,0.06909,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [BNL],REC-013940-4-007,R,1,portions,S&P Roasted Green Beans 1,S,,90,grams,,SUB-014184-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
-90g = green beans
-1/2 scoop (14g) = Sun-dried butter ",,,0.74605,1,SCOOP,white,NATURAL,,,0.19842,4.25526,0.26595,PCK-00-151923-5,2nd,
-FV0035A - Salmon with pesto [BNL],REC-013940-4-007,R,1,portions,Compound butter - Sun-Dried Tomato,S,,14,grams,,SUB-013608-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,1,1,HAND_PORTIONED,Hand Portioned,,,,0.03086,0.49384,0.03086,PCK-00-151923-5,2nd,
-
-FV0035A - Salmon with pesto [DE],REC-013940-4-006,R,1,portions,Spinach - Creamed Spinach,S,,115,grams,,SUB-013867-4-001,HAND MIX / BLAST CHILLER,"***PLATING INSTRUCTIONS***
-(From the bottom to the top)
-
-2 Compartment
-
-MAIN COMPARTMENT
-115g = creamed spinach 
-1 EA (119g cooked)  = salmon 
-30g (black scoop) = pesto sauce
-
- 
-
-NET WEIGHT: 361g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.84,1,SCOOP,grey,LEVEL,,,0.25353,4.82918,0.30182,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [DE],REC-013940-4-006,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [DE],REC-013940-4-006,R,1,portions,Sauce - Pesto,S,,30,grams,,SUB-013665-4-001,IMMERSION BLENDER / BLAST CHILLER,,"MANDELN, MILCH (EINSCHLIESSLICH LAKTOSE), SCHALENFRÜCHTE",,0.95726,1,SCOOP,black,LEVEL,,,0.06614,1.10547,0.06909,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [DE],REC-013940-4-006,R,1,portions,S&P Roasted Green Beans 1,S,,90,grams,,SUB-014184-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
-90g = green beans
-1/2 scoop (14g) = Sun-dried butter ",,,0.74605,1,SCOOP,white,NATURAL,,,0.19842,4.25526,0.26595,PCK-00-151923-5,2nd,
-FV0035A - Salmon with pesto [DE],REC-013940-4-006,R,1,portions,Compound butter - Sun-Dried Tomato,S,,14,grams,,SUB-013608-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,1,1,HAND_PORTIONED,Hand Portioned,,,,0.03086,0.49384,0.03086,PCK-00-151923-5,2nd,
-
-FV0035A - Salmon with pesto [DKSE],REC-013940-4-004,R,1,portions,Spinach - Creamed Spinach,S,,115,grams,,SUB-013867-4-001,HAND MIX / BLAST CHILLER,"***PLATING INSTRUCTIONS***
-(From the bottom to the top)
-
-2 Compartment
-
-MAIN COMPARTMENT
-115g = creamed spinach 
-1 EA (119g cooked)  = salmon 
-30g (black scoop) = pesto sauce
-
- 
-
-NET WEIGHT: 361g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.84,1,SCOOP,grey,LEVEL,,,0.25353,4.82918,0.30182,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [DKSE],REC-013940-4-004,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,,,,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [DKSE],REC-013940-4-004,R,1,portions,Sauce - Pesto,S,,30,grams,,SUB-013665-4-001,IMMERSION BLENDER / BLAST CHILLER,,"MANDELN, MILCH (EINSCHLIESSLICH LAKTOSE), SCHALENFRÜCHTE",,0.95726,1,SCOOP,black,LEVEL,,,0.06614,1.10547,0.06909,PCK-00-151923-5,Main,
-FV0035A - Salmon with pesto [DKSE],REC-013940-4-004,R,1,portions,S&P Roasted Green Beans 1,S,,90,grams,,SUB-014184-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
-90g = green beans
-1/2 scoop (14g) = Sun-dried butter ",,,0.74605,1,SCOOP,white,NATURAL,,,0.19842,4.25526,0.26595,PCK-00-151923-5,2nd,
-FV0035A - Salmon with pesto [DKSE],REC-013940-4-004,R,1,portions,Compound butter - Sun-Dried Tomato,S,,14,grams,,SUB-013608-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,1,1,HAND_PORTIONED,Hand Portioned,,,,0.03086,0.49384,0.03086,PCK-00-151923-5,2nd,
+NET WEIGHT: 405g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.86402,1,SCOOP,grey,LEVEL,,,0.30865,5.71555,0.35722,PCK-00-151923-5,2nd,
 
 FV0090A - Ratatouille of zucchini and pepper [DE],REC-013827-4-004,R,1,portions,Mixed veg - Ratatouille Vegetable Batch,S,,255,grams,,SUB-013764-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
@@ -122,6 +30,105 @@ FV0090A - Ratatouille of zucchini and pepper [DE],REC-013827-4-004,R,1,portions,
 Polenta - 140g
 
 NET WEIGHT: 405g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.86402,1,SCOOP,grey,LEVEL,,,0.30865,5.71555,0.35722,PCK-00-151923-5,2nd,
+
+FV0090A - Ratatouille of zucchini and pepper [DKSE],REC-013827-4-003,R,1,portions,Mixed veg - Ratatouille Vegetable Batch,S,,255,grams,,SUB-013764-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
+(From the bottom to the top)
+
+2 Compartment
+
+MAIN COMPARTMENT
+ratatouille 255g
+sunflower seed crunch 10g
+
+",SCHWEFELDIOXIDE UND SULFITE,,0.86355,2,SCOOP,grey,LEVEL,,,0.56218,10.41617,0.65101,PCK-00-151923-5,Main,
+FV0090A - Ratatouille of zucchini and pepper [DKSE],REC-013827-4-003,R,1,portions,Sunflower seeds - Vegetable Ratatouille Toasted Seed Garnish,S,,10,grams,,SUB-013826-4-001,HAND MARINADE / OVEN / BLAST CHILLER,,,,0.98148,1,SCOOP,black,LEVEL,,,0.02205,0.3594,0.02246,PCK-00-151923-5,Main,
+FV0090A - Ratatouille of zucchini and pepper [DKSE],REC-013827-4-003,R,1,portions,Polenta less fat,S,,140,grams,,SUB-031689-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"2ND COMPARTMENT
+Polenta - 140g
+
+NET WEIGHT: 405g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.86402,1,SCOOP,grey,LEVEL,,,0.30865,5.71555,0.35722,PCK-00-151923-5,2nd,
+
+FV0131A - Black bean bowl and enchilada sauce [BNL],REC-013918-4-003,R,1,portions,Rice - Enchilada Bowl Rice,S,,100,grams,,SUB-013914-4-001,HAND MIX / BLAST CHILLER,"MAIN COMPARTMENT
+Enchilada Bowl Rice - 100 gr
+Black Bean Enchilada Mix - 120 gr
+Shredded Cheddar Cheese - 20 gr
+Roasted Green Onions - 5 gr
+
+SIDE COMPARTMENT
+Roasted zucchini & corn - 80 gr
+Green chile salsa verde - 45 gr
+
+NET WEIGHT: 370 G","SCHWEFELDIOXIDE UND SULFITE, SELLERIE",,0.99997,1,SCOOP,green,LEVEL,,,0.22046,3.52751,0.22047,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [BNL],REC-013918-4-003,R,1,portions,Black Bean Enchilada Mix,S,,120,grams,,SUB-013916-4-001,HAND MIX / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.99649,"2
+1","SCOOP
+SCOOP","red
+beige","LEVEL
+LEVEL",,,0.26455,4.24779,0.26549,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [BNL],REC-013918-4-003,R,1,portions,"FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",I,DAI-00-139135-3,20,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,,,,,,,0.04409,0.70548,0.04409,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [BNL],REC-013918-4-003,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,,,,,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [BNL],REC-013918-4-003,R,1,portions,Mixed veg - Roasted Zucchini & Corn,S,,80,grams,,SUB-013917-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.74037,1,SCOOP,green,LEVEL,,,0.17637,3.8115,0.23822,PCK-00-151923-5,2nd,
+FV0131A - Black bean bowl and enchilada sauce [BNL],REC-013918-4-003,R,1,portions,Sauce - Green Chili Salsa Verde,S,,45,grams,,SUB-013913-4-001,HAND MIX,,SCHWEFELDIOXIDE UND SULFITE,,0.91087,1,SCOOP,red,LEVEL,,,0.09921,1.74265,0.10892,PCK-00-151923-5,2nd,
+
+FV0131A - Black bean bowl and enchilada sauce [DE],REC-013918-4-004,R,1,portions,Rice - Enchilada Bowl Rice,S,,100,grams,,SUB-013914-4-001,HAND MIX / BLAST CHILLER,"MAIN COMPARTMENT
+Enchilada Bowl Rice - 100 gr
+Black Bean Enchilada Mix - 120 gr
+Shredded Cheddar Cheese - 20 gr
+Roasted Green Onions - 5 gr
+
+SIDE COMPARTMENT
+Roasted zucchini & corn - 80 gr
+Green chile salsa verde - 45 gr
+
+NET WEIGHT: 370 G","SCHWEFELDIOXIDE UND SULFITE, SELLERIE",,0.99997,1,SCOOP,green,LEVEL,,,0.22046,3.52751,0.22047,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [DE],REC-013918-4-004,R,1,portions,Black Bean Enchilada Mix,S,,120,grams,,SUB-013916-4-001,HAND MIX / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.99649,"2
+1","SCOOP
+SCOOP","red
+beige","LEVEL
+LEVEL",,,0.26455,4.24779,0.26549,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [DE],REC-013918-4-004,R,1,portions,"FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",I,DAI-00-139135-3,20,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,,,,,,,0.04409,0.70548,0.04409,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [DE],REC-013918-4-004,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,,,,,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [DE],REC-013918-4-004,R,1,portions,Mixed veg - Roasted Zucchini & Corn,S,,80,grams,,SUB-013917-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.74037,1,SCOOP,green,LEVEL,,,0.17637,3.8115,0.23822,PCK-00-151923-5,2nd,
+FV0131A - Black bean bowl and enchilada sauce [DE],REC-013918-4-004,R,1,portions,Sauce - Green Chili Salsa Verde,S,,45,grams,,SUB-013913-4-001,HAND MIX,,SCHWEFELDIOXIDE UND SULFITE,,0.91087,1,SCOOP,red,LEVEL,,,0.09921,1.74265,0.10892,PCK-00-151923-5,2nd,
+
+FV0131A - Black bean bowl and enchilada sauce [DKSE],REC-013918-4-005,R,1,portions,Rice - Enchilada Bowl Rice,S,,100,grams,,SUB-013914-4-001,HAND MIX / BLAST CHILLER,"MAIN COMPARTMENT
+Enchilada Bowl Rice - 100 gr
+Black Bean Enchilada Mix - 120 gr
+Shredded Cheddar Cheese - 20 gr
+Roasted Green Onions - 5 gr
+
+SIDE COMPARTMENT
+Roasted zucchini & corn - 80 gr
+Green chile salsa verde - 45 gr
+
+NET WEIGHT: 370 G","SCHWEFELDIOXIDE UND SULFITE, SELLERIE",,0.99997,1,SCOOP,green,LEVEL,,,0.22046,3.52751,0.22047,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [DKSE],REC-013918-4-005,R,1,portions,Black Bean Enchilada Mix,S,,120,grams,,SUB-013916-4-001,HAND MIX / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.99649,"2
+1","SCOOP
+SCOOP","red
+beige","LEVEL
+LEVEL",,,0.26455,4.24779,0.26549,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [DKSE],REC-013918-4-005,R,1,portions,"FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",I,DAI-00-139135-3,20,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,,,,,,,0.04409,0.70548,0.04409,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [DKSE],REC-013918-4-005,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,,,,,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
+FV0131A - Black bean bowl and enchilada sauce [DKSE],REC-013918-4-005,R,1,portions,Mixed veg - Roasted Zucchini & Corn,S,,80,grams,,SUB-013917-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.74037,1,SCOOP,green,LEVEL,,,0.17637,3.8115,0.23822,PCK-00-151923-5,2nd,
+FV0131A - Black bean bowl and enchilada sauce [DKSE],REC-013918-4-005,R,1,portions,Sauce - Green Chili Salsa Verde,S,,45,grams,,SUB-013913-4-001,HAND MIX,,SCHWEFELDIOXIDE UND SULFITE,,0.91087,1,SCOOP,red,LEVEL,,,0.09921,1.74265,0.10892,PCK-00-151923-5,2nd,
+
+FV0232A - Herb Crusted Chicken [DE],REC-013836-4-006,R,1,portions,Herb-Crusted Chicken - 1 piece,S,,1,each,,SUB-013811-4-001,MARINADE / CRUSTED / OVEN / BLAST CHILLER,"***PLATING INSTRUCTIONS***
+(From the bottom to the top)
+
+2 Compartment
+
+MAIN COMPARTMENT
+mash on bottom - 100g
+crusted chicken on top - 1 EA
+
+",MILCH (EINSCHLIESSLICH LAKTOSE),,0.73684,,,,,,4.93836,0.30865,6.70206,0.41888,PCK-00-151923-5,Main,
+FV0232A - Herb Crusted Chicken [DE],REC-013836-4-006,R,1,portions,Mash - Garlic Herb Mashed Cauliflower - Rice,S,,100,grams,,SUB-013551-4-001,HAND MIX / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.95759,1,SCOOP,beige,LEVEL,,,0.22046,3.68361,0.23023,PCK-00-151923-5,Main,
+FV0232A - Herb Crusted Chicken [DE],REC-013836-4-006,R,1,portions,Almonds - Garlic & Black Pepper Toasted Almonds,S,,6,grams,,SUB-013553-4-001,HAND MARINADE / OVEN / BLAST CHILLER,"2ND COMPARTMENT
+1. green beans - 80g
+2. toasted almonds - 6g
+3. butter - 13g (1/2 scoop)
+
+Net Weight: 339g","MANDELN, SCHALENFRÜCHTE",,0.9417,1,SCOOP,silver #110,NATURAL,,,0.01323,0.22475,0.01405,PCK-00-151923-5,2nd,
+FV0232A - Herb Crusted Chicken [DE],REC-013836-4-006,R,1,portions,Green beans - oil and sea salt,S,,80,grams,,SUB-013552-4-001,OVEN / BLAST CHILLER,,,,0.8482,1,SCOOP,white,LEVEL,,,0.17637,3.32697,0.20794,PCK-00-151923-5,2nd,
+FV0232A - Herb Crusted Chicken [DE],REC-013836-4-006,R,1,portions,Compound butter - Garlic Lemon Butter,S,,13,grams,,SUB-013547-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.90575,13,HAND_PORTIONED,Hand Portioned,BY_TRAY,,,0.02866,0.50628,0.03164,PCK-00-151923-5,2nd,
 
 FV0281A - Baja Salmon [BNL],REC-014197-4-006,R,1,portions,Mexican Cauliflower Rice,S,,120,grams,,SUB-014051-4-001,OVEN,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
@@ -207,7 +214,7 @@ FV0333A - Tuscan Shrimp [BNL],REC-013835-4-004,R,1,portions,Sauce - Tuscan Shrim
 FV0333A - Tuscan Shrimp [BNL],REC-013835-4-004,R,1,portions,"Zucchini/Pepper/Onion Mix for Tuscan Shrimp - 1/2"" Diced",S,,100,grams,,SUB-013802-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
 zucchini/pepper mix - 100g
 
-NET WEIGHT: 340g",,,0.89908,1,SCOOP,beige,NATURAL,,,0.22046,3.92333,0.24521,PCK-00-151923-5,2nd,
+NET WEIGHT: 340g",,,0.79487,1,SCOOP,beige,NATURAL,,,0.22046,4.43772,0.27736,PCK-00-151923-5,2nd,
 
 FV0333A - Tuscan Shrimp [DE],REC-013835-4-002,R,1,portions,Creamed Kale - Cream Cheese,S,,100,grams,,SUB-013834-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
@@ -223,7 +230,7 @@ FV0333A - Tuscan Shrimp [DE],REC-013835-4-002,R,1,portions,Sauce - Tuscan Shrimp
 FV0333A - Tuscan Shrimp [DE],REC-013835-4-002,R,1,portions,"Zucchini/Pepper/Onion Mix for Tuscan Shrimp - 1/2"" Diced",S,,100,grams,,SUB-013802-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
 zucchini/pepper mix - 100g
 
-NET WEIGHT: 340g",,,0.89908,1,SCOOP,beige,NATURAL,,,0.22046,3.92333,0.24521,PCK-00-151923-5,2nd,
+NET WEIGHT: 340g",,,0.79487,1,SCOOP,beige,NATURAL,,,0.22046,4.43772,0.27736,PCK-00-151923-5,2nd,
 
 FV0333A - Tuscan Shrimp [DKSE],REC-013835-4-003,R,1,portions,Creamed Kale - Cream Cheese,S,,100,grams,,SUB-013834-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
@@ -239,36 +246,7 @@ FV0333A - Tuscan Shrimp [DKSE],REC-013835-4-003,R,1,portions,Sauce - Tuscan Shri
 FV0333A - Tuscan Shrimp [DKSE],REC-013835-4-003,R,1,portions,"Zucchini/Pepper/Onion Mix for Tuscan Shrimp - 1/2"" Diced",S,,100,grams,,SUB-013802-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
 zucchini/pepper mix - 100g
 
-NET WEIGHT: 340g",,,0.89908,1,SCOOP,beige,NATURAL,,,0.22046,3.92333,0.24521,PCK-00-151923-5,2nd,
-
-FV0413A - Braised beef in herby jus [BNL],REC-014130-4-008,R,1,portions,Mash - Parmesan Cauli Mash w/ Chives,S,,120,grams,,SUB-014129-4-001,IMMERSION BLENDER / OVEN / BLAST CHILLER,"***PRODUCTION PLATING***
-(From the bottom to the top)
-
-2 Compartment
-
-Main:
-120g mash
-80g beef
-30g sauce
-30g onions
-15g cheese
-
-
-
-NET WEIGHT: 275g
-",MILCH (EINSCHLIESSLICH LAKTOSE),,0.99867,1,SCOOP,grey,LEVEL,,,0.26455,4.23852,0.26491,PCK-00-151923-5,Main,
-FV0413A - Braised beef in herby jus [BNL],REC-014130-4-008,R,1,portions,Shredded Sous Vide Beef,S,,80,grams,,SUB-013599-4-001,HAND MIX / COLD SHREDDER,,,,0.97997,1,SCOOP,green,NATURAL,,,0.17637,2.87959,0.17997,PCK-00-151923-5,Main,
-FV0413A - Braised beef in herby jus [BNL],REC-014130-4-008,R,1,portions,Sauce - for French Dip Shredded Beef,S,,30,grams,,SUB-014127-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,,,0.902,1,SCOOP,black,LEVEL,,,0.06614,1.1732,0.07332,PCK-00-151923-5,Main,
-FV0413A - Braised beef in herby jus [BNL],REC-014130-4-008,R,1,portions,Onions - Caramelized Onions,S,,30,grams,,SUB-014017-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,,,,0.56666,1,SCOOP,black,LEVEL,,,0.06614,1.86747,0.11672,PCK-00-151923-5,Main,
-FV0413A - Braised beef in herby jus [BNL],REC-014130-4-008,R,1,portions,"FA-DE Cheese, Emmentaler, Shredded /Käse, Emmentaler, gerieben",I,DAI-00-139134-3,15,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,1,SCOOP,purple,LEVEL,,,0.03307,0.52911,0.03307,PCK-00-151923-5,Main,
-FV0413A - Braised beef in herby jus [BNL],REC-014130-4-008,R,1,portions,Broccoli - S&P Broccoli FLORETS - less salt,S,,100,grams,,SUB-013822-4-001,HAND MIX,"2nd: 
-100g broccoli
-12g butter
-
-NET WEIGHT: 112g
-
-TOTAL NET WEIGHT: 387g",,,0.75359,1,SCOOP,white,LEVEL,,,0.22046,4.68077,0.29255,PCK-00-151923-5,2nd,
-FV0413A - Braised beef in herby jus [BNL],REC-014130-4-008,R,1,portions,Compound butter - Parmesan-Chive,S,,12,grams,,SUB-013536-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.97999,1,SCOOP,silver #60,LEVEL,,,0.02646,0.43193,0.027,PCK-00-151923-5,2nd,
+NET WEIGHT: 340g",,,0.79487,1,SCOOP,beige,NATURAL,,,0.22046,4.43772,0.27736,PCK-00-151923-5,2nd,
 
 FV0426A - Potato Leek Mash & Grilled Chicken [BNL],REC-013840-4-002,R,1,portions,Chicken breast - Herb Grilled Chicken Breast,S,,1,each,,SUB-013545-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
@@ -330,7 +308,7 @@ SIDE COMPARTMENT
 NET WEIGHT = 356g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.81911,1,SCOOP,white,NATURAL,,,0.25353,4.95233,0.30952,PCK-00-151923-5,Main,
 FV0472A - Indian Butter Chicken [BNL],REC-013852-4-003,R,1,portions,Sauce - Butter Chicken sauce,S,,115,grams,,SUB-013851-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.91418,1,SCOOP,grey,LEVEL,,,0.25353,4.43733,0.27733,PCK-00-151923-5,Main,
 FV0472A - Indian Butter Chicken [BNL],REC-013852-4-003,R,1,portions,Roasted Green Onions,S,,6,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,purple,LEVEL,,,0.01323,0.24899,0.01556,PCK-00-151923-5,Main,
-FV0472A - Indian Butter Chicken [BNL],REC-013852-4-003,R,1,portions,Cauliflower rice - Cilantro and Lime Cauliflower Rice - BA,S,,120,grams,,SUB-013733-4-001,OVEN / BLAST CHILLER,,,,0.93012,1,SCOOP,white,LEVEL,,,0.26455,4.55092,0.28443,PCK-00-151923-5,2nd,
+FV0472A - Indian Butter Chicken [BNL],REC-013852-4-003,R,1,portions,Cauliflower rice - Cilantro and Lime Cauliflower Rice - BA,S,,120,grams,,SUB-013733-4-001,OVEN / BLAST CHILLER,,,,0.77359,1,SCOOP,white,LEVEL,,,0.26455,5.47171,0.34198,PCK-00-151923-5,2nd,
 
 FV0472A - Indian Butter Chicken [DE],REC-013852-4-002,R,1,portions,Diced chicken - Butter Chicken Batch - BA,S,,115,grams,,SUB-013850-4-001,MARINADE / OVEN / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
@@ -348,7 +326,7 @@ SIDE COMPARTMENT
 NET WEIGHT = 356g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.81911,1,SCOOP,white,NATURAL,,,0.25353,4.95233,0.30952,PCK-00-151923-5,Main,
 FV0472A - Indian Butter Chicken [DE],REC-013852-4-002,R,1,portions,Sauce - Butter Chicken sauce,S,,115,grams,,SUB-013851-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.91418,1,SCOOP,grey,LEVEL,,,0.25353,4.43733,0.27733,PCK-00-151923-5,Main,
 FV0472A - Indian Butter Chicken [DE],REC-013852-4-002,R,1,portions,Roasted Green Onions,S,,6,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,purple,LEVEL,,,0.01323,0.24899,0.01556,PCK-00-151923-5,Main,
-FV0472A - Indian Butter Chicken [DE],REC-013852-4-002,R,1,portions,Cauliflower rice - Cilantro and Lime Cauliflower Rice - BA,S,,120,grams,,SUB-013733-4-001,OVEN / BLAST CHILLER,,,,0.93012,1,SCOOP,white,LEVEL,,,0.26455,4.55092,0.28443,PCK-00-151923-5,2nd,
+FV0472A - Indian Butter Chicken [DE],REC-013852-4-002,R,1,portions,Cauliflower rice - Cilantro and Lime Cauliflower Rice - BA,S,,120,grams,,SUB-013733-4-001,OVEN / BLAST CHILLER,,,,0.77359,1,SCOOP,white,LEVEL,,,0.26455,5.47171,0.34198,PCK-00-151923-5,2nd,
 
 FV0472A - Indian Butter Chicken [DKSE],REC-013852-4-001,R,1,portions,Diced chicken - Butter Chicken Batch - BA,S,,115,grams,,SUB-013850-4-001,MARINADE / OVEN / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
@@ -366,7 +344,7 @@ SIDE COMPARTMENT
 NET WEIGHT = 356g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.81911,1,SCOOP,white,NATURAL,,,0.25353,4.95233,0.30952,PCK-00-151923-5,Main,
 FV0472A - Indian Butter Chicken [DKSE],REC-013852-4-001,R,1,portions,Sauce - Butter Chicken sauce,S,,115,grams,,SUB-013851-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.91418,1,SCOOP,grey,LEVEL,,,0.25353,4.43733,0.27733,PCK-00-151923-5,Main,
 FV0472A - Indian Butter Chicken [DKSE],REC-013852-4-001,R,1,portions,Roasted Green Onions,S,,6,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,purple,LEVEL,,,0.01323,0.24899,0.01556,PCK-00-151923-5,Main,
-FV0472A - Indian Butter Chicken [DKSE],REC-013852-4-001,R,1,portions,Cauliflower rice - Cilantro and Lime Cauliflower Rice - BA,S,,120,grams,,SUB-013733-4-001,OVEN / BLAST CHILLER,,,,0.93012,1,SCOOP,white,LEVEL,,,0.26455,4.55092,0.28443,PCK-00-151923-5,2nd,
+FV0472A - Indian Butter Chicken [DKSE],REC-013852-4-001,R,1,portions,Cauliflower rice - Cilantro and Lime Cauliflower Rice - BA,S,,120,grams,,SUB-013733-4-001,OVEN / BLAST CHILLER,,,,0.77359,1,SCOOP,white,LEVEL,,,0.26455,5.47171,0.34198,PCK-00-151923-5,2nd,
 
 FV0601A - Mozzarella Burger & Roasted Potatoes [BNL],REC-013423-4-005,R,1,portions,Roasted Garlic and Parsley Roasted Potato - SH,S,,115,grams,,SUB-013390-4-001,OVEN / BLAST CHILLER,"**PLATING INSTRUCTIONS**
 
@@ -378,7 +356,7 @@ MAIN:
 
 ",,,0.77545,1,SCOOP,white,LEVEL,,,0.25353,5.23118,0.32695,PCK-00-151924-5,Main,
 FV0601A - Mozzarella Burger & Roasted Potatoes [BNL],REC-013423-4-005,R,1,portions,Mozzarella + Parsley Mix,S,,14,grams,,SUB-013419-4-001,HAND MIX,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.99961,1,SCOOP,black,NATURAL,,,0.03086,0.49403,0.03088,PCK-00-151924-5,Main,
-FV0601A - Mozzarella Burger & Roasted Potatoes [BNL],REC-013423-4-005,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.7027,,,,,,4.58562,0.2866,6.52569,0.40786,PCK-00-151924-5,Main,
+FV0601A - Mozzarella Burger & Roasted Potatoes [BNL],REC-013423-4-005,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.6701,1,HAND_PORTIONED,Hand Portioned,BY_TRAY,,4.58562,0.2866,6.84315,0.4277,PCK-00-151924-5,Main,
 FV0601A - Mozzarella Burger & Roasted Potatoes [BNL],REC-013423-4-005,R,1,portions,Mozzarella + Parsley Mix,S,,14,grams,,SUB-013419-4-001,HAND MIX,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.99961,1,SCOOP,black,NATURAL,,,0.03086,0.49403,0.03088,PCK-00-151924-5,Main,
 FV0601A - Mozzarella Burger & Roasted Potatoes [BNL],REC-013423-4-005,R,1,portions,Mixed veg - Summer Zucchini Roast,S,,85,grams,,SUB-013418-4-001,OVEN / BLAST CHILLER,"2ND: 
 85g Zucchini Roast
@@ -397,7 +375,7 @@ MAIN:
 14g mozz / parsley
 ",,,0.77545,1,SCOOP,white,LEVEL,,,0.25353,5.23118,0.32695,PCK-00-151924-5,Main,
 FV0601A - Mozzarella Burger & Roasted Potatoes [DE],REC-013423-4-003,R,1,portions,Mozzarella + Parsley Mix,S,,14,grams,,SUB-013419-4-001,HAND MIX,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.99961,1,SCOOP,black,NATURAL,,,0.03086,0.49403,0.03088,PCK-00-151924-5,Main,
-FV0601A - Mozzarella Burger & Roasted Potatoes [DE],REC-013423-4-003,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.7027,,,,,,4.58562,0.2866,6.52569,0.40786,PCK-00-151924-5,Main,
+FV0601A - Mozzarella Burger & Roasted Potatoes [DE],REC-013423-4-003,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.6701,1,HAND_PORTIONED,Hand Portioned,BY_TRAY,,4.58562,0.2866,6.84315,0.4277,PCK-00-151924-5,Main,
 FV0601A - Mozzarella Burger & Roasted Potatoes [DE],REC-013423-4-003,R,1,portions,Mozzarella + Parsley Mix,S,,14,grams,,SUB-013419-4-001,HAND MIX,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.99961,1,SCOOP,black,NATURAL,,,0.03086,0.49403,0.03088,PCK-00-151924-5,Main,
 FV0601A - Mozzarella Burger & Roasted Potatoes [DE],REC-013423-4-003,R,1,portions,Mixed veg - Summer Zucchini Roast,S,,85,grams,,SUB-013418-4-001,OVEN / BLAST CHILLER,"2ND: 
 85g Zucchini Roast",SCHWEFELDIOXIDE UND SULFITE,,0.72003,1,SCOOP,green,LEVEL,,,0.18739,4.16412,0.26026,PCK-00-151924-5,2nd,
@@ -406,91 +384,49 @@ FV0601A - Mozzarella Burger & Roasted Potatoes [DE],REC-013423-4-003,R,1,portion
 
 NET WEIGHT: 388g",SCHWEFELDIOXIDE UND SULFITE,,0.91477,1,CUP,Cup,,,,0.06614,1.15681,0.0723,PCK-00-151924-5,3rd,
 
-FV0601A - Mozzarella Burger & Roasted Potatoes [DKSE],REC-013423-4-004,R,1,portions,Roasted Garlic and Parsley Roasted Potato - SH,S,,115,grams,,SUB-013390-4-001,OVEN / BLAST CHILLER,"**PLATING INSTRUCTIONS**
+FV0713A - Cabbage in cheese sauce with minced beef [BNL],REC-013950-4-001,R,1,portions,Cabbage - Cheesy Cabbage Casserole,S,,100,grams,,SUB-013771-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
+(from the bottom to the top)
 
-MAIN: 
-115g potatoes
-14g mozz / parsley
-1 each burger
-14g mozz / parsley
+2 Compartment
 
-",,,0.77545,1,SCOOP,white,LEVEL,,,0.25353,5.23118,0.32695,PCK-00-151924-5,Main,
-FV0601A - Mozzarella Burger & Roasted Potatoes [DKSE],REC-013423-4-004,R,1,portions,Mozzarella + Parsley Mix,S,,14,grams,,SUB-013419-4-001,HAND MIX,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.99961,1,SCOOP,black,NATURAL,,,0.03086,0.49403,0.03088,PCK-00-151924-5,Main,
-FV0601A - Mozzarella Burger & Roasted Potatoes [DKSE],REC-013423-4-004,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.7027,,,,,,4.58562,0.2866,6.52569,0.40786,PCK-00-151924-5,Main,
-FV0601A - Mozzarella Burger & Roasted Potatoes [DKSE],REC-013423-4-004,R,1,portions,Mozzarella + Parsley Mix,S,,14,grams,,SUB-013419-4-001,HAND MIX,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.99961,1,SCOOP,black,NATURAL,,,0.03086,0.49403,0.03088,PCK-00-151924-5,Main,
-FV0601A - Mozzarella Burger & Roasted Potatoes [DKSE],REC-013423-4-004,R,1,portions,Mixed veg - Summer Zucchini Roast,S,,85,grams,,SUB-013418-4-001,OVEN / BLAST CHILLER,"2ND: 
-85g Zucchini Roast
-",SCHWEFELDIOXIDE UND SULFITE,,0.72003,1,SCOOP,green,LEVEL,,,0.18739,4.16412,0.26026,PCK-00-151924-5,2nd,
-FV0601A - Mozzarella Burger & Roasted Potatoes [DKSE],REC-013423-4-004,R,1,portions,Smokehouse Ketchup,S,,30,grams,,SUB-013422-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,"3RD:
-30g cupped sauce
+MAIN:
+cheesy cabbage - 100 g
+ground beef mix - 130 g
+cheese - 25 g
 
-NET WEIGHT: 388g",SCHWEFELDIOXIDE UND SULFITE,,0.91477,1,CUP,Cup,,,,0.06614,1.15681,0.0723,PCK-00-151924-5,3rd,
+",MILCH (EINSCHLIESSLICH LAKTOSE),,0.89308,1,SCOOP,beige,LEVEL,,,0.22046,3.94969,0.24686,PCK-00-151923-5,Main,
+FV0713A - Cabbage in cheese sauce with minced beef [BNL],REC-013950-4-001,R,1,portions,Tomato Ground Beef Mix,S,,130,grams,,SUB-013949-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SENF",,0.79785,1,SCOOP,grey,LEVEL,,,0.2866,5.74746,0.35922,PCK-00-151923-5,Main,
+FV0713A - Cabbage in cheese sauce with minced beef [BNL],REC-013950-4-001,R,1,portions,"FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",I,DAI-00-139135-3,25,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,1,SCOOP,yellow,LEVEL,,,0.05512,0.88185,0.05512,PCK-00-151923-5,Main,
+FV0713A - Cabbage in cheese sauce with minced beef [BNL],REC-013950-4-001,R,1,portions,Mixed veg - Garlic Chili Green Beans & Red Bell Peppers,S,,100,grams,,SUB-013731-4-001,OVEN / BLAST CHILLER,"SIDE:
+green bean/pepper mix - 100 g
 
-FV0612A - Dijon Ground Beef & Mushroom Skillet [BNL],REC-014010-4-005,R,1,portions,Roasted Potatoes,S,,110,grams,,SUB-013668-4-001,OVEN / BLAST CHILLER,"***PLATING
-INSTRUCTIONS***
-(From the bottom to the top)
+NET WEIGHT:  355 g",,,0.79503,"1
+1","SCOOP
+SCOOP","blue
+grey","LEVEL
+LEVEL",,,0.22046,4.43684,0.2773,PCK-00-151923-5,2nd,
 
-1 Compartment
+FV0713A - Cabbage in cheese sauce with minced beef [DE],REC-013950-4-002,R,1,portions,Cabbage - Cheesy Cabbage Casserole,S,,100,grams,,SUB-013771-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
+(from the bottom to the top)
 
-MAIN COMPARTMENT
-110g roasted potatoes
-80g roasted mushrooms, 
-50g Roasted Red Onion
-85g mushroom beef
-55g Emmentaler fondue
-5g scallions
+2 Compartment
 
+MAIN:
+cheesy cabbage - 100 g
+ground beef mix - 130 g
+cheese - 25 g
 
-Net Weight: 385g",,,0.76352,1,SCOOP,white,NATURAL,,,0.24251,5.08189,0.31762,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [BNL],REC-014010-4-005,R,1,portions,Dry Roasted Mushrooms (thick),S,,80,grams,,SUB-014006-4-001,OVEN / BLAST CHILLER,,,,0.67871,1,SCOOP,beige,LEVEL,,,0.17637,4.15778,0.25986,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [BNL],REC-014010-4-005,R,1,portions,Roasted Red Onion,S,,50,grams,,SUB-014007-4-001,OVEN / BLAST CHILLER,,,,0.79908,1,SCOOP,red,LEVEL,,,0.11023,2.20717,0.13795,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [BNL],REC-014010-4-005,R,1,portions,Mushroom Swiss Beef (medium salt),S,,85,grams,,SUB-014302-4-001,BRAISER / BLAST CHILLER,,SENF,,0.95046,1,SCOOP,green,LEVEL,,,0.18739,3.15458,0.19716,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [BNL],REC-014010-4-005,R,1,portions,Sauce - Emmentaler Fondue,S,,55,grams,,SUB-013671-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.9204,1,SCOOP,yellow,LEVEL,,,0.12125,2.10786,0.13174,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [BNL],REC-014010-4-005,R,1,portions,Oven Roasted Scallions,S,,5,grams,,SUB-014172-4-001,OVEN / BLAST CHILLER,,,,0.55037,1,SCOOP,silver #60,LEVEL,,,0.01102,0.32046,0.02003,PCK-00-151922-5,Main,
+",MILCH (EINSCHLIESSLICH LAKTOSE),,0.89308,1,SCOOP,beige,LEVEL,,,0.22046,3.94969,0.24686,PCK-00-151923-5,Main,
+FV0713A - Cabbage in cheese sauce with minced beef [DE],REC-013950-4-002,R,1,portions,Tomato Ground Beef Mix,S,,130,grams,,SUB-013949-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SENF",,0.79785,1,SCOOP,grey,LEVEL,,,0.2866,5.74746,0.35922,PCK-00-151923-5,Main,
+FV0713A - Cabbage in cheese sauce with minced beef [DE],REC-013950-4-002,R,1,portions,"FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",I,DAI-00-139135-3,25,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,1,SCOOP,yellow,LEVEL,,,0.05512,0.88185,0.05512,PCK-00-151923-5,Main,
+FV0713A - Cabbage in cheese sauce with minced beef [DE],REC-013950-4-002,R,1,portions,Mixed veg - Garlic Chili Green Beans & Red Bell Peppers,S,,100,grams,,SUB-013731-4-001,OVEN / BLAST CHILLER,"SIDE:
+green bean/pepper mix - 100 g
 
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DE],REC-014010-4-002,R,1,portions,Roasted Potatoes,S,,110,grams,,SUB-013668-4-001,OVEN / BLAST CHILLER,"***PLATING
-INSTRUCTIONS***
-(From the bottom to the top)
-
-1 Compartment
-
-MAIN COMPARTMENT
-110g roasted potatoes
-80g roasted mushrooms, 
-50g Roasted Red Onion
-85g mushroom beef
-55g Emmentaler fondue
-5g scallions
-
-
-Net Weight: 385g",,,0.76352,1,SCOOP,white,NATURAL,,,0.24251,5.08189,0.31762,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DE],REC-014010-4-002,R,1,portions,Dry Roasted Mushrooms (thick),S,,80,grams,,SUB-014006-4-001,OVEN / BLAST CHILLER,,,,0.67871,1,SCOOP,beige,LEVEL,,,0.17637,4.15778,0.25986,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DE],REC-014010-4-002,R,1,portions,Roasted Red Onion,S,,50,grams,,SUB-014007-4-001,OVEN / BLAST CHILLER,,,,0.79908,1,SCOOP,red,LEVEL,,,0.11023,2.20717,0.13795,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DE],REC-014010-4-002,R,1,portions,Mushroom Swiss Beef (medium salt),S,,85,grams,,SUB-014302-4-001,BRAISER / BLAST CHILLER,,SENF,,0.95046,1,SCOOP,green,LEVEL,,,0.18739,3.15458,0.19716,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DE],REC-014010-4-002,R,1,portions,Sauce - Emmentaler Fondue,S,,55,grams,,SUB-013671-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.9204,1,SCOOP,yellow,LEVEL,,,0.12125,2.10786,0.13174,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DE],REC-014010-4-002,R,1,portions,Oven Roasted Scallions,S,,5,grams,,SUB-014172-4-001,OVEN / BLAST CHILLER,,,,0.55037,1,SCOOP,silver #60,LEVEL,,,0.01102,0.32046,0.02003,PCK-00-151922-5,Main,
-
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DKSE],REC-014010-4-004,R,1,portions,Roasted Potatoes,S,,110,grams,,SUB-013668-4-001,OVEN / BLAST CHILLER,"***PLATING
-INSTRUCTIONS***
-(From the bottom to the top)
-
-1 Compartment
-
-MAIN COMPARTMENT
-110g roasted potatoes
-80g roasted mushrooms, 
-50g Roasted Red Onion
-85g mushroom beef
-55g Emmentaler fondue
-5g scallions
-
-
-Net Weight: 385g",,,0.76352,1,SCOOP,white,NATURAL,,,0.24251,5.08189,0.31762,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DKSE],REC-014010-4-004,R,1,portions,Dry Roasted Mushrooms (thick),S,,80,grams,,SUB-014006-4-001,OVEN / BLAST CHILLER,,,,0.67871,1,SCOOP,beige,LEVEL,,,0.17637,4.15778,0.25986,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DKSE],REC-014010-4-004,R,1,portions,Roasted Red Onion,S,,50,grams,,SUB-014007-4-001,OVEN / BLAST CHILLER,,,,0.79908,1,SCOOP,red,LEVEL,,,0.11023,2.20717,0.13795,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DKSE],REC-014010-4-004,R,1,portions,Mushroom Swiss Beef (medium salt),S,,85,grams,,SUB-014302-4-001,BRAISER / BLAST CHILLER,,SENF,,0.95046,1,SCOOP,green,LEVEL,,,0.18739,3.15458,0.19716,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DKSE],REC-014010-4-004,R,1,portions,Sauce - Emmentaler Fondue,S,,55,grams,,SUB-013671-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.9204,1,SCOOP,yellow,LEVEL,,,0.12125,2.10786,0.13174,PCK-00-151922-5,Main,
-FV0612A - Dijon Ground Beef & Mushroom Skillet [DKSE],REC-014010-4-004,R,1,portions,Oven Roasted Scallions,S,,5,grams,,SUB-014172-4-001,OVEN / BLAST CHILLER,,,,0.55037,1,SCOOP,silver #60,LEVEL,,,0.01102,0.32046,0.02003,PCK-00-151922-5,Main,
+NET WEIGHT:  355 g",,,0.79503,"1
+1","SCOOP
+SCOOP","blue
+grey","LEVEL
+LEVEL",,,0.22046,4.43684,0.2773,PCK-00-151923-5,2nd,
 
 FV0713A - Cabbage in cheese sauce with minced beef [DKSE],REC-013950-4-003,R,1,portions,Cabbage - Cheesy Cabbage Casserole,S,,100,grams,,SUB-013771-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (from the bottom to the top)
@@ -596,8 +532,8 @@ MAIN COMPARTMENT
 1 ea = master burger
 5g  = green onion
 
-","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SELLERIE, SENF",,0.91947,1,SCOOP,beige,LEVEL,,,0.22046,3.83632,0.23977,PCK-00-151923-5,Main,
-FV0846A - Stroganoff-Style Beef Burger [BNL],REC-029854-4-003,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.7027,1,HAND_PORTIONED,Hand Portioned,,,4.58562,0.2866,6.52569,0.40786,PCK-00-151923-5,Main,
+","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SELLERIE, SENF",,0.91055,1,SCOOP,beige,LEVEL,,,0.22046,3.87394,0.24212,PCK-00-151923-5,Main,
+FV0846A - Stroganoff-Style Beef Burger [BNL],REC-029854-4-003,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.6701,1,HAND_PORTIONED,Hand Portioned,,,4.58562,0.2866,6.84315,0.4277,PCK-00-151923-5,Main,
 FV0846A - Stroganoff-Style Beef Burger [BNL],REC-029854-4-003,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,silver #110,LEVEL,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
 FV0846A - Stroganoff-Style Beef Burger [BNL],REC-029854-4-003,R,1,portions,Green Beans CUT 1-1/2 - Fresh - Less Salt,S,,50,grams,,SUB-029004-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
 50g = green beans
@@ -618,8 +554,8 @@ MAIN COMPARTMENT
 1 ea = master burger
 5g  = green onion
 
-","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SELLERIE, SENF",,0.91947,1,SCOOP,beige,LEVEL,,,0.22046,3.83632,0.23977,PCK-00-151923-5,Main,
-FV0846A - Stroganoff-Style Beef Burger [DE],REC-029854-4-001,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.7027,1,HAND_PORTIONED,Hand Portioned,,,4.58562,0.2866,6.52569,0.40786,PCK-00-151923-5,Main,
+","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SELLERIE, SENF",,0.91055,1,SCOOP,beige,LEVEL,,,0.22046,3.87394,0.24212,PCK-00-151923-5,Main,
+FV0846A - Stroganoff-Style Beef Burger [DE],REC-029854-4-001,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.6701,1,HAND_PORTIONED,Hand Portioned,,,4.58562,0.2866,6.84315,0.4277,PCK-00-151923-5,Main,
 FV0846A - Stroganoff-Style Beef Burger [DE],REC-029854-4-001,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,silver #110,LEVEL,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
 FV0846A - Stroganoff-Style Beef Burger [DE],REC-029854-4-001,R,1,portions,Green Beans CUT 1-1/2 - Fresh - Less Salt,S,,50,grams,,SUB-029004-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
 50g = green beans
@@ -640,8 +576,8 @@ MAIN COMPARTMENT
 1 ea = master burger
 5g  = green onion
 
-","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SELLERIE, SENF",,0.91947,1,SCOOP,beige,LEVEL,,,0.22046,3.83632,0.23977,PCK-00-151923-5,Main,
-FV0846A - Stroganoff-Style Beef Burger [DKSE],REC-029854-4-002,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.7027,1,HAND_PORTIONED,Hand Portioned,,,4.58562,0.2866,6.52569,0.40786,PCK-00-151923-5,Main,
+","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SELLERIE, SENF",,0.91055,1,SCOOP,beige,LEVEL,,,0.22046,3.87394,0.24212,PCK-00-151923-5,Main,
+FV0846A - Stroganoff-Style Beef Burger [DKSE],REC-029854-4-002,R,1,portions,Beef Burger Master EU,S,,1,each,,SUB-031776-4-001,HORIZONTAL MIXER / PATTY MAKER / OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.6701,1,HAND_PORTIONED,Hand Portioned,,,4.58562,0.2866,6.84315,0.4277,PCK-00-151923-5,Main,
 FV0846A - Stroganoff-Style Beef Burger [DKSE],REC-029854-4-002,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,silver #110,LEVEL,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
 FV0846A - Stroganoff-Style Beef Burger [DKSE],REC-029854-4-002,R,1,portions,Green Beans CUT 1-1/2 - Fresh - Less Salt,S,,50,grams,,SUB-029004-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
 50g = green beans
@@ -651,66 +587,6 @@ FV0846A - Stroganoff-Style Beef Burger [DKSE],REC-029854-4-002,R,1,portions,Gree
 Net Weight- 345 g",,,0.73433,1,SCOOP,green,NATURAL,,,0.11023,2.40178,0.15011,PCK-00-151923-5,2nd,
 FV0846A - Stroganoff-Style Beef Burger [DKSE],REC-029854-4-002,R,1,portions,Loaded Roasted Sliced Mushrooms 1/2 green onion,S,,50,grams,,SUB-029969-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.59865,1,SCOOP,yellow,LEVEL,,,0.11023,2.94614,0.18413,PCK-00-151923-5,2nd,
 FV0846A - Stroganoff-Style Beef Burger [DKSE],REC-029854-4-002,R,1,portions,Herb-Parmesan Butter,S,,12,grams,,SUB-029972-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.92063,1,SCOOP,silver #60,LEVEL,,,0.02646,0.45978,0.02874,PCK-00-151923-5,2nd,
-
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [BNL],REC-014186-4-004,R,1,portions,S&P Roasted Green Beans 1,S,,50,grams,,SUB-014184-4-001,OVEN / BLAST CHILLER,"**PLATING INSTRUCTIONS**
-
-1 : (from bottom to top)
-50g Roasted Green Beans
-35g Caramelized Onions
-1 ea Chicken Breast
-55g Swiss Cheese Sauce
-5g Green Onions
-
-
-Net Weight : 370g",,,0.74605,1,SCOOP,beige,NATURAL,,,0.11023,2.36404,0.14775,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [BNL],REC-014186-4-004,R,1,portions,Keto French Onion Burger Onions - More Salt - no wine,S,,35,grams,,SUB-014181-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.81546,1,SCOOP,black,LEVEL,,,0.07716,1.51397,0.09462,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [BNL],REC-014186-4-004,R,1,portions,Chicken breast - Herb Grilled Chicken Breast,S,,1,each,,SUB-013545-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,,,,0.72185,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.86395,0.3665,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [BNL],REC-014186-4-004,R,1,portions,Emmental Cheese Sauce - More Salt/Fat,S,,55,grams,,SUB-014183-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.8771,1,SCOOP,yellow,LEVEL,,,0.12125,2.2119,0.13824,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [BNL],REC-014186-4-004,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,silver #110,LEVEL,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [BNL],REC-014186-4-004,R,1,portions,"Thyme Roasted Mushrooms (less pepper, more salt)",S,,90,grams,,SUB-014182-4-001,OVEN / BLAST CHILLER,"2 :
-90g Roasted Mushrooms
-15g Garlic Herb Butter",,,0.71543,1,SCOOP,grey,LEVEL,,,0.19842,4.43743,0.27734,PCK-00-151923-5,2nd,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [BNL],REC-014186-4-004,R,1,portions,Garlic Herb Butter,S,,15,grams,,SUB-014185-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.98685,1,SCOOP,silver #60,LEVEL,,,0.03307,0.53616,0.03351,PCK-00-151923-5,2nd,
-
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DE],REC-014186-4-002,R,1,portions,S&P Roasted Green Beans 1,S,,50,grams,,SUB-014184-4-001,OVEN / BLAST CHILLER,"**PLATING INSTRUCTIONS**
-
-1 : (from bottom to top)
-50g Roasted Green Beans
-35g Caramelized Onions
-1 ea Chicken Breast
-55g Swiss Cheese Sauce
-5g Green Onions
-
-
-Net Weight : 370g",,,0.74605,1,SCOOP,beige,NATURAL,,,0.11023,2.36404,0.14775,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DE],REC-014186-4-002,R,1,portions,Keto French Onion Burger Onions - More Salt - no wine,S,,35,grams,,SUB-014181-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.81546,1,SCOOP,black,LEVEL,,,0.07716,1.51397,0.09462,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DE],REC-014186-4-002,R,1,portions,Chicken breast - Herb Grilled Chicken Breast,S,,1,each,,SUB-013545-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,,,,0.72185,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.86395,0.3665,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DE],REC-014186-4-002,R,1,portions,Emmental Cheese Sauce - More Salt/Fat,S,,55,grams,,SUB-014183-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.8771,1,SCOOP,yellow,LEVEL,,,0.12125,2.2119,0.13824,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DE],REC-014186-4-002,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,silver #110,LEVEL,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DE],REC-014186-4-002,R,1,portions,"Thyme Roasted Mushrooms (less pepper, more salt)",S,,90,grams,,SUB-014182-4-001,OVEN / BLAST CHILLER,"2 :
-90g Roasted Mushrooms
-15g Garlic Herb Butter",,,0.71543,1,SCOOP,grey,LEVEL,,,0.19842,4.43743,0.27734,PCK-00-151923-5,2nd,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DE],REC-014186-4-002,R,1,portions,Garlic Herb Butter,S,,15,grams,,SUB-014185-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.98685,1,SCOOP,silver #60,LEVEL,,,0.03307,0.53616,0.03351,PCK-00-151923-5,2nd,
-
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DKSE],REC-014186-4-003,R,1,portions,S&P Roasted Green Beans 1,S,,50,grams,,SUB-014184-4-001,OVEN / BLAST CHILLER,"**PLATING INSTRUCTIONS**
-
-1 : (from bottom to top)
-50g Roasted Green Beans
-35g Caramelized Onions
-1 ea Chicken Breast
-55g Swiss Cheese Sauce
-5g Green Onions
-
-
-Net Weight : 370g",,,0.74605,1,SCOOP,beige,NATURAL,,,0.11023,2.36404,0.14775,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DKSE],REC-014186-4-003,R,1,portions,Keto French Onion Burger Onions - More Salt - no wine,S,,35,grams,,SUB-014181-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.81546,1,SCOOP,black,LEVEL,,,0.07716,1.51397,0.09462,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DKSE],REC-014186-4-003,R,1,portions,Chicken breast - Herb Grilled Chicken Breast,S,,1,each,,SUB-013545-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,,,,0.72185,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.86395,0.3665,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DKSE],REC-014186-4-003,R,1,portions,Emmental Cheese Sauce - More Salt/Fat,S,,55,grams,,SUB-014183-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.8771,1,SCOOP,yellow,LEVEL,,,0.12125,2.2119,0.13824,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DKSE],REC-014186-4-003,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,silver #110,LEVEL,,,0.01102,0.20749,0.01297,PCK-00-151923-5,Main,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DKSE],REC-014186-4-003,R,1,portions,"Thyme Roasted Mushrooms (less pepper, more salt)",S,,90,grams,,SUB-014182-4-001,OVEN / BLAST CHILLER,"2 :
-90g Roasted Mushrooms
-15g Garlic Herb Butter",,,0.71543,1,SCOOP,grey,LEVEL,,,0.19842,4.43743,0.27734,PCK-00-151923-5,2nd,
-FV0970A - Caramelized Onion & Emmental Fondue Chicken [DKSE],REC-014186-4-003,R,1,portions,Garlic Herb Butter,S,,15,grams,,SUB-014185-4-001,PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.98685,1,SCOOP,silver #60,LEVEL,,,0.03307,0.53616,0.03351,PCK-00-151923-5,2nd,
 
 FV0972A - Salmon Piccata [BNL],REC-013607-4-003,R,1,portions,Parmesan Cauliflower Mash - Rice - HTD - Batch,S,,100,grams,,SUB-013598-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,". PLATING INSTRUCTIONS:
 **2 COMPARTMENT BENTO**
@@ -776,125 +652,38 @@ FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [BNL],REC-030395-4-003,R,1,p
 
 Net Weight: 345 g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.98002,1,CUP,Cup,,,,0.07716,1.25976,0.07873,PCK-00-151924-5,3rd,
 
-FV1145A - Roasted Salmon & Dill Yogurt [BNL],REC-029971-4-003,R,1,portions,Italian Roasted Diced Potatoes,S,,100,grams,,SUB-029885-4-001,OVEN / BLAST CHILLER,"**PLATING INSTRUCTIONS**
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DE],REC-030395-4-002,R,1,portions,Spice Roasted Potatoes 10mm Diced-Less Pepper,S,,80,grams,,SUB-030305-4-001,UNCATEGORIZED BOM,"***Plating Instructions***
 
-3 COMPARTMENT
-1 : (from bottom to top)
+3 Compartment
+from bottom to the top
 
-MAIN:
-100g Potatoes
-30g Spanish onion
-115g Salmon (1 ea)
-30g Red Peppers",,,0.70371,1,SCOOP,white,LEVEL,,,0.22046,5.0126,0.31329,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [BNL],REC-029971-4-003,R,1,portions,Cooked 10mm diced Spanish Onions,S,,30,grams,,SUB-029899-4-001,OVEN / BLAST CHILLER,,,,0.7566,1,SCOOP,black,LEVEL,,,0.06614,1.39864,0.08742,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [BNL],REC-029971-4-003,R,1,portions,Moroccan Salmon Batch,S,,1,each,,SUB-029902-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,"FISCH, MILCH (EINSCHLIESSLICH LAKTOSE)",,0.79893,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.29815,0.33113,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [BNL],REC-029971-4-003,R,1,portions,Roasted Red Peppers - Diced (half pepper),S,,30,grams,,SUB-029906-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.74645,1,SCOOP,black,LEVEL,,,0.06614,1.41766,0.0886,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [BNL],REC-029971-4-003,R,1,portions,Green Beans CUT 1-1/2 - Fresh,S,,60,grams,,SUB-013484-4-001,OVEN / BLAST CHILLER,"2nd:
-60g Green Beans",,,0.73433,,,,,,,0.13228,2.88214,0.18013,PCK-00-151924-5,2nd,
-FV1145A - Roasted Salmon & Dill Yogurt [BNL],REC-029971-4-003,R,1,portions,Lemon Dill Yogurt,S,,35,grams,,SUB-029910-4-001,IMMERSION BLENDER / CUPPING,"3rd :
-35g Lemon Dill Yogurt (CUPPED)
+1:
+80 g potatoes
+100 g chicken
+60 g sauce 
+",,,0.7217,1,SCOOP,grey,NATURAL,,,0.17637,3.91009,0.24438,PCK-00-151924-5,Main,
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DE],REC-030395-4-002,R,1,portions,Moroccan  Chicken Thighs,S,,100,grams,,SUB-030396-4-001,UNCATEGORIZED BOM,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.71495,1,SCOOP,grey,NATURAL,,,0.22046,4.93375,0.30836,PCK-00-151924-5,Main,
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DE],REC-030395-4-002,R,1,portions,Moroccan  cherry tomato sauce,S,,60,grams,,SUB-030308-4-001,UNCATEGORIZED BOM,,SCHWEFELDIOXIDE UND SULFITE,,0.88001,1,SCOOP,yellow,LEVEL,,,0.13228,2.40501,0.15031,PCK-00-151924-5,Main,
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DE],REC-030395-4-002,R,1,portions,Lebanese Green Beans Batch,S,,70,grams,,SUB-030311-4-001,UNCATEGORIZED BOM,70 g green beans,SCHWEFELDIOXIDE UND SULFITE,,0.88479,1,SCOOP,grey,NATURAL,,,0.15432,2.79071,0.17442,PCK-00-151924-5,2nd,
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DE],REC-030395-4-002,R,1,portions,Cumin Coriander Yogurt - CUPPED,S,,35,grams,,SUB-030550-4-001,IMMERSION BLENDER / CUPPING,"35 g yogurt (cupped)
 
-Net Weight : 370g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.98005,1,CUP,Cup,,,,0.07716,1.25972,0.07873,PCK-00-151924-5,3rd,
+Net Weight: 340 g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.98002,1,CUP,Cup,,,,0.07716,1.25976,0.07873,PCK-00-151924-5,3rd,
 
-FV1145A - Roasted Salmon & Dill Yogurt [DE],REC-029971-4-002,R,1,portions,Italian Roasted Diced Potatoes,S,,100,grams,,SUB-029885-4-001,OVEN / BLAST CHILLER,"**PLATING INSTRUCTIONS**
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DKSE],REC-030395-4-001,R,1,portions,Spice Roasted Potatoes 10mm Diced-Less Pepper,S,,80,grams,,SUB-030305-4-001,UNCATEGORIZED BOM,"***Plating Instructions***
 
-3 COMPARTMENT
-1 : (from bottom to top)
+3 Compartment
 
-MAIN:
-100g Potatoes
-30g Spanish onion
-115g Salmon (1 ea)
-30g Red Peppers",,,0.70371,1,SCOOP,white,LEVEL,,,0.22046,5.0126,0.31329,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [DE],REC-029971-4-002,R,1,portions,Cooked 10mm diced Spanish Onions,S,,30,grams,,SUB-029899-4-001,OVEN / BLAST CHILLER,,,,0.7566,1,SCOOP,black,LEVEL,,,0.06614,1.39864,0.08742,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [DE],REC-029971-4-002,R,1,portions,Moroccan Salmon Batch,S,,1,each,,SUB-029902-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,"FISCH, MILCH (EINSCHLIESSLICH LAKTOSE)",,0.79893,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.29815,0.33113,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [DE],REC-029971-4-002,R,1,portions,Roasted Red Peppers - Diced (half pepper),S,,30,grams,,SUB-029906-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.74645,1,SCOOP,black,LEVEL,,,0.06614,1.41766,0.0886,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [DE],REC-029971-4-002,R,1,portions,Green Beans CUT 1-1/2 - Fresh - very little salt,S,,60,grams,,SUB-014171-4-001,OVEN / BLAST CHILLER,"2nd:
-60g Green Beans",,,0.73551,1,SCOOP,beige,LEVEL,,,0.13228,2.8775,0.17984,PCK-00-151924-5,2nd,
-FV1145A - Roasted Salmon & Dill Yogurt [DE],REC-029971-4-002,R,1,portions,Lemon Dill Yogurt,S,,35,grams,,SUB-029910-4-001,IMMERSION BLENDER / CUPPING,"3rd :
-35g Lemon Dill Yogurt (CUPPED)
+1:
+80 g potatoes
+100 g chicken
+60 g sauce 
+",,,0.7217,1,SCOOP,grey,NATURAL,,,0.17637,3.91009,0.24438,PCK-00-151924-5,Main,
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DKSE],REC-030395-4-001,R,1,portions,Moroccan  Chicken Thighs,S,,100,grams,,SUB-030396-4-001,UNCATEGORIZED BOM,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.71495,1,SCOOP,grey,NATURAL,,,0.22046,4.93375,0.30836,PCK-00-151924-5,Main,
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DKSE],REC-030395-4-001,R,1,portions,Moroccan  cherry tomato sauce,S,,60,grams,,SUB-030308-4-001,UNCATEGORIZED BOM,,SCHWEFELDIOXIDE UND SULFITE,,0.88001,1,SCOOP,yellow,LEVEL,,,0.13228,2.40501,0.15031,PCK-00-151924-5,Main,
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DKSE],REC-030395-4-001,R,1,portions,Lebanese Green Beans Batch,S,,70,grams,,SUB-030311-4-001,UNCATEGORIZED BOM,70 g green beans,SCHWEFELDIOXIDE UND SULFITE,,0.88479,1,SCOOP,grey,NATURAL,,,0.15432,2.79071,0.17442,PCK-00-151924-5,2nd,
+FV1068A - Moroccan Chicken Thighs & Spiced Potatoes [DKSE],REC-030395-4-001,R,1,portions,Cumin Coriander Yogurt - CUPPED,S,,35,grams,,SUB-030550-4-001,IMMERSION BLENDER / CUPPING,"35 g yogurt (cupped)
 
-Net Weight : 370g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.98005,1,CUP,Cup,,,,0.07716,1.25972,0.07873,PCK-00-151924-5,3rd,
-
-FV1145A - Roasted Salmon & Dill Yogurt [DKSE],REC-029971-4-001,R,1,portions,Italian Roasted Diced Potatoes,S,,100,grams,,SUB-029885-4-001,OVEN / BLAST CHILLER,"**PLATING INSTRUCTIONS**
-
-3 COMPARTMENT
-1 : (from bottom to top)
-
-MAIN:
-100g Potatoes
-30g Spanish onion
-115g Salmon (1 ea)
-30g Red Peppers",,,0.70371,1,SCOOP,white,LEVEL,,,0.22046,5.0126,0.31329,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [DKSE],REC-029971-4-001,R,1,portions,Cooked 10mm diced Spanish Onions,S,,30,grams,,SUB-029899-4-001,OVEN / BLAST CHILLER,,,,0.7566,1,SCOOP,black,LEVEL,,,0.06614,1.39864,0.08742,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [DKSE],REC-029971-4-001,R,1,portions,Moroccan Salmon Batch,S,,1,each,,SUB-029902-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,"FISCH, MILCH (EINSCHLIESSLICH LAKTOSE)",,0.79893,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.29815,0.33113,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [DKSE],REC-029971-4-001,R,1,portions,Roasted Red Peppers - Diced (half pepper),S,,30,grams,,SUB-029906-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.74645,1,SCOOP,black,LEVEL,,,0.06614,1.41766,0.0886,PCK-00-151924-5,Main,
-FV1145A - Roasted Salmon & Dill Yogurt [DKSE],REC-029971-4-001,R,1,portions,Green Beans CUT 1-1/2 - Fresh - very little salt,S,,60,grams,,SUB-014171-4-001,OVEN / BLAST CHILLER,"2nd:
-60g Green Beans",,,0.73551,1,SCOOP,beige,LEVEL,,,0.13228,2.8775,0.17984,PCK-00-151924-5,2nd,
-FV1145A - Roasted Salmon & Dill Yogurt [DKSE],REC-029971-4-001,R,1,portions,Lemon Dill Yogurt,S,,35,grams,,SUB-029910-4-001,IMMERSION BLENDER / CUPPING,"3rd :
-35g Lemon Dill Yogurt (CUPPED)
-
-Net Weight : 370g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.98005,1,CUP,Cup,,,,0.07716,1.25972,0.07873,PCK-00-151924-5,3rd,
-
-FV1320A - Aji Verde Salmon [BNL],REC-029892-4-003,R,1,portions,Tomato & Bell Pepper Quinoa Batch 2,S,,120,grams,,SUB-029879-4-001,HAND MIX / BLAST CHILLER,"PRODUCTION PLATING
-(from the bottom to the top)
-
-3 Compartment 
-
-MAIN:
-120g quinoa
-1 ea salmon (115 g)
-45g pepper mix
-
-",,,0.85411,1,SCOOP,grey,LEVEL,,,0.26455,4.95591,0.30974,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [BNL],REC-029892-4-003,R,1,portions,Scallion Marinated Salmon,S,,1,each,,SUB-029881-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.76708,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,5.28828,0.33052,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [BNL],REC-029892-4-003,R,1,portions,Cumin Roasted Diced Red & Green Bell Peppers - 10mm,S,,45,grams,,SUB-029888-4-001,OVEN / BLAST CHILLER,,,,0.73737,1,SCOOP,red,LEVEL,,,0.09921,2.1527,0.13454,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [BNL],REC-029892-4-003,R,1,portions,Roasted Zucchini & Corn - Less Corn,S,,85,grams,,SUB-029887-4-001,OVEN / BLAST CHILLER,"SIDE. 1:
-85g zucchini/corn
-30g aji verde sauce (cup)
-
-Net Weight: 395g",SCHWEFELDIOXIDE UND SULFITE,,0.75058,1,SCOOP,green,LEVEL,,,0.18739,3.99463,0.24966,PCK-00-151924-5,2nd,
-FV1320A - Aji Verde Salmon [BNL],REC-029892-4-003,R,1,portions,Aji Verde Sauce 3 (CUPPED) NO MAYO,S,,30,grams,,SUB-029904-4-001,IMMERSION BLENDER / CUPPING,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.92944,1,CUP,Cup,,,,0.06614,1.13855,0.07116,PCK-00-151924-5,2nd,
-
-FV1320A - Aji Verde Salmon [DE],REC-029892-4-001,R,1,portions,Tomato & Bell Pepper Quinoa Batch 2,S,,120,grams,,SUB-029879-4-001,HAND MIX / BLAST CHILLER,"PRODUCTION PLATING
-(from the bottom to the top)
-
-3 Compartment 
-
-MAIN:
-120g quinoa
-1 ea salmon (115 g)
-45g pepper mix
-
-",,,0.85411,1,SCOOP,grey,LEVEL,,,0.26455,4.95591,0.30974,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [DE],REC-029892-4-001,R,1,portions,Scallion Marinated Salmon,S,,1,each,,SUB-029881-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.76708,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,5.28828,0.33052,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [DE],REC-029892-4-001,R,1,portions,Cumin Roasted Diced Red & Green Bell Peppers - 10mm,S,,45,grams,,SUB-029888-4-001,OVEN / BLAST CHILLER,,,,0.73737,1,SCOOP,red,LEVEL,,,0.09921,2.1527,0.13454,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [DE],REC-029892-4-001,R,1,portions,Roasted Zucchini & Corn - Less Corn,S,,85,grams,,SUB-029887-4-001,OVEN / BLAST CHILLER,"SIDE. 1:
-85g zucchini/corn
-30g aji verde sauce (cup)
-
-Net Weight: 395g",SCHWEFELDIOXIDE UND SULFITE,,0.75058,1,SCOOP,green,LEVEL,,,0.18739,3.99463,0.24966,PCK-00-151924-5,2nd,
-FV1320A - Aji Verde Salmon [DE],REC-029892-4-001,R,1,portions,Aji Verde Sauce 3 (CUPPED) NO MAYO,S,,30,grams,,SUB-029904-4-001,IMMERSION BLENDER / CUPPING,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.92944,1,CUP,Cup,,,,0.06614,1.13855,0.07116,PCK-00-151924-5,2nd,
-
-FV1320A - Aji Verde Salmon [DKSE],REC-029892-4-002,R,1,portions,Tomato & Bell Pepper Quinoa Batch 2,S,,120,grams,,SUB-029879-4-001,HAND MIX / BLAST CHILLER,"PRODUCTION PLATING
-(from the bottom to the top)
-
-3 Compartment 
-
-MAIN:
-120g quinoa
-1 ea salmon (115 g)
-45g pepper mix
-
-",,,0.85411,1,SCOOP,grey,LEVEL,,,0.26455,4.95591,0.30974,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [DKSE],REC-029892-4-002,R,1,portions,Scallion Marinated Salmon,S,,1,each,,SUB-029881-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.76708,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,5.28828,0.33052,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [DKSE],REC-029892-4-002,R,1,portions,Cumin Roasted Diced Red & Green Bell Peppers - 10mm,S,,45,grams,,SUB-029888-4-001,OVEN / BLAST CHILLER,,,,0.73737,1,SCOOP,red,LEVEL,,,0.09921,2.1527,0.13454,PCK-00-151924-5,Main,
-FV1320A - Aji Verde Salmon [DKSE],REC-029892-4-002,R,1,portions,Roasted Zucchini & Corn - Less Corn,S,,85,grams,,SUB-029887-4-001,OVEN / BLAST CHILLER,"SIDE. 1:
-85g zucchini/corn
-30g aji verde sauce (cup)
-
-Net Weight: 395g",SCHWEFELDIOXIDE UND SULFITE,,0.75058,1,SCOOP,green,LEVEL,,,0.18739,3.99463,0.24966,PCK-00-151924-5,2nd,
-FV1320A - Aji Verde Salmon [DKSE],REC-029892-4-002,R,1,portions,Aji Verde Sauce 3 (CUPPED) NO MAYO,S,,30,grams,,SUB-029904-4-001,IMMERSION BLENDER / CUPPING,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.92944,1,CUP,Cup,,,,0.06614,1.13855,0.07116,PCK-00-151924-5,2nd,
+Net Weight: 345 g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.98002,1,CUP,Cup,,,,0.07716,1.25976,0.07873,PCK-00-151924-5,3rd,
 
 FV1346A - Parmesan & Garlic Cream Shredded Beef [DE],REC-015144-4-003,R,1,portions,Rosemary and Thyme Roasted Potato Wedges,S,,90,grams,,SUB-015143-4-001,OVEN / BLAST CHILLER,"Main compartment:
 1st layer:
@@ -944,7 +733,7 @@ FV1439A - Tzatziki Salmon & Lemon Rice [DE],REC-029425-4-001,R,1,portions,Greek 
 MAIN COMPARTMENT
 105g = rice to the other side of the bento
 1 ea = salmon to one side of the main bento","SCHWEFELDIOXIDE UND SULFITE, SELLERIE",,0.80675,1,SCOOP,grey,LEVEL,,,0.23149,4.59098,0.28694,PCK-00-151923-5,Main,
-FV1439A - Tzatziki Salmon & Lemon Rice [DE],REC-029425-4-001,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
+FV1439A - Tzatziki Salmon & Lemon Rice [DE],REC-029425-4-001,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,1,HAND_PORTIONED,Hand Portioned,BY_TRAY,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
 FV1439A - Tzatziki Salmon & Lemon Rice [DE],REC-029425-4-001,R,1,portions,Garlic and Chive Roasted Cauliflower Florets,S,,70,grams,,SUB-029387-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
 70g = cauliflower
 35g = zucchini
@@ -954,23 +743,25 @@ FV1439A - Tzatziki Salmon & Lemon Rice [DE],REC-029425-4-001,R,1,portions,"Roast
 FV1439A - Tzatziki Salmon & Lemon Rice [DE],REC-029425-4-001,R,1,portions,Roasted Balsamic Pearl Onions- Half Balsamic,S,,25,grams,,SUB-029392-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.50063,1,SCOOP,purple,LEVEL,,,0.05512,1.76147,0.11009,PCK-00-151923-5,2nd,
 FV1439A - Tzatziki Salmon & Lemon Rice [DE],REC-029425-4-001,R,1,portions,GBB Tzatziki,S,,35,grams,,SUB-029389-4-001,IMMERSION BLENDER / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.9547,1,CUP,Cup,,,,0.07716,1.29317,0.08082,PCK-00-151923-5,2nd,
 
-FV1439A - Tzatziki Salmon & Lemon Rice [DKSE],REC-029425-4-002,R,1,portions,Greek Lemon Rice w/ inclusions,S,,105,grams,,SUB-029398-4-001,HAND MIX / BLAST CHILLER,"***PLATING INSTRUCTIONS***
+FV1646A Lemon Garlic Shrimp & Spanakopita Rice DKSE,REC-030366-4-003,R,1,portions,Spanakopita Rice,S,,105,grams,,SUB-031599-4-001,UNCATEGORIZED BOM,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
 
-2 Compartment
+ 2 Compartment
 
 MAIN COMPARTMENT
-105g = rice to the other side of the bento
-1 ea = salmon to one side of the main bento","SCHWEFELDIOXIDE UND SULFITE, SELLERIE",,0.80675,1,SCOOP,grey,LEVEL,,,0.23149,4.59098,0.28694,PCK-00-151923-5,Main,
-FV1439A - Tzatziki Salmon & Lemon Rice [DKSE],REC-029425-4-002,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
-FV1439A - Tzatziki Salmon & Lemon Rice [DKSE],REC-029425-4-002,R,1,portions,Garlic and Chive Roasted Cauliflower Florets,S,,70,grams,,SUB-029387-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
-70g = cauliflower
-35g = zucchini
-25g = onions
-35g = tzatziki (cupped)",SCHWEFELDIOXIDE UND SULFITE,,0.72434,1,SCOOP,blue,NATURAL,,,0.15432,3.40889,0.21306,PCK-00-151923-5,2nd,
-FV1439A - Tzatziki Salmon & Lemon Rice [DKSE],REC-029425-4-002,R,1,portions,"Roasted Zucchini, Diced - Toasted Garlic",S,,35,grams,,SUB-029391-4-001,OVEN / BLAST CHILLER,,,,0.80141,1,SCOOP,black,LEVEL,,,0.07716,1.54053,0.09628,PCK-00-151923-5,2nd,
-FV1439A - Tzatziki Salmon & Lemon Rice [DKSE],REC-029425-4-002,R,1,portions,Roasted Balsamic Pearl Onions- Half Balsamic,S,,25,grams,,SUB-029392-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.50063,1,SCOOP,purple,LEVEL,,,0.05512,1.76147,0.11009,PCK-00-151923-5,2nd,
-FV1439A - Tzatziki Salmon & Lemon Rice [DKSE],REC-029425-4-002,R,1,portions,GBB Tzatziki,S,,35,grams,,SUB-029389-4-001,IMMERSION BLENDER / BLAST CHILLER,,MILCH (EINSCHLIESSLICH LAKTOSE),,0.9547,1,CUP,Cup,,,,0.07716,1.29317,0.08082,PCK-00-151923-5,2nd,
+105 g = Rice
+95 g = (approximately 7 pc)
+43 g = lemon garlic sauce
+","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,1,1,SCOOP,grey,NATURAL,,,0.23149,3.70377,0.23149,PCK-00-151923-5,Main,
+FV1646A Lemon Garlic Shrimp & Spanakopita Rice DKSE,REC-030366-4-003,R,1,portions,Tuscan Shrimp Batch 2,S,,95,grams,,SUB-030357-4-001,THAW / MARINADE / OVEN / BLAST CHILLER,,"KREBSTIERE, SCHWEFELDIOXIDE UND SULFITE",,0.70183,7,HAND_PORTIONED,Hand Portioned,,,,0.20944,4.77469,0.29842,PCK-00-151923-5,Main,
+FV1646A Lemon Garlic Shrimp & Spanakopita Rice DKSE,REC-030366-4-003,R,1,portions,Lemon Garlic Cream Sauce,S,,43,grams,,SUB-030358-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.95443,1,SCOOP,red,NATURAL,,,0.0948,1.5892,0.09933,PCK-00-151923-5,Main,
+FV1646A Lemon Garlic Shrimp & Spanakopita Rice DKSE,REC-030366-4-003,R,1,portions,Garlic and Chive Roasted Cauliflower Florets,S,,90,grams,,SUB-029387-4-001,OVEN / BLAST CHILLER,"
+2ND COMPARTMENT
+90 g= cauliflower
+40 g = zucchini
+32 g = grape tomato",SCHWEFELDIOXIDE UND SULFITE,,0.72434,1,SCOOP,beige,NATURAL,,,0.19842,4.38285,0.27393,PCK-00-151923-5,2nd,
+FV1646A Lemon Garlic Shrimp & Spanakopita Rice DKSE,REC-030366-4-003,R,1,portions,Toasted Garlic Zucchini - Half moons 3 - half salt,S,,40,grams,,SUB-030364-4-001,OVEN / BLAST CHILLER,,,,0.83169,1,SCOOP,blue,NATURAL,,,0.08818,1.6965,0.10603,PCK-00-151923-5,2nd,
+FV1646A Lemon Garlic Shrimp & Spanakopita Rice DKSE,REC-030366-4-003,R,1,portions,Balsamic Cherry Tomatoes,S,,32,grams,,SUB-014243-4-001,OVEN / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.85641,1,SCOOP,red,NATURAL,,,0.07055,1.31802,0.08238,PCK-00-151923-5,2nd,
 
 FV4006A - Pork tenderloin in sun dried tomato sauce [BNL],REC-014085-4-001,R,1,portions,Mash - Roasted Garlic Cauliflower Mashed,S,,100,grams,,SUB-013673-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
 (From the bottom to the top)
@@ -1042,9 +833,9 @@ MAIN COMPARTMENT:
 40g sauce
 
 
-Net weight: 285g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,1,1,SCOOP,white,LEVEL,,,0.2866,4.58562,0.2866,PCK-00-151923-5,Main,
+Net weight: 285g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.95,1,SCOOP,white,LEVEL,,,0.2866,4.82697,0.30169,PCK-00-151923-5,Main,
 FV4009A - Salmon with a mustard dill sauce [BNL],REC-013579-4-003,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
-FV4009A - Salmon with a mustard dill sauce [BNL],REC-013579-4-003,R,1,portions,Sauce - Creamy Dijon and Dill Sauce,S,,40,grams,,SUB-013575-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF",,0.84998,1,SCOOP,red,LEVEL,,,0.08818,1.65999,0.10375,PCK-00-151923-5,Main,
+FV4009A - Salmon with a mustard dill sauce [BNL],REC-013579-4-003,R,1,portions,Sauce - Creamy Dijon and Dill Sauce,S,,40,grams,,SUB-013575-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF",,0.8417,1,SCOOP,red,LEVEL,,,0.08818,1.67632,0.10477,PCK-00-151923-5,Main,
 FV4009A - Salmon with a mustard dill sauce [BNL],REC-013579-4-003,R,1,portions,Green Beans CUT 1-1/2 - Fresh - Less Salt,S,,60,grams,,SUB-029004-4-001,OVEN / BLAST CHILLER,"SIDE COMPARTMENT: 
 60g carrots
 60g green beans
@@ -1062,9 +853,9 @@ MAIN COMPARTMENT:
 40g sauce
 
 
-Net weight: 285g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,1,1,SCOOP,white,LEVEL,,,0.2866,4.58562,0.2866,PCK-00-151923-5,Main,
+Net weight: 285g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.95,1,SCOOP,white,LEVEL,,,0.2866,4.82697,0.30169,PCK-00-151923-5,Main,
 FV4009A - Salmon with a mustard dill sauce [DE],REC-013579-4-001,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
-FV4009A - Salmon with a mustard dill sauce [DE],REC-013579-4-001,R,1,portions,Sauce - Creamy Dijon and Dill Sauce,S,,40,grams,,SUB-013575-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF",,0.84998,1,SCOOP,red,LEVEL,,,0.08818,1.65999,0.10375,PCK-00-151923-5,Main,
+FV4009A - Salmon with a mustard dill sauce [DE],REC-013579-4-001,R,1,portions,Sauce - Creamy Dijon and Dill Sauce,S,,40,grams,,SUB-013575-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF",,0.8417,1,SCOOP,red,LEVEL,,,0.08818,1.67632,0.10477,PCK-00-151923-5,Main,
 FV4009A - Salmon with a mustard dill sauce [DE],REC-013579-4-001,R,1,portions,Green Beans CUT 1-1/2 - Fresh - Less Salt,S,,60,grams,,SUB-029004-4-001,OVEN / BLAST CHILLER,"SIDE COMPARTMENT: 
 60g carrots
 60g green beans
@@ -1082,9 +873,9 @@ MAIN COMPARTMENT:
 40g sauce
 
 
-Net weight: 285g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,1,1,SCOOP,white,LEVEL,,,0.2866,4.58562,0.2866,PCK-00-151923-5,Main,
+Net weight: 285g","MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.95,1,SCOOP,white,LEVEL,,,0.2866,4.82697,0.30169,PCK-00-151923-5,Main,
 FV4009A - Salmon with a mustard dill sauce [DKSE],REC-013579-4-002,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,,FISCH,,0.81816,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
-FV4009A - Salmon with a mustard dill sauce [DKSE],REC-013579-4-002,R,1,portions,Sauce - Creamy Dijon and Dill Sauce,S,,40,grams,,SUB-013575-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF",,0.84998,1,SCOOP,red,LEVEL,,,0.08818,1.65999,0.10375,PCK-00-151923-5,Main,
+FV4009A - Salmon with a mustard dill sauce [DKSE],REC-013579-4-002,R,1,portions,Sauce - Creamy Dijon and Dill Sauce,S,,40,grams,,SUB-013575-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF",,0.8417,1,SCOOP,red,LEVEL,,,0.08818,1.67632,0.10477,PCK-00-151923-5,Main,
 FV4009A - Salmon with a mustard dill sauce [DKSE],REC-013579-4-002,R,1,portions,Green Beans CUT 1-1/2 - Fresh - Less Salt,S,,60,grams,,SUB-029004-4-001,OVEN / BLAST CHILLER,"SIDE COMPARTMENT: 
 60g carrots
 60g green beans
@@ -1093,26 +884,6 @@ Net weight: 120g
 
 Total Net weight: 405g",,,0.73433,1,SCOOP,beige,LEVEL,,,0.13228,2.88214,0.18013,PCK-00-151923-5,2nd,
 FV4009A - Salmon with a mustard dill sauce [DKSE],REC-013579-4-002,R,1,portions,Honey-Garlic Roasted Carrot Coins,S,,60,grams,,SUB-013578-4-001,OVEN / BLAST CHILLER,,,,0.76865,1,SCOOP,blue,NATURAL,,,0.13228,2.75344,0.17209,PCK-00-151923-5,2nd,
-
-FV4015A - Chicken ratatouille [BNL],REC-013765-4-003,R,1,portions,Chicken breast - Herb Grilled Chicken Breast,S,,1,each,,SUB-013545-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,"***PLATING INSTRUCTIONS***
-(From the bottom to the top)
-
-2 Compartment
-
-MAIN COMPARTMENT
-150G RATATOUILLE VEG
-1 EA CHICKEN BREAST
-10G MOZZARELLA
-",,,0.72185,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.86395,0.3665,PCK-00-151924-5,Main,
-FV4015A - Chicken ratatouille [BNL],REC-013765-4-003,R,1,portions,Mixed veg - Ratatouille Vegetable Batch,S,,150,grams,,SUB-013764-4-001,SPICE PORTIONING / BRAISER / BLAST CHILLER,,SCHWEFELDIOXIDE UND SULFITE,,0.86355,1,SCOOP,white,LEVEL,,,0.33069,6.12716,0.38295,PCK-00-151924-5,Main,
-FV4015A - Chicken ratatouille [BNL],REC-013765-4-003,R,1,portions,"FA-DE Cheese, Mozzarella, Shredded /Käse, Mozzarella, gerieben",I,DAI-00-139125-3,10,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,1,SCOOP,silver #60,LEVEL,,,0.02205,0.35274,0.02205,PCK-00-151924-5,Main,
-FV4015A - Chicken ratatouille [BNL],REC-013765-4-003,R,1,portions,Potatoes - Roasted Potato Wedges with Skin,S,,90,grams,,SUB-013752-4-001,OVEN / BLAST CHILLER,"2ND COMPARTMENT
-90G POTATO
-",,,0.63579,1,SCOOP,grey,LEVEL,,,0.19842,4.99323,0.31208,PCK-00-151924-5,2nd,
-FV4015A - Chicken ratatouille [BNL],REC-013765-4-003,R,1,portions,Sauce - Herby Parmesan Garlic Dressing,S,,30,grams,,SUB-013556-4-001,HAND MIX,"3RD COMPARTMENT
-30G SAUCE CUPPED 
-
-NET WEIGHT: 400G",MILCH (EINSCHLIESSLICH LAKTOSE),,0.84375,1,CUP,Cup,,,,0.06614,1.25418,0.07839,PCK-00-151924-5,3rd,
 
 FV4039A - Salmon in creamy gochugaru sauce [BNL],REC-013629-4-003,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,"125g sauce
 1 salmon
@@ -1158,127 +929,55 @@ FV4039A - Salmon in creamy gochugaru sauce [DE],REC-013629-4-001,R,1,portions,Ro
 FV4039A - Salmon in creamy gochugaru sauce [DE],REC-013629-4-001,R,1,portions,Tomatoes - Roasted cherry tomatoes,S,,40,grams,,SUB-013627-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,red,NATURAL,,,0.08818,1.65995,0.10375,PCK-00-151923-5,Main,
 FV4039A - Salmon in creamy gochugaru sauce [DE],REC-013629-4-001,R,1,portions,Courgette - Sesame Zucchini Noodles,S,,125,grams,,SUB-013628-4-001,OVEN / BLAST CHILLER,,SESAMSAMEN,,0.69617,1,SCOOP,white,NATURAL,,,0.27558,6.33355,0.39585,PCK-00-151923-5,2nd,
 
-FV4039A - Salmon in creamy gochugaru sauce [DKSE],REC-013629-4-002,R,1,portions,Salmon - garlic seasoning,S,,1,each,,SUB-013382-4-001,THAW / HAND MARINADE / OVEN / BLAST CHILLER,"125g sauce
-1 salmon
-10g green onion
-40g grape tomatoes
-125g zucchini noodles 
-PLATING INSTRUCTION
+FV4065A - Spicy Beef & Black Bean Chili [BNL],REC-029397-4-003,R,1,portions,Beef & Black Bean Chili Batch [Aji Amarillo Sub],S,,290,grams,,SUB-029390-4-002,UNCATEGORIZED BOM,"**PLATING INSTRUCTIONS***
 
-MAIN: 
-1 salmon = 115g
-115g sauce
-10g green onion
-40g grape tomatoes
+**3 Compartment Tray**
 
-SIDE: 
-125g zucchini noodles 
-
-Net weight = 405g",FISCH,,0.81816,1,HAND_PORTIONED,Hand Portioned,,,4.05651,0.25353,4.95811,0.30988,PCK-00-151923-5,Main,
-FV4039A - Salmon in creamy gochugaru sauce [DKSE],REC-013629-4-002,R,1,portions,Sauce - Creamy Gochugaru Sauce,S,,115,grams,,SUB-013450-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE",,0.90687,1,SCOOP,white,LEVEL,,,0.25353,4.47308,0.27957,PCK-00-151923-5,Main,
-FV4039A - Salmon in creamy gochugaru sauce [DKSE],REC-013629-4-002,R,1,portions,Roasted Green Onions,S,,10,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,purple,LEVEL,,,0.02205,0.41499,0.02594,PCK-00-151923-5,Main,
-FV4039A - Salmon in creamy gochugaru sauce [DKSE],REC-013629-4-002,R,1,portions,Tomatoes - Roasted cherry tomatoes,S,,40,grams,,SUB-013627-4-001,OVEN / BLAST CHILLER,,,,0.85,1,SCOOP,red,NATURAL,,,0.08818,1.65995,0.10375,PCK-00-151923-5,Main,
-FV4039A - Salmon in creamy gochugaru sauce [DKSE],REC-013629-4-002,R,1,portions,Courgette - Sesame Zucchini Noodles,S,,125,grams,,SUB-013628-4-001,OVEN / BLAST CHILLER,,SESAMSAMEN,,0.69617,1,SCOOP,white,NATURAL,,,0.27558,6.33355,0.39585,PCK-00-151923-5,Main,
-
-FV4063A - Cheddar Pulled Beef  [BNL],REC-014036-4-002,R,1,portions,Mac n Cheese Sauce - chili cheddar,S,,95,grams,,SUB-013744-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
+MAIN COMPARTMENT:
 (From the bottom to the top)
+290 g chili
+5 g green onions
+",SCHWEFELDIOXIDE UND SULFITE,,0.78644,"1
+1
+1","SCOOP
+SCOOP
+SCOOP","yellow
+green
+grey","LEVEL
+LEVEL
+LEVEL",,,0.63934,13.00732,0.81296,PCK-00-151924-5,Main,
+FV4065A - Spicy Beef & Black Bean Chili [BNL],REC-029397-4-003,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,,,,,,,0.01102,0.20749,0.01297,PCK-00-151924-5,Main,
+FV4065A - Spicy Beef & Black Bean Chili [BNL],REC-029397-4-003,R,1,portions,Corn Salsa - Less Salt,S,,55,grams,,SUB-029395-4-001,UNCATEGORIZED BOM,"2ND COMPARTMENT:
+55 g corn 
+",,,0.70012,1,SCOOP,yellow,LEVEL,,,0.12125,2.77107,0.17319,PCK-00-151924-5,2nd,
+FV4065A - Spicy Beef & Black Bean Chili [BNL],REC-029397-4-003,R,1,portions,Coriander-Jalapeno Sweet Potatoes,S,,85,grams,,SUB-029396-4-001,OVEN / BLAST CHILLER,"3RD COMPARTMENT:
+85 g sweet potatoes 
 
-2 Compartment
+Total Net Weight: 435 g",,,0.68715,1,SCOOP,green,LEVEL,,,0.18739,4.36337,0.27271,PCK-00-151924-5,3rd,
 
-MAIN COMPARTMENT
-Cheese Sauce = 100g
-Shredded Beef = 100g
-Peppers & Onions = 65g
-Cheddar cheese = 10g
+FV4065A - Spicy Beef & Black Bean Chili [DE],REC-029397-4-002,R,1,portions,Beef & Black Bean Chili Batch [Aji Amarillo Sub],S,,290,grams,,SUB-029390-4-002,UNCATEGORIZED BOM,"**PLATING INSTRUCTIONS***
 
-2ND COMPARTMENT
-Smoky cauliflower florets = 110g
+**3 Compartment Tray**
 
-NET WEIGHT: 385g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.94298,1,SCOOP,beige,LEVEL,,,0.20944,3.55367,0.2221,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [BNL],REC-014036-4-002,R,1,portions,Shredded Sous Vide Beef Chuck,S,,100,grams,,SUB-014687-4-001,HAND MIX / COLD SHREDDER,,,,0.99241,1,SCOOP,green,NATURAL,,,0.22046,3.55436,0.22215,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [BNL],REC-014036-4-002,R,1,portions,Mixed veg - Italian Peppers & Onions,S,,65,grams,,SUB-013956-4-001,HAND MARINADE / OVEN / BLAST CHILLER,,,,0.74308,1,SCOOP,blue,LEVEL,,,0.1433,3.08554,0.19285,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [BNL],REC-014036-4-002,R,1,portions,"FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",I,DAI-00-139135-3,10,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,1,SCOOP,purple,NATURAL,,,0.02205,0.35274,0.02205,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [BNL],REC-014036-4-002,R,1,portions,Smoky Cauliflower Florets,S,,110,grams,,SUB-013818-4-001,OVEN / BLAST CHILLER,,,,0.7537,1,SCOOP,grey,LEVEL,,,0.24251,5.1481,0.32176,PCK-00-151923-5,2nd,
-
-FV4063A - Cheddar Pulled Beef  [DE],REC-014036-4-001,R,1,portions,Mac n Cheese Sauce - chili cheddar,S,,95,grams,,SUB-013744-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
+MAIN COMPARTMENT:
 (From the bottom to the top)
+290 g chili
+5 g green onions
+",SCHWEFELDIOXIDE UND SULFITE,,0.78644,"1
+1
+1","SCOOP
+SCOOP
+SCOOP","yellow
+green
+grey","LEVEL
+LEVEL
+LEVEL",,,0.63934,13.00732,0.81296,PCK-00-151924-5,Main,
+FV4065A - Spicy Beef & Black Bean Chili [DE],REC-029397-4-002,R,1,portions,Roasted Green Onions,S,,5,grams,,SUB-023370-4-001,OVEN / BLAST CHILLER,,,,0.85,,,,,,,0.01102,0.20749,0.01297,PCK-00-151924-5,Main,
+FV4065A - Spicy Beef & Black Bean Chili [DE],REC-029397-4-002,R,1,portions,Corn Salsa - Less Salt,S,,55,grams,,SUB-029395-4-001,UNCATEGORIZED BOM,"2ND COMPARTMENT:
+55 g corn ",,,0.70012,1,SCOOP,yellow,LEVEL,,,0.12125,2.77107,0.17319,PCK-00-151924-5,2nd,
+FV4065A - Spicy Beef & Black Bean Chili [DE],REC-029397-4-002,R,1,portions,Coriander-Jalapeno Sweet Potatoes,S,,85,grams,,SUB-029396-4-001,OVEN / BLAST CHILLER,"3RD COMPARTMENT
 
-2 Compartment
+85 g sweet potatoes (other half)
 
-MAIN COMPARTMENT
-Cheese Sauce = 100g
-Shredded Beef = 100g
-Peppers & Onions = 65g
-Cheddar cheese = 10g
-
-2ND COMPARTMENT
-Smoky cauliflower florets = 110g
-
-NET WEIGHT: 385g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.94298,1,SCOOP,beige,LEVEL,,,0.20944,3.55367,0.2221,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [DE],REC-014036-4-001,R,1,portions,Shredded Sous Vide Beef Chuck,S,,100,grams,,SUB-014687-4-001,HAND MIX / COLD SHREDDER,,,,0.99241,1,SCOOP,green,NATURAL,,,0.22046,3.55436,0.22215,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [DE],REC-014036-4-001,R,1,portions,Mixed veg - Italian Peppers & Onions,S,,65,grams,,SUB-013956-4-001,HAND MARINADE / OVEN / BLAST CHILLER,,,,0.74308,1,SCOOP,blue,LEVEL,,,0.1433,3.08554,0.19285,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [DE],REC-014036-4-001,R,1,portions,"FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",I,DAI-00-139135-3,10,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,1,SCOOP,purple,NATURAL,,,0.02205,0.35274,0.02205,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [DE],REC-014036-4-001,R,1,portions,Smoky Cauliflower Florets,S,,110,grams,,SUB-013818-4-001,OVEN / BLAST CHILLER,,,,0.7537,1,SCOOP,grey,LEVEL,,,0.24251,5.1481,0.32176,PCK-00-151923-5,2nd,
-
-FV4063A - Cheddar Pulled Beef  [DKSE],REC-014036-4-003,R,1,portions,Mac n Cheese Sauce - chili cheddar,S,,95,grams,,SUB-013744-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,"***PLATING INSTRUCTIONS***
-(From the bottom to the top)
-
-2 Compartment
-
-MAIN COMPARTMENT
-Cheese Sauce = 100g
-Shredded Beef = 100g
-Peppers & Onions = 65g
-Cheddar cheese = 10g
-
-2ND COMPARTMENT
-Smoky cauliflower florets = 110g
-
-NET WEIGHT: 385g",MILCH (EINSCHLIESSLICH LAKTOSE),,0.94298,1,SCOOP,beige,LEVEL,,,0.20944,3.55367,0.2221,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [DKSE],REC-014036-4-003,R,1,portions,Shredded Sous Vide Beef Chuck,S,,100,grams,,SUB-014687-4-001,HAND MIX / COLD SHREDDER,,,,0.99241,1,SCOOP,green,NATURAL,,,0.22046,3.55436,0.22215,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [DKSE],REC-014036-4-003,R,1,portions,Mixed veg - Italian Peppers & Onions,S,,65,grams,,SUB-013956-4-001,HAND MARINADE / OVEN / BLAST CHILLER,,,,0.74308,1,SCOOP,blue,LEVEL,,,0.1433,3.08554,0.19285,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [DKSE],REC-014036-4-003,R,1,portions,"FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",I,DAI-00-139135-3,10,grams,,,,,MILCH (EINSCHLIESSLICH LAKTOSE),,,1,SCOOP,purple,NATURAL,,,0.02205,0.35274,0.02205,PCK-00-151923-5,Main,
-FV4063A - Cheddar Pulled Beef  [DKSE],REC-014036-4-003,R,1,portions,Smoky Cauliflower Florets,S,,110,grams,,SUB-013818-4-001,OVEN / BLAST CHILLER,,,,0.7537,1,SCOOP,grey,LEVEL,,,0.24251,5.1481,0.32176,PCK-00-151923-5,2nd,
-
-FV4064A - Ginger Garlic Grilled Chicken [DE],REC-016335-4-002,R,1,portions,Brown Basmati Rice with GGS,S,,110,grams,,SUB-014273-4-001,OVEN / HAND MIX / BLAST CHILLER,"**PLATING INSTRUCTIONS**
-
-2-COMPARTMENT TRAY
-
-MAIN COMPARTMENT (From the bottom to the top):
-110g - rice
-60g - edamame 
-1pc - chicken (120g)
-30g - teriyaki sauce
-3g - sesame
-
-2ND COMPARTMENT: 
-100g - sesame broccoli
-
-NET WEIGHT: 403g",SCHWEFELDIOXIDE UND SULFITE,,1.01999,1,SCOOP,grey,LEVEL,,,0.24251,3.80409,0.23776,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DE],REC-016335-4-002,R,1,portions,Edamame Succotash,S,,60,grams,,SUB-016331-4-001,OVEN / BLAST CHILLER,,"SCHWEFELDIOXIDE UND SULFITE, SESAMSAMEN, SOJA",,0.66697,1,SCOOP,beige,NATURAL,,,0.13228,3.1732,0.19833,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DE],REC-016335-4-002,R,1,portions,Grilled Chicken Breast Marinade #6 - Asian (EACH),S,,1,each,,SUB-016253-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,,"SCHWEFELDIOXIDE UND SULFITE, SESAMSAMEN, SOJA",,0.72551,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.83432,0.36464,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DE],REC-016335-4-002,R,1,portions,Teriyaki Sauce,S,,30,grams,,SUB-016332-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"SESAMSAMEN, SOJA",,0.89566,1,SCOOP,black,LEVEL,,,0.06614,1.18149,0.07384,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DE],REC-016335-4-002,R,1,portions,"FA-DE Spice, Sesame Seed, Roasted /Gewürz, Sesamsamen, geröstet",I,SPI-00-139379-5,3,grams,,,,,SESAMSAMEN,,,1,HAND_PORTIONED,Hand Portioned,,,,0.00661,0.10582,0.00661,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DE],REC-016335-4-002,R,1,portions,Broccoli - Sesame Broccoli,S,,100,grams,,SUB-016334-4-001,OVEN / BLAST CHILLER,,SESAMSAMEN,,0.65245,1,SCOOP,white,NATURAL,,,0.22046,5.4064,0.3379,PCK-00-151923-5,2nd,
-
-FV4064A - Ginger Garlic Grilled Chicken [DKSE],REC-016335-4-003,R,1,portions,Brown Basmati Rice with GGS,S,,110,grams,,SUB-014273-4-001,OVEN / HAND MIX / BLAST CHILLER,"**PLATING INSTRUCTIONS**
-
-2-COMPARTMENT TRAY
-
-MAIN COMPARTMENT (From the bottom to the top):
-110g - rice
-60g - edamame 
-1pc - chicken (100g)
-30g - teriyaki sauce
-3g - sesame
-
-2ND COMPARTMENT: 
-100g - sesame broccoli
-
-NET WEIGHT: 403g",SCHWEFELDIOXIDE UND SULFITE,,1.01999,1,SCOOP,grey,LEVEL,,,0.24251,3.80409,0.23776,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DKSE],REC-016335-4-003,R,1,portions,Edamame Succotash,S,,60,grams,,SUB-016331-4-001,OVEN / BLAST CHILLER,,"SCHWEFELDIOXIDE UND SULFITE, SESAMSAMEN, SOJA",,0.66697,1,SCOOP,beige,NATURAL,,,0.13228,3.1732,0.19833,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DKSE],REC-016335-4-003,R,1,portions,Grilled Chicken Breast Marinade #6 - Asian (EACH),S,,1,each,,SUB-016253-4-001,MARINADE / GRILL / OVEN / BLAST CHILLER,,"SCHWEFELDIOXIDE UND SULFITE, SESAMSAMEN, SOJA",,0.72551,1,HAND_PORTIONED,Hand Portioned,,,4.23288,0.26455,5.83432,0.36464,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DKSE],REC-016335-4-003,R,1,portions,Teriyaki Sauce,S,,30,grams,,SUB-016332-4-001,SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER,,"SESAMSAMEN, SOJA",,0.89566,1,CUP,Cup,,,,0.06614,1.18149,0.07384,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DKSE],REC-016335-4-003,R,1,portions,"FA-DE Spice, Sesame Seed, Roasted /Gewürz, Sesamsamen, geröstet",I,SPI-00-139379-5,3,grams,,,,,SESAMSAMEN,,,1,SCOOP,orange,LEVEL,,,0.00661,0.10582,0.00661,PCK-00-151923-5,Main,
-FV4064A - Ginger Garlic Grilled Chicken [DKSE],REC-016335-4-003,R,1,portions,Broccoli - Sesame Broccoli,S,,100,grams,,SUB-016334-4-001,OVEN / BLAST CHILLER,,SESAMSAMEN,,0.65245,1,SCOOP,silver #110,LEVEL,,,0.22046,5.4064,0.3379,PCK-00-151923-5,Main,
+Total Net Weight: 435 g",,,0.68715,1,SCOOP,green,LEVEL,,,0.18739,4.36337,0.27271,PCK-00-151924-5,3rd,
 

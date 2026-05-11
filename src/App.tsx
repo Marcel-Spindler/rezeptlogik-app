@@ -11,7 +11,6 @@ import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
 import { formatDateTime, marketToLocale, marketVariantLabel, MARKET_LANGUAGE_LABEL, tl, type UiLocale } from "./i18n";
 import { useRecipePlanningIntel } from "./planningOasisData";
 
-const RackView = lazy(() => loadDynamicModule("rack-view", () => import("./RackView").then((module) => ({ default: module.RackView }))));
 const RackV2View = lazy(() => loadDynamicModule("rack-v2-view", () => import("./RackV2View").then((module) => ({ default: module.RackV2View }))));
 const LinePlanningView = lazy(() => loadDynamicModule("line-planning", () => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView }))));
 
@@ -24,6 +23,11 @@ const MARKET_COLOR: Record<Market, string> = {
 };
 function fmtNum(n: number, digits = 0): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
+}
+
+/** Entfernt Market-Tags wie [BNL], [BENL], [DE], [DKSE], [NORD] aus Rezept-Namen. */
+function stripMarketTag(name: string): string {
+  return name.replace(/\s*\[(?:BNL|BENL|DE|DKSE|NORD)\]\s*/gi, "").trim();
 }
 
 /** Extrahiert den deutschen Namen aus "FA-DE English /Deutsch" — zeigt immer die lesbare Variante. */
@@ -356,10 +360,10 @@ function usePersistent<T>(key: string, defaultVal: T): [T, React.Dispatch<React.
   return [state, wrapped];
 }
 
-type AppView = "recipe" | "equipment" | "breakdown" | "planning" | "woche" | "rack" | "rack2" | "ket" | "phase2";
+type AppView = "recipe" | "equipment" | "breakdown" | "planning" | "woche" | "rack" | "ket" | "phase2" | "wochenplaner";
 type AppSurface = "full" | "kitchen";
 
-const ALL_VIEWS: readonly AppView[] = ["recipe", "equipment", "breakdown", "planning", "woche", "rack", "rack2", "ket", "phase2"] as const;
+const ALL_VIEWS: readonly AppView[] = ["recipe", "equipment", "breakdown", "planning", "woche", "rack", "ket", "phase2"] as const;
 
 function parseTruthyParam(value: string | null): boolean {
   const v = (value ?? "").trim().toLowerCase();
@@ -508,7 +512,7 @@ export default function App() {
       if (delta !== 0) {
         changed.push({
           code,
-          recipeName: recipesByCode[code]?.markets[globalMarket]?.recipeNameLocal || current.recipeName || previous.recipeName,
+          recipeName: recipesByCode[code]?.baseName || stripMarketTag(current.recipeName || previous.recipeName),
           current: currentPortions,
           previous: previousPortions,
           delta,
@@ -558,11 +562,11 @@ export default function App() {
               ["equipment", tl(locale, "Equipment")],
               ["breakdown", "Breakdown+"],
               ["planning", "Planning OASE"],
+              ["wochenplaner", "Wochenplaner"],
               ["rack", "Rack"],
-              ["rack2", "Rack v2"],
               ["ket", "Linien-Fokus"],
               ["phase2", "What-if & Diff"]
-            ] as ["recipe"|"equipment"|"breakdown"|"planning"|"woche"|"rack"|"rack2"|"ket"|"phase2", string][]).map(([k, l]) => (
+            ] as ["recipe"|"equipment"|"breakdown"|"planning"|"woche"|"rack"|"ket"|"phase2"|"wochenplaner", string][]).map(([k, l]) => (
               <button key={k} onClick={() => setView(k)}
                 className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md ${
                   view === k ? "bg-white shadow ring-1 ring-slate-300" : "text-slate-500 hover:text-slate-800"
@@ -649,7 +653,7 @@ export default function App() {
                       <span className="font-mono text-xs" style={tone.code}>{r.code}</span>
                       <span className="text-sm font-semibold">{fmtNum(adjustedPortions(getBaseVerdenVolume(r), upliftPercent))}</span>
                     </div>
-                    <div className="text-sm font-medium" style={tone.title}>{data.recipes[r.code]?.markets[globalMarket]?.recipeNameLocal || r.recipeName}</div>
+                    <div className="text-sm font-medium" style={tone.title}>{data.recipes[r.code]?.baseName || stripMarketTag(r.recipeName)}</div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       <span className="pill" style={tone.preference}>{r.preference}</span>
                       {MARKETS.map(m => r.verdenVolume[m] > 0 && (
@@ -732,13 +736,21 @@ export default function App() {
               defaultSection="cockpit"
             />
           )}
-          {view === "rack" && (
-            <Suspense fallback={<div className="card p-6 text-slate-500">{tl(locale, "Rack-Ansicht wird geladen …")}</div>}>
-              <RackView week={selectedWeek} locale="de" />
-            </Suspense>
+          {view === "wochenplaner" && (
+            <PlanningView
+              data={data}
+              week={selectedWeek}
+              locale={locale}
+              upliftPercent={upliftPercent}
+              selectedRecipe={selectedRecipe}
+              onSelectRecipe={code => {
+                setSelectedRecipe(code);
+                setView("recipe");
+              }}
+            />
           )}
-          {view === "rack2" && (
-            <Suspense fallback={<div className="card p-6 text-slate-500">Rack v2 wird geladen …</div>}>
+          {view === "rack" && (
+            <Suspense fallback={<div className="card p-6 text-slate-500">Rack wird geladen …</div>}>
               <RackV2View
                 week={selectedWeek}
                 locale="de"
@@ -1238,10 +1250,7 @@ function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, upliftPer
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
             <div className="font-mono text-xs text-slate-500">{wr.code} · {wr.hfWeek}</div>
-            <h2 className="text-xl font-bold leading-tight">{md?.recipeNameLocal || wr.recipeName}</h2>
-            {md?.recipeNameLocal && md.recipeNameLocal !== wr.recipeName && (
-              <div className="text-xs text-slate-400 mt-0.5">{wr.recipeName}</div>
-            )}
+            <h2 className="text-xl font-bold leading-tight">{recipe?.baseName || stripMarketTag(wr.recipeName)}</h2>
             <div className="mt-1 flex flex-wrap gap-1 text-xs">
               <span className="pill bg-slate-100 text-slate-700">{wr.preference}</span>
               {MARKETS.map(m => (
