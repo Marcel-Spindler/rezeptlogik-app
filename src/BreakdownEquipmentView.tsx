@@ -2359,22 +2359,45 @@ export function BreakdownEquipmentView({
                         {/* Path header */}
                         <div className={`px-4 py-3 border-l-[4px] ${colors.border} ${colors.headerBg} flex flex-wrap items-center gap-4`}>
                           <div className="flex-1 min-w-0">
+                            {/* Sub-Rezept Hierarchie mit exakten Bezeichnungen */}
+                            <div className="flex flex-col gap-0.5 mb-1.5">
+                              {([
+                                { label: "Sub 1", value: path.sub1, indent: 0 },
+                                { label: "Sub 2", value: path.sub2, indent: 1 },
+                                { label: "Sub 3", value: path.sub3, indent: 2 },
+                              ] as { label: string; value: string; indent: number }[]).map(({ label, value, indent }) => {
+                                const isEmpty = !value || value === "—" || value === "Ohne Sub-Rezept";
+                                if (isEmpty && indent > 0) return null;
+                                return (
+                                  <div key={label} className="flex items-center gap-1.5" style={{ paddingLeft: indent * 16 }}>
+                                    {indent > 0 && (
+                                      <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0 text-slate-300" style={{ marginLeft: -10 }}>
+                                        <path d="M1 0 L1 6 L10 6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                                      </svg>
+                                    )}
+                                    <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shrink-0 ${
+                                      indent === 0 ? "bg-slate-700 text-slate-100" :
+                                      indent === 1 ? "bg-slate-200 text-slate-600" :
+                                                     "bg-slate-100 text-slate-400"
+                                    }`}>{label}</span>
+                                    <span className={`text-xs font-bold leading-snug truncate ${
+                                      isEmpty ? "text-slate-400 italic" :
+                                      indent === 0 ? "text-slate-900" :
+                                      indent === 1 ? "text-slate-700" :
+                                                     "text-slate-500"
+                                    }`} title={isEmpty ? undefined : value}>
+                                      {isEmpty ? "—" : value}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                             <div className="flex items-center gap-1 flex-wrap">
-                              {crumbs.length > 0 ? crumbs.map((crumb, ci) => (
-                                <span key={ci} className="flex items-center gap-1">
-                                  {ci > 0 && <span className="text-slate-300 text-xs select-none">›</span>}
-                                  <span className={`text-xs font-bold leading-snug ${ci === 0 ? "text-slate-800" : "text-slate-600"}`}>{crumb}</span>
-                                </span>
-                              )) : (
-                                <span className="text-xs font-semibold text-slate-500 italic">Ohne Sub-Rezept</span>
-                              )}
                               {path.isBrining && (
-                                <span className="ml-1 text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full ring-1 ring-sky-200">
+                                <span className="text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full ring-1 ring-sky-200">
                                   💧 BRINING 1:1
                                 </span>
                               )}
-                            </div>
-                            <div className="flex items-center gap-1 mt-1 flex-wrap">
                               {eq && eq.split(",").map((e, ei) => (
                                 <span key={ei} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${colors.badge}`}>
                                   <span>{colors.icon}</span>{e.trim()}
