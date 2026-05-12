@@ -916,6 +916,7 @@ export function PlanningView(
     notes: ""
   });
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [savePlanStamp, setSavePlanStamp] = useState<string | null>(null);
   /** Manuelle Verschiebungen der Ghost-Pillen per Drag & Drop: tileKey → neuer Produktionstag */
   const [suggestOverrides, setSuggestOverrides] = useState<Record<string, PlannerDay>>({});
   const [draggingSuggestKey, setDraggingSuggestKey] = useState<string | null>(null);
@@ -1685,6 +1686,26 @@ export function PlanningView(
     setBoardEditor(null);
   }
 
+  function handleSavePlanSnapshot() {
+    if (typeof window === "undefined") return;
+    const now = new Date();
+    const stamp = now.toLocaleString("de-DE");
+    const snapshot = {
+      savedAtIso: now.toISOString(),
+      savedAtLabel: stamp,
+      week,
+      scenarioId: scenario.id,
+      scenarioName: scenario.name,
+      assignments: scenario.assignments,
+      stats: {
+        plannedCount: analysis.plannedCount,
+        unplannedCount: analysis.unplannedCount
+      }
+    };
+    window.localStorage.setItem(`rezeptlogik-plan-snapshot-${week}`, JSON.stringify(snapshot));
+    setSavePlanStamp(stamp);
+  }
+
   return (
     <div className="space-y-3">
       <div className="card overflow-hidden p-0">
@@ -1713,6 +1734,14 @@ export function PlanningView(
                 Auto: Meals + Subs
               </button>
               <button
+                className="rounded-md bg-sky-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-800 disabled:opacity-40"
+                onClick={handleSavePlanSnapshot}
+                disabled={analysis.plannedCount === 0}
+                title="Speichert den aktuellen Wochenplan als Snapshot für die Rundmail-Weitergabe"
+              >
+                Plan sichern
+              </button>
+              <button
                 className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-100 disabled:opacity-40"
                 onClick={() => {
                   if (analysis.plannedCount === 0) return;
@@ -1724,6 +1753,11 @@ export function PlanningView(
               >
                 Kalender leeren
               </button>
+              {savePlanStamp && (
+                <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-300">
+                  Plan gesichert: {savePlanStamp}
+                </span>
+              )}
               {/* Export-Dropdown */}
               <div className="relative">
                 <button
@@ -1824,8 +1858,8 @@ export function PlanningView(
                         </div>
                       </td>
                       <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{fmtNum(forecast)}</td>
-                      <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-2 text-center text-slate-400" style={tone.sticky}>-</td>
-                      <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{mainMapped > 0 ? fmtNum(mainMapped) : "-"}</td>
+                      <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-2 text-center text-slate-300" style={tone.sticky}></td>
+                      <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{mainMapped > 0 ? fmtNum(mainMapped) : ""}</td>
 
                       {PLANNER_DAYS.flatMap((day) => activeShifts.map((shift) => {
                         const slot = slotValue(day, shift);
@@ -1839,9 +1873,26 @@ export function PlanningView(
                           <td
                             key={`${recipe.recipeCode}-${day}-${shift}`}
                             className="border-l border-slate-200 p-1 align-top"
-                            onDragOver={(e) => { if (draggingSuggestKey) { e.preventDefault(); setDragOverSlot(slot); } }}
+                            onDragOver={(e) => {
+                              const hasSuggest = !!(e.dataTransfer.getData("text/suggest-key") || draggingSuggestKey);
+                              const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCode);
+                              if (hasSuggest || hasRecipe) {
+                                e.preventDefault();
+                                setDragOverSlot(slot);
+                              }
+                            }}
                             onDragLeave={() => { if (dragOverSlot === slot) setDragOverSlot(null); }}
-                            onDrop={(e) => { if (draggingSuggestKey) { e.preventDefault(); handleDropSuggestOnSlot(e, day); } }}
+                            onDrop={(e) => {
+                              const hasSuggest = !!(e.dataTransfer.getData("text/suggest-key") || draggingSuggestKey);
+                              const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCode);
+                              if (!hasSuggest && !hasRecipe) return;
+                              e.preventDefault();
+                              if (hasSuggest) {
+                                handleDropSuggestOnSlot(e, day);
+                                return;
+                              }
+                              handleDropOnSlot(e, day, shift);
+                            }}
                           >
                             <div className="min-h-[66px] rounded border p-1 hover:border-slate-300" style={isDragOverThis ? { ...tone.slotActive, outline: '2px dashed currentColor' } : hasReal ? tone.slotActive : tone.slotIdle} onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift })}>
                               <div className="space-y-1">
@@ -1860,7 +1911,10 @@ export function PlanningView(
 
                                     // Alle Sub-Rezepte verplant → solide Plating-Pille
                                     if (mainTile.allSubsDone) {
-                                      const platLabel = `${mainTile.batchLabel ? mainTile.batchLabel + " " : ""}Plating ${fmtNum(mainTile.targetPortions ?? forecast)}`;
+                                      const labelPortions = mainTile.targetPortions
+                                        ?? recipe.assigned?.targetPortions
+                                        ?? forecast;
+                                      const platLabel = `${mainTile.batchLabel ? mainTile.batchLabel + " " : ""}Plan ${fmtNum(labelPortions)}`;
                                       return (
                                         <div key={mainTile.key}>
                                           <button
@@ -1956,8 +2010,11 @@ export function PlanningView(
                                     <div key={mainTile.key} className="space-y-0.5">
                                       {connBar && <div className="-mx-1 h-0.5 rounded-full" style={connBar} />}
                                       <button
+                                        draggable
+                                        onDragStart={(event) => handleDragStart(event, recipe.recipeCode)}
+                                        onDragEnd={handleDragEnd}
                                         onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift }); }}
-                                        className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold"
+                                        className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold cursor-grab active:cursor-grabbing"
                                         style={tone.mainPill}
                                         title={isSplit ? `Batch ${bIdx + 1} von ${bTotal} · ${mainTile.batchLabel}` : undefined}
                                       >
@@ -1969,7 +2026,7 @@ export function PlanningView(
                                   );
                                 })}
                               </div>
-                              {!hasAny && <div className="pt-4 text-center text-[10px] text-slate-300">+ Add plan</div>}
+                              {!hasAny && <div className="pt-4 text-center text-[10px] text-slate-200"></div>}
                             </div>
                           </td>
                         );
@@ -1988,8 +2045,8 @@ export function PlanningView(
                             </div>
                           </td>
                           <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{fmtNum(forecast)}</td>
-                          <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-1.5 text-center text-slate-400" style={tone.subSticky}>-</td>
-                          <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{subMapped > 0 ? fmtNum(subMapped) : "-"}</td>
+                          <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-1.5 text-center text-slate-300" style={tone.subSticky}></td>
+                          <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{subMapped > 0 ? fmtNum(subMapped) : ""}</td>
                           {PLANNER_DAYS.flatMap((day) => activeShifts.map((shift) => {
                             const isAssigned = sub.assigned?.day === day && sub.assigned?.shift === shift;
                             return (
@@ -2005,7 +2062,15 @@ export function PlanningView(
                                           : undefined;
                                         return (
                                           <>
-                                            <button onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName }); }} className="min-w-0 flex-1 rounded-full px-2 py-0.5 text-left text-[10px] font-bold" style={tone.subPill} title={leadTooltip}>
+                                            <button
+                                              draggable
+                                              onDragStart={(event) => handleDragStart(event, recipe.recipeCode, sub.subRecipeId)}
+                                              onDragEnd={handleDragEnd}
+                                              onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName }); }}
+                                              className="min-w-0 flex-1 rounded-full px-2 py-0.5 text-left text-[10px] font-bold cursor-grab active:cursor-grabbing"
+                                              style={tone.subPill}
+                                              title={leadTooltip}
+                                            >
                                               {fmtNum(sub.assigned?.targetPortions ?? forecast)}
                                               {leadLabel && <span className="ml-1 rounded-full bg-white/50 px-1 text-[9px] font-bold opacity-80">{leadLabel}</span>}
                                             </button>
@@ -2036,7 +2101,7 @@ export function PlanningView(
                                       })()}
                                     </div>
                                   ) : (
-                                    <div className="pt-3 text-center text-[10px] text-slate-300">+ Add plan</div>
+                                    <div className="pt-3 text-center text-[10px] text-slate-200"></div>
                                   )}
                                 </div>
                               </td>

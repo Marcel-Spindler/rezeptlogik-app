@@ -65,7 +65,7 @@ function deriveRecipesFromWeekRecipes(weekRecipes: WeekRecipe[], requestedWeek: 
 // Versandtag ist der Freitag NACH Donnerstag (= index 7, außerhalb des Arrays).
 // MHD-Tage: Fisch 9d (maxGap=2d), Non-Fisch 13d (maxGap=6d).
 // daysBeforeShipping für Index i = (DAYS.length - i) weil Donnerstag (idx 6) = 1 Tag vor Versand.
-const DAYS = ["Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag"] as const;
+const DAYS = ["Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag", "Montag"] as const;
 type PlanDay = (typeof DAYS)[number];
 
 // KET-Sheets liefern englische Wochentage – auf deutsche DAYS mappen
@@ -207,6 +207,10 @@ function mealsPerHourFromScheduleMap(schedule: ScheduleMap, day: PlanDay, slotKe
     if (r) total += portionsInSlot(r, slotKey);
   }
   return duration > 0 ? Math.round((total / duration) * 60) : 0;
+}
+
+function portionsInSlotByLineCapacity(lineCapacityPerHour: number, slotKey: string): number {
+  return (Math.max(0, lineCapacityPerHour) / 60) * slotDuration(slotKey);
 }
 
 function statusColor(status: string): string {
@@ -612,8 +616,8 @@ function DropCell({
             </div>
           )}
           {multiDayCount && multiDayCount > 1 && (
-            <div className="absolute top-0.5 left-0.5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[9px] font-black text-white leading-none z-10" title={`${multiDayCount}x diese Woche an verschiedenen Tagen`}>
-              {multiDayCount}x
+            <div className="absolute top-0.5 left-0.5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[9px] font-black text-white leading-none z-10" title={`${multiDayCount} Tage diese Woche eingeplant`}>
+              {multiDayCount} Tage
             </div>
           )}
           <button
@@ -1138,8 +1142,11 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
 
     for (const [key, recipe] of Object.entries(next)) {
       if (!recipe) continue;
-      const slotKey = key.split("|")[1] ?? "";
-      producedByRecipe.set(recipe.code, (producedByRecipe.get(recipe.code) ?? 0) + portionsInSlot(recipe, slotKey));
+      const [, slotKey, liRaw] = key.split("|");
+      const li = Number(liRaw ?? -1);
+      const lineTarget = li >= 0 ? Math.max(0, lineCapacityByLane[String(li)] ?? 0) : 0;
+      const p = portionsInSlotByLineCapacity(lineTarget, slotKey ?? "");
+      producedByRecipe.set(recipe.code, (producedByRecipe.get(recipe.code) ?? 0) + p);
     }
 
     let assignments = 0;
@@ -1153,7 +1160,9 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
           .filter((li) => !next[`${day}|${slot.key}|${li}`] && (lineCapacityByLane[String(li)] ?? 0) > 0)
           .sort((a, b) => Number(a === LINES.length - 1) - Number(b === LINES.length - 1));
 
-        let currentMh = mealsPerHourFromScheduleMap(next, day, slot.key);
+        let currentMh = activeLineIdx.reduce((sum, li) => {
+          return next[`${day}|${slot.key}|${li}`] ? sum + Math.max(0, lineCapacityByLane[String(li)] ?? 0) : sum;
+        }, 0);
         while (freeLineIdx.length > 0 && currentMh < targetMh) {
           const li = freeLineIdx.shift();
           if (li === undefined) break;
@@ -1167,21 +1176,25 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
             const remaining = Math.max(0, recipe.totalPlanned - produced);
             if (remaining <= 0) continue;
 
-            const slotPortions = portionsInSlot(recipe, slot.key);
-            const recipeMh = recipe.speedPerMin * 60;
-            if (lineTarget > 0 && recipeMh > lineTarget * 1.35) continue;
+            const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
+            const recipeMh = Math.max(0, lineTarget);
             const fitScore = 1 - Math.min(1, Math.abs(missingMh - recipeMh) / Math.max(targetMh, recipeMh, 1));
             const volumeScore = Math.min(1, remaining / Math.max(slotPortions, 1));
-            const lineFitScore = lineTarget > 0 ? 1 - Math.min(1, Math.abs(lineTarget - recipeMh) / Math.max(lineTarget, recipeMh, 1)) : fitScore;
+            const lineFitScore = lineTarget > 0 ? 1 : fitScore;
 
-            // Fulfillment- und Plating-Denkweise: Fr priorisiert Nordics + BENL + Teil DE; So Rest-DE.
+            // Fulfillment-Vorgaben:
+            // BENELUX: 50/50 Donnerstag/Freitag
+            // NORDICS: 50/50 Donnerstag/Freitag
+            // DE: 50/50 Freitag/Sonntag
             const totalPlanned = Math.max(1, recipe.totalPlanned);
-            const fridayDemand = recipe.nordics + recipe.bnl + recipe.de * 0.5;
+            const thursdayDemand = recipe.bnl * 0.5 + recipe.nordics * 0.5;
+            const fridayDemand = recipe.bnl * 0.5 + recipe.nordics * 0.5 + recipe.de * 0.5;
             const sundayDemand = recipe.de * 0.5;
             let dayDemandScore = 0;
-            if (day === "Freitag") dayDemandScore = fridayDemand / totalPlanned;
+            if (day === "Donnerstag") dayDemandScore = thursdayDemand / totalPlanned;
+            else if (day === "Freitag") dayDemandScore = fridayDemand / totalPlanned;
             else if (day === "Sonntag") dayDemandScore = sundayDemand / totalPlanned;
-            else dayDemandScore = Math.max(0, (recipe.de * 0.15) / totalPlanned);
+            else dayDemandScore = Math.max(0, (recipe.de * 0.05) / totalPlanned);
 
             const recipeWos = ketWOs.filter(wo => (wo.recipeName.match(/FV\d{4}[A-Z]/)?.[0] ?? "") === recipe.code);
             const longSubCount = recipeWos.reduce((sum, wo) => {
@@ -1208,8 +1221,13 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
 
           if (!best) break;
           next[`${day}|${slot.key}|${li}`] = best;
-          producedByRecipe.set(best.code, (producedByRecipe.get(best.code) ?? 0) + portionsInSlot(best, slot.key));
-          currentMh = mealsPerHourFromScheduleMap(next, day, slot.key);
+          producedByRecipe.set(
+            best.code,
+            (producedByRecipe.get(best.code) ?? 0) + portionsInSlotByLineCapacity(lineTarget, slot.key)
+          );
+          currentMh = activeLineIdx.reduce((sum, idx) => {
+            return next[`${day}|${slot.key}|${idx}`] ? sum + Math.max(0, lineCapacityByLane[String(idx)] ?? 0) : sum;
+          }, 0);
           assignments += 1;
         }
       }
@@ -1305,13 +1323,12 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
   // Slot-count per recipe code (für Multi-Day-Badge in Zellen)
   // Meals/h per (day, slot)
   function mealsPerHour(day: PlanDay, slotKey: string): number {
-    const duration = slotDuration(slotKey);
-    let total = 0;
+    let totalMh = 0;
     for (const li of activeLineIdx) {
       const r = schedule[`${day}|${slotKey}|${li}`];
-      if (r) total += portionsInSlot(r, slotKey);
+      if (r) totalMh += Math.max(0, lineCapacityByLane[String(li)] ?? 0);
     }
-    return duration > 0 ? Math.round((total / duration) * 60) : 0;
+    return Math.round(totalMh);
   }
 
   // KET filtering & grouping
@@ -1413,7 +1430,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
           <div className="flex items-center gap-2">
             {/* Sub-tab switcher */}
             <div className="flex rounded-lg bg-slate-100 ring-1 ring-slate-200 p-1 gap-0.5">
-              {([["lineplanning", "📋 Plating Linien Plannung"], ["ket", "🍳 KET / Küche"]] as const).map(([k, l]) => (
+              {([["lineplanning", "📋 Plating Linien Plannung"], ["ket", "🍳 KET"]] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setSubTab(k)}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
                     subTab === k ? "bg-white shadow ring-1 ring-slate-300 text-slate-800" : "text-slate-500 hover:text-slate-700"
@@ -1433,13 +1450,6 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
               title="Hilfe & Bedienung"
             >
               ? Hilfe
-            </button>
-            <button
-              onClick={copyCurrentMealsAsTargets}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-              title="Aktuelle Meals/h in Zielwerte kopieren"
-            >
-              🎯 Zielwerte übernehmen
             </button>
             <button
               onClick={autoPlanFromTargets}
@@ -1473,26 +1483,13 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
             {autoPlanNotice}
           </div>
         )}
-        {dataWarning && (
-          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 ring-1 ring-amber-200 flex items-start gap-2">
-            <span className="shrink-0">⚠️</span>
-            <span>{dataWarning}</span>
-          </div>
-        )}
-        {weekIntel && !weekIntel.hasTruthData && (
-          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 ring-1 ring-amber-200 flex items-start gap-2">
-            <span className="shrink-0">⚠️</span>
-            <span>Für diese KW fehlen aktuell Truth-/PDL-Daten im Export. Linien- und KET-Zahlen laufen, PDL/Forecast bleiben bis zum passenden KW-Export leer.</span>
-          </div>
-        )}
         {showHelp && (
           <div className="mt-3 rounded-xl bg-slate-50 ring-1 ring-slate-200 p-4 text-xs text-slate-700 space-y-3">
             <div className="font-bold text-sm text-slate-800 mb-1">Bedienung – Factor OPS Planner · Linienplanung</div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
               <div><span className="font-semibold text-slate-900">📋 Plating Linien Plannung</span> – Wechselt zum Raster-Tab: 7 Tage × 9 Zeitslots × 3 P-Linien. Rezepte per Drag&amp;Drop aus dem Rezept-Pool (rechts) in die Slots ziehen.</div>
-              <div><span className="font-semibold text-slate-900">🍳 KET / Küche</span> – Kitchen Equipment Tracking: zeigt alle Produktionsaufträge (Work Orders) aus dem Google Sheet, geordnet nach Produktionstag. Cards per Drag&amp;Drop in andere Tage verschieben, Klick auf Status schaltet weiter.</div>
+              <div><span className="font-semibold text-slate-900">🍳 KET</span> – Kitchen Equipment Tracking: zeigt alle Produktionsaufträge (Work Orders) aus dem Google Sheet, geordnet nach Produktionstag. Cards per Drag&amp;Drop in andere Tage verschieben, Klick auf Status schaltet weiter.</div>
               <div><span className="font-semibold text-slate-900">QR / URL</span> – Öffnet ein Modal mit QR-Code und direktem Link zu dieser Woche. Link direkt in Teams/WhatsApp teilen – Empfänger landen sofort auf der richtigen KW.</div>
-              <div><span className="font-semibold text-slate-900">🎯 Zielwerte übernehmen</span> – Kopiert die aktuell berechneten Meals/h-Werte aller belegten Slots als Zielwerte. Danach werden Abweichungen farbig angezeigt (grün = on target, gelb/rot = Abweichung).</div>
               <div><span className="font-semibold text-slate-900">🤖 Auto-Plan</span> – Füllt alle leeren Slots automatisch nach Zielwerten und Rezept-Volumen. Bereits belegte Slots werden nicht überschrieben.</div>
               <div><span className="font-semibold text-slate-900">💾 Plan sichern</span> – Speichert die komplette Planung (Schedule, KET-Status, Zielwerte) in Firestore. Alle anderen Planer sehen die Änderungen sofort (Echtzeit-Sync).</div>
               <div><span className="font-semibold text-slate-900">Rezept-Pool (rechts)</span> – Zeigt alle Rezepte der KW mit Volumen pro Markt. Von hier per Drag&amp;Drop in Slots ziehen. Volumen-Balance unten zeigt Fortschritt.</div>
@@ -1697,7 +1694,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                   onChange={e => setAutoPlanMode(e.target.value as AutoPlanMode)}
                   className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700"
                 >
-                  <option value="fulfillment-smart">Fulfillment smart (Fr NORD+BENL+DE, So Rest-DE)</option>
+                  <option value="fulfillment-smart">Fulfillment smart (Do BENL/NORD 50%, Fr BENL/NORD/DE 50%, So DE 50%)</option>
                   <option value="subrecipe-first">Lange Sub-Rezepte zuerst (Mo-Do)</option>
                   <option value="balanced">Balanced</option>
                 </select>
