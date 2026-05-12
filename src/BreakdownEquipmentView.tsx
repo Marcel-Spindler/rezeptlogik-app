@@ -1261,6 +1261,9 @@ export function BreakdownEquipmentView({
   // Welche Ingredient-Zeilen haben die Override-Eingaben offen
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
 
+  // Rohwaren-Rechner: eingetippte kg-Werte pro Sub-Pfad (key = `${mealCode}-path-${idx}`)
+  const [pathRawInputs, setPathRawInputs] = useState<Record<string, string>>({});
+
   function toggleOverrideRow(key: string) {
     setExpandedOverrides((prev) => {
       const next = new Set(prev);
@@ -2352,6 +2355,14 @@ export function BreakdownEquipmentView({
                     const crumbs = [path.sub1, path.sub2, path.sub3]
                       .filter((s) => s && s !== "—" && s !== "Ohne Sub-Rezept")
                       .filter(Boolean);
+                    // Rohwaren-Rechner: Berechnungen für diesen Pfad
+                    const pathKey = `${meal.code}-path-${idx}`;
+                    const rawStr = pathRawInputs[pathKey] ?? "";
+                    const rawKg = rawStr !== "" ? (wrParseNumberLoose(rawStr) ?? null) : null;
+                    const rawCoverage = rawKg != null && path.totalKg > 0 ? rawKg / path.totalKg : null;
+                    const rawPortions = rawCoverage != null ? Math.floor(meal.portionsEffective * rawCoverage) : null;
+                    const pathYieldFactor = path.totalKg > 0 ? (path.totalKg - path.totalLossKg) / path.totalKg : 1;
+                    const rawNetKg = rawKg != null ? rawKg * pathYieldFactor : null;
                     const eq = path.equipmentHint;
                     const colors = equipmentColorScheme(eq);
                     return (
@@ -2407,6 +2418,29 @@ export function BreakdownEquipmentView({
                                 <span className="text-[9px] text-slate-400">{path.cookCategories}</span>
                               )}
                             </div>
+                            {/* Yield-Zusammenfassung: Roh → Verlust → Netto */}
+                            {path.totalKg > 0 && (
+                              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Roh</span>
+                                  <span className="text-[10px] font-bold text-slate-600 tabular-nums">{wrFmtKg(path.totalKg)}</span>
+                                </div>
+                                {path.totalLossKg > 0 ? (
+                                  <>
+                                    <span className="text-[8px] font-semibold text-amber-500 whitespace-nowrap">
+                                      −{wrFmtKg(path.totalLossKg)} ({Math.round((path.totalLossKg / path.totalKg) * 100)}% Verlust)
+                                    </span>
+                                    <span className="text-[8px] text-slate-300">→</span>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-600">Netto</span>
+                                      <span className="text-[10px] font-bold text-emerald-700 tabular-nums">{wrFmtKg(path.totalKg - path.totalLossKg)}</span>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <span className="text-[8px] font-semibold text-emerald-500">✓ kein Yield-Verlust</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-stretch gap-3 shrink-0 flex-wrap">
                             {batchCount != null && (
@@ -2458,6 +2492,86 @@ export function BreakdownEquipmentView({
                             </span>
                           </div>
                         )}
+                        {/* Rohwaren-Rechner: Verfügbarkeits-Kalkulator für diesen Sub-Pfad */}
+                        <div className={`px-4 py-2.5 border-b flex flex-wrap items-center gap-x-3 gap-y-1.5 transition-colors ${
+                          rawCoverage != null && rawCoverage < 0.8
+                            ? "bg-rose-50/60 border-rose-100"
+                            : rawCoverage != null && rawCoverage < 1
+                            ? "bg-amber-50/60 border-amber-100"
+                            : rawCoverage != null && rawCoverage >= 1
+                            ? "bg-emerald-50/50 border-emerald-100"
+                            : "bg-slate-50/80 border-slate-100"
+                        }`}>
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 shrink-0">🧮 Rohwaren-Rechner</span>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              placeholder="kg eingeben …"
+                              value={rawStr}
+                              onChange={(e) =>
+                                setPathRawInputs((prev) => ({ ...prev, [pathKey]: e.target.value }))
+                              }
+                              className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 tabular-nums focus:ring-1 focus:ring-indigo-300 focus:outline-none"
+                            />
+                            <span className="text-[10px] text-slate-400">kg verfügbar</span>
+                          </div>
+                          {rawKg != null && (
+                            <>
+                              <div className="h-3 w-px bg-slate-200 shrink-0" />
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {/* Deckungsgrad */}
+                                <div className="flex items-center gap-1">
+                                  <span className={`text-sm font-black tabular-nums leading-none ${
+                                    rawCoverage != null && rawCoverage >= 1
+                                      ? "text-emerald-600"
+                                      : rawCoverage != null && rawCoverage >= 0.8
+                                      ? "text-amber-600"
+                                      : "text-rose-600"
+                                  }`}>
+                                    {rawCoverage != null ? Math.round(rawCoverage * 100) : 0}%
+                                  </span>
+                                  <span className="text-[9px] text-slate-400">Deckung</span>
+                                </div>
+                                {/* Portionen die machbar sind */}
+                                <div className="flex items-center gap-1">
+                                  <span className={`text-[11px] font-bold tabular-nums ${
+                                    rawCoverage != null && rawCoverage >= 1 ? "text-emerald-700" : "text-amber-700"
+                                  }`}>
+                                    {rawPortions?.toLocaleString("de-DE")}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400">/ {Math.round(meal.portionsEffective).toLocaleString("de-DE")} Port.</span>
+                                </div>
+                                {/* Netto-Ertrag (nach Yield-Verlust) */}
+                                {rawNetKg != null && path.totalLossKg > 0 && (
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[9px] text-slate-400">Netto-Ertrag:</span>
+                                    <span className="text-[10px] font-bold text-emerald-600 tabular-nums">{wrFmtKg(rawNetKg)}</span>
+                                  </div>
+                                )}
+                                {/* Engpass-Warnung */}
+                                {rawCoverage != null && rawCoverage < 1 && (
+                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ring-1 ${
+                                    rawCoverage < 0.8
+                                      ? "text-rose-700 bg-rose-50 ring-rose-200"
+                                      : "text-amber-700 bg-amber-50 ring-amber-200"
+                                  }`}>
+                                    ⚠ Engpass: −{Math.round((1 - rawCoverage) * meal.portionsEffective).toLocaleString("de-DE")} Port. fehlen im Gesamtmeal
+                                  </span>
+                                )}
+                                {/* Volldeckung */}
+                                {rawCoverage != null && rawCoverage >= 1 && (
+                                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg ring-1 ring-emerald-200">
+                                    ✓ Volldeckung{rawCoverage > 1
+                                      ? ` (+${Math.round((rawCoverage - 1) * meal.portionsEffective).toLocaleString("de-DE")} Port. Überschuss)`
+                                      : ""}
+                                  </span>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
                         {/* Ingredient table */}
                         <div className="overflow-x-auto bg-white">
                           <table className="w-full text-sm">
