@@ -22,6 +22,7 @@
     ],
     "rewrites": [
       { "source": "/api/refresh-ramp-up", "function": "refreshRampUp" },
+      { "source": "/api/wms-live", "function": "wmsLive" },
       { "source": "**", "destination": "/index.html" }
     ]
   }

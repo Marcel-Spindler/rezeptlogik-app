@@ -16,7 +16,7 @@ test("Planning OASE owns rack and line planning navigation", async ({ page }) =>
   await expect(page.getByText("Rack v2")).toBeVisible();
 
   await page.getByRole("button", { name: "Linienplanung" }).click();
-  await expect(page.getByText("Plating Linien Plannung")).toBeVisible();
+  await expect(page.getByText("Plating Linien Plannung").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Breakdown+" }).click();
   await expect(page.getByText("Meal-Auswahl")).toBeVisible();
@@ -30,7 +30,7 @@ test("legacy urls still land inside Planning OASE", async ({ page }) => {
   await expect(page.getByText("Rack v2")).toBeVisible({ timeout: 30000 });
 
   await page.goto("http://127.0.0.1:5173?view=ket");
-  await expect(page.getByText("Plating Linien Plannung")).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Plating Linien Plannung").first()).toBeVisible({ timeout: 30000 });
 
   await page.goto("http://127.0.0.1:5173?view=breakdown");
   await expect(page.getByText("Meal-Auswahl")).toBeVisible({ timeout: 30000 });
@@ -43,6 +43,10 @@ test("Planning OASE supports section deep links", async ({ page }) => {
   await page.getByRole("button", { name: "Breakdown+" }).click();
   await expect(page).toHaveURL(/oase=breakdown/);
   await expect(page.getByText("Meal-Auswahl")).toBeVisible();
+
+  await page.getByRole("button", { name: "WMS Live" }).click();
+  await expect(page).toHaveURL(/oase=wms/);
+  await expect(page.getByText("WMS Live Soll/Ist")).toBeVisible();
 });
 
 test("Planning OASE cockpit renders on mobile", async ({ page }) => {

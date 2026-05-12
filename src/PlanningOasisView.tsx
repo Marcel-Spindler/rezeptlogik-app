@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import type { DataBundle, WeekRecipe } from "./types";
 import { PlanningView } from "./PlanningView";
 import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
+import { WmsLiveView } from "./WmsLiveView";
 import type { UiLocale } from "./i18n";
 import { usePlanningOasisData } from "./planningOasisData";
 import { loadFactorDailyMeta, type FactorDailyMeta } from "./planningTruthData";
@@ -9,10 +10,10 @@ import { loadFactorDailyMeta, type FactorDailyMeta } from "./planningTruthData";
 const LinePlanningSection = lazy(() => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView })));
 const RackSection = lazy(() => import("./RackV2View").then((module) => ({ default: module.RackV2View })));
 
-type OasisSection = "cockpit" | "lines" | "rack" | "breakdown" | "recipes";
+type OasisSection = "cockpit" | "lines" | "rack" | "breakdown" | "wms" | "recipes";
 type SourceHealthStatus = "ok" | "warn" | "missing" | "checking";
 
-const OASIS_SECTIONS: readonly OasisSection[] = ["cockpit", "lines", "rack", "breakdown", "recipes"] as const;
+const OASIS_SECTIONS: readonly OasisSection[] = ["cockpit", "lines", "rack", "breakdown", "wms", "recipes"] as const;
 const OASIS_SOURCE_CHECKS: ReadonlyArray<{ key: string; label: string; path: string; optional?: boolean }> = [
   { key: "app-data", label: "App Data", path: "/data/data.json" },
   { key: "kpl", label: "KPL Dump", path: "/data/gsheet-dump-Kitchen_Priority_List-Verden-2026.json" },
@@ -217,6 +218,7 @@ export function PlanningOasisView({
             ["lines", "Linienplanung"],
             ["rack", "Rack"],
             ["breakdown", "Breakdown+"],
+            ["wms", "WMS Live"],
             ["recipes", "Rezept-Fokus"]
           ] as [OasisSection, string][]).map(([key, label]) => (
             <button
@@ -385,6 +387,13 @@ export function PlanningOasisView({
           week={week}
           upliftPercent={upliftPercent}
           locale={locale}
+        />
+      )}
+
+      {section === "wms" && (
+        <WmsLiveView
+          data={data}
+          week={week}
         />
       )}
 
