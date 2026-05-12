@@ -567,16 +567,14 @@ function subRecipeLeadClass(sub: SubRecipe, spec?: ProcessSpec): number {
 }
 
 function defaultPlatingDayForRecipe(weekRecipe: WeekRecipe): PlannerDay {
-  // Wenn es einen DE-Sonntagssplit gibt und der DE-Anteil ueberwiegt → Plating So.
-  // Sonst Plating am Freitag (DK/SE + BENL + DE Split 1).
+  // Plating-Linie läuft 1 Tag VOR dem Versand (Fr), damit noch Zeit für Sleeving bleibt.
+  // → Plating-Anker für die Küchen-Autoplanung = "Do" (Donnerstag).
+  // Ausnahme: wenn DE-Anteil überwiegt und ein So-Split entsteht, bleibt Do als
+  // frühester gemeinsamer Anker (Fr-Split 1 läuft auf Do, So-Split auf Sa – Do
+  // deckt trotzdem den frühesten Bedarf ab).
   const total = weekRecipe.verdenVolume.BENL + weekRecipe.verdenVolume.DKSE + weekRecipe.verdenVolume.DE;
-  if (total <= 0) return "Fr";
-  const deShare = weekRecipe.verdenVolume.DE / total;
-  // Heuristik: ueberwiegender DE-Anteil → ein Teil laeuft Sonntag; wir wollen
-  // dass die Komponenten bis Fr UND Sa fertig sind. Wir nehmen den FRUEHEREN
-  // Plating-Tag (Fr) als Deadline, damit Komponenten fuer beide Splits da sind.
-  if (deShare >= 0.6) return "Fr"; // bewusst Fr, weil Fr-Split 1 zuerst raus muss
-  return "Fr";
+  if (total <= 0) return "Do";
+  return "Do"; // 1 Tag vor Fr-Versand → Sleeving-Puffer sichergestellt
 }
 
 function shiftDaysBackward(day: PlannerDay, days: number): PlannerDay {
@@ -609,10 +607,14 @@ export interface BatchSplit {
   fulfillmentDay: PlannerDay;
   fulfillmentLabel: string;
   portions: number;
+  /** Tatsächlicher Plating-Linen-Tag (= 1 Tag vor Versand im Fallback; = entry.platDay bei liniengetriebenem Pfad) */
+  platDay: PlannerDay;
   earliestProductionDay: PlannerDay;
   latestProductionDay: PlannerDay;
   recommendedProductionDay: PlannerDay;
   reason: string;
+  /** Kapazität der Plating-Linie für diesen Batch (wenn aus Linienplanung bekannt) */
+  lineCapacityPortions?: number;
 }
 
 export interface BatchSplitPlan {
@@ -623,6 +625,29 @@ export interface BatchSplitPlan {
   customerTargetDays: number;
   totalPortions: number;
   batches: BatchSplit[];
+  /** Gesamtkapazität aller Plating-Linien für dieses Rezept (wenn bekannt) */
+  totalLineCapacity?: number;
+  /** Forecast - Linienkapazität (positiv = Lücke, negativ = Überschuss) */
+  lineCoverageGap?: number;
+}
+
+/**
+ * Zusammenfassung der Plating-Linienkapazität pro Rezept und Produktionstag.
+ * Wird aus dem Linienplan-Schedule (Firestore) berechnet und an
+ * computeBatchSplitPlan übergeben.
+ */
+export interface LinePlatingEntry {
+  /** Produktionstag auf der Linie (als PlannerDay: Mo/Di/Mi/Do/Fr/Sa/So) */
+  platDay: PlannerDay;
+  /** Gesamtkapazität der Linie an diesem Tag für dieses Rezept (Portionen) */
+  capacityPortions: number;
+  /** Anzahl der belegten Zeitslots */
+  slotCount: number;
+}
+
+export interface LinePlatingSummary {
+  /** keyed by recipe code */
+  byRecipe: Record<string, LinePlatingEntry[]>;
 }
 
 const CUSTOMER_TARGET_DAYS = 7;
@@ -682,7 +707,46 @@ function recommendedProdDayInWindow(
   return fulfillmentDay;
 }
 
-export function computeBatchSplitPlan(data: DataBundle, week: string): BatchSplitPlan[] {
+/**
+ * Berechnet den empfohlenen Küchenproduktions-Tag relativ zu einem gegebenen
+ * Plating-Tag unter Berücksichtigung der MHD-Regeln.
+ */
+function computeProductionWindowForPlatDay(
+  platDay: PlannerDay,
+  maxGapDays: number
+): { earliest: PlannerDay; latest: PlannerDay; recommended: PlannerDay } {
+  const platIdx = PLANNER_DAYS.indexOf(platDay);
+  // Küche muss spätestens am Tag VOR dem Plating fertig sein
+  const latestIdxRaw = Math.max(0, platIdx - 1);
+  const earliestIdxRaw = Math.max(0, platIdx - maxGapDays);
+  const clamped = clampToKitchenOpenIdx(earliestIdxRaw, latestIdxRaw);
+  const earliestIdx = clamped ? clamped.lo : earliestIdxRaw;
+  const latestIdx = clamped ? clamped.hi : latestIdxRaw;
+  const recommended = recommendedProdDayInWindow(platDay, earliestIdx, latestIdx);
+  return {
+    earliest: PLANNER_DAYS[earliestIdx] ?? platDay,
+    latest: PLANNER_DAYS[latestIdx] ?? platDay,
+    recommended,
+  };
+}
+
+/**
+ * Batch-Split Plan: pro Woche und Rezept werden die Mengen auf die Plating-Tage
+ * aufgeteilt.
+ *
+ * Wenn `lineSummary` übergeben wird und für ein Rezept Plating-Linen-Einträge
+ * vorhanden sind, werden die Batches aus dem Linienplan abgeleitet (liniengetrieben).
+ * Die Ghost-Pills zeigen dann den tatsächlichen Plating-Tag der Linie und die
+ * Linienkapazität. Der Forecast-Vergleich wird in `lineCoverageGap` geliefert.
+ *
+ * Ohne Linienplan (oder wenn ein Rezept im Linienplan fehlt) fällt die Funktion
+ * auf die MHD-basierte Fr/So-Heuristik zurück.
+ */
+export function computeBatchSplitPlan(
+  data: DataBundle,
+  week: string,
+  lineSummary?: LinePlatingSummary
+): BatchSplitPlan[] {
   const rows = data.weekRecipes.filter(r => {
     if (r.hfWeek !== week) return false;
     const code = (r.code ?? "").toUpperCase();
@@ -706,54 +770,84 @@ export function computeBatchSplitPlan(data: DataBundle, week: string): BatchSpli
     const shelfLifeDays = isSeafood ? 9 : 13;
     const maxGapDays = Math.max(1, shelfLifeDays - CUSTOMER_TARGET_DAYS);
 
+    // ── Liniengetriebener Pfad ──────────────────────────────────────────────
+    const lineEntries = lineSummary?.byRecipe[wr.code];
+    if (lineEntries && lineEntries.length > 0) {
+      // Einträge chronologisch sortieren (Mo < Di < ... < So)
+      const sorted = [...lineEntries].sort(
+        (a, b) => PLANNER_DAYS.indexOf(a.platDay) - PLANNER_DAYS.indexOf(b.platDay)
+      );
+      const totalLineCapacity = sorted.reduce((s, e) => s + e.capacityPortions, 0);
+      const lineCoverageGap = totalPortions - totalLineCapacity; // positiv = Lücke
+
+      const batches: BatchSplit[] = sorted.map((entry, idx) => {
+        const { earliest, latest, recommended } = computeProductionWindowForPlatDay(
+          entry.platDay, maxGapDays
+        );
+        return {
+          fulfillmentDay: entry.platDay,
+          platDay: entry.platDay,
+          fulfillmentLabel: `Plating-Linie ${entry.platDay} (${entry.slotCount} Slot${entry.slotCount !== 1 ? "s" : ""})`,
+          portions: entry.capacityPortions,
+          earliestProductionDay: earliest,
+          latestProductionDay: latest,
+          recommendedProductionDay: recommended,
+          reason: `Linienplanung: ${entry.slotCount} Slot(s) am ${entry.platDay} → ${entry.capacityPortions.toLocaleString("de-DE")} Port. Kapazität${isSeafood ? " (Fisch MHD 9d)" : ""}`,
+          lineCapacityPortions: entry.capacityPortions,
+        } satisfies BatchSplit;
+      });
+
+      plans.push({
+        recipeCode: wr.code,
+        recipeName: wr.recipeName,
+        isSeafood,
+        shelfLifeDays,
+        customerTargetDays: CUSTOMER_TARGET_DAYS,
+        totalPortions,
+        batches,
+        totalLineCapacity,
+        lineCoverageGap,
+      });
+      continue;
+    }
+
+    // ── Fallback: MHD-basierte Fr/So-Heuristik ─────────────────────────────
     const batches: BatchSplit[] = [];
 
     if (friPortions > 0) {
-      const fulfillIdx = PLANNER_DAYS.indexOf("Fr");
-      const earliestIdxRaw = Math.max(0, fulfillIdx - maxGapDays);
-      const latestIdxRaw = fulfillIdx; // bis einschliesslich Fr (Plating)
-      const clamped = clampToKitchenOpenIdx(earliestIdxRaw, latestIdxRaw);
-      const earliestIdx = clamped ? clamped.lo : earliestIdxRaw;
-      const latestIdx = clamped ? clamped.hi : latestIdxRaw;
-      const earliest = PLANNER_DAYS[earliestIdx];
-      const latest = PLANNER_DAYS[latestIdx];
-      const recommended = recommendedProdDayInWindow("Fr", earliestIdx, latestIdx);
+      // Plating muss 1 Tag VOR dem Versand (Fr) fertig sein, damit Sleeving noch stattfinden kann.
+      const platDay = PLANNER_DAYS[Math.max(0, PLANNER_DAYS.indexOf("Fr") - 1)] as PlannerDay; // "Do"
+      const { earliest, latest, recommended } = computeProductionWindowForPlatDay(platDay, maxGapDays);
       batches.push({
         fulfillmentDay: "Fr",
+        platDay,
         fulfillmentLabel: "Fulfillment 1 (DK/SE + BENL + DE Split 1)",
         portions: friPortions,
         earliestProductionDay: earliest,
         latestProductionDay: latest,
         recommendedProductionDay: recommended,
         reason: isSeafood
-          ? `Fisch MHD 9d → fruehestens ${earliest}, empfohlen ${recommended} (Mo–Fr)`
-          : `MHD 13d → Produktion ${earliest}–${latest} (Mo–Fr), empfohlen ${recommended}`
+          ? `Fisch MHD 9d → Plating ${platDay}, Küche ${earliest}–${latest}, empfohlen ${recommended}`
+          : `MHD 13d → Plating ${platDay}, Küche ${earliest}–${latest}, empfohlen ${recommended}`
       });
     }
 
     if (sunPortions > 0) {
-      const fulfillIdx = PLANNER_DAYS.indexOf("So");
-      const earliestIdxRaw = Math.max(0, fulfillIdx - maxGapDays);
-      const latestIdxRaw = fulfillIdx;
-      const clamped = clampToKitchenOpenIdx(earliestIdxRaw, latestIdxRaw);
-      const earliestIdx = clamped ? clamped.lo : earliestIdxRaw;
-      const latestIdx = clamped ? clamped.hi : latestIdxRaw;
-      const earliest = PLANNER_DAYS[earliestIdx];
-      const latest = PLANNER_DAYS[latestIdx];
-      const recommended = recommendedProdDayInWindow("So", earliestIdx, latestIdx);
-      const kitchenClosedTail = !clamped || clamped.hi < latestIdxRaw;
+      // Plating muss 1 Tag VOR dem Versand (So) fertig sein → Plating-Tag = Sa.
+      // Kueche ist Sa/So zu, daher verschiebt computeProductionWindowForPlatDay den Horizont automatisch.
+      const platDay = PLANNER_DAYS[Math.max(0, PLANNER_DAYS.indexOf("So") - 1)] as PlannerDay; // "Sa"
+      const { earliest, latest, recommended } = computeProductionWindowForPlatDay(platDay, maxGapDays);
       batches.push({
         fulfillmentDay: "So",
+        platDay,
         fulfillmentLabel: "Fulfillment 2 (DE Split 2)",
         portions: sunPortions,
         earliestProductionDay: earliest,
         latestProductionDay: latest,
         recommendedProductionDay: recommended,
         reason: isSeafood
-          ? `Fisch MHD 9d, Sa/So Kueche zu → Produktion zwingend ${recommended} (Vorlauf 2 Tage in den Versand am So)`
-          : kitchenClosedTail
-            ? `MHD 13d, Sa/So Kueche zu → spaetestmoeglich ${recommended}, Fenster ${earliest}–${latest}`
-            : `MHD 13d → Produktion ${earliest}–${latest}, empfohlen ${recommended}`
+          ? `Fisch MHD 9d → Plating ${platDay} (Kueche zu) → Küche spätestens ${recommended}`
+          : `MHD 13d → Plating ${platDay}, Küche ${earliest}–${latest}, empfohlen ${recommended}`
       });
     }
 
@@ -768,8 +862,11 @@ export function computeBatchSplitPlan(data: DataBundle, week: string): BatchSpli
     });
   }
 
-  // Sortiere: Multi-Batch zuerst (Split-Faelle), dann Seafood, dann Rest.
+  // Sortiere: Liniengetriebene zuerst, dann Multi-Batch (Split-Faelle), dann Seafood, dann Rest.
   return plans.sort((a, b) => {
+    const aLine = a.totalLineCapacity !== undefined ? 0 : 1;
+    const bLine = b.totalLineCapacity !== undefined ? 0 : 1;
+    if (aLine !== bLine) return aLine - bLine;
     const aMulti = a.batches.length > 1 ? 0 : 1;
     const bMulti = b.batches.length > 1 ? 0 : 1;
     if (aMulti !== bMulti) return aMulti - bMulti;
@@ -783,7 +880,7 @@ export function suggestAssignments(
   week: string,
   scenario: PlannerScenario,
   activeShifts: readonly PlannerShift[],
-  options?: { portionMultiplier?: number; shiftCapacityMin?: number; stationDeviceCounts?: Partial<Record<Station, number>>; stationPools?: Partial<Record<Station, string>> }
+  options?: { portionMultiplier?: number; shiftCapacityMin?: number; stationDeviceCounts?: Partial<Record<Station, number>>; stationPools?: Partial<Record<Station, string>>; lineSummary?: LinePlatingSummary }
 ): Record<string, PlannerSuggestedAssignment> {
   const analysis = analyzePlan(data, week, scenario, options);
   const stationDeviceCounts = options?.stationDeviceCounts ?? {};
@@ -833,7 +930,17 @@ export function suggestAssignments(
   for (const recipe of analysis.recipes) {
     const recipeLoad = computeWeekLoad(data, week, { portionMultiplier: options?.portionMultiplier }).recipes.find(r => r.weekRecipe.code === recipe.recipeCode);
     if (!recipeLoad) continue;
-    const platingDay = defaultPlatingDayForRecipe(recipeLoad.weekRecipe);
+
+    // Plating-Tag: aus Linienplan (Quelle der Wahrheit) oder Fallback-Heuristik.
+    // Wenn mehrere Plating-Tage im Linienplan existieren, nehmen wir den
+    // FRÜHESTEN, da der rückwärts geplante Küchentag konservativ sein muss.
+    const lineEntries = options?.lineSummary?.byRecipe[recipe.recipeCode];
+    const platingDay: PlannerDay = lineEntries && lineEntries.length > 0
+      ? lineEntries.reduce((earliest, e) =>
+          PLANNER_DAYS.indexOf(e.platDay) < PLANNER_DAYS.indexOf(earliest.platDay) ? e : earliest
+        ).platDay
+      : defaultPlatingDayForRecipe(recipeLoad.weekRecipe);
+
     const hints = recipePlanningHints(data, week, recipe.recipeCode);
 
     // Pro Sub-Rezept Lead-Klasse → Tag bestimmen.

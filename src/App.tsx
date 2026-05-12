@@ -13,6 +13,7 @@ import { useRecipePlanningIntel } from "./planningOasisData";
 
 const RackV2View = lazy(() => loadDynamicModule("rack-v2-view", () => import("./RackV2View").then((module) => ({ default: module.RackV2View }))));
 const LinePlanningView = lazy(() => loadDynamicModule("line-planning", () => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView }))));
+const PlanningEmailView = lazy(() => import("./PlanningEmailView").then((module) => ({ default: module.PlanningEmailView })));
 
 const MARKETS: Market[] = ["BENL", "DKSE", "DE"];
 const MARKET_LABEL: Record<Market, string> = { BENL: "BENL", DKSE: "DK/SE", DE: "DE" };
@@ -360,7 +361,7 @@ function usePersistent<T>(key: string, defaultVal: T): [T, React.Dispatch<React.
   return [state, wrapped];
 }
 
-type AppView = "recipe" | "equipment" | "breakdown" | "planning" | "woche" | "rack" | "ket" | "phase2" | "wochenplaner";
+type AppView = "recipe" | "equipment" | "breakdown" | "planning" | "woche" | "rack" | "ket" | "phase2" | "wochenplaner" | "rundmail";
 type AppSurface = "full" | "kitchen";
 
 const ALL_VIEWS: readonly AppView[] = ["recipe", "equipment", "breakdown", "planning", "woche", "rack", "ket", "phase2"] as const;
@@ -565,8 +566,9 @@ export default function App() {
               ["wochenplaner", "Wochenplaner"],
               ["rack", "Rack"],
               ["ket", "Linien-Fokus"],
-              ["phase2", "What-if & Diff"]
-            ] as ["recipe"|"equipment"|"breakdown"|"planning"|"woche"|"rack"|"ket"|"phase2"|"wochenplaner", string][]).map(([k, l]) => (
+              ["phase2", "What-if & Diff"],
+              ["rundmail", "📧 Rundmail"]
+            ] as ["recipe"|"equipment"|"breakdown"|"planning"|"woche"|"rack"|"ket"|"phase2"|"wochenplaner"|"rundmail", string][]).map(([k, l]) => (
               <button key={k} onClick={() => setView(k)}
                 className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md ${
                   view === k ? "bg-white shadow ring-1 ring-slate-300" : "text-slate-500 hover:text-slate-800"
@@ -777,6 +779,11 @@ export default function App() {
           )}
           {view === "phase2" && (
             <WhatIfView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />
+          )}
+          {view === "rundmail" && (
+            <Suspense fallback={<div className="card p-6 text-slate-500">Planungsrundmail wird geladen …</div>}>
+              <PlanningEmailView data={data} week={selectedWeek} />
+            </Suspense>
           )}
           {view === "recipe" && (activeRecipe
             ? <RecipeDetail wr={activeRecipe} recipe={data.recipes[activeRecipe.code]} data={data}

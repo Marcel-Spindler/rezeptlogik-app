@@ -245,6 +245,26 @@ function recipeYieldLookup(structure: RecipeStructure | undefined): Map<string, 
   return map;
 }
 
+// Yield-Lookup rein nach ingredientId (nicht subRecipeId-gebunden) für den Breakdown-Rechner.
+// Mehrfache Vorkommen: erster gefundener Wert gewinnt.
+function wrCollectIngYield(node: DetailedSubRecipe, target: Map<string, number>): void {
+  for (const ing of node.ingredients) {
+    if (!ing.id || !ing.yieldPct || !Number.isFinite(ing.yieldPct) || ing.yieldPct <= 0 || ing.yieldPct > 1) continue;
+    if (!target.has(ing.id)) target.set(ing.id, ing.yieldPct);
+  }
+  for (const child of node.subRecipes) wrCollectIngYield(child, target);
+}
+
+function wrIngredientYieldMap(structure: RecipeStructure | undefined): Map<string, number> {
+  const map = new Map<string, number>();
+  if (!structure) return map;
+  for (const roots of Object.values(structure.markets)) {
+    if (!roots) continue;
+    for (const root of roots) wrCollectIngYield(root, map);
+  }
+  return map;
+}
+
 function ingredientRowTubsByMode(
   row: IngredientCalcRow,
   mode: YieldMode,
@@ -730,6 +750,9 @@ interface WR_IngRow {
   totalKg: number | null;
   pieceKgHint: number | null;
   inferredPcsPerTray: number | null;
+  // Yield-Verlust
+  yieldPct: number | null;   // 0..1 (z. B. 0.85 = 85 % Ausbeute, 15 % Verlust)
+  lossKg: number | null;     // = totalKg * (1 - yieldPct)
 }
 
 interface WR_PathAgg {
@@ -738,8 +761,11 @@ interface WR_PathAgg {
   sub3: string;
   rows: WR_IngRow[];
   totalKg: number;
+  totalLossKg: number;       // Summe der Yield-Verluste aller Zutaten
   capacityKgHint: number | null;
   equipmentHint: string | null;
+  isBrining: boolean;        // 1:1 Wasserzugabe beim Brinen → Wannenvolumen verdoppelt sich
+  cookCategories: string;    // kombinierte Sub-Rezept-Kategorien
 }
 
 interface WR_MealAgg {
@@ -750,6 +776,7 @@ interface WR_MealAgg {
   portionsEffective: number;
   paths: WR_PathAgg[];
   totalKg: number;
+  totalLossKg: number;       // Gesamtverlust über alle Pfade
 }
 
 interface WRCapacityHint {
@@ -804,6 +831,11 @@ function wrFmtQty(qty: number, uom: string): string {
   return Number(qty.toFixed(1)).toLocaleString("de-DE") + " " + uom;
 }
 
+/** Entfernt Market-Tags wie [BNL], [BENL], [DE], [DKSE], [NORD] aus Rezept-Namen. */
+function wrStripMarketTag(name: string): string {
+  return name.replace(/\s*\[(?:BNL|BENL|DE|DKSE|NORD)\]\s*/gi, "").trim();
+}
+
 function wrSafeFilePart(value: string): string {
   return value
     .normalize("NFKD")
@@ -816,6 +848,30 @@ function wrSafeFilePart(value: string): string {
 
 function wrTsvSafe(value: unknown): string {
   return String(value ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
+}
+
+// ── Brining-Erkennung ────────────────────────────────────────────────────────
+function wrSubRecipeCategory(recipe: Recipe, subName: string): string {
+  if (!subName || subName === "—" || subName === "Ohne Sub-Rezept") return "";
+  const needle = norm(subName);
+  for (const market of Object.values(recipe.markets)) {
+    if (!market) continue;
+    for (const sub of market.subRecipes) {
+      if (norm(sub.name) === needle) return sub.category || "";
+    }
+  }
+  return "";
+}
+
+function wrPathIsBrining(recipe: Recipe, sub1: string, sub2: string, sub3: string): boolean {
+  return [sub1, sub2, sub3].some((n) => /brine/i.test(wrSubRecipeCategory(recipe, n)));
+}
+
+function wrPathCookCategories(recipe: Recipe, sub1: string, sub2: string, sub3: string): string {
+  return [sub1, sub2, sub3]
+    .map((n) => wrSubRecipeCategory(recipe, n))
+    .filter(Boolean)
+    .join(" / ");
 }
 
 function wrNumExport(value: number | null | undefined, digits = 3): string {
@@ -1282,7 +1338,7 @@ export function BreakdownEquipmentView({
       ...prev,
       {
         code: wr.code,
-        name: wr.recipeName,
+        name: wrStripMarketTag(wr.recipeName),
         portions: wr.totalVerdenVolume > 0 ? wr.totalVerdenVolume : 500,
         mode: "roh",
       },
@@ -1356,9 +1412,9 @@ export function BreakdownEquipmentView({
     return null;
   }
 
-  function rowTubCountByWanne(row: WR_IngRow, wanneKg: number): number | null {
+  function rowTubCountByWanne(row: WR_IngRow, wanneKg: number, briningFactor = 1): number | null {
     if (row.totalKg == null || row.totalKg <= 0) return null;
-    return Math.ceil(row.totalKg / wanneKg);
+    return Math.ceil((row.totalKg * briningFactor) / wanneKg);
   }
 
   function wrFindSubRecipeSpec(subRecipeName: string): { spec?: ProcessSpec; schedule?: CookSchedule } {
@@ -1714,49 +1770,120 @@ export function BreakdownEquipmentView({
     downloadBinaryFile(fileName, out, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   }
 
-  function exportMealsPdf(meals: WR_MealAgg[], title: string): void {
-    const sections = meals.map((meal) => {
-      const rowsHtml = mealExportRows(meal)
-        .map((row) => {
-          const tubCells = WANNEN.map((w) => `<td>${wrTsvSafe(row[`wannen_${w.label}`])}</td>`).join("");
-          const hasShelfLife = row.shelfLifeStatus && String(row.shelfLifeStatus).length > 0;
-          const isFish = String(row.shelfLifeStatus || "").toLowerCase().includes("fisch");
-          const bgStyle = isFish ? "background-color: #fef3c7;" : hasShelfLife ? "background-color: #fecaca;" : "";
-          
-          return `<tr style="${bgStyle}">
-            <td>${wrTsvSafe(row.sub1)}</td>
-            <td>${wrTsvSafe(row.sub2)}</td>
-            <td>${wrTsvSafe(row.sub3)}</td>
-            <td>${wrTsvSafe(row.ingredientId)}</td>
-            <td>${wrTsvSafe(row.ingredientName)}</td>
-            <td>${wrTsvSafe(row.uom)}</td>
-            <td>${wrTsvSafe(row.totalQty)}</td>
-            <td>${wrTsvSafe(row.totalKg)}</td>
-            <td>${wrTsvSafe(row.pcsPerTray)}</td>
-            <td>${wrTsvSafe(row.trayCount)}</td>
-            <td>${wrTsvSafe(row.batchSizeKg)}</td>
-            <td>${wrTsvSafe(row.shelfLifeStatus)}</td>
-            ${tubCells}
-          </tr>`;
-        })
+  function exportMealsPdf(meals: WR_MealAgg[], title: string, printMode: "all" | "per-meal" | "per-sub" = "all"): void {
+    // Build sections: one card per Sub-Rezept (path) sorted by meal
+    const buildPathSection = (meal: WR_MealAgg, path: WR_PathAgg, pathIdx: number): string => {
+      const briningFactor = path.isBrining ? 2 : 1;
+      const effectiveTubKg = path.totalKg * briningFactor;
+      const batchCount = path.capacityKgHint && path.capacityKgHint > 0
+        ? Math.ceil(effectiveTubKg / path.capacityKgHint)
+        : null;
+
+      const crumbs = [path.sub1, path.sub2, path.sub3]
+        .filter((s) => s && s !== "—" && s !== "Ohne Sub-Rezept");
+      const subTitle = crumbs[crumbs.length - 1] || path.sub1 || "Sub-Rezept";
+      const processPath = path.cookCategories || path.equipmentHint || "—";
+
+      const activeWannenList = WANNEN.filter((w) => activeWannen.has(w.kg));
+
+      const ingRows = path.rows.map((row) => {
+        const gnCount = rowTrayCount(row);
+        const wannenCells = activeWannenList.map((w) => {
+          const c = rowTubCountByWanne(row, w.kg, briningFactor);
+          return `<td class="tub-cell" style="text-align:center">${c != null ? `×${c}` : "—"}</td>`;
+        }).join("");
+
+        const isFish = wrFindShelfLife(row.name)?.skuName?.toLowerCase().includes("fisch") ?? false;
+        const rowBg = isFish ? "background:#fef9c3;" : "";
+        const kgDisplay = row.totalKg != null ? `${row.totalKg.toFixed(2)} kg` : `${row.totalQty.toFixed(2)} ${row.uom}`;
+        const lossCell = (row.lossKg != null && row.lossKg > 0)
+          ? `<td class="loss-cell">\u2212${row.lossKg.toFixed(2)} kg<br><span class="loss-pct">${Math.round((1 - (row.yieldPct ?? 1)) * 100)}%</span></td>`
+          : `<td class="loss-cell" style="color:#cbd5e1">\u2014</td>`;
+        const gnCell = gnCount != null
+          ? `<td colspan="${activeWannenList.length}" style="text-align:center">🍽️ ×${gnCount} GN (${row.inferredPcsPerTray ?? "?"} pcs/Blech)</td>`
+          : wannenCells;
+
+        return `<tr style="${rowBg}">
+          <td><span class="cat-badge cat-${(row.category || "").toLowerCase()}">${row.category || "—"}</span> ${wrTsvSafe(row.name)}<br><span class="id-small">${row.ingredientId !== "-" ? row.ingredientId : ""}</span></td>
+          <td style="text-align:right;white-space:nowrap">${kgDisplay}</td>
+          ${lossCell}
+          ${gnCell}
+        </tr>`;
+      }).join("");
+
+      const wannenHeaders = activeWannenList
+        .map((w) => `<th style="text-align:center">${w.label}</th>`)
         .join("");
 
+      const briningNote = path.isBrining ? `
+        <div class="brining-box">
+          💧 <strong>Brining 1:1 Wasser</strong>:
+          ${path.totalKg.toFixed(2)} kg Rohware + ${path.totalKg.toFixed(2)} kg Wasser
+          = <strong>${effectiveTubKg.toFixed(2)} kg</strong> Wannenvolumen
+          ${path.capacityKgHint ? `→ <strong>${batchCount} Wannen</strong> à ${path.capacityKgHint} kg` : ""}
+        </div>` : "";
+
       return `
-        <section>
-          <h2>${wrTsvSafe(meal.code)} - ${wrTsvSafe(meal.name)}</h2>
-          <p>Mode: ${wrTsvSafe(meal.mode)} | Portionen Input: ${wrNumExport(meal.portionsInput, 0)} | Effektiv: ${wrNumExport(meal.portionsEffective, 2)} | Total: ${wrNumExport(meal.totalKg, 3)} kg</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Sub1</th><th>Sub2</th><th>Sub3</th><th>ID</th><th>Artikel</th><th>UOM</th><th>Qty</th><th>Kg</th><th>PCS/Tray</th><th>Tray</th><th>Batch (Kg)</th><th>Haltbarkeit</th>
-                ${WANNEN.map((w) => `<th>${w.label}</th>`).join("")}
-              </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
-        </section>
-      `;
-    }).join("");
+      <section class="recipe-card" style="page-break-before: ${pathIdx > 0 ? "always" : "auto"}">
+        <div class="card-header">
+          <div class="card-header-left">
+            <div class="meal-code">${meal.code}</div>
+            <div class="meal-name">${meal.name}</div>
+          </div>
+          <div class="card-header-right">
+            <div class="week-label">KW ${week.replace("2026-", "")}</div>
+            <div class="date-label">${new Date().toLocaleDateString("de-DE")}</div>
+          </div>
+        </div>
+        <div class="card-sub-header">
+          <h2 class="sub-name">${wrTsvSafe(subTitle)}</h2>
+          <div class="meta-row">
+            <div class="meta-item"><span class="meta-label">Portionen</span><span class="meta-value">${Math.round(meal.portionsEffective).toLocaleString("de-DE")}</span></div>
+            <div class="meta-item"><span class="meta-label">Total (${meal.mode === "fertig" ? "Fertig" : "Roh"})</span><span class="meta-value">${path.totalKg.toFixed(2)} kg</span></div>
+            ${path.capacityKgHint ? `<div class="meta-item"><span class="meta-label">Kapazität/Batch</span><span class="meta-value">${path.capacityKgHint} kg</span></div>` : ""}
+            ${batchCount ? `<div class="meta-item"><span class="meta-label">Batches</span><span class="meta-value batch-count">${batchCount}</span></div>` : ""}
+            <div class="meta-item"><span class="meta-label">Prozess</span><span class="meta-value">${wrTsvSafe(processPath)}</span></div>
+            ${path.equipmentHint ? `<div class="meta-item"><span class="meta-label">Equipment</span><span class="meta-value">${wrTsvSafe(path.equipmentHint)}</span></div>` : ""}
+          </div>
+          ${crumbs.length > 1 ? `<div class="breadcrumbs">${crumbs.join(" › ")}</div>` : ""}
+        </div>
+        ${briningNote}
+        <table class="ing-table">
+          <thead>
+            <tr>
+              <th>Zutat</th>
+              <th style="text-align:right">Total Roh</th>
+              <th style="text-align:right;color:#d97706">Verlust</th>
+              ${wannenHeaders}
+            </tr>
+          </thead>
+          <tbody>${ingRows}</tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td><strong>GESAMT</strong></td>
+              <td style="text-align:right"><strong>${path.totalKg.toFixed(2)} kg${path.isBrining ? ` + ${path.totalKg.toFixed(2)} kg H₂O` : ""}</strong></td>
+              <td style="text-align:right">
+                ${path.totalLossKg > 0
+                  ? `<strong style="color:#d97706">\u2212${path.totalLossKg.toFixed(2)} kg</strong><br><span style="font-size:9px;color:#92400e">${Math.round((path.totalLossKg / path.totalKg) * 100)}% Verlust</span>`
+                  : `<span style="color:#cbd5e1">\u2014</span>`
+                }
+              </td>
+              ${activeWannenList.map((w) => {
+                const c = path.totalKg > 0 ? Math.ceil(effectiveTubKg / w.kg) : 0;
+                return `<td style="text-align:center"><strong>${c > 0 ? `×${c}` : "—"}</strong></td>`;
+              }).join("")}
+            </tr>
+          </tfoot>
+        </table>
+      </section>`;
+    };
+
+    const sections: string[] = [];
+    for (const meal of meals) {
+      for (let pi = 0; pi < meal.paths.length; pi++) {
+        sections.push(buildPathSection(meal, meal.paths[pi], printMode === "all" ? sections.length : pi));
+      }
+    }
 
     const html = `<!doctype html>
 <html>
@@ -1764,36 +1891,64 @@ export function BreakdownEquipmentView({
 <meta charset="utf-8" />
 <title>${wrTsvSafe(title)}</title>
 <style>
-  body { font-family: Arial, sans-serif; margin: 20px; color: #0f172a; }
-  h1 { margin: 0 0 4px 0; font-size: 18px; }
-  h2 { margin: 18px 0 6px 0; font-size: 14px; }
-  p { margin: 0 0 8px 0; font-size: 11px; color: #334155; }
-  table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 10px; }
-  th, td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: left; vertical-align: top; }
-  th { background: #f1f5f9; font-weight: bold; }
-  tr[style*="background-color"] { font-weight: 500; }
-  @media print { section { page-break-inside: avoid; } }
+  * { box-sizing: border-box; }
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  body { font-family: 'Arial', sans-serif; font-size: 11px; color: #0f172a; margin: 0; }
+  .recipe-card { margin-bottom: 16px; border: 1.5px solid #1e293b; border-radius: 6px; overflow: hidden; }
+  .card-header { background: #1e293b; color: white; display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; }
+  .meal-code { font-size: 9px; font-family: monospace; color: #94a3b8; letter-spacing: 0.08em; }
+  .meal-name { font-size: 13px; font-weight: 900; line-height: 1.2; }
+  .card-header-right { text-align: right; }
+  .week-label { font-size: 13px; font-weight: bold; color: #f1f5f9; }
+  .date-label { font-size: 9px; color: #94a3b8; }
+  .card-sub-header { padding: 8px 12px 6px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+  .sub-name { font-size: 15px; font-weight: 900; margin: 0 0 6px 0; color: #0f172a; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  .meta-item { display: flex; flex-direction: column; }
+  .meta-label { font-size: 7px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; font-weight: bold; }
+  .meta-value { font-size: 12px; font-weight: 700; color: #0f172a; }
+  .batch-count { font-size: 18px; font-weight: 900; color: #1d4ed8; }
+  .breadcrumbs { font-size: 9px; color: #64748b; margin-top: 4px; }
+  .brining-box { background: #eff6ff; border: 1px solid #93c5fd; padding: 6px 10px; font-size: 10px; color: #1e40af; margin: 0; }
+  .ing-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .ing-table th, .ing-table td { border: 1px solid #e2e8f0; padding: 4px 6px; vertical-align: top; }
+  .ing-table th { background: #f1f5f9; font-weight: bold; font-size: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .ing-table .total-row td { background: #f8fafc; border-top: 2px solid #334155; }
+  .tub-cell { font-weight: 700; }
+  .loss-cell { text-align: right; font-size: 10px; color: #d97706; font-weight: 700; white-space: nowrap; }
+  .loss-pct { font-size: 8px; color: #92400e; font-weight: normal; }
+  .cat-badge { display: inline-block; font-size: 7px; font-weight: 900; padding: 1px 4px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .cat-pro { background: #fef3c7; color: #92400e; }
+  .cat-spi { background: #fee2e2; color: #991b1b; }
+  .cat-phf { background: #dbeafe; color: #1e40af; }
+  .cat-dry { background: #dcfce7; color: #166534; }
+  .id-small { font-family: monospace; font-size: 8px; color: #94a3b8; }
+  @media print { .recipe-card { page-break-inside: avoid; } }
 </style>
 </head>
 <body>
-  <h1>${wrTsvSafe(title)}</h1>
-  <p>Woche: ${wrTsvSafe(week)} | Export: ${new Date().toLocaleString("de-DE")}</p>
-  <p style="font-size: 9px; color: #666;">
-    Gelb = Fisch-Artikel (9 Tage MHD) | Rot = Weitere Haltbarkeits-Info (13 Tage MHD)
-  </p>
-  ${sections}
+  ${sections.join("\n")}
 </body>
 </html>`;
 
-    const win = window.open("", "_blank", "noopener,noreferrer");
-    if (!win) return;
+    // Popup ohne noopener öffnen, damit wir document.write + print() aufrufen können
+    const win = window.open("about:blank", "_blank");
+    if (!win) {
+      // Fallback: als HTML-Datei herunterladen
+      downloadTextFile(
+        `breakdown-${week}-print.html`,
+        html,
+        "text/html;charset=utf-8"
+      );
+      return;
+    }
     win.document.open();
     win.document.write(html);
     win.document.close();
     setTimeout(() => {
       win.focus();
       win.print();
-    }, 120);
+    }, 250);
   }
 
   function exportMealSettings(meal: WR_MealAgg): void {
@@ -1855,7 +2010,7 @@ export function BreakdownEquipmentView({
       if (!grossList) {
         result.push({
           code: entry.code,
-          name: entry.name,
+          name: wrStripMarketTag(entry.name),
           mode: entry.mode,
           portionsInput: entry.portions,
           portionsEffective,
@@ -1864,6 +2019,9 @@ export function BreakdownEquipmentView({
         });
         continue;
       }
+
+      // Yield-Karte für dieses Rezept (ingredientId → yieldPct)
+      const yieldMap = wrIngredientYieldMap(data.structures?.[entry.code]);
 
       const pathMap = new Map<string, Map<string, WR_IngRow>>();
       for (const item of grossList) {
@@ -1895,7 +2053,14 @@ export function BreakdownEquipmentView({
           prev.totalQty += addQ;
           if (prev.totalKg !== null && addK !== null) prev.totalKg += addK;
           else if (addK === null) prev.totalKg = null;
+          // lossKg neu berechnen (yieldPct bleibt konstant)
+          if (prev.yieldPct != null && prev.totalKg != null && prev.yieldPct < 1) {
+            prev.lossKg = prev.totalKg * (1 - prev.yieldPct);
+          }
         } else {
+          const ingYield = yieldMap.get(item.ingredientId || "") ?? null;
+          const ingLossKg = (addK != null && ingYield != null && ingYield < 1)
+            ? addK * (1 - ingYield) : null;
           ingMap.set(ingKey, {
             ingredientId: item.ingredientId || "-",
             name: item.ingredient || "-",
@@ -1906,6 +2071,8 @@ export function BreakdownEquipmentView({
             totalKg: addK,
             pieceKgHint: pieceKg ?? gnPieceKg,
             inferredPcsPerTray: trayPcsHint,
+            yieldPct: ingYield,
+            lossKg: ingLossKg,
           });
         }
       }
@@ -1925,10 +2092,14 @@ export function BreakdownEquipmentView({
           }
           if (ov?.kg != null && ov.kg >= 0) kg = ov.kg;
 
+          const yieldPct = row.yieldPct;
+          const lossKg = (kg != null && yieldPct != null && yieldPct < 1)
+            ? kg * (1 - yieldPct) : null;
           return {
             ...row,
             totalQty: qty,
             totalKg: kg,
+            lossKg,
             inferredPcsPerTray: ov?.pcsPerTray != null && ov.pcsPerTray > 0
               ? ov.pcsPerTray
               : row.inferredPcsPerTray,
@@ -1937,6 +2108,7 @@ export function BreakdownEquipmentView({
           (a, b) => (b.totalKg ?? 0) - (a.totalKg ?? 0),
         );
         const totalKg = rows.reduce((sum, row) => sum + (row.totalKg ?? 0), 0);
+        const totalLossKg = rows.reduce((sum, row) => sum + (row.lossKg ?? 0), 0);
         const hint = wrResolveCapacityHint(capacityHints, sub1, sub2, sub3);
         paths.push({
           sub1,
@@ -1944,26 +2116,31 @@ export function BreakdownEquipmentView({
           sub3,
           rows,
           totalKg,
+          totalLossKg,
           capacityKgHint: hint?.capacityKg ?? null,
           equipmentHint: hint?.equipment ?? null,
+          isBrining: wrPathIsBrining(recipe, sub1, sub2, sub3),
+          cookCategories: wrPathCookCategories(recipe, sub1, sub2, sub3),
         });
       }
 
       paths.sort((a, b) => b.totalKg - a.totalKg);
       const totalKg = paths.reduce((sum, p) => sum + p.totalKg, 0);
+      const totalLossKg = paths.reduce((sum, p) => sum + p.totalLossKg, 0);
       result.push({
         code: entry.code,
-        name: entry.name,
+        name: wrStripMarketTag(entry.name),
         mode: entry.mode,
         portionsInput: entry.portions,
         portionsEffective,
         paths,
         totalKg,
+        totalLossKg,
       });
     }
 
     return result.sort((a, b) => b.totalKg - a.totalKg);
-  }, [entries, data.recipes, upliftPercent, capacityHints, pieceWeightKg, trayHints, overrides]);
+  }, [entries, data.recipes, data.structures, upliftPercent, capacityHints, pieceWeightKg, trayHints, overrides]);
 
   const totalKgAll = mealAggs.reduce((sum, meal) => sum + meal.totalKg, 0);
   const totalPathCount = mealAggs.reduce((sum, meal) => sum + meal.paths.length, 0);
@@ -2009,7 +2186,7 @@ export function BreakdownEquipmentView({
                         className="group rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left hover:border-indigo-400 hover:shadow-sm transition-all"
                       >
                         <div className="text-[10px] font-mono text-slate-400 group-hover:text-indigo-500 transition-colors">{wr.code}</div>
-                        <div className="text-sm font-semibold text-slate-800 leading-snug truncate">{wr.recipeName}</div>
+                        <div className="text-sm font-semibold text-slate-800 leading-snug truncate">{wrStripMarketTag(wr.recipeName)}</div>
                         <div className="text-[11px] text-slate-400 tabular-nums mt-0.5">
                           {wr.totalVerdenVolume.toLocaleString("de-DE")} Port.{wr.preference ? ` · ${wr.preference}` : ""}
                         </div>
@@ -2038,7 +2215,7 @@ export function BreakdownEquipmentView({
               <div key={entry.code} className="card flex flex-wrap items-center gap-3 px-4 py-3 border-l-[3px] border-l-indigo-500">
                 <div className="flex-1 min-w-[160px]">
                   <div className="text-[10px] font-mono text-slate-400">{entry.code}</div>
-                  <div className="text-sm font-semibold text-slate-800">{entry.name}</div>
+                  <div className="text-sm font-semibold text-slate-800">{wrStripMarketTag(entry.name)}</div>
                   <div className="text-[11px] text-slate-400 tabular-nums">
                     {entry.mode === "fertig" ? "Fertigware" : "Rohware"} · eff. {effective.toLocaleString("de-DE")} Port.
                   </div>
@@ -2137,8 +2314,18 @@ export function BreakdownEquipmentView({
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <div className="text-right">
                     <div className="text-2xl font-black text-white tabular-nums">{wrFmtKg(meal.totalKg)}</div>
-                    <div className="text-[8px] text-slate-500 uppercase tracking-widest">Gesamt</div>
+                    <div className="text-[8px] text-slate-500 uppercase tracking-widest">Gesamt Roh</div>
                   </div>
+                  {meal.totalLossKg > 0 && (
+                    <div className="text-right">
+                      <div className="text-base font-bold text-amber-400 tabular-nums">
+                        −{wrFmtKg(meal.totalLossKg)}
+                      </div>
+                      <div className="text-[8px] text-amber-600 uppercase tracking-widest">
+                        {Math.round((meal.totalLossKg / meal.totalKg) * 100)}% Yield-Verlust
+                      </div>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1 flex-wrap justify-end">
                     <button onClick={() => exportMealSettings(meal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">JSON</button>
                     <button onClick={() => { void exportMealExcel(meal); }} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">Excel</button>
@@ -2155,9 +2342,11 @@ export function BreakdownEquipmentView({
                 <div className="divide-y divide-slate-100">
                   {meal.paths.map((path, idx) => {
                     const visibleWannen = WANNEN.filter((w) => activeWannen.has(w.kg));
+                    const briningFactor = path.isBrining ? 2 : 1;
                     const bibleKg = path.capacityKgHint;
+                    const effectiveTubKg = path.totalKg * briningFactor;
                     const batchCount = bibleKg && bibleKg > 0 && path.totalKg > 0
-                      ? Math.ceil(path.totalKg / bibleKg)
+                      ? Math.ceil(effectiveTubKg / bibleKg)
                       : null;
                     const crumbs = [path.sub1, path.sub2, path.sub3]
                       .filter((s) => s && s !== "—" && s !== "Ohne Sub-Rezept")
@@ -2178,17 +2367,24 @@ export function BreakdownEquipmentView({
                               )) : (
                                 <span className="text-xs font-semibold text-slate-500 italic">Ohne Sub-Rezept</span>
                               )}
+                              {path.isBrining && (
+                                <span className="ml-1 text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full ring-1 ring-sky-200">
+                                  💧 BRINING 1:1
+                                </span>
+                              )}
                             </div>
-                            {eq && (
-                              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                                <span className="text-[10px]">{colors.icon}</span>
-                                {eq.split(",").map((e, ei) => (
-                                  <span key={ei} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${colors.badge}`}>{e.trim()}</span>
-                                ))}
-                              </div>
-                            )}
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              {eq && eq.split(",").map((e, ei) => (
+                                <span key={ei} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${colors.badge}`}>
+                                  <span>{colors.icon}</span>{e.trim()}
+                                </span>
+                              ))}
+                              {path.cookCategories && !eq && (
+                                <span className="text-[9px] text-slate-400">{path.cookCategories}</span>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-stretch gap-4 shrink-0">
+                          <div className="flex items-stretch gap-3 shrink-0 flex-wrap">
                             {batchCount != null && (
                               <div className="text-center">
                                 <div className={`text-3xl font-black tabular-nums leading-none ${colors.text}`}>{batchCount}</div>
@@ -2196,26 +2392,60 @@ export function BreakdownEquipmentView({
                               </div>
                             )}
                             {bibleKg != null && (
-                              <div className="text-center border-l border-slate-200/60 pl-4">
+                              <div className="text-center border-l border-slate-200/60 pl-3">
                                 <div className="text-sm font-bold text-slate-700 tabular-nums">{wrFmtKg(bibleKg)}</div>
                                 <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Bible</div>
                               </div>
                             )}
-                            <div className="text-center border-l border-slate-200/60 pl-4">
-                              <div className="text-sm font-bold text-slate-800 tabular-nums">{wrFmtKg(path.totalKg)}</div>
-                              <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Total</div>
+                            {path.isBrining ? (
+                              <div className="text-center border-l border-sky-200 pl-3">
+                                <div className="text-sm font-bold text-sky-700 tabular-nums">{wrFmtKg(effectiveTubKg)}</div>
+                                <div className="text-[8px] font-bold uppercase tracking-widest text-sky-500 mt-0.5">
+                                  {wrFmtKg(path.totalKg)} + H₂O
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center border-l border-slate-200/60 pl-3">
+                                <div className="text-sm font-bold text-slate-800 tabular-nums">{wrFmtKg(path.totalKg)}</div>
+                                <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Total</div>
+                              </div>
+                            )}
+                            {/* Per-Sub-Rezept PDF-Button */}
+                            <div className="border-l border-slate-200/60 pl-3 flex items-center">
+                              <button
+                                onClick={() => exportMealsPdf([{ ...meal, paths: [path] }], `${meal.code} · ${crumbs[crumbs.length - 1] ?? path.sub1}`)}
+                                title="Dieses Sub-Rezept drucken"
+                                className={`text-[9px] font-bold px-2 py-1 rounded-lg transition-colors ${colors.badge} hover:opacity-80`}
+                              >
+                                🖨 PDF
+                              </button>
                             </div>
                           </div>
                         </div>
+                        {/* Brining info banner */}
+                        {path.isBrining && (
+                          <div className="px-4 py-2 bg-sky-50 border-b border-sky-100 flex items-center gap-2 text-xs text-sky-700">
+                            <span className="text-base">💧</span>
+                            <span>
+                              <strong>Brining 1:1:</strong>{" "}
+                              {wrFmtKg(path.totalKg)} Rohware + {wrFmtKg(path.totalKg)} Wasser ={" "}
+                              <strong>{wrFmtKg(effectiveTubKg)} Wannenvolumen</strong>
+                              {bibleKg ? ` → ${batchCount} Wannen à ${bibleKg} kg` : ""}
+                            </span>
+                          </div>
+                        )}
                         {/* Ingredient table */}
                         <div className="overflow-x-auto bg-white">
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="border-b border-slate-100">
                                 <th className="text-left px-4 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">Zutat</th>
-                                <th className="text-right px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">Total</th>
+                                <th className="text-right px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">Total Roh</th>
+                                <th className="text-right px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-amber-500 whitespace-nowrap">Verlust</th>
                                 {visibleWannen.map((w) => (
-                                  <th key={w.kg} className="text-center px-2 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">{w.label}</th>
+                                  <th key={w.kg} className={`text-center px-2 py-2 text-[9px] font-bold uppercase tracking-widest whitespace-nowrap ${path.isBrining ? "text-sky-500" : "text-slate-400"}`}>
+                                    {w.label}{path.isBrining ? " 💧" : ""}
+                                  </th>
                                 ))}
                                 <th className="w-8" />
                               </tr>
@@ -2263,6 +2493,23 @@ export function BreakdownEquipmentView({
                                     <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
                                       {row.totalKg !== null ? wrFmtKg(row.totalKg) : wrFmtQty(row.totalQty, row.uom)}
                                     </td>
+                                    {/* Yield-Verlust-Spalte */}
+                                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                                      {row.lossKg != null && row.lossKg > 0 ? (
+                                        <div className="flex flex-col items-end gap-0.5">
+                                          <span className="text-[10px] font-bold text-amber-600">
+                                            −{wrFmtKg(row.lossKg)}
+                                          </span>
+                                          {row.yieldPct != null && (
+                                            <span className="text-[9px] text-slate-400">
+                                              {Math.round((1 - row.yieldPct) * 100)}%
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-200">—</span>
+                                      )}
+                                    </td>
                                     {(() => {
                                       const gnCount = rowTrayCount(row);
                                       if (gnCount != null) {
@@ -2280,18 +2527,18 @@ export function BreakdownEquipmentView({
                                           </td>
                                         );
                                       }
-                                      // Normal Wannen display
+                                      // Normal Wannen display (with brining factor)
                                       return visibleWannen.map((w) => {
-                                        if (row.totalKg === null || row.totalKg <= 0) {
+                                        const count = rowTubCountByWanne(row, w.kg, briningFactor);
+                                        if (count === null) {
                                           return (
                                             <td key={w.kg} className="px-2 py-2.5 text-center">
                                               <span className="text-[10px] text-slate-300">—</span>
                                             </td>
                                           );
                                         }
-                                        const count = Math.ceil(row.totalKg / w.kg);
                                         return (
-                                          <td key={w.kg} className="px-2 py-2.5 text-center">
+                                          <td key={w.kg} className={`px-2 py-2.5 text-center ${path.isBrining ? "bg-sky-50/50" : ""}`}>
                                             <span className={`inline-flex items-center justify-center min-w-[40px] h-7 px-2 text-sm font-bold tabular-nums rounded-lg ${wrTubCellCls(count)}`}>
                                               ×{count}
                                             </span>
@@ -2314,6 +2561,26 @@ export function BreakdownEquipmentView({
                                 );
                               })}
                             </tbody>
+                            {/* Path total + loss footer */}
+                            <tfoot>
+                              <tr className="border-t-2 border-slate-200 bg-slate-50">
+                                <td className="px-4 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-wide">Gesamt</td>
+                                <td className="px-3 py-2 text-right tabular-nums font-bold text-slate-800 whitespace-nowrap">{wrFmtKg(path.totalKg)}</td>
+                                <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+                                  {path.totalLossKg > 0 ? (
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-[10px] font-bold text-amber-600">−{wrFmtKg(path.totalLossKg)}</span>
+                                      {path.totalKg > 0 && (
+                                        <span className="text-[9px] text-slate-400">
+                                          {Math.round((path.totalLossKg / path.totalKg) * 100)}% Verlust
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : <span className="text-[10px] text-slate-300">—</span>}
+                                </td>
+                                <td colSpan={visibleWannen.length + 1} />
+                              </tr>
+                            </tfoot>
                           </table>
                         </div>
                       </div>

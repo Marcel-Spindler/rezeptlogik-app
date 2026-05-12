@@ -318,10 +318,12 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
   const lastRemoteSerializedRef = useRef<string>("");
   const firestoreAvailableRef = useRef(false);
   const hydratedWeekRef = useRef<string | null>(null);
+  const sharedPlanRef = useRef(sharedPlan);
+  sharedPlanRef.current = sharedPlan;
 
   useEffect(() => {
     const poolReady = pool.de.length > 0 || pool.nordics.length > 0;
-    const currentEmpty = RACK_V2_LINES.every((line) => (sharedPlan.lines[line.id]?.entries.length ?? 0) === 0);
+    const currentEmpty = RACK_V2_LINES.every((line) => (sharedPlanRef.current.lines[line.id]?.entries.length ?? 0) === 0);
     if (hydratedWeekRef.current === week && !(poolReady && currentEmpty)) return;
 
     const stored = typeof window === "undefined"
@@ -339,7 +341,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     setTimeout(() => {
       applyingRemoteRef.current = false;
     }, 0);
-  }, [pool, sharedPlan.lines, week]);
+  }, [pool, week]);
 
   useEffect(() => {
     if (hydratedWeekRef.current !== week) return;

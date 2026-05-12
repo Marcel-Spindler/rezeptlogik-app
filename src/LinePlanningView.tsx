@@ -27,7 +27,14 @@ type LinePlanRecipe = {
   bnl: number;
   de: number;
   speedPerMin: number;   // portions/min on this line
+  /** true wenn Rezept Fisch enthält (MHD 9 Tage) */
+  isSeafood: boolean;
 };
+
+/** Heuristik: Rezeptname auf Fisch-Schlüsselwörter prüfen (kein Zugriff auf Zutaten nötig) */
+function detectSeafoodByName(name: string): boolean {
+  return /salmon|shrimp|prawn|fish|seafood|cod|tuna|trout|hering|herring|lachs|garnele|forelle|kabeljau|thunfisch/i.test(name);
+}
 
 function isProducedInVerden(recipe: WeekRecipe): boolean {
   const code = (recipe.code ?? "").toUpperCase();
@@ -50,10 +57,14 @@ function deriveRecipesFromWeekRecipes(weekRecipes: WeekRecipe[], requestedWeek: 
       bnl: recipe.verdenVolume.BENL,
       de: recipe.verdenVolume.DE,
       speedPerMin: 10,
+      isSeafood: detectSeafoodByName(recipe.recipeName),
     }));
 }
 
 // Factor-Woche: Freitag (Produktion startet) → Donnerstag (Lieferwoche)
+// Versandtag ist der Freitag NACH Donnerstag (= index 7, außerhalb des Arrays).
+// MHD-Tage: Fisch 9d (maxGap=2d), Non-Fisch 13d (maxGap=6d).
+// daysBeforeShipping für Index i = (DAYS.length - i) weil Donnerstag (idx 6) = 1 Tag vor Versand.
 const DAYS = ["Freitag", "Samstag", "Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag"] as const;
 type PlanDay = (typeof DAYS)[number];
 
@@ -423,14 +434,26 @@ function RecipePill({
       >
         {compact ? (
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="font-bold text-xs shrink-0" style={tone.code}>{recipe.code}</span>
+            <div className="flex items-center gap-1">
+              <span className="font-bold text-xs shrink-0" style={tone.code}>{recipe.code}</span>
+              {recipe.isSeafood
+                ? <span className="rounded-full px-1.5 py-0 text-[9px] font-bold bg-blue-100 text-blue-700 ring-1 ring-blue-200">🐟 9d</span>
+                : <span className="rounded-full px-1.5 py-0 text-[9px] font-bold bg-slate-100 text-slate-500 ring-1 ring-slate-200">13d</span>
+              }
+            </div>
             <span className="text-[11px] font-medium leading-tight line-clamp-2" style={tone.title}>{recipe.name.replace(/^FV\d+[A-Za-z]?\s*[-\u2013]\s*/i, "")}</span>
             <span className="text-[10px] opacity-50 tabular-nums">{fmtNum(recipe.totalPlanned)} Port.</span>
           </div>
         ) : (
           <div className="min-w-0">
             <div className="flex items-center justify-between gap-2 mb-0.5">
-              <span className="font-bold text-sm tracking-tight" style={tone.code}>{recipe.code}</span>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-sm tracking-tight" style={tone.code}>{recipe.code}</span>
+                {recipe.isSeafood
+                  ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-700 ring-1 ring-blue-200">🐟 9d</span>
+                  : <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 ring-1 ring-slate-200">13d</span>
+                }
+              </div>
               <span className="text-xs opacity-60 tabular-nums">{recipe.speedPerMin}/min</span>
             </div>
             <div className="text-xs font-medium truncate mb-2" style={tone.title}>{nameShort(recipe.name, 34)}</div>
@@ -535,7 +558,7 @@ function RecipePill({
 function DropCell({
   slotKey, recipe, isDragOver, isActiveDrag,
   onDrop, onDragEnter, onDragLeave,
-  onDragStartCell, onRemove, multiDayCount,
+  onDragStartCell, onRemove, multiDayCount, mhdViolation,
 }: {
   slotKey: string;
   recipe: LinePlanRecipe | null;
@@ -547,6 +570,8 @@ function DropCell({
   onDragStartCell: (r: LinePlanRecipe, key: string) => void;
   onRemove: () => void;
   multiDayCount?: number;
+  /** true wenn das Rezept in diesem Slot zu früh geplattet wird (MHD-Verletzung) */
+  mhdViolation?: boolean;
 }) {
   return (
     <div
@@ -557,6 +582,8 @@ function DropCell({
       className={`min-h-[5rem] rounded-xl border-2 transition-all duration-100 flex items-stretch ${
         isDragOver
           ? "border-indigo-400 bg-indigo-50 ring-2 ring-indigo-300/50 scale-[1.03]"
+          : mhdViolation
+          ? "border-orange-400 bg-orange-50/40 ring-1 ring-orange-300/50"
           : recipe
           ? "border-transparent"
           : isActiveDrag
@@ -574,6 +601,14 @@ function DropCell({
             compact
             onDragStart={() => onDragStartCell(recipe, slotKey)}
           />
+          {mhdViolation && (
+            <div
+              className="absolute bottom-0.5 right-0.5 z-10 rounded-full bg-orange-500 px-1.5 py-0.5 text-[9px] font-bold text-white leading-none"
+              title={recipe.isSeafood ? "⚠ Fisch (MHD 9d): zu früh geplattet – erst Mi oder Do!" : "⚠ Non-Fisch (MHD 13d): Plating am Fr riskant – möglichst Sa–Do"}
+            >
+              ⚠ MHD
+            </div>
+          )}
           {multiDayCount && multiDayCount > 1 && (
             <div className="absolute top-0.5 left-0.5 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[9px] font-black text-white leading-none z-10" title={`${multiDayCount}x diese Woche an verschiedenen Tagen`}>
               {multiDayCount}x
@@ -1520,6 +1555,15 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                                 </div>
                               );
                             }
+                            // MHD-Verletzung prüfen:
+                            // DAYS = [Fr=0, Sa=1, So=2, Mo=3, Di=4, Mi=5, Do=6]
+                            // Versand = Fr folgende Woche → daysBeforeShipping = 7 - dayIndex
+                            // Fisch (maxGap=2): Plating muss spätestens Mi (idx 5) oder Do (idx 6) → Verletzung wenn idx < 5
+                            // Non-Fisch (maxGap=6): Verletzung wenn idx < 1 (nur Fr ist kritisch)
+                            const dayIdx = DAYS.indexOf(day);
+                            const mhdViolation = r != null && (
+                              r.isSeafood ? dayIdx < 5 : dayIdx < 1
+                            );
                             return (
                               <DropCell
                                 key={cellKey}
@@ -1533,6 +1577,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                                 onDragStartCell={onDragStartCell}
                                 onRemove={() => dispatch({ type: "remove", key: cellKey })}
                                 multiDayCount={r ? (scheduledDaysByCode.get(r.code)?.size ?? 1) : undefined}
+                                mhdViolation={mhdViolation}
                               />
                             );
                           })}

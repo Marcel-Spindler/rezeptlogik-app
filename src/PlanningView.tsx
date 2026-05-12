@@ -22,7 +22,9 @@ import {
   type PlannerDay,
   type PlannerShift,
   type PlannerPoolConflict,
-  type PlannerStationConflict
+  type PlannerStationConflict,
+  type LinePlatingSummary,
+  type LinePlatingEntry,
 } from "./planner";
 import { tl, type UiLocale } from "./i18n";
 import { usePlanningOasisData } from "./planningOasisData";
@@ -914,6 +916,13 @@ export function PlanningView(
     notes: ""
   });
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  /** Manuelle Verschiebungen der Ghost-Pillen per Drag & Drop: tileKey → neuer Produktionstag */
+  const [suggestOverrides, setSuggestOverrides] = useState<Record<string, PlannerDay>>({});
+  const [draggingSuggestKey, setDraggingSuggestKey] = useState<string | null>(null);
+
+  /** Raw schedule aus dem Linienplan (Firestore), keyed als "{PlanDay}|{slotKey}|{lineIdx}" */
+  const [linePlanSchedule, setLinePlanSchedule] = useState<Record<string, { code: string; speedPerMin: number } | null>>({});
+
   useEffect(() => {
     savePlannerStorage(storage);
   }, [storage]);
@@ -943,6 +952,35 @@ export function PlanningView(
     return () => { active = false; };
   }, []);
 
+  // Linienplan aus Firestore laden – selbe Datenquelle wie LinePlanningView
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { getFirebase } = await import("./firebase");
+        const { doc, onSnapshot } = await import("firebase/firestore");
+        const { db } = getFirebase();
+        // Wochenformat "2026-W19" → weekStr "19"
+        const weekStr = week.includes("-W") ? week.split("-W")[1] : week;
+        unsub = onSnapshot(
+          doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`),
+          (snap) => {
+            if (snap.exists()) {
+              const raw = (snap.data() as { schedule?: Record<string, { code: string; speedPerMin: number } | null> }).schedule ?? {};
+              setLinePlanSchedule(raw);
+            } else {
+              setLinePlanSchedule({});
+            }
+          },
+          () => { /* Fehler ignorieren – Linienplan ist optional */ }
+        );
+      } catch {
+        // Firestore nicht verfügbar – Linienplan-Integration deaktiviert
+      }
+    })();
+    return () => unsub?.();
+  }, [week]);
+
   const weekState = useMemo(() => getWeekState(storage, week), [storage, week]);
   const scenario = useMemo(() => getActiveScenario(storage, week), [storage, week]);
   const portionMultiplier = 1 + upliftPercent / 100;
@@ -954,21 +992,67 @@ export function PlanningView(
     stationDeviceCounts,
     stationPools
   }), [data, week, scenario, portionMultiplier, stationDeviceCounts, stationPools]);
+
+  /**
+   * Berechnet pro Rezept und Tag, welche Kapazität die Plating-Linien haben.
+   * Schichten-Durations entsprechen den SLOTS aus LinePlanningView.
+   * Muss VOR suggestions berechnet werden, da suggestAssignments den platDay
+   * aus dem Linienplan als Anker für die rückwärtige Küchenplanung nutzt.
+   */
+  const linePlatingSummary = useMemo((): LinePlatingSummary => {
+    const SLOT_DURATIONS: Record<string, number> = {
+      "06:00-07:00": 60, "07:00-08:00": 60, "08:00-08:30": 30,
+      "09:00-10:00": 60, "10:00-11:00": 60, "11:30-12:00": 30,
+      "12:00-13:00": 60, "13:00-14:00": 60, "14:00-15:00": 60,
+    };
+    // Linienplan-Tagesbezeichnungen → PlannerDay
+    const DAY_MAP: Record<string, PlannerDay> = {
+      "Freitag": "Fr", "Samstag": "Sa", "Sonntag": "So",
+      "Montag": "Mo", "Dienstag": "Di", "Mittwoch": "Mi", "Donnerstag": "Do",
+    };
+    const byRecipe: Record<string, LinePlatingEntry[]> = {};
+    for (const [key, recipe] of Object.entries(linePlanSchedule)) {
+      if (!recipe) continue;
+      // Format: "{PlanDay}|{slotKey}|{lineIdx}"
+      const parts = key.split("|");
+      if (parts.length !== 3) continue;
+      const [dayDE, slotKey] = parts;
+      const platDay = DAY_MAP[dayDE ?? ""];
+      if (!platDay) continue;
+      const duration = SLOT_DURATIONS[slotKey ?? ""] ?? 60;
+      const portions = (recipe.speedPerMin ?? 10) * duration;
+      const entries = (byRecipe[recipe.code] ??= []);
+      const existing = entries.find(e => e.platDay === platDay);
+      if (existing) {
+        existing.capacityPortions += portions;
+        existing.slotCount += 1;
+      } else {
+        entries.push({ platDay, capacityPortions: portions, slotCount: 1 });
+      }
+    }
+    return { byRecipe };
+  }, [linePlanSchedule]);
+
   const suggestions = useMemo(() => {
     if (!uiSettings.showAutoSuggestions) return {};
     return suggestAssignments(data, week, scenario, activeShifts, {
       portionMultiplier,
       shiftCapacityMin: DEFAULT_SHIFT_MIN,
       stationDeviceCounts,
-      stationPools
+      stationPools,
+      lineSummary: linePlatingSummary,
     });
-  }, [data, week, scenario, activeShifts, portionMultiplier, stationDeviceCounts, stationPools, uiSettings.showAutoSuggestions]);
+  }, [data, week, scenario, activeShifts, portionMultiplier, stationDeviceCounts, stationPools, uiSettings.showAutoSuggestions, linePlatingSummary]);
   const split = useMemo(() => getWeekSplit(data, week), [data, week]);
-  const batchSplitPlan = useMemo(() => computeBatchSplitPlan(data, week), [data, week]);
   const autoProfile = useMemo(() => {
     return AUTO_FULFILLMENT_PROFILES.find((profile) => profile.id === uiSettings.autoSplitProfileId)
       ?? AUTO_FULFILLMENT_PROFILES[0];
   }, [uiSettings.autoSplitProfileId]);
+
+  const batchSplitPlan = useMemo(
+    () => computeBatchSplitPlan(data, week, linePlatingSummary),
+    [data, week, linePlatingSummary]
+  );
   const batchSplitByRecipe = useMemo(() => {
     const map = new Map<string, AutoFulfillmentBatch[]>();
     for (const plan of batchSplitPlan) {
@@ -1054,6 +1138,10 @@ export function PlanningView(
       recommendedProdDay?: PlannerDay;
       /** Alle Sub-Rezepte bereits einzeln verplant → Ghost-Tile wird als solide Plating-Pille angezeigt */
       allSubsDone?: boolean;
+      /** Linienkapazität für diesen Batch (in Portionen), wenn Linienplan vorhanden */
+      lineCapacityPortions?: number;
+      /** Differenz Forecast - Linienkapazität für das gesamte Rezept (positiv = Lücke) */
+      lineCoverageGap?: number;
     };
     const buckets: Record<string, Tile[]> = {};
     for (const recipe of analysis.recipes) {
@@ -1119,9 +1207,11 @@ export function PlanningView(
       const allSubsDone = subsWithWork.length > 0 && subsWithWork.every(s => !!s.assigned);
       const totalBatches = plan.batches.length;
       plan.batches.forEach((batch, index) => {
-        const slot = slotValue(batch.fulfillmentDay, defaultShift);
+        const tileKey = `${recipe.recipeCode}::suggest-${index}`;
+        const overrideDay = suggestOverrides[tileKey];
+        const slot = slotValue(overrideDay ?? batch.recommendedProductionDay, defaultShift);
         (buckets[slot] ??= []).push({
-          key: `${recipe.recipeCode}::suggest-${index}`,
+          key: tileKey,
           code: recipe.recipeCode,
           name: recipe.recipeName,
           activeMin: 0,
@@ -1137,6 +1227,8 @@ export function PlanningView(
           fulfillmentDay: batch.fulfillmentDay,
           recommendedProdDay: batch.recommendedProductionDay,
           allSubsDone,
+          lineCapacityPortions: batch.lineCapacityPortions,
+          lineCoverageGap: plan.lineCoverageGap,
         });
       });
     }
@@ -1149,7 +1241,7 @@ export function PlanningView(
       });
     }
     return buckets;
-  }, [analysis.recipes, batchSplitPlan, activeShifts]);
+  }, [analysis.recipes, batchSplitPlan, activeShifts, suggestOverrides]);
 
   const stationsBySlot = useMemo(() => {
     return Object.fromEntries(
@@ -1226,8 +1318,23 @@ export function PlanningView(
   function handleDragEnd() {
     setDraggingCode(null);
     setDraggingSubId(null);
+    setDraggingSuggestKey(null);
     setDragOverSlot(null);
     setDragOverUnplanned(false);
+  }
+
+  function handleSuggestDragStart(event: React.DragEvent, tileKey: string) {
+    event.dataTransfer.setData('text/suggest-key', tileKey);
+    event.dataTransfer.effectAllowed = 'move';
+    setDraggingSuggestKey(tileKey);
+  }
+
+  function handleDropSuggestOnSlot(event: React.DragEvent, day: PlannerDay) {
+    const key = event.dataTransfer.getData('text/suggest-key') || draggingSuggestKey;
+    if (!key) return;
+    setSuggestOverrides(prev => ({ ...prev, [key]: day }));
+    setDraggingSuggestKey(null);
+    setDragOverSlot(null);
   }
 
   /** Liest Drop-Payload und löst Code+ggf. SubId auf. */
@@ -1727,45 +1834,103 @@ export function PlanningView(
                         const subTiles = rows.filter((row) => row.code === recipe.recipeCode && row.kind === "sub");
                         const hasReal = mainTiles.some(t => !t.suggested);
                         const hasAny = mainTiles.length > 0;
+                        const isDragOverThis = dragOverSlot === slot;
                         return (
-                          <td key={`${recipe.recipeCode}-${day}-${shift}`} className="border-l border-slate-200 p-1 align-top">
-                            <div className="min-h-[66px] rounded border p-1 hover:border-slate-300" style={hasReal ? tone.slotActive : tone.slotIdle} onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift })}>
+                          <td
+                            key={`${recipe.recipeCode}-${day}-${shift}`}
+                            className="border-l border-slate-200 p-1 align-top"
+                            onDragOver={(e) => { if (draggingSuggestKey) { e.preventDefault(); setDragOverSlot(slot); } }}
+                            onDragLeave={() => { if (dragOverSlot === slot) setDragOverSlot(null); }}
+                            onDrop={(e) => { if (draggingSuggestKey) { e.preventDefault(); handleDropSuggestOnSlot(e, day); } }}
+                          >
+                            <div className="min-h-[66px] rounded border p-1 hover:border-slate-300" style={isDragOverThis ? { ...tone.slotActive, outline: '2px dashed currentColor' } : hasReal ? tone.slotActive : tone.slotIdle} onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift })}>
                               <div className="space-y-1">
                                 {mainTiles.map((mainTile) => {
                                   // Ghost-Pill / Plating-Pill: aus BatchSplitPlan
                                   if (mainTile.suggested) {
+                                    // Liniengetriebene Kapazitätsinfo
+                                    const isLineDriven = mainTile.lineCapacityPortions !== undefined;
+                                    const gapPlan = mainTile.lineCoverageGap; // positiv = Lücke, negativ = Überschuss
+                                    const gapPortions = gapPlan !== undefined ? Math.abs(gapPlan) : 0;
+                                    const hasGap = gapPlan !== undefined && gapPlan > 0;
+                                    const hasSurplus = gapPlan !== undefined && gapPlan < 0;
+                                    const titleSuffix = isLineDriven
+                                      ? ` | Linienkapazität: ${fmtNum(mainTile.lineCapacityPortions!)} Port.${hasGap ? ` ⚠ ${fmtNum(gapPortions)} fehlen` : hasSurplus ? ` ✓ ${fmtNum(gapPortions)} Überschuss` : " ✓ gedeckt"}`
+                                      : "";
+
                                     // Alle Sub-Rezepte verplant → solide Plating-Pille
                                     if (mainTile.allSubsDone) {
                                       const platLabel = `${mainTile.batchLabel ? mainTile.batchLabel + " " : ""}Plating ${fmtNum(mainTile.targetPortions ?? forecast)}`;
                                       return (
                                         <div key={mainTile.key}>
                                           <button
+                                            draggable
+                                            onDragStart={(e) => handleSuggestDragStart(e, mainTile.key)}
+                                            onDragEnd={handleDragEnd}
                                             onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift }); }}
-                                            className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold"
+                                            className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold flex items-center gap-1 cursor-grab active:cursor-grabbing"
                                             style={tone.mainPill}
-                                            title={`Alle Sub-Rezepte verplant → Plating am ${mainTile.fulfillmentDay}: ${fmtNum(mainTile.targetPortions ?? forecast)} Portionen. Klick zum Bestätigen.`}
+                                            title={`Alle Sub-Rezepte verplant → Plating am ${mainTile.fulfillmentDay}: ${fmtNum(mainTile.targetPortions ?? forecast)} Portionen. Klick zum Bestätigen.${titleSuffix}`}
                                           >
-                                            {platLabel}
+                                            <span className="flex-1">{platLabel}</span>
+                                            {isLineDriven && (
+                                              <span className="shrink-0 text-[9px]" title="Linienplan aktiv">🔗</span>
+                                            )}
+                                            {mainTile.fulfillmentDay && (
+                                              <span className="shrink-0 rounded bg-white/60 px-1 text-[9px] font-black">{mainTile.fulfillmentDay}</span>
+                                            )}
                                           </button>
                                         </div>
                                       );
                                     }
                                     // Ghost-Pill: noch nicht alle Subs verplant
                                     const ghostLabel = `${mainTile.batchLabel ? mainTile.batchLabel + " " : ""}${fmtNum(mainTile.targetPortions ?? forecast)} · Plating ${mainTile.fulfillmentDay}`;
+                                    // Randfarbe bei Kapazitätslücke: rot, bei Überschuss: grün
+                                    const gapOutlineColor = hasGap
+                                      ? "hsl(0 70% 50%)"
+                                      : hasSurplus
+                                        ? "hsl(140 60% 42%)"
+                                        : `hsl(${tone.hue} 52% 52%)`;
                                     return (
                                       <div key={mainTile.key}>
                                         <button
+                                          draggable
+                                          onDragStart={(e) => handleSuggestDragStart(e, mainTile.key)}
+                                          onDragEnd={handleDragEnd}
                                           onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift }); }}
-                                          className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-semibold"
+                                          className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-semibold flex items-center gap-1 cursor-grab active:cursor-grabbing"
                                           style={{
                                             backgroundColor: `hsl(${tone.hue} 64% 93%)`,
                                             color: `hsl(${tone.hue} 58% 28%)`,
-                                            outline: `1.5px dashed hsl(${tone.hue} 52% 52%)`,
+                                            outline: `1.5px dashed ${gapOutlineColor}`,
                                             outlineOffset: '-1.5px',
                                           }}
-                                          title={`Deadline: ${fmtNum(mainTile.targetPortions ?? forecast)} Portionen platen → Versand ${mainTile.fulfillmentDay} · empfohlene Produktion: ${mainTile.recommendedProdDay ?? "–"}`}
+                                          title={`Deadline: ${fmtNum(mainTile.targetPortions ?? forecast)} Port. platen → Plating-Tag ${mainTile.fulfillmentDay} · empf. Küche: ${mainTile.recommendedProdDay ?? "–"}${titleSuffix}`}
                                         >
-                                          {ghostLabel}
+                                          <span className="flex-1">{ghostLabel}</span>
+                                          {isLineDriven && (
+                                            <span className="shrink-0 text-[9px]" title="Aus Linienplanung">🔗</span>
+                                          )}
+                                          {hasGap && (
+                                            <span
+                                              className="shrink-0 rounded px-1 text-[9px] font-black"
+                                              style={{ backgroundColor: "hsl(0 70% 50%)", color: '#fff' }}
+                                              title={`Kapazitätslücke: ${fmtNum(gapPortions)} Portionen fehlen auf der Linie`}
+                                            >⚠{fmtNum(gapPortions)}</span>
+                                          )}
+                                          {hasSurplus && (
+                                            <span
+                                              className="shrink-0 rounded px-1 text-[9px] font-black"
+                                              style={{ backgroundColor: "hsl(140 60% 42%)", color: '#fff' }}
+                                              title={`Linie hat ${fmtNum(gapPortions)} Portionen Überschusskapazität`}
+                                            >✓</span>
+                                          )}
+                                          {mainTile.fulfillmentDay && (
+                                            <span
+                                              className="shrink-0 rounded px-1 text-[9px] font-black"
+                                              style={{ backgroundColor: `hsl(${tone.hue} 52% 52%)`, color: '#fff' }}
+                                            >{mainTile.fulfillmentDay}</span>
+                                          )}
                                         </button>
                                       </div>
                                     );
