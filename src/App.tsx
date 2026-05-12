@@ -11,8 +11,6 @@ import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
 import { formatDateTime, marketToLocale, marketVariantLabel, MARKET_LANGUAGE_LABEL, tl, type UiLocale } from "./i18n";
 import { useRecipePlanningIntel } from "./planningOasisData";
 
-const RackV2View = lazy(() => loadDynamicModule("rack-v2-view", () => import("./RackV2View").then((module) => ({ default: module.RackV2View }))));
-const LinePlanningView = lazy(() => loadDynamicModule("line-planning", () => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView }))));
 const PlanningEmailView = lazy(() => import("./PlanningEmailView").then((module) => ({ default: module.PlanningEmailView })));
 
 const MARKETS: Market[] = ["BENL", "DKSE", "DE"];
@@ -561,11 +559,8 @@ export default function App() {
               ["recipe", tl(locale, "Rezept")],
               ["woche", tl(locale, "Σ Wochenbestellung")],
               ["equipment", tl(locale, "Equipment")],
-              ["breakdown", "Breakdown+"],
               ["planning", "Planning OASE"],
               ["wochenplaner", "Wochenplaner"],
-              ["rack", "Rack"],
-              ["ket", "Linien-Fokus"],
               ["phase2", "What-if & Diff"],
               ["rundmail", "📧 Rundmail"]
             ] as ["recipe"|"equipment"|"breakdown"|"planning"|"woche"|"rack"|"ket"|"phase2"|"wochenplaner"|"rundmail", string][]).map(([k, l]) => (
@@ -722,7 +717,6 @@ export default function App() {
           {!kitchenMode && (
             <>
           {view === "equipment" && <EquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
-          {view === "breakdown" && <BreakdownEquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
           {view === "woche" && <WocheZutatenView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
           {view === "planning" && (
             <PlanningOasisView
@@ -751,19 +745,7 @@ export default function App() {
               }}
             />
           )}
-          {view === "rack" && (
-            <Suspense fallback={<div className="card p-6 text-slate-500">Rack wird geladen …</div>}>
-              <RackV2View
-                week={selectedWeek}
-                locale="de"
-                weekRecipes={data.weekRecipes}
-                recipes={data.recipes}
-                cookSchedules={data.cookSchedules}
-                processSpecs={data.processSpecs}
-              />
-            </Suspense>
-          )}
-          {view === "ket" && (
+          {(view === "ket" || view === "rack" || view === "breakdown") && (
             <PlanningOasisView
               data={data}
               week={selectedWeek}
@@ -774,7 +756,7 @@ export default function App() {
                 setSelectedRecipe(code);
                 setView("recipe");
               }}
-              defaultSection="lines"
+              defaultSection={view === "rack" ? "rack" : view === "breakdown" ? "breakdown" : "lines"}
             />
           )}
           {view === "phase2" && (

@@ -111,14 +111,14 @@ const DE_BLOCKS: RackV2Block[] = [
   { number: 4, id: "de-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: true },
   { number: 5, id: "de-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, defaultActive: true },
   { number: 6, id: "de-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: true },
-  { number: 7, id: "de-b7", label: "Block 7", subtitle: "F64-F69", kind: "window", area: "rack", minSlot: 64, maxSlot: 69, maxTier: 3, defaultActive: true },
-  { number: 8, id: "de-b8", label: "Block 8", subtitle: "F70-F75", kind: "window", area: "rack", minSlot: 70, maxSlot: 75, maxTier: 3, defaultActive: true },
-  { number: 9, id: "de-b9", label: "Block 9", subtitle: "F76-F81", kind: "window", area: "rack", minSlot: 76, maxSlot: 81, maxTier: 3, defaultActive: true },
-  { number: 10, id: "de-b10", label: "Block 10", subtitle: "F82-F93", kind: "window", area: "rack", minSlot: 82, maxSlot: 93, maxTier: 3, wallBefore: true, defaultActive: true },
-  { number: 11, id: "de-b11", label: "Block 11", subtitle: "F94-F105", kind: "window", area: "rack", minSlot: 94, maxSlot: 105, maxTier: 2, defaultActive: true },
-  { number: 12, id: "de-b12", label: "Block 12", subtitle: "F106-F117", kind: "window", area: "rack", minSlot: 106, maxSlot: 117, maxTier: 2, defaultActive: true },
-  { number: 13, id: "de-b13", label: "Block 13", subtitle: "F118-F127", kind: "window", area: "rack", minSlot: 118, maxSlot: 127, maxTier: 2, defaultActive: true },
-  { number: 14, id: "de-b14", label: "Block 14", subtitle: "F128-F135", kind: "gifts", area: "gifts", minSlot: 128, maxSlot: 135, maxTier: 2, defaultActive: true },
+  { number: 7, id: "de-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, defaultActive: true },
+  { number: 8, id: "de-b8", label: "Block 8", subtitle: "F73-F84", kind: "window", area: "rack", minSlot: 73, maxSlot: 84, maxTier: 3, defaultActive: true },
+  { number: 9, id: "de-b9", label: "Block 9", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, defaultActive: true },
+  { number: 10, id: "de-b10", label: "Block 10", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: true },
+  { number: 11, id: "de-b11", label: "Block 11", subtitle: "F103-F122", kind: "window", area: "rack", minSlot: 103, maxSlot: 122, maxTier: 2, defaultActive: true },
+  { number: 12, id: "de-b12", label: "Block 12", subtitle: "F123-F128", kind: "window", area: "rack", minSlot: 123, maxSlot: 128, maxTier: 2, defaultActive: true },
+  { number: 13, id: "de-b13", label: "Block 13", subtitle: "F129-F134", kind: "window", area: "rack", minSlot: 129, maxSlot: 134, maxTier: 2, defaultActive: true },
+  { number: 14, id: "de-b14", label: "Block 14", subtitle: "F135-F144", kind: "gifts", area: "gifts", minSlot: 135, maxSlot: 144, maxTier: 2, defaultActive: true },
 ];
 
 const NORDICS_BLOCKS: RackV2Block[] = [
@@ -128,20 +128,20 @@ const NORDICS_BLOCKS: RackV2Block[] = [
   { number: 4, id: "nordics-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: true },
   { number: 5, id: "nordics-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, defaultActive: true },
   { number: 6, id: "nordics-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: true },
-  { number: 7, id: "nordics-b7", label: "Block 7", subtitle: "F64-F69", kind: "window", area: "rack", minSlot: 64, maxSlot: 69, maxTier: 3, defaultActive: true },
-  { number: 8, id: "nordics-b8", label: "Block 8", subtitle: "F70-F75", kind: "window", area: "rack", minSlot: 70, maxSlot: 75, maxTier: 3, defaultActive: true },
-  { number: 9, id: "nordics-b9", label: "Block 9", subtitle: "F76-F81", kind: "window", area: "rack", minSlot: 76, maxSlot: 81, maxTier: 3, defaultActive: true },
-  { number: 10, id: "nordics-b10", label: "Block 10", subtitle: "F82-F93", kind: "window", area: "rack", minSlot: 82, maxSlot: 93, maxTier: 3, wallBefore: true, defaultActive: true },
-  { number: 11, id: "nordics-b11", label: "Block 11", subtitle: "F94-F105", kind: "window", area: "rack", minSlot: 94, maxSlot: 105, maxTier: 2, defaultActive: true },
-  { number: 12, id: "nordics-b12", label: "Block 12", subtitle: "F106-F117", kind: "window", area: "rack", minSlot: 106, maxSlot: 117, maxTier: 2, defaultActive: true },
-  { number: 13, id: "nordics-b13", label: "Block 13", subtitle: "F118-F127", kind: "window", area: "rack", minSlot: 118, maxSlot: 127, maxTier: 2, defaultActive: true },
-  { number: 14, id: "nordics-b14", label: "Block 14", subtitle: "F128-F135", kind: "gifts", area: "gifts", minSlot: 128, maxSlot: 135, maxTier: 2, defaultActive: true },
+  { number: 7, id: "nordics-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, defaultActive: true },
+  { number: 8, id: "nordics-b8", label: "Block 8", subtitle: "F73-F84", kind: "window", area: "rack", minSlot: 73, maxSlot: 84, maxTier: 3, defaultActive: true },
+  { number: 9, id: "nordics-b9", label: "Block 9", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, defaultActive: true },
+  { number: 10, id: "nordics-b10", label: "Block 10", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: true },
+  { number: 11, id: "nordics-b11", label: "Block 11", subtitle: "F103-F122", kind: "window", area: "rack", minSlot: 103, maxSlot: 122, maxTier: 2, defaultActive: true },
+  { number: 12, id: "nordics-b12", label: "Block 12", subtitle: "F123-F128", kind: "window", area: "rack", minSlot: 123, maxSlot: 128, maxTier: 2, defaultActive: true },
+  { number: 13, id: "nordics-b13", label: "Block 13", subtitle: "F129-F134", kind: "window", area: "rack", minSlot: 129, maxSlot: 134, maxTier: 2, defaultActive: true },
+  { number: 14, id: "nordics-b14", label: "Block 14", subtitle: "F135-F144", kind: "gifts", area: "gifts", minSlot: 135, maxSlot: 144, maxTier: 2, defaultActive: true },
 ];
 
 const MARKET_LAYOUTS: Record<RackV2MarketId, RackV2MarketLayout> = {
-  DE: { hallLayoutWorkers: 11, forezone: DE_FOREZONE, blocks: DE_BLOCKS },
-  DKSE: { hallLayoutWorkers: 8, forezone: NORDICS_FOREZONE, blocks: NORDICS_BLOCKS },
-  BENL: { hallLayoutWorkers: 8, forezone: NORDICS_FOREZONE, blocks: NORDICS_BLOCKS },
+  DE: { hallLayoutWorkers: 9, forezone: DE_FOREZONE, blocks: DE_BLOCKS },
+  DKSE: { hallLayoutWorkers: 7, forezone: NORDICS_FOREZONE, blocks: NORDICS_BLOCKS },
+  BENL: { hallLayoutWorkers: 7, forezone: NORDICS_FOREZONE, blocks: NORDICS_BLOCKS },
 };
 
 export const RACK_V2_BLUEPRINT = DE_BLOCKS;
@@ -311,9 +311,7 @@ export function rackV2IsBlockActive(block: RackV2Block, overrides?: RackV2Active
 
 export function rackV2RecommendedActiveCount(market: RackV2MarketId, plannedWorkers: number): number {
   const blocks = rackV2BlocksForMarket(market);
-  const hallWorkers = rackV2HallLayoutWorkers(market);
-  const delta = Math.round(plannedWorkers) - hallWorkers;
-  return Math.max(1, Math.min(blocks.length, blocks.length + delta));
+  return Math.max(1, Math.min(blocks.length, Math.round(plannedWorkers)));
 }
 
 export function rackV2RecommendedActiveBlockIds(market: RackV2MarketId, plannedWorkers: number): string[] {
@@ -582,7 +580,14 @@ export function assembleRackfileFromV2(assignments: RackV2LineAssignment[], layo
   for (const assignment of assignments) {
     const source = layouts[assignment.line.id] ?? [];
     for (const entry of source) {
-      out.push({ ...entry, line: assignment.line.code });
+      const labelPos = `${assignment.line.code}${entry.flowRackPosition}`;
+      const portionSuffix = entry.recipe.includes("_") ? entry.recipe.split("_", 2)[1] : "";
+      out.push({
+        ...entry,
+        line: assignment.line.code,
+        labelPos,
+        uniCode: `${labelPos}${portionSuffix}`,
+      });
     }
   }
   return out;
@@ -595,6 +600,7 @@ export function validateV2Plan(
 ): RackV2PlanValidation {
   const perLine: RackV2PlanValidation["perLine"] = [];
   const allEntries = assembleRackfileFromV2(assignments, layouts);
+  const marketByLine = new Map(assignments.map((assignment) => [assignment.line.code, assignment.market]));
 
   for (const assignment of assignments) {
     const issues = validateLineV2(assignment, allEntries);
@@ -607,6 +613,22 @@ export function validateV2Plan(
   }
 
   const global = validateRackPlan(allEntries, options).issues.filter((issue) => !/^Mehrfachbelegung in /.test(issue.message));
+  const seenByMarket = new Map<string, RackEntry>();
+  for (const entry of allEntries) {
+    if (deriveEntryKind(entry) === "packaging") continue;
+    const market = marketByLine.get(entry.line);
+    if (!market) continue;
+    const key = `${market}:${rackV2EntryFingerprint(entry)}`;
+    const existing = seenByMarket.get(key);
+    if (existing) {
+      global.push({
+        severity: "error",
+        message: `Doppelte Pille im Markt ${market}: ${entry.recipe} liegt auf ${existing.line}/${existing.flowRackPosition} und ${entry.line}/${entry.flowRackPosition}.`,
+      });
+    } else {
+      seenByMarket.set(key, entry);
+    }
+  }
   const ok = perLine.every((line) => line.issues.every((issue) => issue.severity !== "error"))
     && global.every((issue) => issue.severity !== "error");
 

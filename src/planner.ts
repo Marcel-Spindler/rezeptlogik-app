@@ -1,6 +1,7 @@
 import type { DataBundle, ProcessSpec, Station, SubRecipe, WeekRecipe } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, computeWeekLoad, getStationCapacityView, normalizePoolName } from "./equipment";
+import { runSplitForRecipeLike } from "./runPlanning";
 
 export const PLANNER_DAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] as const;
 export const PLANNER_SHIFTS = ["S1", "S2", "S3"] as const;
@@ -756,14 +757,10 @@ export function computeBatchSplitPlan(
 
   const plans: BatchSplitPlan[] = [];
   for (const wr of rows) {
-    const dkse = wr.verdenVolume.DKSE ?? 0;
-    const benl = wr.verdenVolume.BENL ?? 0;
-    const de = wr.verdenVolume.DE ?? 0;
-    const deFri = Math.round(de / 2);
-    const deSun = Math.max(0, de - deFri);
-    const friPortions = dkse + benl + deFri;
-    const sunPortions = deSun;
-    const totalPortions = friPortions + sunPortions;
+    const runSplit = runSplitForRecipeLike(wr);
+    const runOnePortions = runSplit.firstRun.total;
+    const runTwoPortions = runSplit.secondRun;
+    const totalPortions = runSplit.upliftTotal;
     if (totalPortions <= 0) continue;
 
     const isSeafood = recipeIsSeafood(data, wr.code);
@@ -811,28 +808,30 @@ export function computeBatchSplitPlan(
       continue;
     }
 
-    // ── Fallback: MHD-basierte Fr/So-Heuristik ─────────────────────────────
+    // ── Fallback: Run-Template aus Planning OASE ───────────────────────────
+    // Run 1 = BENL 50% + Nordics 100% + DE 70%.
+    // Run 2 = Differenz auf 110% Gesamtvolumen.
     const batches: BatchSplit[] = [];
 
-    if (friPortions > 0) {
+    if (runOnePortions > 0) {
       // Plating muss 1 Tag VOR dem Versand (Fr) fertig sein, damit Sleeving noch stattfinden kann.
       const platDay = PLANNER_DAYS[Math.max(0, PLANNER_DAYS.indexOf("Fr") - 1)] as PlannerDay; // "Do"
       const { earliest, latest, recommended } = computeProductionWindowForPlatDay(platDay, maxGapDays);
       batches.push({
         fulfillmentDay: "Fr",
         platDay,
-        fulfillmentLabel: "Fulfillment 1 (DK/SE + BENL + DE Split 1)",
-        portions: friPortions,
+        fulfillmentLabel: `Run 1 (BNL ${Math.round((wr.verdenVolume.BENL ?? 0) * 0.5).toLocaleString("de-DE")} + Nordics ${(wr.verdenVolume.DKSE ?? 0).toLocaleString("de-DE")} + DE ${Math.round((wr.verdenVolume.DE ?? 0) * 0.7).toLocaleString("de-DE")})`,
+        portions: runOnePortions,
         earliestProductionDay: earliest,
         latestProductionDay: latest,
         recommendedProductionDay: recommended,
         reason: isSeafood
-          ? `Fisch MHD 9d → Plating ${platDay}, Küche ${earliest}–${latest}, empfohlen ${recommended}`
-          : `MHD 13d → Plating ${platDay}, Küche ${earliest}–${latest}, empfohlen ${recommended}`
+          ? `Run 1 nach Template: BENL 50%, Nordics 100%, DE 70% → Fisch MHD 9d, Küche ${earliest}–${latest}`
+          : `Run 1 nach Template: BENL 50%, Nordics 100%, DE 70% → MHD 13d, Küche ${earliest}–${latest}`
       });
     }
 
-    if (sunPortions > 0) {
+    if (runTwoPortions > 0) {
       // Plating muss 1 Tag VOR dem Versand (So) fertig sein → Plating-Tag = Sa.
       // Kueche ist Sa/So zu, daher verschiebt computeProductionWindowForPlatDay den Horizont automatisch.
       const platDay = PLANNER_DAYS[Math.max(0, PLANNER_DAYS.indexOf("So") - 1)] as PlannerDay; // "Sa"
@@ -840,14 +839,14 @@ export function computeBatchSplitPlan(
       batches.push({
         fulfillmentDay: "So",
         platDay,
-        fulfillmentLabel: "Fulfillment 2 (DE Split 2)",
-        portions: sunPortions,
+        fulfillmentLabel: "Run 2 (Rest + 10% Gesamtvolumen)",
+        portions: runTwoPortions,
         earliestProductionDay: earliest,
         latestProductionDay: latest,
         recommendedProductionDay: recommended,
         reason: isSeafood
-          ? `Fisch MHD 9d → Plating ${platDay} (Kueche zu) → Küche spätestens ${recommended}`
-          : `MHD 13d → Plating ${platDay}, Küche ${earliest}–${latest}, empfohlen ${recommended}`
+          ? `Run 2 = 110% Gesamt minus Run 1 (${runSplit.baseRemainder.toLocaleString("de-DE")} Rest + ${runSplit.upliftPortions.toLocaleString("de-DE")} Buffer) → Fisch MHD 9d`
+          : `Run 2 = 110% Gesamt minus Run 1 (${runSplit.baseRemainder.toLocaleString("de-DE")} Rest + ${runSplit.upliftPortions.toLocaleString("de-DE")} Buffer)`
       });
     }
 

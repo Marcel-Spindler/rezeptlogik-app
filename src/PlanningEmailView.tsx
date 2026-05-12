@@ -181,8 +181,9 @@ export function PlanningEmailView({
             if (snap.exists()) {
               const d = snap.data() as { lines?: Record<string, { releaseStatus?: string }> };
               const lines = d.lines ?? {};
-              const anyReleased = Object.values(lines).some(l => l.releaseStatus === "released");
-              setRackAllReleased(anyReleased);
+              const requiredLineIds = ["ASL1", "ASL2", "ASL3", "ASL4", "ASL5", "ASL6"];
+              const allReleased = requiredLineIds.every((lineId) => lines[lineId]?.releaseStatus === "released");
+              setRackAllReleased(allReleased);
             } else {
               setRackAllReleased(false);
             }
@@ -619,8 +620,8 @@ export function PlanningEmailView({
               ok: rackConfirmed,
               loading: !rackLoaded,
               hint: rackConfirmed
-                ? "Mindestens eine Linie freigegeben"
-                : "Noch keine Linie freigegeben – bitte ‘Freigeben’ im Rack klicken",
+                ? "Alle sechs Linien freigegeben"
+                : "Noch nicht alle Linien freigegeben - bitte jede Linie im Rack freigeben",
             },
             {
               label: "Wochenplaner",

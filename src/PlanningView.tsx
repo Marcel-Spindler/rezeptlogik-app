@@ -29,6 +29,7 @@ import {
 import { tl, type UiLocale } from "./i18n";
 import { usePlanningOasisData } from "./planningOasisData";
 import { exportAsTSV, exportAsExcel, exportAsPDF } from "./planExport";
+import type { RunSplitPlan } from "./runPlanning";
 
 const PLANNER_UI_SETTINGS_STORAGE_KEY = "rezeptlogik-planner-ui-settings-v1";
 
@@ -923,6 +924,8 @@ export function PlanningView(
 
   /** Raw schedule aus dem Linienplan (Firestore), keyed als "{PlanDay}|{slotKey}|{lineIdx}" */
   const [linePlanSchedule, setLinePlanSchedule] = useState<Record<string, { code: string; speedPerMin: number } | null>>({});
+  const [linePlanCapacityByLane, setLinePlanCapacityByLane] = useState<Record<string, number>>({});
+  const [linePlanRunSplitByRecipe, setLinePlanRunSplitByRecipe] = useState<Record<string, RunSplitPlan>>({});
 
   useEffect(() => {
     savePlannerStorage(storage);
@@ -967,10 +970,18 @@ export function PlanningView(
           doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`),
           (snap) => {
             if (snap.exists()) {
-              const raw = (snap.data() as { schedule?: Record<string, { code: string; speedPerMin: number } | null> }).schedule ?? {};
-              setLinePlanSchedule(raw);
+              const data = snap.data() as {
+                schedule?: Record<string, { code: string; speedPerMin: number } | null>;
+                lineCapacityByLane?: Record<string, number>;
+                runSplitByRecipe?: Record<string, RunSplitPlan>;
+              };
+              setLinePlanSchedule(data.schedule ?? {});
+              setLinePlanCapacityByLane(data.lineCapacityByLane ?? {});
+              setLinePlanRunSplitByRecipe(data.runSplitByRecipe ?? {});
             } else {
               setLinePlanSchedule({});
+              setLinePlanCapacityByLane({});
+              setLinePlanRunSplitByRecipe({});
             }
           },
           () => { /* Fehler ignorieren – Linienplan ist optional */ }
@@ -1017,11 +1028,14 @@ export function PlanningView(
       // Format: "{PlanDay}|{slotKey}|{lineIdx}"
       const parts = key.split("|");
       if (parts.length !== 3) continue;
-      const [dayDE, slotKey] = parts;
+      const [dayDE, slotKey, lineIdx] = parts;
       const platDay = DAY_MAP[dayDE ?? ""];
       if (!platDay) continue;
       const duration = SLOT_DURATIONS[slotKey ?? ""] ?? 60;
-      const portions = (recipe.speedPerMin ?? 10) * duration;
+      const laneCapacity = linePlanCapacityByLane[lineIdx ?? ""];
+      const portions = laneCapacity != null
+        ? Math.round((Math.max(0, laneCapacity) / 60) * duration)
+        : (recipe.speedPerMin ?? 10) * duration;
       const entries = (byRecipe[recipe.code] ??= []);
       const existing = entries.find(e => e.platDay === platDay);
       if (existing) {
@@ -1032,7 +1046,7 @@ export function PlanningView(
       }
     }
     return { byRecipe };
-  }, [linePlanSchedule]);
+  }, [linePlanSchedule, linePlanCapacityByLane]);
 
   const suggestions = useMemo(() => {
     if (!uiSettings.showAutoSuggestions) return {};
@@ -1718,6 +1732,11 @@ export function PlanningView(
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-300">{analysis.plannedCount} geplant</span>
               <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-300">{unplanned.length} offen</span>
+              {Object.keys(linePlanRunSplitByRecipe).length > 0 && (
+                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-semibold text-cyan-800 ring-1 ring-cyan-300">
+                  Plating Runs: {Object.keys(linePlanRunSplitByRecipe).length} Meals · Ziel 110%
+                </span>
+              )}
               <label className="flex items-center gap-1 rounded-md bg-white px-2 py-1 ring-1 ring-slate-300">
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Auto-Profil</span>
                 <select

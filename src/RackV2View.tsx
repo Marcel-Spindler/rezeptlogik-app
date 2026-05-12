@@ -114,6 +114,41 @@ function dedupePoolEntries(entries: RackEntry[]): RackEntry[] {
   return out;
 }
 
+function rackV2EntryBelongsToMarket(entry: RackEntry, market: RackV2MarketId): boolean {
+  const recipe = String(entry.recipe ?? "").trim();
+  const kind = deriveEntryKind(entry);
+  if (market === "DE") return true;
+  if (kind !== "meal" && !/^\d/.test(recipe)) return true;
+  if (market === "DKSE") return /^6\d*/.test(recipe);
+  return /^7\d*/.test(recipe);
+}
+
+function filterPoolForV2Market(entries: RackEntry[], market: RackV2MarketId): RackEntry[] {
+  return entries.filter((entry) => rackV2EntryBelongsToMarket(entry, market));
+}
+
+function fixedActiveOverrides(market: RackV2MarketId, plannedWorkers: number): RackV2ActiveOverrides {
+  const activeIds = new Set(rackV2RecommendedActiveBlockIds(market, plannedWorkers));
+  return Object.fromEntries(rackV2BlocksForMarket(market).map((block) => [block.id, activeIds.has(block.id)]));
+}
+
+function splitPoolAcrossLines(entries: RackEntry[], lineIds: string[]): Record<string, RackEntry[]> {
+  const buckets = Object.fromEntries(lineIds.map((lineId) => [lineId, [] as RackEntry[]]));
+  const weights = Object.fromEntries(lineIds.map((lineId) => [lineId, 0]));
+  const sorted = [...entries].sort((left, right) => {
+    const kindDelta = deriveEntryKind(left).localeCompare(deriveEntryKind(right));
+    if (kindDelta !== 0) return kindDelta;
+    return (right.quantity ?? 0) - (left.quantity ?? 0);
+  });
+
+  for (const entry of sorted) {
+    const target = [...lineIds].sort((left, right) => weights[left] - weights[right] || left.localeCompare(right))[0];
+    buckets[target].push(entry);
+    weights[target] += Math.max(1, Number(entry.quantity ?? 1));
+  }
+  return buckets;
+}
+
 async function fetchAsFile(url: string): Promise<File> {
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) throw new Error(`HTTP ${response.status} fuer ${url}`);
@@ -167,7 +202,7 @@ function buildWeekSeedPlan(pool: EntriesByDataMarket): SharedPlanState {
     lines: Object.fromEntries(
       RACK_V2_LINES.map((line) => {
         const market = line.defaultMarket;
-        const dataPool = pool[RACK_V2_MARKET_TO_DATA[market]] ?? [];
+        const dataPool = filterPoolForV2Market(pool[RACK_V2_MARKET_TO_DATA[market]] ?? [], market);
         return [line.id, {
           ...defaultLinePlanState(line),
           market,
@@ -182,6 +217,13 @@ function coerceMarket(candidate: unknown, fallback: RackV2MarketId): RackV2Marke
   return typeof candidate === "string" && ALL_MARKETS.includes(candidate as RackV2MarketId)
     ? candidate as RackV2MarketId
     : fallback;
+}
+
+function coercePlannedWorkers(candidate: unknown, market: RackV2MarketId): number {
+  if (typeof candidate !== "number" || !Number.isFinite(candidate)) return rackV2HallLayoutWorkers(market);
+  if (market === "DE" && candidate === 11) return 9;
+  if (market !== "DE" && candidate === 8) return 7;
+  return Math.max(1, Math.round(candidate));
 }
 
 function parseStoredPlan(raw: string | null): SharedPlanState | null {
@@ -203,7 +245,7 @@ function parseStoredPlan(raw: string | null): SharedPlanState | null {
         base.lines[line.id] = {
           market,
           entries: restoreEntries(row.entries, line.id),
-          plannedWorkers: typeof row.plannedWorkers === "number" ? row.plannedWorkers : rackV2HallLayoutWorkers(market),
+          plannedWorkers: coercePlannedWorkers(row.plannedWorkers, market),
           manualOverrides: row.manualOverrides && typeof row.manualOverrides === "object" ? row.manualOverrides : {},
           releaseStatus: row.releaseStatus === "released" || row.releaseStatus === "rework" ? row.releaseStatus : "draft",
           releasedAt: row.releasedAt,
@@ -222,7 +264,7 @@ function parseStoredPlan(raw: string | null): SharedPlanState | null {
         base.lines[line.id] = {
           market,
           entries: restoreEntries(row?.entries, line.id),
-          plannedWorkers: typeof row?.plannedWorkers === "number" ? row.plannedWorkers : rackV2HallLayoutWorkers(market),
+          plannedWorkers: coercePlannedWorkers(row?.plannedWorkers, market),
           manualOverrides: row?.manualOverrides && typeof row.manualOverrides === "object" ? row.manualOverrides : {},
           releaseStatus: row?.releaseStatus === "released" || row?.releaseStatus === "rework" ? row.releaseStatus : "draft",
           releasedAt: row?.releasedAt,
@@ -482,6 +524,19 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
   const validation = useMemo(() => validateV2Plan(assignments, layoutsByLine), [assignments, layoutsByLine]);
   const rackfileEntries = useMemo(() => assembleRackfileFromV2(assignments, layoutsByLine), [assignments, layoutsByLine]);
+  const lineValidationById = useMemo(() => {
+    return Object.fromEntries(validation.perLine.map((line) => [line.lineId, line])) as Record<string, (typeof validation.perLine)[number]>;
+  }, [validation.perLine]);
+  const lineErrorCountById = useMemo(() => {
+    return Object.fromEntries(
+      validation.perLine.map((line) => [
+        line.lineId,
+        line.issues.filter((issue) => issue.severity === "error").length,
+      ]),
+    ) as Record<string, number>;
+  }, [validation.perLine]);
+  const releasedLineCount = RACK_V2_LINES.filter((line) => (sharedPlan.lines[line.id] ?? defaultLinePlanState(line)).releaseStatus === "released").length;
+  const allLinesReleased = releasedLineCount === RACK_V2_LINES.length;
 
   const currentLine = useMemo(() => RACK_V2_LINES.find((line) => line.id === editorLineId) ?? RACK_V2_LINES[0], [editorLineId]);
   const currentLinePlan = sharedPlan.lines[currentLine.id] ?? defaultLinePlanState(currentLine);
@@ -492,8 +547,13 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
   const currentRecommendedIds = new Set(rackV2RecommendedActiveBlockIds(currentMarket, currentLinePlan.plannedWorkers));
   const currentRoleLabels = roleLabelsByLine[currentLine.id] ?? {};
   const currentEntries = currentLinePlan.entries;
-  const currentDataPool = useMemo(() => pool[RACK_V2_MARKET_TO_DATA[currentMarket]] ?? [], [pool, currentMarket]);
+  const currentDataPool = useMemo(
+    () => filterPoolForV2Market(pool[RACK_V2_MARKET_TO_DATA[currentMarket]] ?? [], currentMarket),
+    [pool, currentMarket],
+  );
   const currentLocked = currentLinePlan.releaseStatus === "released";
+  const currentLineValidation = lineValidationById[currentLine.id];
+  const currentLineErrorCount = lineErrorCountById[currentLine.id] ?? 0;
 
   const boardByCell = useMemo(() => {
     const map = new Map<string, RackEntry>();
@@ -506,19 +566,40 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     return map;
   }, [currentEntries]);
 
-  const usedFingerprints = useMemo(() => new Set(currentEntries.map(rackV2EntryFingerprint)), [currentEntries]);
+  const currentUsedFingerprints = useMemo(() => new Set(currentEntries.map(rackV2EntryFingerprint)), [currentEntries]);
+  const marketLineIds = useMemo(() => {
+    const ids = RACK_V2_LINES
+      .filter((line) => (sharedPlan.lines[line.id] ?? defaultLinePlanState(line)).market === currentMarket)
+      .map((line) => line.id);
+    return ids.length > 0 ? ids : [currentLine.id];
+  }, [currentLine.id, currentMarket, sharedPlan.lines]);
+  const marketUsedFingerprints = useMemo(() => {
+    const seen = new Set<string>();
+    for (const lineId of marketLineIds) {
+      for (const entry of sharedPlan.lines[lineId]?.entries ?? []) {
+        if (deriveEntryKind(entry) === "packaging") continue;
+        seen.add(rackV2EntryFingerprint(entry));
+      }
+    }
+    return seen;
+  }, [marketLineIds, sharedPlan.lines]);
 
   const poolEntries = useMemo(() => {
     const term = search.trim().toLowerCase();
     return currentDataPool
-      .filter((entry) => !usedFingerprints.has(rackV2EntryFingerprint(entry)))
+      .filter((entry) => {
+        const fingerprint = rackV2EntryFingerprint(entry);
+        return deriveEntryKind(entry) === "packaging"
+          ? !currentUsedFingerprints.has(fingerprint)
+          : !marketUsedFingerprints.has(fingerprint);
+      })
       .filter((entry) => {
         if (!term) return true;
         const hay = `${entry.recipe} ${entry.sku} ${entry.ingredient} ${entry.displayName}`.toLowerCase();
         return hay.includes(term);
       })
       .sort((left, right) => (right.quantity ?? 0) - (left.quantity ?? 0));
-  }, [currentDataPool, search, usedFingerprints]);
+  }, [currentDataPool, currentUsedFingerprints, marketUsedFingerprints, search]);
 
   const selectedEntry = useMemo(() => currentEntries.find((entry) => entry.id === selectedEntryId) ?? null, [currentEntries, selectedEntryId]);
 
@@ -539,7 +620,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     if (!line) return;
     const existing = sharedPlan.lines[lineId] ?? defaultLinePlanState(line);
     if (existing.releaseStatus === "released") return;
-    const dataPool = pool[RACK_V2_MARKET_TO_DATA[market]] ?? [];
+    const dataPool = filterPoolForV2Market(pool[RACK_V2_MARKET_TO_DATA[market]] ?? [], market);
     setSharedPlan((prev) => ({
       ...prev,
       lines: {
@@ -660,15 +741,42 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
   function autoFillLine() {
     if (currentLocked) return;
-    setLinePlan(currentLine.id, (plan) => ({
-      ...plan,
-      entries: rackV2AutoFillLayout(
-        plan.entries,
-        currentDataPool,
-        currentMarket,
-        Object.fromEntries(rackV2BlocksForMarket(currentMarket).map((block) => [block.id, currentActiveBlockIds.has(block.id)])),
-      ),
+    const targetLineIds = marketLineIds;
+    const lockedLine = targetLineIds.find((lineId) => sharedPlan.lines[lineId]?.releaseStatus === "released");
+    if (lockedLine) {
+      setHint(`${lockedLine} ist bereits freigegeben. Markt-Automatik kann nur ohne gesperrte Marktlinie laufen.`);
+      return;
+    }
+
+    const plannedWorkers = rackV2HallLayoutWorkers(currentMarket);
+    const packagingEntries = currentDataPool.filter((entry) => deriveEntryKind(entry) === "packaging");
+    const uniqueEntries = currentDataPool.filter((entry) => deriveEntryKind(entry) !== "packaging");
+    const split = splitPoolAcrossLines(uniqueEntries, targetLineIds);
+    const activeOverrides = fixedActiveOverrides(currentMarket, plannedWorkers);
+
+    setSharedPlan((prev) => ({
+      ...prev,
+      lines: {
+        ...prev.lines,
+        ...Object.fromEntries(targetLineIds.map((lineId) => {
+          const line = RACK_V2_LINES.find((candidate) => candidate.id === lineId);
+          if (!line) return [lineId, prev.lines[lineId]];
+          const plan = prev.lines[lineId] ?? defaultLinePlanState(line);
+          const linePool = [...packagingEntries, ...(split[lineId] ?? [])];
+          return [lineId, {
+            ...plan,
+            market: currentMarket,
+            plannedWorkers,
+            manualOverrides: {},
+            entries: rackV2AutoFillLayout([], linePool, currentMarket, activeOverrides),
+            releaseStatus: plan?.releaseStatus === "rework" ? "rework" : "draft",
+            releasedAt: undefined,
+            releasedBy: undefined,
+          }];
+        })),
+      },
     }));
+    setHint(`Automatik hat ${targetLineIds.length} ${currentMarket}-Linien balanciert geplant. Jede Nicht-Packaging-Pille wurde nur einmal vergeben.`);
   }
 
   function resetLine() {
@@ -684,6 +792,10 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
   async function releaseLine() {
     if (currentLocked) return;
+    if (currentLineErrorCount > 0) {
+      setHint(`${currentLine.code} hat noch ${currentLineErrorCount} Fehler. Bitte erst die Validierung bereinigen.`);
+      return;
+    }
     const releasedAt = Date.now();
     const releasedBy = actorName();
     setLinePlan(currentLine.id, (plan) => {
@@ -748,6 +860,25 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     URL.revokeObjectURL(url);
   }
 
+  function downloadAllRackfiles() {
+    if (!allLinesReleased) {
+      setHint("Gesamt-Rackfile ist erst verfuegbar, wenn alle sechs Linien freigegeben sind.");
+      return;
+    }
+    const releasedAssignments = RACK_V2_LINES.map((line) => {
+      const linePlan = sharedPlan.lines[line.id] ?? defaultLinePlanState(line);
+      return rackV2BuildAssignment(line, linePlan.market);
+    });
+    const csv = exportRackfileCsv(assembleRackfileFromV2(releasedAssignments, layoutsByLine));
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `Rackfile_ALL_KW${week}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   const totalErrors = validation.perLine.reduce((sum, line) => sum + line.issues.filter((issue) => issue.severity === "error").length, 0)
     + validation.global.filter((issue) => issue.severity === "error").length;
 
@@ -772,11 +903,17 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
             <span className="rounded-full bg-white px-3 py-1 ring-1 ring-slate-300 font-semibold">
               {rackfileEntries.length} Rackfile-Eintraege
             </span>
+            <span className={`rounded-full px-3 py-1 ring-1 font-semibold ${allLinesReleased ? "bg-emerald-100 text-emerald-900 ring-emerald-300" : "bg-white text-slate-700 ring-slate-300"}`}>
+              {releasedLineCount}/{RACK_V2_LINES.length} Linien freigegeben
+            </span>
             {totalErrors > 0 && (
               <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-800 ring-1 ring-rose-300 font-semibold">
                 {totalErrors} Fehler
               </span>
             )}
+            <button type="button" onClick={downloadAllRackfiles} disabled={!allLinesReleased} className="btn disabled:opacity-50">
+              Gesamt-Rackfile CSV
+            </button>
           </div>
         </div>
         {loadError && <div className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200">{loadError}</div>}
@@ -793,6 +930,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
             const plan = sharedPlan.lines[line.id] ?? defaultLinePlanState(line);
             const active = editorLineId === line.id;
             const isLocked = plan.releaseStatus === "released";
+            const lineErrors = lineErrorCountById[line.id] ?? 0;
             return (
               <div
                 key={line.id}
@@ -824,7 +962,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600">
                   <span>{RACK_V2_MARKET_LABEL[plan.market]}</span>
-                  <span>{plan.entries.length} Slots</span>
+                  <span>{plan.entries.length} Slots · {lineErrors === 0 ? "valid" : `${lineErrors} Fehler`}</span>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <span className="text-[11px] text-slate-500">CSV je Linie, Upload einzeln</span>
@@ -860,12 +998,18 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                 {currentLinePlan.releaseStatus === "released" ? "freigegeben" : currentLinePlan.releaseStatus === "rework" ? "Nacharbeit" : "Draft"}
               </span>
               <button type="button" onClick={autoFillLine} disabled={currentLocked} className="btn disabled:opacity-50">
-                Automatik
+                Markt-Automatik
               </button>
               <button type="button" onClick={resetLine} disabled={currentLocked} className="btn disabled:opacity-50">
                 Zuruecksetzen
               </button>
-              <button type="button" onClick={releaseLine} disabled={currentLocked} className="btn disabled:opacity-50">
+              <button
+                type="button"
+                onClick={releaseLine}
+                disabled={currentLocked || currentLineErrorCount > 0}
+                title={currentLineErrorCount > 0 ? "Validierung muss zuerst fehlerfrei sein" : undefined}
+                className="btn disabled:opacity-50"
+              >
                 Plan freigeben
               </button>
               <button type="button" onClick={() => downloadLineRackfile(currentLine.id)} disabled={!currentLocked} className="btn disabled:opacity-50">
@@ -905,6 +1049,15 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
               <div className="mt-2 text-lg font-black text-slate-900">{currentEntries.length}</div>
             </div>
           </div>
+
+          {currentLineErrorCount > 0 && (
+            <div className="rounded-xl bg-rose-50 px-3 py-2 text-[11px] text-rose-900 ring-1 ring-rose-200">
+              {currentLine.code} kann erst freigegeben werden, wenn die Validierung fehlerfrei ist.
+              {currentLineValidation?.issues.slice(0, 2).map((issue, index) => (
+                <div key={`${currentLine.id}-release-blocker-${index}`} className="mt-1">- {issue.message}</div>
+              ))}
+            </div>
+          )}
 
           <div className="rounded-xl bg-amber-50 p-3 text-[11px] text-amber-900 ring-1 ring-amber-200">
             Alle Bloecke bleiben testweise schaltbar. Die aktive Reihenfolge bildet automatisch P1, P2, P3 ... und laeuft je Linie separat.
@@ -981,14 +1134,23 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
             <div>
               <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Bloecke hinter der Vorzone</div>
               <div className="mt-2 flex gap-3 overflow-x-auto pb-2">
-                {currentBlocks.map((block) => {
+                {currentBlocks.map((block, blockIndex) => {
                   const active = currentActiveBlockIds.has(block.id);
                   const recommended = currentRecommendedIds.has(block.id);
                   const roleLabel = currentRoleLabels[block.id];
+                  const separatorClass = block.wallBefore
+                    ? "w-10 shrink-0 rounded-sm bg-slate-950"
+                    : blockIndex > 0
+                      ? "w-1 shrink-0 rounded-sm bg-slate-950"
+                      : "";
+                  const blockColumnCount = Math.ceil((block.maxSlot - block.minSlot + 1) / block.maxTier);
                   return (
                     <div key={block.id} className="flex items-stretch gap-3">
-                      {block.wallBefore && <div className="w-3 rounded-full bg-slate-900/80" />}
-                      <div className={`min-w-[250px] rounded-2xl p-3 ring-1 ${blockTone(active, recommended, block.area)}`}>
+                      {separatorClass && <div className={separatorClass} />}
+                      <div
+                        className={`rounded-2xl p-3 ring-1 ${blockTone(active, recommended, block.area)}`}
+                        style={{ minWidth: `${Math.max(250, blockColumnCount * 42)}px` }}
+                      >
                         <button type="button" onClick={() => toggleBlock(block)} disabled={currentLocked} className="w-full text-left disabled:opacity-60">
                           <div className="flex items-center justify-between gap-2">
                             <div>

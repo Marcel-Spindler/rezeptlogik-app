@@ -14,6 +14,7 @@ import { loadData } from "./dataSource";
 import { usePlanningOasisData } from "./planningOasisData";
 import type { WeekRecipe } from "./types";
 import type { UiLocale } from "./i18n";
+import { calculateRunSplit, type RunSplitPlan } from "./runPlanning";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  DOMAIN TYPES
@@ -211,6 +212,14 @@ function mealsPerHourFromScheduleMap(schedule: ScheduleMap, day: PlanDay, slotKe
 
 function portionsInSlotByLineCapacity(lineCapacityPerHour: number, slotKey: string): number {
   return (Math.max(0, lineCapacityPerHour) / 60) * slotDuration(slotKey);
+}
+
+function runSplitForLineRecipe(recipe: LinePlanRecipe): RunSplitPlan {
+  return calculateRunSplit({
+    bnl: recipe.bnl,
+    nordics: recipe.nordics,
+    de: recipe.de,
+  });
 }
 
 function statusColor(status: string): string {
@@ -421,8 +430,10 @@ function RecipePill({
 }) {
   const tone = recipeTone(recipe.code);
   const style = tone.base;
-  const pct = recipe.totalPlanned > 0 && scheduledPortions !== undefined
-    ? scheduledPortions / recipe.totalPlanned
+  const runSplit = runSplitForLineRecipe(recipe);
+  const targetTotal = runSplit.upliftTotal || recipe.totalPlanned;
+  const pct = targetTotal > 0 && scheduledPortions !== undefined
+    ? scheduledPortions / targetTotal
     : 0;
   const fullyPlanned = pct >= 1;
   const overPlanned = pct > 1.02;
@@ -448,7 +459,7 @@ function RecipePill({
               }
             </div>
             <span className="text-[11px] font-medium leading-tight line-clamp-2" style={tone.title}>{recipe.name.replace(/^FV\d+[A-Za-z]?\s*[-\u2013]\s*/i, "")}</span>
-            <span className="text-[10px] opacity-50 tabular-nums">{fmtNum(recipe.totalPlanned)} Port.</span>
+            <span className="text-[10px] opacity-50 tabular-nums">{fmtNum(targetTotal)} Port. inkl. 10%</span>
           </div>
         ) : (
           <div className="min-w-0">
@@ -469,7 +480,7 @@ function RecipePill({
               {recipe.bnl > 0 && <span>&#x2B21; BNL {fmtNum(recipe.bnl)}</span>}
             </div>
             <div className="mt-1.5 text-xs font-semibold tabular-nums">
-              &#x2211; {fmtNum(recipe.totalPlanned)} Portionen
+              &#x2211; {fmtNum(targetTotal)} Portionen · R1 {fmtNum(runSplit.firstRun.total)} / R2 {fmtNum(runSplit.secondRun)}
             </div>
             <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${planningRoleTone(planningRole)}`}>
               {planningRoleLabel(planningRole)}
@@ -520,7 +531,7 @@ function RecipePill({
           </div>
           <div className="flex items-center justify-between text-xs mb-2 pb-2 border-b border-slate-100">
             <span className="text-slate-500">&#x2211; Geplant</span>
-            <span className="font-bold tabular-nums text-slate-800">{fmtNum(recipe.totalPlanned)} Port.</span>
+            <span className="font-bold tabular-nums text-slate-800">{fmtNum(targetTotal)} Port. inkl. 10%</span>
             {recipe.speedPerMin > 0 && (
               <span className="font-bold tabular-nums text-indigo-600 ml-3">{recipe.speedPerMin}/min</span>
             )}
@@ -643,9 +654,11 @@ function DropCell({
 
 
 function VolumeBar({ recipe, scheduledPortions }: { recipe: LinePlanRecipe; scheduledPortions: number }) {
-  const pct = recipe.totalPlanned > 0 ? Math.min(100, (scheduledPortions / recipe.totalPlanned) * 100) : 0;
+  const runSplit = runSplitForLineRecipe(recipe);
+  const targetTotal = runSplit.upliftTotal || recipe.totalPlanned;
+  const pct = targetTotal > 0 ? Math.min(100, (scheduledPortions / targetTotal) * 100) : 0;
   const h = recipeHue(recipe.code);
-  const over = scheduledPortions > recipe.totalPlanned;
+  const over = scheduledPortions > targetTotal;
   return (
     <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -657,7 +670,7 @@ function VolumeBar({ recipe, scheduledPortions }: { recipe: LinePlanRecipe; sche
           <div className={`text-sm font-bold tabular-nums ${over ? "text-rose-600" : pct >= 100 ? "text-emerald-600" : "text-slate-700"}`}>
             {Math.round(pct)}%
           </div>
-          <div className="text-[10px] text-slate-400 tabular-nums">{fmtNum(scheduledPortions)}/{fmtNum(recipe.totalPlanned)}</div>
+          <div className="text-[10px] text-slate-400 tabular-nums">{fmtNum(scheduledPortions)}/{fmtNum(targetTotal)} · R1 {fmtNum(runSplit.firstRun.total)}</div>
         </div>
       </div>
       <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
@@ -666,7 +679,7 @@ function VolumeBar({ recipe, scheduledPortions }: { recipe: LinePlanRecipe; sche
           background: over ? `hsl(0,75%,60%)` : `hsl(${h},55%,60%)`,
         }} />
       </div>
-      {over && <div className="text-[10px] text-rose-500 mt-1">+{fmtNum(scheduledPortions - recipe.totalPlanned)} überplant</div>}
+      {over && <div className="text-[10px] text-rose-500 mt-1">+{fmtNum(scheduledPortions - targetTotal)} überplant</div>}
     </div>
   );
 }
@@ -883,6 +896,11 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
   const weekStr = week.split("-W")[1] ?? week;
   const activeLineIdx = useMemo(() => Array.from({ length: platingLineCount }, (_, idx) => idx), [platingLineCount]);
   const weekIntel = planningOasis?.weeks[week] ?? null;
+  const runSplitByRecipe = useMemo(() => {
+    return Object.fromEntries(
+      recipes.map((recipe) => [recipe.code, runSplitForLineRecipe(recipe)])
+    ) as Record<string, RunSplitPlan>;
+  }, [recipes]);
 
   // ─── Load data ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1037,6 +1055,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
         lineCapacityByLane,
         platingLineCount,
         autoPlanMode,
+        runSplitByRecipe,
       });
       setSaveOk(true);
       setTimeout(() => setSaveOk(false), 3000);
@@ -1072,6 +1091,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
         lineCapacityByLane,
         platingLineCount,
         autoPlanMode,
+        runSplitByRecipe,
       });
     } catch (err) {
       alert(`Bereinigen fehlgeschlagen: ${(err as Error).message}`);
@@ -1173,7 +1193,8 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
 
           for (const recipe of recipes) {
             const produced = producedByRecipe.get(recipe.code) ?? 0;
-            const remaining = Math.max(0, recipe.totalPlanned - produced);
+            const runSplit = runSplitForLineRecipe(recipe);
+            const remaining = Math.max(0, runSplit.upliftTotal - produced);
             if (remaining <= 0) continue;
 
             const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
@@ -1182,19 +1203,17 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
             const volumeScore = Math.min(1, remaining / Math.max(slotPortions, 1));
             const lineFitScore = lineTarget > 0 ? 1 : fitScore;
 
-            // Fulfillment-Vorgaben:
-            // BENELUX: 50/50 Donnerstag/Freitag
-            // NORDICS: 50/50 Donnerstag/Freitag
-            // DE: 50/50 Freitag/Sonntag
-            const totalPlanned = Math.max(1, recipe.totalPlanned);
-            const thursdayDemand = recipe.bnl * 0.5 + recipe.nordics * 0.5;
-            const fridayDemand = recipe.bnl * 0.5 + recipe.nordics * 0.5 + recipe.de * 0.5;
-            const sundayDemand = recipe.de * 0.5;
+            // Run-Template aus der Planning OASE:
+            // 1. Run = BENL 50%, Nordics 100%, DE 70%.
+            // 2. Run = Restmenge + 10% vom Gesamtvolumen (= Ziel 110%).
+            const totalPlanned = Math.max(1, runSplit.upliftTotal);
+            const isRunOneDay = day === "Dienstag" || day === "Mittwoch" || day === "Donnerstag";
+            const runOneOpen = Math.max(0, runSplit.firstRun.total - produced);
+            const runTwoOpen = Math.max(0, runSplit.upliftTotal - Math.max(produced, runSplit.firstRun.total));
             let dayDemandScore = 0;
-            if (day === "Donnerstag") dayDemandScore = thursdayDemand / totalPlanned;
-            else if (day === "Freitag") dayDemandScore = fridayDemand / totalPlanned;
-            else if (day === "Sonntag") dayDemandScore = sundayDemand / totalPlanned;
-            else dayDemandScore = Math.max(0, (recipe.de * 0.05) / totalPlanned);
+            if (isRunOneDay) dayDemandScore = runOneOpen / totalPlanned;
+            else if (day === "Freitag" || day === "Samstag" || day === "Sonntag" || day === "Montag") dayDemandScore = runTwoOpen / totalPlanned;
+            else dayDemandScore = remaining / totalPlanned;
 
             const recipeWos = ketWOs.filter(wo => (wo.recipeName.match(/FV\d{4}[A-Z]/)?.[0] ?? "") === recipe.code);
             const longSubCount = recipeWos.reduce((sum, wo) => {
@@ -1225,7 +1244,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
             let maxRemaining = 0;
             for (const recipe of recipes) {
               const produced = producedByRecipe.get(recipe.code) ?? 0;
-              const remaining = Math.max(0, recipe.totalPlanned - produced);
+              const remaining = Math.max(0, runSplitForLineRecipe(recipe).upliftTotal - produced);
               if (remaining > maxRemaining) {
                 maxRemaining = remaining;
                 fallback = recipe;
@@ -1483,22 +1502,30 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                   const { doc, setDoc } = await import("firebase/firestore");
                   const { db } = getFirebase();
 
-                  const cockpitByDay: Record<string, Array<{ slot: string; line: number; code: string; name: string; portions: number }>> = {};
+                  const cockpitByDay: Record<string, Array<{ slot: string; line: number; code: string; name: string; portions: number; run: 1 | 2 }>> = {};
+                  const producedBefore = new Map<string, number>();
                   for (const d of DAYS) cockpitByDay[d] = [];
-                  for (const [key, recipe] of Object.entries(schedule)) {
-                    if (!recipe) continue;
-                    const [day, slotKey, liRaw] = key.split("|");
-                    const li = Number(liRaw ?? -1);
-                    if (!day || !slotKey || li < 0) continue;
-                    const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
-                    const portions = Math.round(portionsInSlotByLineCapacity(lineTarget, slotKey));
-                    cockpitByDay[day]?.push({
-                      slot: slotKey,
-                      line: li + 1,
-                      code: recipe.code,
-                      name: recipe.name,
-                      portions,
-                    });
+                  for (const day of DAYS) {
+                    for (const slot of SLOTS) {
+                      for (const li of activeLineIdx) {
+                        const recipe = schedule[`${day}|${slot.key}|${li}`];
+                        if (!recipe) continue;
+                        const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
+                        const portions = Math.round(portionsInSlotByLineCapacity(lineTarget, slot.key));
+                        const split = runSplitByRecipe[recipe.code] ?? runSplitForLineRecipe(recipe);
+                        const before = producedBefore.get(recipe.code) ?? 0;
+                        const run: 1 | 2 = before < split.firstRun.total ? 1 : 2;
+                        producedBefore.set(recipe.code, before + portions);
+                        cockpitByDay[day]?.push({
+                          slot: slot.key,
+                          line: li + 1,
+                          code: recipe.code,
+                          name: recipe.name,
+                          portions,
+                          run,
+                        });
+                      }
+                    }
                   }
 
                   await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
@@ -1511,6 +1538,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                     lineCapacityByLane,
                     platingLineCount,
                     autoPlanMode,
+                    runSplitByRecipe,
                     cockpitPlan: cockpitByDay,
                     cockpitBuiltAt: new Date().toISOString(),
                   }, { merge: true });

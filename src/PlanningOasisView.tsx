@@ -1,13 +1,15 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import type { DataBundle, WeekRecipe } from "./types";
 import { PlanningView } from "./PlanningView";
+import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
 import type { UiLocale } from "./i18n";
 import { usePlanningOasisData } from "./planningOasisData";
 import { loadFactorDailyMeta, type FactorDailyMeta } from "./planningTruthData";
 
 const LinePlanningSection = lazy(() => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView })));
+const RackSection = lazy(() => import("./RackV2View").then((module) => ({ default: module.RackV2View })));
 
-type OasisSection = "cockpit" | "lines" | "recipes";
+type OasisSection = "cockpit" | "lines" | "rack" | "breakdown" | "recipes";
 
 function fmtNum(n: number, digits = 0): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
@@ -129,6 +131,8 @@ export function PlanningOasisView({
           {([
             ["cockpit", "Cockpit"],
             ["lines", "Linienplanung"],
+            ["rack", "Rack"],
+            ["breakdown", "Breakdown+"],
             ["recipes", "Rezept-Fokus"]
           ] as [OasisSection, string][]).map(([key, label]) => (
             <button
@@ -264,6 +268,28 @@ export function PlanningOasisView({
         <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
           <LinePlanningSection week={week} locale={locale} />
         </Suspense>
+      )}
+
+      {section === "rack" && (
+        <Suspense fallback={<div className="card p-6 text-slate-500">Rack wird geladen …</div>}>
+          <RackSection
+            week={week}
+            locale={locale}
+            weekRecipes={data.weekRecipes}
+            recipes={data.recipes}
+            cookSchedules={data.cookSchedules}
+            processSpecs={data.processSpecs}
+          />
+        </Suspense>
+      )}
+
+      {section === "breakdown" && (
+        <BreakdownEquipmentView
+          data={data}
+          week={week}
+          upliftPercent={upliftPercent}
+          locale={locale}
+        />
       )}
 
       {section === "recipes" && (

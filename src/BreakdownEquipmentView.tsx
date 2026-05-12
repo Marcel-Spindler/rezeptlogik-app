@@ -1224,6 +1224,48 @@ function equipmentColorScheme(eq: string | null): {
   return { bg: "bg-indigo-50", headerBg: "bg-gradient-to-r from-indigo-100 to-blue-50", border: "border-indigo-300", badge: "bg-indigo-100 text-indigo-800", text: "text-indigo-800", icon: "⚙️" };
 }
 
+function wrHasSubName(value: string): boolean {
+  return !!value && value !== "—" && value !== "Ohne Sub-Rezept";
+}
+
+function wrScenarioTone(rawCoverage: number | null): {
+  band: string;
+  badge: string;
+  meter: string;
+  label: string;
+} {
+  if (rawCoverage == null) {
+    return {
+      band: "bg-slate-900 text-white ring-slate-700",
+      badge: "bg-white/10 text-slate-100 ring-white/15",
+      meter: "bg-slate-400",
+      label: "Soll-Szenario"
+    };
+  }
+  if (rawCoverage < 0.8) {
+    return {
+      band: "bg-rose-950 text-white ring-rose-800",
+      badge: "bg-rose-400/15 text-rose-100 ring-rose-300/25",
+      meter: "bg-rose-400",
+      label: "Kritischer Engpass"
+    };
+  }
+  if (rawCoverage < 1) {
+    return {
+      band: "bg-amber-950 text-white ring-amber-800",
+      badge: "bg-amber-400/15 text-amber-100 ring-amber-300/25",
+      meter: "bg-amber-400",
+      label: "Teilabdeckung"
+    };
+  }
+  return {
+    band: "bg-emerald-950 text-white ring-emerald-800",
+    badge: "bg-emerald-400/15 text-emerald-100 ring-emerald-300/25",
+    meter: "bg-emerald-400",
+    label: "Freigegeben"
+  };
+}
+
 export function BreakdownEquipmentView({
   data,
   week,
@@ -1252,6 +1294,7 @@ export function BreakdownEquipmentView({
   const [capacityHints, setCapacityHints] = useState<Map<string, WRCapacityHint>>(new Map());
   const [pieceWeightKg, setPieceWeightKg] = useState<Map<string, number>>(new Map());
   const [trayHints, setTrayHints] = useState<WRTrayHint[]>([]);
+  const [pathRawInputs, setPathRawInputs] = useState<Record<string, string>>({});
 
   // Welche Wannengrößen in den Spalten anzeigen (Default: 40/60/80/120 kg)
   const [activeWannen, setActiveWannen] = useState<Set<number>>(
@@ -2360,120 +2403,131 @@ export function BreakdownEquipmentView({
                     const rawPortions = rawCoverage != null ? Math.floor(meal.portionsEffective * rawCoverage) : null;
                     const pathYieldFactor = path.totalKg > 0 ? (path.totalKg - path.totalLossKg) / path.totalKg : 1;
                     const rawNetKg = rawKg != null ? rawKg * pathYieldFactor : null;
+                    const rawMissingKg = rawKg != null ? Math.max(0, path.totalKg - rawKg) : null;
+                    const rawSurplusKg = rawKg != null ? Math.max(0, rawKg - path.totalKg) : null;
+                    const rawCoveragePct = rawCoverage != null ? Math.round(rawCoverage * 100) : null;
+                    const pathNetKg = Math.max(0, path.totalKg - path.totalLossKg);
+                    const pathLossPct = path.totalKg > 0 ? Math.round((path.totalLossKg / path.totalKg) * 100) : 0;
+                    const primarySub = wrHasSubName(path.sub1) ? path.sub1 : "Ohne Sub-Rezept";
+                    const secondarySub = wrHasSubName(path.sub2) ? path.sub2 : "";
+                    const tertiarySub = wrHasSubName(path.sub3) ? path.sub3 : "";
+                    const focusName = tertiarySub || secondarySub || primarySub;
+                    const scenarioTone = wrScenarioTone(rawCoverage);
                     const eq = path.equipmentHint;
                     const colors = equipmentColorScheme(eq);
                     return (
                       <div key={`${meal.code}-${idx}`} className={colors.bg}>
                         {/* Path header */}
-                        <div className={`px-4 py-3 border-l-[4px] ${colors.border} ${colors.headerBg} flex flex-wrap items-center gap-4`}>
-                          <div className="flex-1 min-w-0">
-                            {/* Sub-Rezept Hierarchie mit exakten Bezeichnungen */}
-                            <div className="flex flex-col gap-0.5 mb-1.5">
-                              {([
-                                { label: "Sub 1", value: path.sub1, indent: 0 },
-                                { label: "Sub 2", value: path.sub2, indent: 1 },
-                                { label: "Sub 3", value: path.sub3, indent: 2 },
-                              ] as { label: string; value: string; indent: number }[]).map(({ label, value, indent }) => {
-                                const isEmpty = !value || value === "—" || value === "Ohne Sub-Rezept";
-                                if (isEmpty && indent > 0) return null;
-                                return (
-                                  <div key={label} className="flex items-center gap-1.5" style={{ paddingLeft: indent * 16 }}>
-                                    {indent > 0 && (
-                                      <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0 text-slate-300" style={{ marginLeft: -10 }}>
-                                        <path d="M1 0 L1 6 L10 6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-                                      </svg>
+                        <div className={`border-l-[5px] ${colors.border} ${colors.headerBg}`}>
+                          <div className="grid gap-3 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+                            <div className="min-w-0 space-y-3">
+                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-widest ${scenarioTone.badge} ring-1`}>
+                                      {scenarioTone.label}
+                                    </span>
+                                    <span className={`rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-widest ${colors.badge}`}>
+                                      Pfad {idx + 1}
+                                    </span>
+                                    {path.isBrining && (
+                                      <span className="rounded-md bg-sky-100 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-sky-700 ring-1 ring-sky-200">
+                                        Brining 1:1
+                                      </span>
                                     )}
-                                    <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shrink-0 ${
-                                      indent === 0 ? "bg-slate-700 text-slate-100" :
-                                      indent === 1 ? "bg-slate-200 text-slate-600" :
-                                                     "bg-slate-100 text-slate-400"
-                                    }`}>{label}</span>
-                                    <span className={`text-xs font-bold leading-snug truncate ${
-                                      isEmpty ? "text-slate-400 italic" :
-                                      indent === 0 ? "text-slate-900" :
-                                      indent === 1 ? "text-slate-700" :
-                                                     "text-slate-500"
-                                    }`} title={isEmpty ? undefined : value}>
-                                      {isEmpty ? "—" : value}
-                                    </span>
                                   </div>
-                                );
-                              })}
-                            </div>
-                            <div className="flex items-center gap-1 flex-wrap">
-                              {path.isBrining && (
-                                <span className="text-[9px] font-bold bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded-full ring-1 ring-sky-200">
-                                  💧 BRINING 1:1
-                                </span>
-                              )}
-                              {eq && eq.split(",").map((e, ei) => (
-                                <span key={ei} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${colors.badge}`}>
-                                  <span>{colors.icon}</span>{e.trim()}
-                                </span>
-                              ))}
-                              {path.cookCategories && !eq && (
-                                <span className="text-[9px] text-slate-400">{path.cookCategories}</span>
-                              )}
-                            </div>
-                            {/* Yield-Zusammenfassung: Roh → Verlust → Netto */}
-                            {path.totalKg > 0 && (
-                              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Roh</span>
-                                  <span className="text-[10px] font-bold text-slate-600 tabular-nums">{wrFmtKg(path.totalKg)}</span>
+                                  <div className="mt-2 text-xl font-black leading-tight text-slate-950" title={focusName}>
+                                    {focusName}
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                                    <span className="max-w-[18rem] truncate" title={primarySub}>{primarySub}</span>
+                                    {secondarySub && <span className="text-slate-300">/</span>}
+                                    {secondarySub && <span className="max-w-[18rem] truncate" title={secondarySub}>{secondarySub}</span>}
+                                    {tertiarySub && <span className="text-slate-300">/</span>}
+                                    {tertiarySub && <span className="rounded-md bg-white px-2 py-0.5 text-slate-900 ring-1 ring-slate-200" title={tertiarySub}>{tertiarySub}</span>}
+                                  </div>
                                 </div>
-                                {path.totalLossKg > 0 ? (
-                                  <>
-                                    <span className="text-[8px] font-semibold text-amber-500 whitespace-nowrap">
-                                      −{wrFmtKg(path.totalLossKg)} ({Math.round((path.totalLossKg / path.totalKg) * 100)}% Verlust)
-                                    </span>
-                                    <span className="text-[8px] text-slate-300">→</span>
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-600">Netto</span>
-                                      <span className="text-[10px] font-bold text-emerald-700 tabular-nums">{wrFmtKg(path.totalKg - path.totalLossKg)}</span>
+                                <button
+                                  onClick={() => exportMealsPdf([{ ...meal, paths: [path] }], `${meal.code} · ${crumbs[crumbs.length - 1] ?? path.sub1}`)}
+                                  title="Dieses Sub-Rezept drucken"
+                                  className={`shrink-0 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${colors.badge} hover:opacity-80`}
+                                >
+                                  PDF
+                                </button>
+                              </div>
+
+                              <div className="grid gap-2 md:grid-cols-3">
+                                {([
+                                  { label: "Sub-Rezept", value: primarySub, active: true },
+                                  { label: "Sub-Sub", value: secondarySub || "nicht gesetzt", active: !!secondarySub },
+                                  { label: "Sub-Sub Detail", value: tertiarySub || "nicht gesetzt", active: !!tertiarySub },
+                                ] as Array<{ label: string; value: string; active: boolean }>).map((item) => (
+                                  <div
+                                    key={item.label}
+                                    className={`min-h-20 rounded-lg border px-3 py-2 ${item.active ? "border-slate-200 bg-white/85 shadow-sm" : "border-slate-200/70 bg-white/45"}`}
+                                  >
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">{item.label}</div>
+                                    <div className={`mt-1 text-sm font-bold leading-snug ${item.active ? "text-slate-900" : "text-slate-400 italic"}`} title={item.value}>
+                                      {item.value}
                                     </div>
-                                  </>
-                                ) : (
-                                  <span className="text-[8px] font-semibold text-emerald-500">✓ kein Yield-Verlust</span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {eq && eq.split(",").map((e, ei) => (
+                                  <span key={ei} className={`rounded-full px-2 py-1 text-[10px] font-bold ${colors.badge}`}>
+                                    {e.trim()}
+                                  </span>
+                                ))}
+                                {path.cookCategories && (
+                                  <span className="rounded-full bg-white/75 px-2 py-1 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                                    {path.cookCategories}
+                                  </span>
                                 )}
                               </div>
-                            )}
-                          </div>
-                          <div className="flex items-stretch gap-3 shrink-0 flex-wrap">
-                            {batchCount != null && (
-                              <div className="text-center">
-                                <div className={`text-3xl font-black tabular-nums leading-none ${colors.text}`}>{batchCount}</div>
-                                <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Batches</div>
-                              </div>
-                            )}
-                            {bibleKg != null && (
-                              <div className="text-center border-l border-slate-200/60 pl-3">
-                                <div className="text-sm font-bold text-slate-700 tabular-nums">{wrFmtKg(bibleKg)}</div>
-                                <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Bible</div>
-                              </div>
-                            )}
-                            {path.isBrining ? (
-                              <div className="text-center border-l border-sky-200 pl-3">
-                                <div className="text-sm font-bold text-sky-700 tabular-nums">{wrFmtKg(effectiveTubKg)}</div>
-                                <div className="text-[8px] font-bold uppercase tracking-widest text-sky-500 mt-0.5">
-                                  {wrFmtKg(path.totalKg)} + H₂O
+                            </div>
+
+                            <div className={`rounded-xl p-4 shadow-sm ring-1 ${scenarioTone.band}`}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="text-[10px] font-black uppercase tracking-widest opacity-70">Sub-Path Szenario</div>
+                                  <div className="mt-1 text-3xl font-black tabular-nums">
+                                    {rawCoveragePct != null ? `${rawCoveragePct}%` : wrFmtKg(path.totalKg)}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Machbar</div>
+                                  <div className="text-lg font-black tabular-nums">
+                                    {rawPortions != null ? rawPortions.toLocaleString("de-DE") : Math.round(meal.portionsEffective).toLocaleString("de-DE")}
+                                  </div>
+                                  <div className="text-[10px] opacity-70">Portionen</div>
                                 </div>
                               </div>
-                            ) : (
-                              <div className="text-center border-l border-slate-200/60 pl-3">
-                                <div className="text-sm font-bold text-slate-800 tabular-nums">{wrFmtKg(path.totalKg)}</div>
-                                <div className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Total</div>
+                              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15">
+                                <div
+                                  className={`h-full rounded-full ${scenarioTone.meter}`}
+                                  style={{ width: `${Math.min(100, rawCoverage != null ? rawCoverage * 100 : 100)}%` }}
+                                />
                               </div>
-                            )}
-                            {/* Per-Sub-Rezept PDF-Button */}
-                            <div className="border-l border-slate-200/60 pl-3 flex items-center">
-                              <button
-                                onClick={() => exportMealsPdf([{ ...meal, paths: [path] }], `${meal.code} · ${crumbs[crumbs.length - 1] ?? path.sub1}`)}
-                                title="Dieses Sub-Rezept drucken"
-                                className={`text-[9px] font-bold px-2 py-1 rounded-lg transition-colors ${colors.badge} hover:opacity-80`}
-                              >
-                                🖨 PDF
-                              </button>
+                              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                                <div className="rounded-lg bg-white/10 px-2 py-1.5 ring-1 ring-white/10">
+                                  <div className="opacity-65">Rohbedarf</div>
+                                  <div className="font-black tabular-nums">{wrFmtKg(path.totalKg)}</div>
+                                </div>
+                                <div className="rounded-lg bg-white/10 px-2 py-1.5 ring-1 ring-white/10">
+                                  <div className="opacity-65">Netto nach Yield</div>
+                                  <div className="font-black tabular-nums">{wrFmtKg(pathNetKg)}</div>
+                                </div>
+                                <div className="rounded-lg bg-white/10 px-2 py-1.5 ring-1 ring-white/10">
+                                  <div className="opacity-65">{rawMissingKg && rawMissingKg > 0 ? "Fehlt" : "Überschuss"}</div>
+                                  <div className="font-black tabular-nums">{rawMissingKg && rawMissingKg > 0 ? wrFmtKg(rawMissingKg) : wrFmtKg(rawSurplusKg ?? 0)}</div>
+                                </div>
+                                <div className="rounded-lg bg-white/10 px-2 py-1.5 ring-1 ring-white/10">
+                                  <div className="opacity-65">Yield-Verlust</div>
+                                  <div className="font-black tabular-nums">{path.totalLossKg > 0 ? `${wrFmtKg(path.totalLossKg)} (${pathLossPct}%)` : "0 kg"}</div>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -2489,8 +2543,23 @@ export function BreakdownEquipmentView({
                             </span>
                           </div>
                         )}
+                        <div className="grid gap-2 border-b border-slate-100 bg-white px-4 py-3 sm:grid-cols-2 xl:grid-cols-6">
+                          {([
+                            { label: "Ziel-Rohware", value: wrFmtKg(path.totalKg), tone: "text-slate-900" },
+                            { label: "Wannenvolumen", value: wrFmtKg(effectiveTubKg), tone: path.isBrining ? "text-sky-700" : "text-slate-900" },
+                            { label: "Bible / Batch", value: bibleKg ? `${wrFmtKg(bibleKg)} / ${batchCount ?? 0}x` : "offen", tone: bibleKg ? "text-indigo-700" : "text-slate-400" },
+                            { label: "Yield Netto", value: wrFmtKg(pathNetKg), tone: "text-emerald-700" },
+                            { label: "Verlust", value: path.totalLossKg > 0 ? `${wrFmtKg(path.totalLossKg)} (${pathLossPct}%)` : "kein Verlust", tone: path.totalLossKg > 0 ? "text-amber-700" : "text-emerald-700" },
+                            { label: "Roh-Szenario", value: rawCoveragePct != null ? `${rawCoveragePct}% Deckung` : "noch kein Ist", tone: rawCoverage != null && rawCoverage < 1 ? "text-rose-700" : "text-slate-900" },
+                          ] as Array<{ label: string; value: string; tone: string }>).map((item) => (
+                            <div key={item.label} className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+                              <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">{item.label}</div>
+                              <div className={`mt-1 text-sm font-black tabular-nums ${item.tone}`}>{item.value}</div>
+                            </div>
+                          ))}
+                        </div>
                         {/* Rohwaren-Rechner: Verfügbarkeits-Kalkulator für diesen Sub-Pfad */}
-                        <div className={`px-4 py-2.5 border-b flex flex-wrap items-center gap-x-3 gap-y-1.5 transition-colors ${
+                        <div className={`px-4 py-3 border-b flex flex-wrap items-center gap-x-3 gap-y-2 transition-colors ${
                           rawCoverage != null && rawCoverage < 0.8
                             ? "bg-rose-50/60 border-rose-100"
                             : rawCoverage != null && rawCoverage < 1
@@ -2499,8 +2568,8 @@ export function BreakdownEquipmentView({
                             ? "bg-emerald-50/50 border-emerald-100"
                             : "bg-slate-50/80 border-slate-100"
                         }`}>
-                          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 shrink-0">🧮 Rohwaren-Rechner</span>
-                          <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 shrink-0">Rohwaren-Szenario</span>
+                          <div className="flex items-center gap-1.5 rounded-lg bg-white px-2 py-1 ring-1 ring-slate-200">
                             <input
                               type="number"
                               min={0}
@@ -2510,7 +2579,7 @@ export function BreakdownEquipmentView({
                               onChange={(e) =>
                                 setPathRawInputs((prev) => ({ ...prev, [pathKey]: e.target.value }))
                               }
-                              className="w-28 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 tabular-nums focus:ring-1 focus:ring-indigo-300 focus:outline-none"
+                              className="w-28 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 tabular-nums focus:bg-white focus:ring-1 focus:ring-indigo-300 focus:outline-none"
                             />
                             <span className="text-[10px] text-slate-400">kg verfügbar</span>
                           </div>
