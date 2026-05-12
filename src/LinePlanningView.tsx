@@ -247,6 +247,7 @@ function parseLineplanning(rows: string[][]): {
       bnl: (row[13] ?? "").trim() === "X" ? 0 : parseNum(row[13]),
       de: parseNum(row[14]),
       speedPerMin: speed,
+      isSeafood: detectSeafoodByName((row[10] ?? code).trim()),
     });
   }
 
@@ -304,6 +305,7 @@ function deriveRecipesFromKet(rows: string[][]): LinePlanRecipe[] {
       bnl: 0,
       de: totalPlanned,
       speedPerMin: 10,
+      isSeafood: detectSeafoodByName(name),
     });
   }
   return Array.from(map.values());
@@ -957,6 +959,7 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
                 bnl: 0,
                 de: 0,
                 speedPerMin: 10,
+                isSeafood: detectSeafoodByName(m.name),
               }));
               if (fallbackRecipes.length > 0) setRecipes(fallbackRecipes);
             } catch { /* kein Firestore / offline → still ignorieren */ }

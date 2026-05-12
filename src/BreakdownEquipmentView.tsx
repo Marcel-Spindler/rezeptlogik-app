@@ -2016,6 +2016,7 @@ export function BreakdownEquipmentView({
           portionsEffective,
           paths: [],
           totalKg: 0,
+          totalLossKg: 0,
         });
         continue;
       }

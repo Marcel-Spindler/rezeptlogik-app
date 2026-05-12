@@ -1,11 +1,11 @@
-# TODO – Rackplaner Fixes (DE)
+# TODO – Planning OASE / Cockpit Fixes
 
-- [ ] Analyse in `src/RackView.tsx` finalisieren und konkrete Edit-Stellen markieren
-- [ ] 3er-Eis-Drag&Drop als Block robust machen (inkl. Relocation-Zielauswahl)
-- [ ] Validierungslogik so anpassen, dass erlaubte 3er-Eis in DE keine Meldung erzeugen
-- [ ] Auto-Planung korrigieren:
-  - [ ] P1 (F28–F36) in DE zuverlässig priorisieren
-  - [ ] Packaging strikt auf Vorzone begrenzen (kein „letzter Slot“)
-- [ ] Drop-Relocation absichern (keine unerlaubten End-/Out-of-zone-Ziele)
-- [ ] TODO-Status aktualisieren
-- [ ] Sanity-Check per Build/Lint ausführen
+- [x] Analyse der Main-Pillen-Renderlogik und Auto-Plan-Zuordnung (Main vs. Sub) in `src/PlanningView.tsx`
+- [ ] Fix implementieren: Main-Pille mit Stückzahl muss sichtbar sein (inkl. robustem Fallback auf Produktionstag)
+- [ ] "Plan sichern" Funktion im UI ergänzen (KW/Szenario Snapshot für Rundmail-Weitergabe)
+- [ ] Ggf. Persistenz/Typen in `src/planner.ts` erweitern
+- [ ] Critical-Path Testing durchführen:
+  - [ ] Main-Pille sichtbar bei aufgeklapptem Main + Auto/Sub-Plan
+  - [ ] Auto-Plan Main/Sub konsistent
+  - [ ] "Plan sichern" funktioniert wie erwartet
+- [ ] TODO aktualisieren und Ergebnis zusammenfassen

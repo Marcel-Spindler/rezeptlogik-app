@@ -612,7 +612,7 @@ export function PlanningEmailView({
               loading: !linePlanLoaded,
               hint: linePlanConfirmed
                 ? `Gespeichert ${new Date(linePlanSavedAt!).toLocaleString("de-DE")}`
-                : "Noch nicht gespeichert – bitte „💾 Plan sichern" in Linienplanung klicken",
+                : "Noch nicht gespeichert – bitte ‘💾 Plan sichern’ in Linienplanung klicken",
             },
             {
               label: "Rack freigegeben",
@@ -620,7 +620,7 @@ export function PlanningEmailView({
               loading: !rackLoaded,
               hint: rackConfirmed
                 ? "Mindestens eine Linie freigegeben"
-                : "Noch keine Linie freigegeben – bitte „Freigeben" im Rack klicken",
+                : "Noch keine Linie freigegeben – bitte ‘Freigeben’ im Rack klicken",
             },
             {
               label: "Wochenplaner",
