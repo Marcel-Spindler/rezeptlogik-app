@@ -1261,9 +1261,6 @@ export function BreakdownEquipmentView({
   // Welche Ingredient-Zeilen haben die Override-Eingaben offen
   const [expandedOverrides, setExpandedOverrides] = useState<Set<string>>(new Set());
 
-  // Rohwaren-Rechner: eingetippte kg-Werte pro Sub-Pfad (key = `${mealCode}-path-${idx}`)
-  const [pathRawInputs, setPathRawInputs] = useState<Record<string, string>>({});
-
   function toggleOverrideRow(key: string) {
     setExpandedOverrides((prev) => {
       const next = new Set(prev);
