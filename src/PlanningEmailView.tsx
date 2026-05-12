@@ -29,9 +29,6 @@ const DAY_LONG: Record<PlannerDay, string> = {
   Mo: "Montag", Di: "Dienstag", Mi: "Mittwoch", Do: "Donnerstag",
   Fr: "Freitag", Sa: "Samstag", So: "Sonntag",
 };
-// Küche Wochentage (Mo–Fr)
-const KITCHEN_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do", "Fr"];
-
 // ── Typen ───────────────────────────────────────────────────────────────────
 
 type LinePlanRec = { code: string; name: string; speedPerMin: number };
@@ -113,11 +110,10 @@ export function PlanningEmailView({
   week: string;
 }) {
   const { data: oasis } = usePlanningOasisData();
-  const weekIntel = oasis?.weeks[week] ?? null;
 
   // Linienplan aus Firestore
   const [linePlanRaw, setLinePlanRaw] = useState<ScheduleMap>({});
-  const [lineCapacityByLane, setLineCapacityByLane] = useState<Record<string, number>>({ "0": 1200, "1": 1200, "2": 1200 });
+  const [, setLineCapacityByLane] = useState<Record<string, number>>({ "0": 1200, "1": 1200, "2": 1200 });
   const [platingLineCount, setPlatingLineCount] = useState<number>(3);
   const [linePlanComments, setLinePlanComments] = useState<Record<string, string>>({});
   const [linePlanLoaded, setLinePlanLoaded] = useState(false);
@@ -265,9 +261,6 @@ export function PlanningEmailView({
           return a.slotKey.localeCompare(b.slotKey);
         });
         const activeLines = new Set(blocks.map(b => b.lineIdx));
-        const lineRecipes = Array.from(activeLines).flatMap(li =>
-          blocks.filter(b => b.lineIdx === li).map(b => b.recipe)
-        );
         const staff = Array.from(activeLines).reduce((sum, li) => {
           const recipesOnLine = blocks.filter(b => b.lineIdx === li).map(b => b.recipe);
           return sum + staffPerLine(recipesOnLine);

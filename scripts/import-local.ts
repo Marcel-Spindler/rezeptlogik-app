@@ -5,9 +5,9 @@ import { join, resolve } from "node:path";
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
 import type {
-  DataBundle, Market, WeekRecipe, Recipe, RecipeMarketDetails,
-  SubRecipe, Ingredient, GrossIngredient, CookSchedule,
-  RecipeStructure, DetailedSubRecipe, DetailedIngredient, ShelfLifeInfo
+  DataBundle, Market, WeekRecipe, Recipe,
+  GrossIngredient, CookSchedule,
+  RecipeStructure, DetailedSubRecipe, ShelfLifeInfo
 } from "../src/types.ts";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
 
@@ -547,7 +547,7 @@ async function main() {
   let shelfLifeBySku: Record<string, ShelfLifeInfo> = {};
   try {
     shelfLifeBySku = await readOpenShelfLifeSheet();
-  } catch (e) {
+  } catch {
     console.warn("  Shelf-Life-Tabelle nicht erreichbar (Google-Credentials fehlen?). Überspringe.");
   }
 

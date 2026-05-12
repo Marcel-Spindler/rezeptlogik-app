@@ -874,11 +874,6 @@ function wrPathCookCategories(recipe: Recipe, sub1: string, sub2: string, sub3: 
     .join(" / ");
 }
 
-function wrNumExport(value: number | null | undefined, digits = 3): string {
-  if (value == null || !Number.isFinite(value)) return "";
-  return Number(value.toFixed(digits)).toString();
-}
-
 function wrParseNumberLoose(value: unknown): number | null {
   const text = String(value ?? "").trim();
   if (!text) return null;
@@ -2820,7 +2815,8 @@ export function BreakdownEquipmentView({
 }
 
   // ─── Legacy-Implementierung (nicht mehr aktiv, bleibt zur Referenz) ───────────
-  function _BreakdownEquipmentViewLegacy({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  function BreakdownEquipmentViewLegacy({
   data,
   week,
   upliftPercent,

@@ -3,7 +3,6 @@ import { loadData, refreshRampUpDataOnStart } from "./dataSource";
 import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, Station, ShelfLifeInfo, DetailedSubRecipe, RecipeStructure } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, DEFAULT_STATION_DEVICE_COUNTS, DEFAULT_STATION_POOLS, computeWeekLoad, fmtMin, getBaseVerdenVolume, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools, normalizePoolName, saveStationDeviceCounts, saveStationPools, tokenToStation, workflowSteps } from "./equipment";
-import { loadDynamicModule } from "./dynamicImport";
 import { PlanningView } from "./PlanningView";
 import { PlanningOasisView } from "./PlanningOasisView";
 import { WhatIfView } from "./WhatIfView";
@@ -362,7 +361,7 @@ function usePersistent<T>(key: string, defaultVal: T): [T, React.Dispatch<React.
 type AppView = "recipe" | "equipment" | "breakdown" | "planning" | "woche" | "rack" | "ket" | "phase2" | "wochenplaner" | "rundmail";
 type AppSurface = "full" | "kitchen";
 
-const ALL_VIEWS: readonly AppView[] = ["recipe", "equipment", "breakdown", "planning", "woche", "rack", "ket", "phase2"] as const;
+const ALL_VIEWS: readonly AppView[] = ["recipe", "equipment", "breakdown", "planning", "woche", "rack", "ket", "phase2", "wochenplaner", "rundmail"] as const;
 
 function parseTruthyParam(value: string | null): boolean {
   const v = (value ?? "").trim().toLowerCase();
@@ -457,8 +456,6 @@ export default function App() {
   const filteredRecipes = searchNeedle
     ? recipesOfWeek.filter(r => recipeSearchText(r, recipesByCode[r.code]).includes(searchNeedle))
     : recipesOfWeek;
-
-  const portionMultiplier = 1 + upliftPercent / 100;
 
   const totals = recipesOfWeek.reduce((acc, r) => {
     acc.BENL += r.verdenVolume.BENL; acc.DKSE += r.verdenVolume.DKSE;
@@ -1066,7 +1063,7 @@ function WocheZutatenView({ data, week, upliftPercent, locale }:
   );
 }
 
-function Shell({ children, locale }: { children: React.ReactNode; locale: UiLocale }) {
+function Shell({ children }: { children: React.ReactNode; locale: UiLocale }) {
   return (
     <div className="min-h-screen">
       <header className="bg-white border-b border-slate-200">
@@ -1692,8 +1689,6 @@ function TreeCanvas({ roots, code, recipeName, week, market }: {
   const selectedNode = useMemo(() => flatNodes.find(n => n.id === selected)?.node, [flatNodes, selected]);
 
   const totalLeaves = useMemo(() => Math.max(1, subtreeLeafCount(roots, expanded)), [roots, expanded]);
-  const maxDepth   = useMemo(() => flatNodes.reduce((m, n) => Math.max(m, n.depth), 0), [flatNodes]);
-  const _svgW = TPAD * 2 + (maxDepth + 1) * (TW + TGX);
   const svgH = TPAD * 2 + totalLeaves * (TH + TGY);
 
   const edges = useMemo(() => flatNodes.filter(n => n.parentId).map(n => {
@@ -1811,6 +1806,17 @@ function TreeCanvas({ roots, code, recipeName, week, market }: {
 
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
+        <div>
+          <div className="text-xs font-bold text-slate-800">{recipeName}</div>
+          <div className="text-[11px] text-slate-500">{code} · {week} · {market}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn text-xs" onClick={expandAll}>Alles auf</button>
+          <button type="button" className="btn text-xs" onClick={collapseAll}>Alles zu</button>
+          <button type="button" className="btn text-xs" onClick={exportGSheet}>TSV Export</button>
+        </div>
+      </div>
       {/* Kochreihenfolge-Legende */}
       {roots.length > 0 && (
         <div className="rounded-xl bg-amber-50 ring-1 ring-amber-200 px-4 py-3">
@@ -2009,7 +2015,7 @@ function StructureTab({ code, structure, market, week, recipeName, wr, portionsT
   const locale = marketToLocale(market);
   const MARKET_ORDER: Market[] = ["BENL", "DE", "DKSE"];
   const MARKET_LABEL_FULL: Record<Market, string> = { DE: "Deutschland", BENL: "Belgien/NL", DKSE: "Dänemark/SE" };
-  const [activeMarket, setActiveMarket] = usePersistent<Market | "ALL">("structure_market", market);
+  const [activeMarket] = usePersistent<Market | "ALL">("structure_market", market);
   const [treeMode, setTreeMode] = usePersistent<"svg" | "list">("structure_mode", "svg");
   const [xlsxLoading, setXlsxLoading] = useState(false);
 
@@ -2380,6 +2386,12 @@ function StructureTab({ code, structure, market, week, recipeName, wr, portionsT
             >
               <span>{xlsxLoading ? "⏳" : "📥"}</span>
               <span>{xlsxLoading ? (locale === "de" ? "Wird erstellt ..." : locale === "nl" ? "Wordt gemaakt ..." : "Creating ...") : (locale === "de" ? "Export XLSX – ganze KW" : locale === "nl" ? "XLSX-export – hele week" : "Export XLSX – full week")}</span>
+            </button>
+            <button
+              onClick={exportFullGSheet}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-semibold ring-1 ring-slate-300 text-xs transition-colors"
+            >
+              <span>TSV Export</span>
             </button>
           </div>
         </div>
@@ -3712,7 +3724,6 @@ function EquipmentView({ data, week, upliftPercent = 0, locale }: { data: DataBu
       .sort((a, b) => b.capacity.utilizationPct - a.capacity.utilizationPct || b.totalMin - a.totalMin);
   }, [load, stationDeviceCounts, stationPools]);
   const constrainedStations = stationsSorted.filter(station => stationCapacity[station].utilizationPct > 100);
-  const tightStations = stationsSorted.filter(station => stationCapacity[station].utilizationPct > 70 && stationCapacity[station].utilizationPct <= 100);
   const constrainedPools = poolSummary.filter(pool => pool.capacity.utilizationPct > 100);
 
   return (

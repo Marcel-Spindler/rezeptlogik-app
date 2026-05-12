@@ -4,7 +4,7 @@ loadEnv();
 
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { google } from "googleapis";
 
 const SHEET_ID = process.env.GSHEET_ID?.trim();

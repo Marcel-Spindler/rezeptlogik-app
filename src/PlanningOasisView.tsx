@@ -10,6 +10,18 @@ const LinePlanningSection = lazy(() => import("./LinePlanningView").then((module
 const RackSection = lazy(() => import("./RackV2View").then((module) => ({ default: module.RackV2View })));
 
 type OasisSection = "cockpit" | "lines" | "rack" | "breakdown" | "recipes";
+type SourceHealthStatus = "ok" | "warn" | "missing" | "checking";
+
+const OASIS_SECTIONS: readonly OasisSection[] = ["cockpit", "lines", "rack", "breakdown", "recipes"] as const;
+const OASIS_SOURCE_CHECKS: ReadonlyArray<{ key: string; label: string; path: string; optional?: boolean }> = [
+  { key: "app-data", label: "App Data", path: "/data/data.json" },
+  { key: "kpl", label: "KPL Dump", path: "/data/gsheet-dump-Kitchen_Priority_List-Verden-2026.json" },
+  { key: "forecast", label: "Forecast", path: "/data/gsheet-truth-export/Running Forecast - All Markets.csv" },
+  { key: "pdl-de", label: "PDL DE", path: "/data/gsheet-truth-export/Factor_DE - PDL Forecast.csv" },
+  { key: "pdl-nor", label: "PDL NOR", path: "/data/gsheet-truth-export/Factor_Nor - PDL Forecast.csv" },
+  { key: "daily", label: "Daily", path: "/data/gsheet-truth-export/Factor_Daily - PDL Forecast.csv", optional: true },
+  { key: "rack", label: "Rack XLSX", path: "/data/rack/MultiLine-latest.xlsx" },
+];
 
 function fmtNum(n: number, digits = 0): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
@@ -39,6 +51,74 @@ function planningRoleLabel(role: "factory" | "hybrid" | "supplied" | undefined):
   return "eigene Fabrikproduktion";
 }
 
+function isOasisSection(value: string | null): value is OasisSection {
+  return OASIS_SECTIONS.includes(value as OasisSection);
+}
+
+function oasisSectionFromUrl(fallback: OasisSection): OasisSection {
+  if (typeof window === "undefined") return fallback;
+  const param = new URLSearchParams(window.location.search).get("oase");
+  return isOasisSection(param) ? param : fallback;
+}
+
+function writeOasisSectionToUrl(section: OasisSection): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("oase", section);
+  window.history.replaceState(null, "", url.toString());
+}
+
+function sourceHealthTone(status: SourceHealthStatus): string {
+  if (status === "ok") return "bg-emerald-50 text-emerald-800 ring-emerald-200";
+  if (status === "warn") return "bg-amber-50 text-amber-800 ring-amber-200";
+  if (status === "missing") return "bg-rose-50 text-rose-800 ring-rose-200";
+  return "bg-slate-50 text-slate-500 ring-slate-200";
+}
+
+function useOasisSourceHealth(): Array<{ key: string; label: string; status: SourceHealthStatus; detail: string }> {
+  const [health, setHealth] = useState<Array<{ key: string; label: string; status: SourceHealthStatus; detail: string }>>(
+    () => OASIS_SOURCE_CHECKS.map(source => ({ key: source.key, label: source.label, status: "checking", detail: "prüft" }))
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(OASIS_SOURCE_CHECKS.map(async (source) => {
+      try {
+        const response = await fetch(`${source.path}?ts=${Date.now()}`, { method: "HEAD", cache: "no-store" });
+        if (response.ok) {
+          const modified = response.headers.get("last-modified");
+          return {
+            key: source.key,
+            label: source.label,
+            status: "ok" as SourceHealthStatus,
+            detail: modified ? new Date(modified).toLocaleDateString("de-DE") : "geladen",
+          };
+        }
+        return {
+          key: source.key,
+          label: source.label,
+          status: source.optional ? "warn" as SourceHealthStatus : "missing" as SourceHealthStatus,
+          detail: source.optional ? "optional fehlt" : `HTTP ${response.status}`,
+        };
+      } catch {
+        return {
+          key: source.key,
+          label: source.label,
+          status: source.optional ? "warn" as SourceHealthStatus : "missing" as SourceHealthStatus,
+          detail: source.optional ? "optional fehlt" : "nicht erreichbar",
+        };
+      }
+    })).then((result) => {
+      if (!cancelled) setHealth(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return health;
+}
+
 export function PlanningOasisView({
   data,
   week,
@@ -56,12 +136,16 @@ export function PlanningOasisView({
   onSelectRecipe?: (recipeCode: string) => void;
   defaultSection?: OasisSection;
 }): JSX.Element {
-  const [section, setSection] = useState<OasisSection>(defaultSection);
+  const [section, setSection] = useState<OasisSection>(() => oasisSectionFromUrl(defaultSection));
   useEffect(() => {
-    setSection(defaultSection);
+    setSection(oasisSectionFromUrl(defaultSection));
   }, [defaultSection]);
+  useEffect(() => {
+    writeOasisSectionToUrl(section);
+  }, [section]);
 
   const { data: oasisData, loading, error } = usePlanningOasisData();
+  const sourceHealth = useOasisSourceHealth();
 
   const [factorDailyMeta, setFactorDailyMeta] = useState<FactorDailyMeta | null>(null);
   useEffect(() => {
@@ -142,6 +226,18 @@ export function PlanningOasisView({
             >
               {label}
             </button>
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-1.5 text-[11px]">
+          {sourceHealth.map(source => (
+            <span
+              key={source.key}
+              title={source.detail}
+              className={`rounded-full px-2 py-1 font-semibold ring-1 ${sourceHealthTone(source.status)}`}
+            >
+              {source.label}: {source.status === "ok" ? "ok" : source.status === "warn" ? "prüfen" : source.status === "missing" ? "fehlt" : "..."}
+            </span>
           ))}
         </div>
       </div>

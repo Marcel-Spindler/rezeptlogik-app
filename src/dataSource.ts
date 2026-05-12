@@ -1,6 +1,4 @@
 import type { DataBundle } from "./types";
-import { getFirebase } from "./firebase";
-import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 
 const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "local") as "local" | "firestore";
 
@@ -49,6 +47,10 @@ async function loadFromJson(): Promise<DataBundle> {
 }
 
 async function loadFromFirestore(): Promise<DataBundle> {
+  const [{ getFirebase }, { collection, doc, getDoc, getDocs }] = await Promise.all([
+    import("./firebase"),
+    import("firebase/firestore"),
+  ]);
   const { db } = getFirebase();
   // Geteiltes Projekt: alle App-Daten unter apps/rezeptlogik/<collection>
   const ROOT = doc(db, "apps", "rezeptlogik");

@@ -1,5 +1,5 @@
 import { config as loadEnv } from "dotenv";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { google } from "googleapis";
 

@@ -777,7 +777,7 @@ export function computeBatchSplitPlan(
       const totalLineCapacity = sorted.reduce((s, e) => s + e.capacityPortions, 0);
       const lineCoverageGap = totalPortions - totalLineCapacity; // positiv = Lücke
 
-      const batches: BatchSplit[] = sorted.map((entry, idx) => {
+      const batches: BatchSplit[] = sorted.map((entry) => {
         const { earliest, latest, recommended } = computeProductionWindowForPlatDay(
           entry.platDay, maxGapDays
         );

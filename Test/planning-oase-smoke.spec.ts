@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+test.setTimeout(90000);
+
 test("Planning OASE owns rack and line planning navigation", async ({ page }) => {
   await page.goto("http://127.0.0.1:5173?view=planning");
   await expect(page.getByText("Planning OASE").first()).toBeVisible({ timeout: 30000 });
@@ -32,6 +34,23 @@ test("legacy urls still land inside Planning OASE", async ({ page }) => {
 
   await page.goto("http://127.0.0.1:5173?view=breakdown");
   await expect(page.getByText("Meal-Auswahl")).toBeVisible({ timeout: 30000 });
+});
+
+test("Planning OASE supports section deep links", async ({ page }) => {
+  await page.goto("http://127.0.0.1:5173?view=planning&oase=rack");
+  await expect(page.getByText("Rack v2")).toBeVisible({ timeout: 30000 });
+
+  await page.getByRole("button", { name: "Breakdown+" }).click();
+  await expect(page).toHaveURL(/oase=breakdown/);
+  await expect(page.getByText("Meal-Auswahl")).toBeVisible();
+});
+
+test("Planning OASE cockpit renders on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("http://127.0.0.1:5173?view=planning&oase=cockpit");
+  await expect(page.getByText("Planning OASE").first()).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("App Data: ok")).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
 });
 
 test("Breakdown raw calculator screen renders", async ({ page }) => {

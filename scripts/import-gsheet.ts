@@ -86,17 +86,6 @@ function parseRecipeName(full: string): { code: string; base: string } {
   return { code: full, base: full };
 }
 
-function inferHfWeek(text: string): string | undefined {
-  const direct = /(20\d{2})[-_ ]?W(\d{1,2})/i.exec(text);
-  if (direct) return `${direct[1]}-W${String(parseInt(direct[2], 10)).padStart(2, "0")}`;
-
-  const kw = /KW\s*(\d{1,2})/i.exec(text);
-  if (!kw) return undefined;
-
-  const year = process.env.GSHEET_HF_YEAR?.trim() || String(new Date().getFullYear());
-  return `${year}-W${String(parseInt(kw[1], 10)).padStart(2, "0")}`;
-}
-
 async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[]; weeks: string[] }> {
   const auth = new google.auth.GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]

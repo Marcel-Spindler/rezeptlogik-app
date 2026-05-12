@@ -196,20 +196,6 @@ function slotDuration(slotKey: string): number {
   return SLOTS.find(s => s.key === slotKey)?.duration ?? 60;
 }
 
-function portionsInSlot(recipe: LinePlanRecipe, slotKey: string): number {
-  return recipe.speedPerMin * slotDuration(slotKey);
-}
-
-function mealsPerHourFromScheduleMap(schedule: ScheduleMap, day: PlanDay, slotKey: string): number {
-  const duration = slotDuration(slotKey);
-  let total = 0;
-  for (let li = 0; li < LINES.length; li++) {
-    const r = schedule[`${day}|${slotKey}|${li}`];
-    if (r) total += portionsInSlot(r, slotKey);
-  }
-  return duration > 0 ? Math.round((total / duration) * 60) : 0;
-}
-
 function portionsInSlotByLineCapacity(lineCapacityPerHour: number, slotKey: string): number {
   return (Math.max(0, lineCapacityPerHour) / 60) * slotDuration(slotKey);
 }
@@ -791,7 +777,7 @@ function KetCard({
 // ══════════════════════════════════════════════════════════════════════════════
 
 function KetDayColumn({
-  day, label, wos, isDragOver,
+  day: _day, label, wos, isDragOver,
   onDragEnter, onDragLeave, onDrop,
   ketOverrides, onDragStart, onDragEnd, onStatusCycle,
   scheduledDaysByCode,
@@ -863,17 +849,17 @@ function KetDayColumn({
 //  MAIN VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function LinePlanningView({ week, locale }: { week: string; locale: UiLocale }) {
+export function LinePlanningView({ week, locale: _locale }: { week: string; locale: UiLocale }) {
   const { data: planningOasis } = usePlanningOasisData();
   const [subTab, setSubTab] = useState<"lineplanning" | "ket">("lineplanning");
   const [recipes, setRecipes] = useState<LinePlanRecipe[]>([]);
   const [schedule, dispatch] = useReducer(scheduleReducer, {});
   const [ketWOs, setKetWOs] = useState<KetWO[]>([]);
-  const [weekNum, setWeekNum] = useState(0);
+  const [, setWeekNum] = useState(0);
   const [totalVolume, setTotalVolume] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dataWarning, setDataWarning] = useState<string | null>(null);
+  const [, setDataWarning] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
@@ -1271,18 +1257,6 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
       ? `${assignments} Slots automatisch belegt (${platingLineCount} Linie(n), Modus: ${autoPlanMode}).`
       : "Keine neuen Slots belegt. Prüfe Ziel-Meals/h und Restvolumen.");
     setTimeout(() => setAutoPlanNotice(""), 3500);
-  }
-
-  function copyCurrentMealsAsTargets() {
-    const nextTargets: Record<string, number> = { ...targetMealsBySlot };
-    for (const day of DAYS) {
-      for (const slot of SLOTS) {
-        nextTargets[`${day}|${slot.key}`] = mealsPerHour(day, slot.key);
-      }
-    }
-    setTargetMealsBySlot(nextTargets);
-    setAutoPlanNotice("Aktuelle Meals/h als Zielwerte übernommen.");
-    setTimeout(() => setAutoPlanNotice(""), 2500);
   }
 
   function resetLineCapacityDefaults() {
