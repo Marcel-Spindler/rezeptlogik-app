@@ -1219,6 +1219,20 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
             }
           }
 
+          if (!best) {
+            // Fallback: wenn Scoring kein Rezept liefert, nimm das Rezept mit der größten Restmenge
+            let fallback: LinePlanRecipe | null = null;
+            let maxRemaining = 0;
+            for (const recipe of recipes) {
+              const produced = producedByRecipe.get(recipe.code) ?? 0;
+              const remaining = Math.max(0, recipe.totalPlanned - produced);
+              if (remaining > maxRemaining) {
+                maxRemaining = remaining;
+                fallback = recipe;
+              }
+            }
+            best = fallback;
+          }
           if (!best) break;
           next[`${day}|${slot.key}|${li}`] = best;
           producedByRecipe.set(
@@ -1296,17 +1310,20 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
 
   // ─── Computations ──────────────────────────────────────────────────────────
 
-  // Portions scheduled per recipe per slot
+  // Portions scheduled per recipe per slot (linienkapazitätsbasiert, konsistent zu IST/Ziel)
   const scheduledPortions = useMemo(() => {
     const map = new Map<string, number>();
     for (const [key, recipe] of Object.entries(schedule)) {
       if (!recipe) continue;
-      const slotKey = key.split("|")[1] ?? "";
-      const p = portionsInSlot(recipe, slotKey);
+      const [, slotKey, liRaw] = key.split("|");
+      const li = Number(liRaw ?? -1);
+      if (li < 0) continue;
+      const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
+      const p = portionsInSlotByLineCapacity(lineTarget, slotKey ?? "");
       map.set(recipe.code, (map.get(recipe.code) ?? 0) + p);
     }
     return map;
-  }, [schedule]);
+  }, [schedule, lineCapacityByLane]);
 
   // Days scheduled per recipe code (for KET cross-reference)
   const scheduledDaysByCode = useMemo(() => {
@@ -1457,6 +1474,62 @@ export function LinePlanningView({ week, locale }: { week: string; locale: UiLoc
               title="Füllt freie Slots anhand der Ziel-Meals/h automatisch"
             >
               🤖 Auto-Plan
+            </button>
+            <button
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  const { getFirebase } = await import("./firebase");
+                  const { doc, setDoc } = await import("firebase/firestore");
+                  const { db } = getFirebase();
+
+                  const cockpitByDay: Record<string, Array<{ slot: string; line: number; code: string; name: string; portions: number }>> = {};
+                  for (const d of DAYS) cockpitByDay[d] = [];
+                  for (const [key, recipe] of Object.entries(schedule)) {
+                    if (!recipe) continue;
+                    const [day, slotKey, liRaw] = key.split("|");
+                    const li = Number(liRaw ?? -1);
+                    if (!day || !slotKey || li < 0) continue;
+                    const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
+                    const portions = Math.round(portionsInSlotByLineCapacity(lineTarget, slotKey));
+                    cockpitByDay[day]?.push({
+                      slot: slotKey,
+                      line: li + 1,
+                      code: recipe.code,
+                      name: recipe.name,
+                      portions,
+                    });
+                  }
+
+                  await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
+                    week,
+                    savedAt: new Date().toISOString(),
+                    schedule,
+                    comments,
+                    ketOverrides,
+                    targetMealsBySlot,
+                    lineCapacityByLane,
+                    platingLineCount,
+                    autoPlanMode,
+                    cockpitPlan: cockpitByDay,
+                    cockpitBuiltAt: new Date().toISOString(),
+                  }, { merge: true });
+
+                  setSaveOk(true);
+                  setAutoPlanNotice("Cockpit aus Plating-Plan aufgebaut und gespeichert.");
+                  setTimeout(() => setSaveOk(false), 3000);
+                  setTimeout(() => setAutoPlanNotice(""), 3000);
+                } catch (err) {
+                  alert(`Cockpit aufbauen fehlgeschlagen: ${(err as Error).message}`);
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              disabled={saving}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-700 disabled:opacity-50"
+              title="Baut die Cockpit-Linienplanung aus dem aktuellen Plating-Plan und speichert automatisch"
+            >
+              ➡ Cockpit aufbauen
             </button>
             <button
               onClick={handleSave}
