@@ -8,14 +8,14 @@ export default defineConfig({
     open: true,
     proxy: {
       "/api/wms-live": {
-        target: "http://127.0.0.1:5001/hellofresh-de-problem-solve/europe-west3/wmsLive",
+        target: "http://127.0.0.1:5001",
         changeOrigin: true,
-        rewrite: () => "",
+        rewrite: path => path.replace(/^\/api\/wms-live/, "/hellofresh-de-problem-solve/europe-west3/wmsLive"),
       },
       "/api/refresh-ramp-up": {
-        target: "http://127.0.0.1:5001/hellofresh-de-problem-solve/europe-west3/refreshRampUp",
+        target: "http://127.0.0.1:5001",
         changeOrigin: true,
-        rewrite: () => "",
+        rewrite: path => path.replace(/^\/api\/refresh-ramp-up/, "/hellofresh-de-problem-solve/europe-west3/refreshRampUp"),
       },
     },
   },

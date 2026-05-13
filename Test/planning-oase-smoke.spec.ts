@@ -46,7 +46,7 @@ test("Planning OASE supports section deep links", async ({ page }) => {
 
   await page.getByRole("button", { name: "WMS Live" }).click();
   await expect(page).toHaveURL(/oase=wms/);
-  await expect(page.getByText("WMS Live Soll/Ist")).toBeVisible();
+  await expect(page.getByText("WMS Control Tower")).toBeVisible();
 });
 
 test("Planning OASE cockpit renders on mobile", async ({ page }) => {

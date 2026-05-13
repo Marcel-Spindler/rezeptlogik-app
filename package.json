@@ -18,7 +18,9 @@
     "push:firestore": "tsx scripts/push-firestore.ts",
     "sync:factor:forecast": "tsx scripts/sync-factor-forecast.ts",
     "test:smoke:oase": "playwright test Test/planning-oase-smoke.spec.ts --browser=chromium",
-    "deploy": "npm run build && firebase deploy --only hosting"
+    "deploy": "npm run build && firebase deploy --only hosting",
+    "wms:sync": "tsx scripts/sync-wms-live.ts",
+    "wms:sync:deploy": "tsx scripts/sync-wms-live.ts --deploy"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

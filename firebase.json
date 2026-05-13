@@ -21,8 +21,8 @@
       }
     ],
     "rewrites": [
-      { "source": "/api/refresh-ramp-up", "function": "refreshRampUp" },
-      { "source": "/api/wms-live", "function": "wmsLive" },
+      { "source": "/api/refresh-ramp-up", "function": "refreshRampUp", "region": "europe-west3" },
+      { "source": "/api/wms-live", "function": "wmsLive", "region": "europe-west3" },
       { "source": "**", "destination": "/index.html" }
     ]
   }

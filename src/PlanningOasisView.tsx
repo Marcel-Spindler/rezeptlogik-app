@@ -111,6 +111,9 @@ function useOasisSourceHealth(): Array<{ key: string; label: string; status: Sou
       }
     })).then((result) => {
       if (!cancelled) setHealth(result);
+    }).catch(() => {
+      // Promise.all kann theoretisch nicht ablehnen (jeder Mapper hat try/catch),
+      // aber .catch() verhindert unhandled-rejection-Warnungen.
     });
     return () => {
       cancelled = true;
