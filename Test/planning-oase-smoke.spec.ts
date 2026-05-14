@@ -40,13 +40,16 @@ test("Planning OASE supports section deep links", async ({ page }) => {
   await page.goto("http://127.0.0.1:5173?view=planning&oase=rack");
   await expect(page.getByText("Rack v2")).toBeVisible({ timeout: 30000 });
 
-  await page.getByRole("button", { name: "Breakdown+" }).click();
+  const oasisHeader = page.getByRole("heading", { name: "Planning OASE" }).first();
+  const oasisCard = page.locator("div.card").filter({ has: oasisHeader }).first();
+
+  await oasisCard.getByRole("button", { name: "Breakdown+" }).click();
   await expect(page).toHaveURL(/oase=breakdown/);
   await expect(page.getByText("Meal-Auswahl")).toBeVisible();
 
-  await page.getByRole("button", { name: "WMS Live" }).click();
+  await oasisCard.getByRole("button", { name: "WMS Live" }).click();
   await expect(page).toHaveURL(/oase=wms/);
-  await expect(page.getByText("WMS Control Tower")).toBeVisible();
+  await expect(page.getByText("WMS Live Prozess-Dashboard")).toBeVisible();
 });
 
 test("Planning OASE cockpit renders on mobile", async ({ page }) => {

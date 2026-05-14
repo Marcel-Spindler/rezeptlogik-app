@@ -1,8 +1,24 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+function noopRefreshRampUpPlugin() {
+  return {
+    name: "noop-refresh-ramp-up",
+    configureServer(server: any) {
+      server.middlewares.use("/api/refresh-ramp-up", (req: any, res: any, next: any) => {
+        if (req.method === "POST") {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+        next();
+      });
+    }
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [noopRefreshRampUpPlugin(), react()],
   server: {
     port: 5173,
     open: true,

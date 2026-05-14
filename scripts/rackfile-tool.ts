@@ -222,11 +222,25 @@ function parseBoxfile(filePath: string): EtlBoxSnapshot {
   const boxRecipes = new Set<string>();
   const pouchRecipes = new Set<string>();
 
-  for (const row of parsed.data) {
-    const recipes = String(row.Recipes ?? "");
-    for (const m of recipes.matchAll(/(\d+_\dp)/g)) {
+  function collectMealIds(raw: string) {
+    const value = String(raw ?? "");
+    if (!value.trim()) return;
+    for (const m of value.matchAll(/(\d+_\dp)/g)) {
       mealIds.add(normalizeRecipeId(m[1]));
     }
+    for (const m of value.matchAll(/-(\d{3})-/g)) {
+      mealIds.add(normalizeRecipeId(`${m[1]}_1p`));
+    }
+    for (const m of value.matchAll(/(\d{3}):/g)) {
+      mealIds.add(normalizeRecipeId(`${m[1]}_1p`));
+    }
+  }
+
+  for (const row of parsed.data) {
+    collectMealIds(String(row.Recipes ?? ""));
+    collectMealIds(String((row as Record<string, string>)["RecipeCards"] ?? ""));
+    collectMealIds(String((row as Record<string, string>)["meal_swap"] ?? ""));
+    collectMealIds(String((row as Record<string, string>)["meal_swap_dash"] ?? ""));
 
     const ice = String(row.Ice ?? "").trim();
     if (ice) iceRecipes.add(ice);
@@ -268,15 +282,73 @@ function readEtlCo2MealIds(filePath: string, boxPrefix?: string): Set<string> {
   });
 
   const ids = new Set<string>();
-  for (const row of parsed.data) {
-    const boxId = String(row.boxid ?? "").trim();
-    if (boxPrefix && !boxId.startsWith(boxPrefix)) continue;
-
-    const dash = String(row.meal_swap_dash ?? "");
-    for (const m of dash.matchAll(/-(\d+)-/g)) {
+  function collect(raw: string) {
+    const value = String(raw ?? "");
+    for (const m of value.matchAll(/(\d+_\dp)/g)) {
+      ids.add(normalizeRecipeId(m[1]));
+    }
+    for (const m of value.matchAll(/-(\d{3})-/g)) {
+      ids.add(normalizeRecipeId(`${m[1]}_1p`));
+    }
+    for (const m of value.matchAll(/(\d{3}):/g)) {
       ids.add(normalizeRecipeId(`${m[1]}_1p`));
     }
   }
+
+  for (const row of parsed.data) {
+    const boxId = String(row.boxid ?? row.box_id ?? "").trim();
+    if (boxPrefix && boxId && !boxId.startsWith(boxPrefix)) continue;
+    collect(String(row.meal_swap_dash ?? row.meal_swap ?? ""));
+  }
+  return ids;
+}
+
+async function readEtlCo1WorkbookMealIds(filePath: string, boxPrefix?: string): Promise<Set<string>> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(filePath);
+  const ids = new Set<string>();
+
+  function collect(raw: string) {
+    const value = String(raw ?? "");
+    for (const m of value.matchAll(/(\d+_\dp)/g)) {
+      ids.add(normalizeRecipeId(m[1]));
+    }
+    for (const m of value.matchAll(/-(\d{3})-/g)) {
+      ids.add(normalizeRecipeId(`${m[1]}_1p`));
+    }
+    for (const m of value.matchAll(/(\d{3}):/g)) {
+      ids.add(normalizeRecipeId(`${m[1]}_1p`));
+    }
+  }
+
+  for (const ws of wb.worksheets) {
+    const headerCells = ws.getRow(1).values as unknown[];
+    const header = headerCells.slice(1).map(toStringValue);
+    const indexByName = new Map<string, number>();
+    for (let i = 0; i < header.length; i++) {
+      indexByName.set(header[i].toLowerCase(), i + 1);
+    }
+
+    const boxCol = indexByName.get("boxid")
+      ?? indexByName.get("box_id")
+      ?? indexByName.get("box id")
+      ?? 0;
+    const mealSwapCol = indexByName.get("meal_swap")
+      ?? indexByName.get("meal swap")
+      ?? 0;
+    const mealSwapDashCol = indexByName.get("meal_swap_dash")
+      ?? indexByName.get("meal swap dash")
+      ?? 0;
+
+    for (let rowNumber = 2; rowNumber <= ws.rowCount; rowNumber += 1) {
+      const row = ws.getRow(rowNumber);
+      const boxId = boxCol > 0 ? toStringValue(row.getCell(boxCol).value) : "";
+      if (boxPrefix && boxId && !boxId.startsWith(boxPrefix)) continue;
+      if (mealSwapCol > 0) collect(toStringValue(row.getCell(mealSwapCol).value));
+      if (mealSwapDashCol > 0) collect(toStringValue(row.getCell(mealSwapDashCol).value));
+    }
+  }
+
   return ids;
 }
 
@@ -284,7 +356,7 @@ function expectedBoxPrefixForMarket(market: Market): string {
   return market === "de" ? "TZ" : "TK";
 }
 
-function loadEtlSnapshot(etlRoot: string, week: string, market: Market, report: ValidationReport): EtlSnapshot | null {
+async function loadEtlSnapshot(etlRoot: string, week: string, market: Market, report: ValidationReport): Promise<EtlSnapshot | null> {
   const weekPath = path.join(etlRoot, week);
   if (!fs.existsSync(weekPath)) {
     report.warnings.push(`ETL-Wochenordner nicht gefunden: ${weekPath}`);
@@ -318,29 +390,42 @@ function loadEtlSnapshot(etlRoot: string, week: string, market: Market, report: 
     report.warnings.push(`Kein marktspezifisches Boxfile gefunden, Fallback auf: ${selectedBox?.fileName ?? "-"}`);
   }
 
+  const boxPrefix = expectedBoxPrefixForMarket(market);
+  const co1Path = path.join(weekPath, "CO_1", "DWHTAXI");
   const co2Path = path.join(weekPath, "CO_2", "DWHTAXI");
-  if (!fs.existsSync(co2Path)) {
-    report.warnings.push(`CO_2/DWHTAXI fehlt: ${co2Path}`);
-    return {
-      weekPath,
-      boxfilePath,
-      co2Path,
-      selectedBox,
-      co2MealIds: new Set<string>(),
-    };
+  let co2MealIds = new Set<string>();
+  let usedPath = "";
+
+  if (fs.existsSync(co1Path)) {
+    const co1Workbook = fs.readdirSync(co1Path).find((n) => /\.xlsx$/i.test(n));
+    if (co1Workbook) {
+      usedPath = path.join(co1Path, co1Workbook);
+      co2MealIds = await readEtlCo1WorkbookMealIds(usedPath, boxPrefix);
+      report.info.push(`CO_1 Workbook verwendet: ${co1Workbook}`);
+    } else {
+      report.warnings.push(`CO_1 vorhanden, aber keine XLSX gefunden: ${co1Path}`);
+    }
   }
 
-  const co2Csv = fs.readdirSync(co2Path).find((n) => /^or-.*\.csv$/i.test(n));
-  const boxPrefix = expectedBoxPrefixForMarket(market);
-  const co2MealIds = co2Csv ? readEtlCo2MealIds(path.join(co2Path, co2Csv), boxPrefix) : new Set<string>();
-  if (!co2Csv) {
-    report.warnings.push(`Keine or-*.csv in CO_2/DWHTAXI gefunden: ${co2Path}`);
+  if (co2MealIds.size === 0 && fs.existsSync(co2Path)) {
+    const co2Csv = fs.readdirSync(co2Path).find((n) => /^or-.*\.csv$/i.test(n));
+    if (co2Csv) {
+      usedPath = path.join(co2Path, co2Csv);
+      co2MealIds = readEtlCo2MealIds(usedPath, boxPrefix);
+      report.info.push(`CO_2 CSV verwendet: ${co2Csv}`);
+    } else {
+      report.warnings.push(`Keine or-*.csv in CO_2/DWHTAXI gefunden: ${co2Path}`);
+    }
+  }
+
+  if (!usedPath && !fs.existsSync(co1Path) && !fs.existsSync(co2Path)) {
+    report.warnings.push(`Weder CO_1 noch CO_2 vorhanden: ${co1Path} | ${co2Path}`);
   }
 
   return {
     weekPath,
     boxfilePath,
-    co2Path,
+    co2Path: usedPath || co1Path || co2Path,
     selectedBox,
     co2MealIds,
   };
@@ -694,7 +779,7 @@ async function main() {
 
   const etlRootRaw = args.get("etl-root") ?? DEFAULT_ETL_ROOT;
   const skipEtl = args.get("skip-etl") === "true";
-  const etlSnapshot = !skipEtl ? loadEtlSnapshot(etlRootRaw, week, market, report) : null;
+  const etlSnapshot = !skipEtl ? await loadEtlSnapshot(etlRootRaw, week, market, report) : null;
   if (etlSnapshot) {
     report.info.push(`ETL Root: ${etlRootRaw}`);
     report.info.push(`ETL Woche: ${etlSnapshot.weekPath}`);

@@ -229,9 +229,25 @@ export async function parseBoxfileCsv(file: File): Promise<RackBoxSnapshot> {
   const coolPouches = new Set<string>();
   const boxSizes = new Set<string>();
 
+  function collectMealIds(raw: string) {
+    const normalized = asString(raw);
+    if (!normalized) return;
+    for (const match of normalized.matchAll(/(\d+_\dp)/g)) {
+      mealIds.add(normalizeRecipeId(match[1]));
+    }
+    for (const match of normalized.matchAll(/-(\d{3})-/g)) {
+      mealIds.add(normalizeRecipeId(`${match[1]}_1p`));
+    }
+    for (const match of normalized.matchAll(/(\d{3}):/g)) {
+      mealIds.add(normalizeRecipeId(`${match[1]}_1p`));
+    }
+  }
+
   for (const row of parsed.data) {
-    const recipes = asString(row.Recipes);
-    for (const match of recipes.matchAll(/(\d+_\dp)/g)) mealIds.add(normalizeRecipeId(match[1]));
+    collectMealIds(row.Recipes ?? "");
+    collectMealIds((row as Record<string, string>)["RecipeCards"] ?? "");
+    collectMealIds((row as Record<string, string>)["meal_swap"] ?? "");
+    collectMealIds((row as Record<string, string>)["meal_swap_dash"] ?? "");
 
     const loyalty = asString(row.loyalty);
     for (const match of loyalty.matchAll(/([A-Z]{2,}\d+)/g)) loyaltyIds.add(match[1]);
@@ -253,18 +269,62 @@ export async function parseBoxfileCsv(file: File): Promise<RackBoxSnapshot> {
 }
 
 export async function parseCo2Csv(file: File, boxPrefix?: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+
+  function collectFromText(raw: string) {
+    const value = asString(raw);
+    if (!value) return;
+    for (const match of value.matchAll(/(\d+_\dp)/g)) ids.add(normalizeRecipeId(match[1]));
+    for (const match of value.matchAll(/-(\d{3})-/g)) ids.add(normalizeRecipeId(`${match[1]}_1p`));
+    for (const match of value.matchAll(/(\d{3}):/g)) ids.add(normalizeRecipeId(`${match[1]}_1p`));
+  }
+
+  const lowerName = String(file.name ?? "").toLowerCase();
+  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")) {
+    const { Workbook } = await import("exceljs");
+    const workbook = new Workbook();
+    await workbook.xlsx.load(await file.arrayBuffer());
+    for (const worksheet of workbook.worksheets) {
+      const headerRow = worksheet.getRow(1);
+      const headerMap = new Map<string, number>();
+      headerRow.eachCell((cell, colNumber) => {
+        headerMap.set(asString(cell.value).toLowerCase(), colNumber);
+      });
+
+      const boxIdCol = headerMap.get("boxid")
+        ?? headerMap.get("box_id")
+        ?? headerMap.get("box id")
+        ?? 0;
+      const mealSwapDashCol = headerMap.get("meal_swap_dash")
+        ?? headerMap.get("meal swap dash")
+        ?? 0;
+      const mealSwapCol = headerMap.get("meal_swap")
+        ?? headerMap.get("meal swap")
+        ?? 0;
+
+      for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const row = worksheet.getRow(rowNumber);
+        const boxId = boxIdCol > 0 ? asString(row.getCell(boxIdCol).value) : "";
+        if (boxPrefix && boxId && !boxId.startsWith(boxPrefix)) continue;
+        if (mealSwapDashCol > 0) collectFromText(asString(row.getCell(mealSwapDashCol).value));
+        if (mealSwapCol > 0) collectFromText(asString(row.getCell(mealSwapCol).value));
+      }
+    }
+    return ids;
+  }
+
   const text = await file.text();
+  const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
+  const delimiter = firstLine.includes(";") ? ";" : ",";
   const parsed = Papa.parse<Record<string, string>>(text, {
     header: true,
     skipEmptyLines: true,
-    delimiter: ";",
+    delimiter,
   });
-  const ids = new Set<string>();
   for (const row of parsed.data) {
-    const boxId = asString(row.boxid);
-    if (boxPrefix && !boxId.startsWith(boxPrefix)) continue;
-    const value = asString(row.meal_swap_dash);
-    for (const match of value.matchAll(/-(\d+)-/g)) ids.add(normalizeRecipeId(`${match[1]}_1p`));
+    const boxId = asString(row.boxid || row.box_id || (row as Record<string, string>)["Box ID"]);
+    if (boxPrefix && boxId && !boxId.startsWith(boxPrefix)) continue;
+    collectFromText(asString(row.meal_swap_dash || row.meal_swap || (row as Record<string, string>)["Meal Swap Dash"]));
   }
   return ids;
 }

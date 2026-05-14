@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { DataBundle, DetailedSubRecipe, ProcessSpec, Recipe, ShelfLifeInfo, WeekRecipe } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools } from "./equipment";
@@ -1849,7 +1849,7 @@ export function PlanningView(
                 const mainMapped = recipe.assigned?.targetPortions ?? (recipe.assigned ? forecast : 0);
                 const tone = weekBoardRecipeTone(recipe.recipeCode);
                 return (
-                  <>
+                  <Fragment key={recipe.recipeCode}>
                     <tr key={recipe.recipeCode} className="border-b border-slate-300" style={tone.row}>
                       <td className="sticky left-0 z-10 border-r border-slate-200 px-3 py-2 align-top" style={tone.sticky}>
                         <div className="flex items-start gap-2">
@@ -2080,7 +2080,7 @@ export function PlanningView(
                                           ? `${sub.category} → ${leadLabel} vor Bedarfstag ${recipe.assigned.day}`
                                           : undefined;
                                         return (
-                                          <>
+                                          <Fragment key={`${recipe.recipeCode}-${sub.subRecipeId}-${day}-${shift}`}>
                                             <button
                                               draggable
                                               onDragStart={(event) => handleDragStart(event, recipe.recipeCode, sub.subRecipeId)}
@@ -2115,7 +2115,7 @@ export function PlanningView(
                                             >
                                               i
                                             </button>
-                                          </>
+                                          </Fragment>
                                         );
                                       })()}
                                     </div>
@@ -2129,7 +2129,7 @@ export function PlanningView(
                         </tr>
                       );
                     })}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

@@ -221,7 +221,7 @@ export function rackV2PackagingZoneForEntry(entry: RackEntry): RackV2PackagingZo
 export function rackV2PackagingAllowedSlots(market: RackV2MarketId, zone: RackV2PackagingZone): number[] {
   if (market === "DE") {
     if (zone === "box") return [2, 3, 5];
-    if (zone === "liner") return [6, 8, 10, 12];
+    if (zone === "liner") return [6, 7, 8, 10, 11, 12];
     return [1];
   }
   if (zone === "box") return [2, 3, 4];
@@ -525,7 +525,7 @@ export function rackV2AutoFillLayout(
 
     for (const entry of ice) {
       const target = allocate(tailBlocks, 2);
-      place(entry, target, 3);
+      place(entry, target);
     }
 
     for (const entry of sortedMeals) {
