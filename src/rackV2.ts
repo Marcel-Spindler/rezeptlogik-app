@@ -105,37 +105,41 @@ const NORDICS_FOREZONE: RackV2ForezoneSlot[] = [
 ];
 
 const DE_BLOCKS: RackV2Block[] = [
-  { number: 1, id: "de-b1", label: "Block 1", subtitle: "F13-F18", kind: "window", area: "rack", minSlot: 13, maxSlot: 18, maxTier: 3, defaultActive: true },
-  { number: 2, id: "de-b2", label: "Block 2", subtitle: "F19-F27", kind: "window", area: "rack", minSlot: 19, maxSlot: 27, maxTier: 3, defaultActive: true },
-  { number: 3, id: "de-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, defaultActive: true },
-  { number: 4, id: "de-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: true },
-  { number: 5, id: "de-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, defaultActive: true },
-  { number: 6, id: "de-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: true },
-  { number: 7, id: "de-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, defaultActive: true },
-  { number: 8, id: "de-b8", label: "Block 8", subtitle: "F73-F84", kind: "window", area: "rack", minSlot: 73, maxSlot: 84, maxTier: 3, defaultActive: true },
-  { number: 9, id: "de-b9", label: "Block 9", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, defaultActive: true },
-  { number: 10, id: "de-b10", label: "Block 10", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: true },
-  { number: 11, id: "de-b11", label: "Block 11", subtitle: "F103-F122", kind: "window", area: "rack", minSlot: 103, maxSlot: 122, maxTier: 2, defaultActive: true },
-  { number: 12, id: "de-b12", label: "Block 12", subtitle: "F123-F128", kind: "window", area: "rack", minSlot: 123, maxSlot: 128, maxTier: 2, defaultActive: true },
-  { number: 13, id: "de-b13", label: "Block 13", subtitle: "F129-F134", kind: "window", area: "rack", minSlot: 129, maxSlot: 134, maxTier: 2, defaultActive: true },
-  { number: 14, id: "de-b14", label: "Block 14", subtitle: "F135-F144", kind: "gifts", area: "gifts", minSlot: 135, maxSlot: 144, maxTier: 2, defaultActive: true },
+  { number: 1, id: "de-b1", label: "Block 1", subtitle: "F13-F18", kind: "window", area: "rack", minSlot: 13, maxSlot: 18, maxTier: 3, defaultActive: false },
+  { number: 2, id: "de-b2", label: "Block 2", subtitle: "F19-F27", kind: "window", area: "rack", minSlot: 19, maxSlot: 27, maxTier: 3, defaultActive: false },
+  { number: 3, id: "de-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, defaultActive: false },
+  { number: 4, id: "de-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: false },
+  { number: 5, id: "de-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, defaultActive: false },
+  { number: 6, id: "de-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: false },
+  { number: 7, id: "de-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, defaultActive: false },
+  { number: 8, id: "de-b8", label: "Block 8", subtitle: "F73-F78", kind: "window", area: "rack", minSlot: 73, maxSlot: 78, maxTier: 3, defaultActive: false },
+  { number: 9, id: "de-b9", label: "Block 9", subtitle: "F79-F84", kind: "window", area: "rack", minSlot: 79, maxSlot: 84, maxTier: 3, defaultActive: false },
+  { number: 10, id: "de-b10", label: "Block 10", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, defaultActive: false },
+  { number: 11, id: "de-b11", label: "Block 11", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: false },
+  { number: 12, id: "de-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack", minSlot: 103, maxSlot: 112, maxTier: 2, defaultActive: false },
+  { number: 13, id: "de-b13", label: "Block 13", subtitle: "F113-F120", kind: "window", area: "rack", minSlot: 113, maxSlot: 120, maxTier: 2, defaultActive: false },
+  { number: 14, id: "de-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack", minSlot: 121, maxSlot: 128, maxTier: 2, defaultActive: false },
+  { number: 15, id: "de-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack", minSlot: 129, maxSlot: 136, maxTier: 2, defaultActive: false },
+  { number: 16, id: "de-b16", label: "Block 16", subtitle: "F137-F144", kind: "gifts", area: "gifts", minSlot: 137, maxSlot: 144, maxTier: 2, defaultActive: false },
 ];
 
 const NORDICS_BLOCKS: RackV2Block[] = [
-  { number: 1, id: "nordics-b1", label: "Block 1", subtitle: "F13-F18", kind: "window", area: "rack", minSlot: 13, maxSlot: 18, maxTier: 3, defaultActive: true },
-  { number: 2, id: "nordics-b2", label: "Block 2", subtitle: "F19-F27", kind: "window", area: "rack", minSlot: 19, maxSlot: 27, maxTier: 3, defaultActive: true },
-  { number: 3, id: "nordics-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, defaultActive: true },
-  { number: 4, id: "nordics-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: true },
-  { number: 5, id: "nordics-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, defaultActive: true },
-  { number: 6, id: "nordics-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: true },
-  { number: 7, id: "nordics-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, defaultActive: true },
-  { number: 8, id: "nordics-b8", label: "Block 8", subtitle: "F73-F84", kind: "window", area: "rack", minSlot: 73, maxSlot: 84, maxTier: 3, defaultActive: true },
-  { number: 9, id: "nordics-b9", label: "Block 9", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, defaultActive: true },
-  { number: 10, id: "nordics-b10", label: "Block 10", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: true },
-  { number: 11, id: "nordics-b11", label: "Block 11", subtitle: "F103-F122", kind: "window", area: "rack", minSlot: 103, maxSlot: 122, maxTier: 2, defaultActive: true },
-  { number: 12, id: "nordics-b12", label: "Block 12", subtitle: "F123-F128", kind: "window", area: "rack", minSlot: 123, maxSlot: 128, maxTier: 2, defaultActive: true },
-  { number: 13, id: "nordics-b13", label: "Block 13", subtitle: "F129-F134", kind: "window", area: "rack", minSlot: 129, maxSlot: 134, maxTier: 2, defaultActive: true },
-  { number: 14, id: "nordics-b14", label: "Block 14", subtitle: "F135-F144", kind: "gifts", area: "gifts", minSlot: 135, maxSlot: 144, maxTier: 2, defaultActive: true },
+  { number: 1, id: "nordics-b1", label: "Block 1", subtitle: "F13-F18", kind: "window", area: "rack", minSlot: 13, maxSlot: 18, maxTier: 3, defaultActive: false },
+  { number: 2, id: "nordics-b2", label: "Block 2", subtitle: "F19-F27", kind: "window", area: "rack", minSlot: 19, maxSlot: 27, maxTier: 3, defaultActive: false },
+  { number: 3, id: "nordics-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, defaultActive: false },
+  { number: 4, id: "nordics-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: false },
+  { number: 5, id: "nordics-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, defaultActive: false },
+  { number: 6, id: "nordics-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: false },
+  { number: 7, id: "nordics-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, defaultActive: false },
+  { number: 8, id: "nordics-b8", label: "Block 8", subtitle: "F73-F78", kind: "window", area: "rack", minSlot: 73, maxSlot: 78, maxTier: 3, defaultActive: false },
+  { number: 9, id: "nordics-b9", label: "Block 9", subtitle: "F79-F84", kind: "window", area: "rack", minSlot: 79, maxSlot: 84, maxTier: 3, defaultActive: false },
+  { number: 10, id: "nordics-b10", label: "Block 10", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, defaultActive: false },
+  { number: 11, id: "nordics-b11", label: "Block 11", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: false },
+  { number: 12, id: "nordics-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack", minSlot: 103, maxSlot: 112, maxTier: 2, defaultActive: false },
+  { number: 13, id: "nordics-b13", label: "Block 13", subtitle: "F113-F120", kind: "window", area: "rack", minSlot: 113, maxSlot: 120, maxTier: 2, defaultActive: false },
+  { number: 14, id: "nordics-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack", minSlot: 121, maxSlot: 128, maxTier: 2, defaultActive: false },
+  { number: 15, id: "nordics-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack", minSlot: 129, maxSlot: 136, maxTier: 2, defaultActive: false },
+  { number: 16, id: "nordics-b16", label: "Block 16", subtitle: "F137-F144", kind: "window", area: "rack", minSlot: 137, maxSlot: 144, maxTier: 2, defaultActive: false },
 ];
 
 const MARKET_LAYOUTS: Record<RackV2MarketId, RackV2MarketLayout> = {
@@ -216,12 +220,12 @@ export function rackV2PackagingZoneForEntry(entry: RackEntry): RackV2PackagingZo
 
 export function rackV2PackagingAllowedSlots(market: RackV2MarketId, zone: RackV2PackagingZone): number[] {
   if (market === "DE") {
-    if (zone === "box") return [2, 3, 5];          // DE: Kartons fest auf F2, F3, F5
-    if (zone === "liner") return [6, 8, 10, 12];   // DE: Liner fest auf Tier-2-Positionen
+    if (zone === "box") return [2, 3, 5];
+    if (zone === "liner") return [6, 8, 10, 12];
     return [1];
   }
-  if (zone === "box") return [2, 3, 4];            // Nordics: Kartonage fest auf F2, F3, F4
-  if (zone === "liner") return [];                 // Nordics: kein Liner
+  if (zone === "box") return [2, 3, 4];
+  if (zone === "liner") return [];
   return [1, 5];
 }
 
@@ -315,9 +319,16 @@ export function rackV2RecommendedActiveCount(market: RackV2MarketId, plannedWork
 }
 
 export function rackV2RecommendedActiveBlockIds(market: RackV2MarketId, plannedWorkers: number): string[] {
-  return rackV2BlocksForMarket(market)
-    .slice(0, rackV2RecommendedActiveCount(market, plannedWorkers))
-    .map((block) => block.id);
+  const blocks = rackV2BlocksForMarket(market);
+  if (plannedWorkers <= 0) return [];
+  const count = rackV2RecommendedActiveCount(market, plannedWorkers);
+  if (market === "DE") {
+    const preferred = blocks.filter((block) => block.number >= 11).map((block) => block.id);
+    if (preferred.length >= count) return preferred.slice(0, count);
+    const rest = blocks.filter((block) => block.number < 11).map((block) => block.id);
+    return [...preferred, ...rest].slice(0, count);
+  }
+  return blocks.slice(0, count).map((block) => block.id);
 }
 
 export function rackV2ResolveActiveBlockIds(
@@ -325,12 +336,11 @@ export function rackV2ResolveActiveBlockIds(
   plannedWorkers: number,
   overrides?: RackV2ActiveOverrides,
 ): string[] {
-  const recommended = new Set(rackV2RecommendedActiveBlockIds(market, plannedWorkers));
   return rackV2BlocksForMarket(market)
     .filter((block) => {
       const override = overrides?.[block.id];
       if (typeof override === "boolean") return override;
-      return recommended.has(block.id);
+      return block.defaultActive;
     })
     .map((block) => block.id);
 }
@@ -347,15 +357,32 @@ export function rackV2DynamicRoleLabels(activeBlockIds: string[], market: RackV2
   return labels;
 }
 
-function rackV2IsSmoothieLike(entry: RackEntry): boolean {
-  const hay = [entry.recipe, entry.sku, entry.ingredient, entry.displayName]
+function rackV2EntryHaystack(entry: RackEntry): string {
+  return [entry.recipe, entry.sku, entry.ingredient, entry.displayName]
     .map((value) => String(value ?? "").toLowerCase())
     .join(" ");
+}
+
+function rackV2IsSmoothieLike(entry: RackEntry): boolean {
+  const hay = rackV2EntryHaystack(entry);
   return hay.includes("smoothie") || hay.includes("drink");
+}
+
+export function rackV2IsIceLike(entry: RackEntry): boolean {
+  const hay = rackV2EntryHaystack(entry);
+  return deriveEntryKind(entry) === "ice" || hay.includes("icepack") || hay.includes("ice pack") || /\bice\d*\b/.test(hay);
+}
+
+function rackV2IsFlyerOrGiftLike(entry: RackEntry): boolean {
+  const hay = rackV2EntryHaystack(entry);
+  return hay.includes("flyer") || hay.includes("gift") || deriveEntryKind(entry) === "loyalty";
 }
 
 export function rackV2EffectivePickQuantity(entry: RackEntry): number {
   const base = Math.max(1, Number(entry.quantity ?? 1));
+  if (rackV2IsIceLike(entry)) {
+    return base;
+  }
   if (deriveEntryKind(entry) === "beverage" || rackV2IsSmoothieLike(entry)) {
     return Math.max(2, base);
   }
@@ -366,14 +393,15 @@ export function rackV2EntryFingerprint(entry: RackEntry): string {
   return [
     entry.recipe,
     String(entry.sku ?? "").toLowerCase(),
-    String(entry.uniCode ?? "").toLowerCase(),
     String(entry.ingredient ?? "").toLowerCase(),
   ].join("|");
 }
 
 function rackV2AllocationTier(block: RackV2Block, preferredTier: 1 | 2 | 3): Array<1 | 2 | 3> {
-  // Tier-Reihenfolge: 2=Mittelschiene (ergonomisch best), 1=Unterschiene, 3=Oberschiene nur Not
-  const order: Array<1 | 2 | 3> = preferredTier === 2 ? [2, 1, 3] : [1, 2, 3];
+  const order: Array<1 | 2 | 3> =
+    preferredTier === 2 ? [2, 1, 3] :
+    preferredTier === 3 ? [3, 2, 1] :
+    [1, 2, 3];
   return order.filter((tier) => tier <= block.maxTier);
 }
 
@@ -388,6 +416,10 @@ export function rackV2AutoFillLayout(
   activeOverrides?: RackV2ActiveOverrides,
 ): RackEntry[] {
   const activeBlocks = rackV2BlocksForMarket(market).filter((block) => rackV2IsBlockActive(block, activeOverrides));
+  if (activeBlocks.length === 0) {
+    return rackV2BuildFixedPackagingLayout([...existing, ...poolEntries], market);
+  }
+
   const occupied = new Set<string>();
   const seen = new Set<string>();
   const merged: RackEntry[] = rackV2BuildFixedPackagingLayout([...existing, ...poolEntries], market);
@@ -399,123 +431,117 @@ export function rackV2AutoFillLayout(
     seen.add(rackV2EntryFingerprint(entry));
   }
 
+  function isSlotInActiveBlocks(slot: number): boolean {
+    return activeBlocks.some((block) => slot >= block.minSlot && slot <= block.maxSlot);
+  }
+
   for (const entry of existing) {
     if (deriveEntryKind(entry) === "packaging") continue;
     const slot = rackV2SlotNumber(entry.flowRackPosition);
     if (Number.isFinite(slot) && slot <= 12) continue;
-    const tier = (entry.tier ?? (Number.isFinite(slot) && slot <= 12 ? inferForezoneTier(slot) : 1)) as 1 | 2 | 3;
-    if (Number.isFinite(slot)) occupied.add(`${slot}:${tier}`);
+    if (!Number.isFinite(slot) || !isSlotInActiveBlocks(slot)) continue;
+    const tier = (entry.tier ?? 1) as 1 | 2 | 3;
+    occupied.add(`${slot}:${tier}`);
     seen.add(rackV2EntryFingerprint(entry));
     merged.push({ ...entry, tier });
   }
 
-  const remaining = poolEntries.filter((entry) => {
+  const remaining = rackV2UniqueEntries(poolEntries.filter((entry) => {
     if (seen.has(rackV2EntryFingerprint(entry))) return false;
     if (deriveEntryKind(entry) === "packaging") return false;
     return true;
-  });
+  }));
 
   const ice: RackEntry[] = [];
-  const gifts: RackEntry[] = [];
+  const tailOnly: RackEntry[] = [];
   const meals: RackEntry[] = [];
+
   for (const entry of remaining) {
-    const kind = deriveEntryKind(entry);
-    if (kind === "ice") ice.push(entry);
-    else if (kind === "loyalty") gifts.push(entry);
-    else meals.push(entry);
+    if (rackV2IsIceLike(entry)) {
+      ice.push(entry);
+      continue;
+    }
+    if (market === "DE" && rackV2IsFlyerOrGiftLike(entry) && !rackV2IsSmoothieLike(entry)) {
+      tailOnly.push(entry);
+      continue;
+    }
+    meals.push(entry);
   }
 
-  const sortedMeals = [...meals].sort((left, right) => (right.quantity ?? 0) - (left.quantity ?? 0));
-  // Highrunner (oberstes Drittel nach Menge) → Tier 2 (Mittelschiene)
-  // Alles andere (inkl. Mid + Low) → Tier 1 (Unterschiene), Tier 3 nur im Notfall
-  const highCount = Math.ceil(sortedMeals.length / 3);
-  const runnerClass = new Map<string, "high" | "low">();
-  sortedMeals.forEach((entry, index) => {
-    runnerClass.set(entry.id, index < highCount ? "high" : "low");
-  });
+  const sortedMeals = [...meals].sort((left, right) => rackV2EffectivePickQuantity(right) - rackV2EffectivePickQuantity(left));
+  const highPickCutoff = sortedMeals.length > 0
+    ? rackV2EffectivePickQuantity(sortedMeals[Math.max(0, Math.ceil(sortedMeals.length / 3) - 1)])
+    : Number.POSITIVE_INFINITY;
+  const lowPickCutoff = sortedMeals.length > 0
+    ? rackV2EffectivePickQuantity(sortedMeals[Math.max(0, Math.floor(sortedMeals.length * 2 / 3) - 1)])
+    : Number.POSITIVE_INFINITY;
 
-  function allocate(block: RackV2Block | undefined, preferredTier: 1 | 2 | 3): { slot: number; tier: 1 | 2 | 3 } | null {
-    if (!block) return null;
-    for (const tier of rackV2AllocationTier(block, preferredTier)) {
-      for (const slot of rackV2BlockSlotsForTier(block, tier)) {
-        const key = `${slot}:${tier}`;
-        if (occupied.has(key)) continue;
-        occupied.add(key);
-        return { slot, tier };
+  function ergonomicTierForEntry(entry: RackEntry): 1 | 2 | 3 {
+    const picks = rackV2EffectivePickQuantity(entry);
+    if (picks >= highPickCutoff) return 2;
+    if (picks <= lowPickCutoff) return 3;
+    return 1;
+  }
+
+  function allocate(blocks: RackV2Block[], preferredTier: 1 | 2 | 3): { slot: number; tier: 1 | 2 | 3 } | null {
+    for (const block of blocks) {
+      for (const tier of rackV2AllocationTier(block, preferredTier)) {
+        for (const slot of rackV2BlockSlotsForTier(block, tier)) {
+          const key = `${slot}:${tier}`;
+          if (occupied.has(key)) continue;
+          occupied.add(key);
+          return { slot, tier };
+        }
       }
     }
     return null;
   }
 
-  function place(entry: RackEntry, slot: number, tier: 1 | 2 | 3) {
+  function place(entry: RackEntry, target: { slot: number; tier: 1 | 2 | 3 } | null, quantity?: number) {
+    if (!target) return;
     merged.push({
       ...entry,
-      flowRackPosition: rackV2NormalizeSlot(slot),
-      tier,
-      quantity: rackV2EffectivePickQuantity(entry),
+      flowRackPosition: rackV2NormalizeSlot(target.slot),
+      tier: target.tier,
+      quantity: quantity ?? rackV2EffectivePickQuantity(entry),
       line: "",
-      sort: slot,
+      sort: target.slot,
     });
   }
 
-  const firstBlock = activeBlocks[0];
-  const lastBlock = activeBlocks[activeBlocks.length - 1];
-  const midBlock = activeBlocks.find((block) => block.minSlot <= 90 && block.maxSlot >= 85) ?? activeBlocks[Math.floor(activeBlocks.length / 2)];
+  const descActive = [...activeBlocks].sort((a, b) => b.number - a.number);
+  const ascActive = [...activeBlocks].sort((a, b) => a.number - b.number);
 
-  ice.forEach((entry, index) => {
-    // DE: Dreier Eis (qty 3) verteilt auf Vorne → Mitte → Hinten
-    // Nordics: Eis immer ganz hinten
-    const iceTargets = market === "DE"
-      ? [firstBlock, midBlock, lastBlock]
-      : [lastBlock, midBlock];
-    const primary = iceTargets[index % iceTargets.length];
-    const allocated =
-      allocate(primary, 2) ??
-      allocate(midBlock, 2) ??
-      allocate(firstBlock, 2) ??
-      allocate(lastBlock, 2);
-    if (!allocated) return;
-    merged.push({
-      ...entry,
-      flowRackPosition: rackV2NormalizeSlot(allocated.slot),
-      tier: allocated.tier,
-      quantity: market === "DE" ? 3 : 1, // Nordics: Eis = 1 Stück = 1 Fach
-      line: "",
-      sort: allocated.slot,
-    });
-  });
+  if (market === "DE") {
+    const giftBlocks = ascActive.filter((block) => block.area === "gifts");
+    const tailBlocks = ascActive.filter((block) => block.number >= 15);
 
-  const giftsTargets = activeBlocks.filter((block) => block.area === "gifts");
-  for (const entry of gifts) {
-    let placed = false;
-    for (const block of giftsTargets) {
-      const allocated = allocate(block, 1);
-      if (!allocated) continue;
-      place(entry, allocated.slot, allocated.tier);
-      placed = true;
-      break;
+    for (const entry of tailOnly) {
+      const target =
+        allocate(giftBlocks, 1) ??
+        allocate(tailBlocks, 1);
+      place(entry, target);
     }
-    if (!placed) {
-      const fallback = allocate(lastBlock, 1);
-      if (fallback) place(entry, fallback.slot, fallback.tier);
-    }
-  }
 
-  let cursor = 0;
-  for (const entry of sortedMeals) {
-    // Highrunner → Tier 2 (Mittelschiene), alle anderen → Tier 1 (Unterschiene)
-    // Tier 3 (Oberschiene) nur als absoluter Notfall via rackV2AllocationTier-Fallback
-    const preferredTier: 1 | 2 | 3 = runnerClass.get(entry.id) === "high" ? 2 : 1;
-    let placed = false;
-    for (let attempt = 0; attempt < activeBlocks.length && !placed; attempt += 1) {
-      const block = activeBlocks[(cursor + attempt) % activeBlocks.length];
-      const allocated = allocate(block, preferredTier);
-      if (!allocated) continue;
-      place(entry, allocated.slot, allocated.tier);
-      // Block dicht befüllen ("so wenig Racks wie möglich") → Cursor bleibt auf
-      // aktuellem Block bis er voll ist, erst dann Schritt zum nächsten
-      cursor = (cursor + attempt) % Math.max(activeBlocks.length, 1);
-      placed = true;
+    for (const entry of ice) {
+      const target = allocate(tailBlocks, 2);
+      place(entry, target, 3);
+    }
+
+    for (const entry of sortedMeals) {
+      const preferredTier = ergonomicTierForEntry(entry);
+      const target = allocate(ascActive, preferredTier) ?? allocate(descActive, preferredTier);
+      place(entry, target);
+    }
+  } else {
+    for (const entry of ice) {
+      const target = allocate(descActive, 2) ?? allocate(ascActive, 2);
+      place(entry, target);
+    }
+    for (const entry of sortedMeals) {
+      const preferredTier = ergonomicTierForEntry(entry);
+      const target = allocate(ascActive, preferredTier) ?? allocate(descActive, preferredTier);
+      place(entry, target);
     }
   }
 
@@ -531,6 +557,7 @@ export type RackV2PlanValidation = {
 function validateLineV2(assignment: RackV2LineAssignment, entries: RackEntry[]): RackValidationIssue[] {
   const issues: RackValidationIssue[] = [];
   const seen = new Map<string, RackEntry>();
+  const seenPills = new Map<string, RackEntry>();
 
   for (const entry of entries) {
     if (entry.line !== assignment.line.code && entry.line !== assignment.line.id) continue;
@@ -555,6 +582,15 @@ function validateLineV2(assignment: RackV2LineAssignment, entries: RackEntry[]):
         issues.push({ severity: "error", message: `${assignment.line.code}: ${entry.recipe} passt nicht auf ${entry.flowRackPosition}. Erwartet ${zone === "box" ? "Kartonage" : zone === "liner" ? "Liner" : "Packaging"}-Slot.` });
       }
     }
+    if (kind !== "packaging" && !rackV2IsIceLike(entry)) {
+      const pillKey = rackV2EntryFingerprint(entry);
+      const existingPill = seenPills.get(pillKey);
+      if (existingPill) {
+        issues.push({ severity: "error", message: `${assignment.line.code}: ${entry.recipe} ist doppelt auf der Linie (${existingPill.flowRackPosition} und ${entry.flowRackPosition}).` });
+      } else {
+        seenPills.set(pillKey, entry);
+      }
+    }
     const block = rackV2BlockForSlot(slot, assignment.market);
     const expectedTier = rackV2SlotTier(slot, assignment.market);
     if (block && tier > block.maxTier) {
@@ -565,7 +601,7 @@ function validateLineV2(assignment: RackV2LineAssignment, entries: RackEntry[]):
     }
     const key = `${slot}:${tier}`;
     const existing = seen.get(key);
-    if (existing && !(deriveEntryKind(existing) === "ice" && kind === "ice")) {
+    if (existing && !(rackV2IsIceLike(existing) && rackV2IsIceLike(entry))) {
       issues.push({ severity: "error", message: `${assignment.line.code}: ${entry.flowRackPosition} Tier ${tier} ist doppelt belegt.` });
     } else if (!existing) {
       seen.set(key, entry);
@@ -615,7 +651,7 @@ export function validateV2Plan(
   const global = validateRackPlan(allEntries, options).issues.filter((issue) => !/^Mehrfachbelegung in /.test(issue.message));
   const seenByMarket = new Map<string, RackEntry>();
   for (const entry of allEntries) {
-    if (deriveEntryKind(entry) === "packaging") continue;
+    if (deriveEntryKind(entry) === "packaging" || rackV2IsIceLike(entry)) continue;
     const market = marketByLine.get(entry.line);
     if (!market) continue;
     const key = `${market}:${rackV2EntryFingerprint(entry)}`;

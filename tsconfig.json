@@ -18,5 +18,5 @@
     "esModuleInterop": true
   },
   "include": ["src", "scripts"],
-  "exclude": ["scripts/sync-wms-live.ts"]
+  "exclude": ["scripts/sync-wms-live.ts", "scripts/wms-local-server.ts"]
 }

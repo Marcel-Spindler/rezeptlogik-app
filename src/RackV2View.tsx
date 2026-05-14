@@ -23,6 +23,7 @@ import {
   rackV2ForezoneForMarket,
   rackV2HallLayoutWorkers,
   rackV2InitialLayout,
+  rackV2IsIceLike,
   rackV2NormalizeSlot,
   rackV2PackagingAllowedSlots,
   rackV2PackagingZoneForEntry,
@@ -125,28 +126,6 @@ function rackV2EntryBelongsToMarket(entry: RackEntry, market: RackV2MarketId): b
 
 function filterPoolForV2Market(entries: RackEntry[], market: RackV2MarketId): RackEntry[] {
   return entries.filter((entry) => rackV2EntryBelongsToMarket(entry, market));
-}
-
-function fixedActiveOverrides(market: RackV2MarketId, plannedWorkers: number): RackV2ActiveOverrides {
-  const activeIds = new Set(rackV2RecommendedActiveBlockIds(market, plannedWorkers));
-  return Object.fromEntries(rackV2BlocksForMarket(market).map((block) => [block.id, activeIds.has(block.id)]));
-}
-
-function splitPoolAcrossLines(entries: RackEntry[], lineIds: string[]): Record<string, RackEntry[]> {
-  const buckets = Object.fromEntries(lineIds.map((lineId) => [lineId, [] as RackEntry[]]));
-  const weights = Object.fromEntries(lineIds.map((lineId) => [lineId, 0]));
-  const sorted = [...entries].sort((left, right) => {
-    const kindDelta = deriveEntryKind(left).localeCompare(deriveEntryKind(right));
-    if (kindDelta !== 0) return kindDelta;
-    return (right.quantity ?? 0) - (left.quantity ?? 0);
-  });
-
-  for (const entry of sorted) {
-    const target = [...lineIds].sort((left, right) => weights[left] - weights[right] || left.localeCompare(right))[0];
-    buckets[target].push(entry);
-    weights[target] += Math.max(1, Number(entry.quantity ?? 1));
-  }
-  return buckets;
 }
 
 async function fetchAsFile(url: string): Promise<File> {
@@ -325,11 +304,10 @@ function tierTone(tier: 1 | 2 | 3): string {
   return "bg-slate-100 text-slate-700 ring-slate-300";
 }
 
-function blockTone(active: boolean, recommended: boolean, area: string): string {
-  if (!active && !recommended) return "bg-slate-50 text-slate-400 ring-slate-200";
-  if (!active && recommended) return "bg-rose-50 text-rose-800 ring-rose-200";
-  if (area === "gifts") return "bg-amber-50 text-amber-900 ring-amber-200";
-  return "bg-sky-50 text-sky-900 ring-sky-200";
+function blockTone(active: boolean): string {
+  return active
+    ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
+    : "bg-rose-50 text-rose-800 ring-rose-200";
 }
 
 function isPackagingLike(entry: RackEntry): boolean {
@@ -584,22 +562,28 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     return seen;
   }, [marketLineIds, sharedPlan.lines]);
 
+  const hiddenPoolCount = useMemo(() => {
+    let hidden = 0;
+    for (const entry of currentDataPool) {
+      const fingerprint = rackV2EntryFingerprint(entry);
+      const blocked = deriveEntryKind(entry) === "packaging"
+        ? currentUsedFingerprints.has(fingerprint)
+        : marketUsedFingerprints.has(fingerprint);
+      if (blocked) hidden += 1;
+    }
+    return hidden;
+  }, [currentDataPool, currentUsedFingerprints, marketUsedFingerprints]);
+
   const poolEntries = useMemo(() => {
     const term = search.trim().toLowerCase();
     return currentDataPool
-      .filter((entry) => {
-        const fingerprint = rackV2EntryFingerprint(entry);
-        return deriveEntryKind(entry) === "packaging"
-          ? !currentUsedFingerprints.has(fingerprint)
-          : !marketUsedFingerprints.has(fingerprint);
-      })
       .filter((entry) => {
         if (!term) return true;
         const hay = `${entry.recipe} ${entry.sku} ${entry.ingredient} ${entry.displayName}`.toLowerCase();
         return hay.includes(term);
       })
       .sort((left, right) => (right.quantity ?? 0) - (left.quantity ?? 0));
-  }, [currentDataPool, currentUsedFingerprints, marketUsedFingerprints, search]);
+  }, [currentDataPool, search]);
 
   const selectedEntry = useMemo(() => currentEntries.find((entry) => entry.id === selectedEntryId) ?? null, [currentEntries, selectedEntryId]);
 
@@ -658,15 +642,15 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
   function toggleBlock(block: RackV2Block) {
     if (currentLocked) return;
-    const recommended = currentRecommendedIds.has(block.id);
     const active = currentActiveBlockIds.has(block.id);
     const desired = !active;
-    setLinePlan(currentLine.id, (plan) => {
-      const nextOverrides = { ...plan.manualOverrides };
-      if (desired === recommended) delete nextOverrides[block.id];
-      else nextOverrides[block.id] = desired;
-      return { ...plan, manualOverrides: nextOverrides };
-    });
+    setLinePlan(currentLine.id, (plan) => ({
+      ...plan,
+      manualOverrides: {
+        ...plan.manualOverrides,
+        [block.id]: desired,
+      },
+    }));
   }
 
   function canPlaceEntry(entry: RackEntry, slot: number, tier: 1 | 2 | 3): string | null {
@@ -677,6 +661,11 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     if (inForezone && !isPackagingLike(entry)) return "In der Vorzone darf nur Packaging liegen.";
     if (block && isPackagingLike(entry)) return "Packaging darf nur in der Vorzone liegen.";
     if (expectedTier && tier !== expectedTier) return `F${slot} liegt fest auf Ebene ${expectedTier}.`;
+    if (!rackV2IsIceLike(entry) && !isPackagingLike(entry)) {
+      const fingerprint = rackV2EntryFingerprint(entry);
+      const duplicate = currentEntries.find((candidate) => candidate.id !== entry.id && rackV2EntryFingerprint(candidate) === fingerprint);
+      if (duplicate) return `${entry.recipe} ist auf ${currentLine.code} bereits auf ${duplicate.flowRackPosition} verplant.`;
+    }
     if (inForezone && isPackagingLike(entry)) {
       const packagingZone = rackV2PackagingZoneForEntry(entry);
         const allowedSlots = rackV2PackagingAllowedSlots(currentMarket, packagingZone);
@@ -741,42 +730,42 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
   function autoFillLine() {
     if (currentLocked) return;
-    const targetLineIds = marketLineIds;
-    const lockedLine = targetLineIds.find((lineId) => sharedPlan.lines[lineId]?.releaseStatus === "released");
-    if (lockedLine) {
-      setHint(`${lockedLine} ist bereits freigegeben. Markt-Automatik kann nur ohne gesperrte Marktlinie laufen.`);
+    if (currentActiveBlockIds.size === 0) {
+      setHint("Keine aktiven Bloecke: rote/gesperrte Bloecke werden von der Automatik nicht belegt.");
       return;
     }
 
-    const plannedWorkers = rackV2HallLayoutWorkers(currentMarket);
-    const packagingEntries = currentDataPool.filter((entry) => deriveEntryKind(entry) === "packaging");
-    const uniqueEntries = currentDataPool.filter((entry) => deriveEntryKind(entry) !== "packaging");
-    const split = splitPoolAcrossLines(uniqueEntries, targetLineIds);
-    const activeOverrides = fixedActiveOverrides(currentMarket, plannedWorkers);
+    const nextEntries = rackV2AutoFillLayout([], currentDataPool, currentMarket, currentLinePlan.manualOverrides);
+    const sourceFingerprints = new Set(
+      currentDataPool
+        .filter((entry) => deriveEntryKind(entry) !== "packaging")
+        .map(rackV2EntryFingerprint),
+    );
+    const plannedFingerprints = new Set(
+      nextEntries
+        .filter((entry) => deriveEntryKind(entry) !== "packaging")
+        .map(rackV2EntryFingerprint),
+    );
+    const unplannedCount = [...sourceFingerprints].filter((fingerprint) => !plannedFingerprints.has(fingerprint)).length;
 
     setSharedPlan((prev) => ({
       ...prev,
       lines: {
         ...prev.lines,
-        ...Object.fromEntries(targetLineIds.map((lineId) => {
-          const line = RACK_V2_LINES.find((candidate) => candidate.id === lineId);
-          if (!line) return [lineId, prev.lines[lineId]];
-          const plan = prev.lines[lineId] ?? defaultLinePlanState(line);
-          const linePool = [...packagingEntries, ...(split[lineId] ?? [])];
-          return [lineId, {
-            ...plan,
-            market: currentMarket,
-            plannedWorkers,
-            manualOverrides: {},
-            entries: rackV2AutoFillLayout([], linePool, currentMarket, activeOverrides),
-            releaseStatus: plan?.releaseStatus === "rework" ? "rework" : "draft",
-            releasedAt: undefined,
-            releasedBy: undefined,
-          }];
-        })),
+        [currentLine.id]: {
+          ...currentLinePlan,
+          entries: nextEntries,
+          releaseStatus: currentLinePlan.releaseStatus === "rework" ? "rework" : "draft",
+          releasedAt: undefined,
+          releasedBy: undefined,
+        },
       },
     }));
-    setHint(`Automatik hat ${targetLineIds.length} ${currentMarket}-Linien balanciert geplant. Jede Nicht-Packaging-Pille wurde nur einmal vergeben.`);
+    setHint(
+      unplannedCount > 0
+        ? `Automatik hat ${currentLine.code} geplant. ${unplannedCount} Nicht-Packaging-Pillen passen nicht in die aktiven Bloecke.`
+        : `Automatik hat ${currentLine.code} komplett in die aktiven Bloecke geplant.`,
+    );
   }
 
   function resetLine() {
@@ -1112,6 +1101,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                                         <div className="flex items-center gap-1 text-[10px] font-bold">
                                           <span className={`h-2 w-2 rounded-full ${kindDot(entry)}`} />
                                           <span className="truncate">{entry.recipe}</span>
+                                          <span className="ml-auto rounded bg-slate-100 px-1 text-[9px] text-slate-600">{entry.quantity}</span>
                                         </div>
                                         <div className="truncate text-[9px] text-slate-500">{entry.sku || entry.ingredient || "-"}</div>
                                       </button>
@@ -1148,7 +1138,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                     <div key={block.id} className="flex items-stretch gap-3">
                       {separatorClass && <div className={separatorClass} />}
                       <div
-                        className={`rounded-2xl p-3 ring-1 ${blockTone(active, recommended, block.area)}`}
+                        className={`rounded-2xl p-3 ring-1 ${blockTone(active)}`}
                         style={{ minWidth: `${Math.max(250, blockColumnCount * 42)}px` }}
                       >
                         <button type="button" onClick={() => toggleBlock(block)} disabled={currentLocked} className="w-full text-left disabled:opacity-60">
@@ -1157,8 +1147,8 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                               <div className="text-[10px] font-bold uppercase tracking-wide opacity-70">{block.label}</div>
                               <div className="text-sm font-black">{active ? roleLabel : "nicht aktiv"}</div>
                             </div>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${active ? "bg-white/70 ring-current" : "bg-slate-100 text-slate-500 ring-slate-300"}`}>
-                              {active ? "aktiv" : "aus"}
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${active ? "bg-emerald-100 text-emerald-900 ring-emerald-300" : "bg-rose-100 text-rose-800 ring-rose-300"}`}>
+                              {active ? "aktiv" : "gesperrt"}
                             </span>
                           </div>
                           <div className="mt-1 text-[11px] opacity-80">{block.subtitle}</div>
@@ -1205,6 +1195,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                                             <div className="flex items-center gap-1 text-[10px] font-bold">
                                               <span className={`h-2 w-2 rounded-full ${kindDot(entry)}`} />
                                               <span className="truncate">{entry.recipe}</span>
+                                              <span className="ml-auto rounded bg-slate-100 px-1 text-[9px] text-slate-600">{entry.quantity}</span>
                                             </div>
                                             <div className="truncate text-[9px] text-slate-500">{entry.sku || entry.ingredient || "-"}</div>
                                           </button>
@@ -1248,6 +1239,11 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
           <div className="card p-3 space-y-2">
             <div className="text-sm font-bold text-slate-800">Offener Pool {currentLine.code}</div>
+            {hiddenPoolCount > 0 && (
+              <div className="text-[11px] text-amber-700">
+                {hiddenPoolCount} Eintraege sind bereits verplant (nur Info, nicht ausgeblendet).
+              </div>
+            )}
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}

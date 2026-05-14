@@ -358,10 +358,10 @@ function usePersistent<T>(key: string, defaultVal: T): [T, React.Dispatch<React.
   return [state, wrapped];
 }
 
-type AppView = "recipe" | "equipment" | "breakdown" | "planning" | "woche" | "rack" | "ket" | "phase2" | "wochenplaner" | "rundmail";
+type AppView = "recipe" | "equipment" | "breakdown" | "planning" | "wms" | "woche" | "rack" | "ket" | "phase2" | "wochenplaner" | "rundmail";
 type AppSurface = "full" | "kitchen";
 
-const ALL_VIEWS: readonly AppView[] = ["recipe", "equipment", "breakdown", "planning", "woche", "rack", "ket", "phase2", "wochenplaner", "rundmail"] as const;
+const ALL_VIEWS: readonly AppView[] = ["recipe", "equipment", "breakdown", "planning", "wms", "woche", "rack", "ket", "phase2", "wochenplaner", "rundmail"] as const;
 
 function parseTruthyParam(value: string | null): boolean {
   const v = (value ?? "").trim().toLowerCase();
@@ -557,10 +557,11 @@ export default function App() {
               ["woche", tl(locale, "Σ Wochenbestellung")],
               ["equipment", tl(locale, "Equipment")],
               ["planning", "Planning OASE"],
+              ["wms", "WMS Live"],
               ["wochenplaner", "Wochenplaner"],
               ["phase2", "What-if & Diff"],
               ["rundmail", "📧 Rundmail"]
-            ] as ["recipe"|"equipment"|"breakdown"|"planning"|"woche"|"rack"|"ket"|"phase2"|"wochenplaner"|"rundmail", string][]).map(([k, l]) => (
+            ] as [AppView, string][]).map(([k, l]) => (
               <button key={k} onClick={() => setView(k)}
                 className={`flex-1 px-2 py-1.5 text-xs font-semibold rounded-md ${
                   view === k ? "bg-white shadow ring-1 ring-slate-300" : "text-slate-500 hover:text-slate-800"
@@ -715,7 +716,7 @@ export default function App() {
             <>
           {view === "equipment" && <EquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
           {view === "woche" && <WocheZutatenView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale={locale} />}
-          {view === "planning" && (
+          {(view === "planning" || view === "wms") && (
             <PlanningOasisView
               data={data}
               week={selectedWeek}
@@ -726,7 +727,7 @@ export default function App() {
                 setSelectedRecipe(code);
                 setView("recipe");
               }}
-              defaultSection="cockpit"
+              defaultSection={view === "wms" ? "wms" : "cockpit"}
             />
           )}
           {view === "wochenplaner" && (
