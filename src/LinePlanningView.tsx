@@ -127,8 +127,6 @@ type KetWO = {
   comments: string;
 };
 
-type AutoPlanMode = "balanced" | "subrecipe-first" | "fulfillment-smart";
-
 // ══════════════════════════════════════════════════════════════════════════════
 //  PURE HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -206,6 +204,105 @@ function runSplitForLineRecipe(recipe: LinePlanRecipe): RunSplitPlan {
     nordics: recipe.nordics,
     de: recipe.de,
   });
+}
+
+function normalizePlanDay(raw: string): PlanDay | null {
+  const clean = String(raw ?? "").trim();
+  if (!clean) return null;
+  if ((DAYS as readonly string[]).includes(clean)) return clean as PlanDay;
+  const mapped = DAY_EN_TO_DE[clean];
+  return mapped && (DAYS as readonly string[]).includes(mapped) ? mapped as PlanDay : null;
+}
+
+function mhdRunWindow(recipe: LinePlanRecipe, run: 1 | 2): ReadonlyArray<PlanDay> {
+  if (recipe.isSeafood) {
+    return run === 1 ? ["Dienstag", "Mittwoch"] : ["Donnerstag", "Freitag"];
+  }
+  return run === 1 ? ["Montag", "Dienstag", "Mittwoch"] : ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"];
+}
+
+function recommendedRunDay(run: 1 | 2): PlanDay {
+  return run === 1 ? "Mittwoch" : "Freitag";
+}
+
+function normalizedCookMethodText(wo: KetWO): string {
+  return wo.cookMethods.join(" /").toUpperCase();
+}
+
+function longSubMethodScore(wo: KetWO): number {
+  const methods = normalizedCookMethodText(wo);
+  const longHits = [
+    /BRAISER/,
+    /BLAST CHILLER/,
+    /MARINADE/,
+    /THAW/,
+    /IMMERSION BLENDER/,
+    /PLANETARY MIXER/
+  ].reduce((sum, rx) => sum + (rx.test(methods) ? 1 : 0), 0);
+  return Math.min(1, longHits / 4);
+}
+
+function subMealBackwardDayScore(day: PlanDay, recipe: LinePlanRecipe, recipeWos: KetWO[]): number {
+  if (recipeWos.length === 0) return 0;
+
+  const dayOrder: PlanDay[] = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+  const dayIdx = dayOrder.indexOf(day);
+  if (dayIdx < 0) return 0;
+
+  let totalWeight = 0;
+  let weightedScore = 0;
+
+  for (const wo of recipeWos) {
+    const needDay = normalizePlanDay(wo.hotKitchenDay) ?? normalizePlanDay(wo.deboxDay) ?? (recipe.isSeafood ? "Donnerstag" : "Freitag");
+    const needIdx = dayOrder.indexOf(needDay);
+    const complexity = longSubMethodScore(wo);
+    const weight = 0.4 + complexity;
+
+    const leadDays = complexity >= 0.6 ? 2 : complexity >= 0.25 ? 1 : 0;
+    const preferredIdx = Math.max(0, needIdx - leadDays);
+    const distToPreferred = Math.abs(dayIdx - preferredIdx);
+    const tooLate = dayIdx > needIdx;
+
+    let score = Math.max(0, 1 - distToPreferred / 3);
+    if (tooLate) score *= 0.25;
+    if (day === "Mittwoch" || day === "Donnerstag") score = Math.min(1, score + 0.08);
+
+    weightedScore += score * weight;
+    totalWeight += weight;
+  }
+
+  return totalWeight > 0 ? weightedScore / totalWeight : 0;
+}
+
+function runWindowScore(day: PlanDay, window: ReadonlyArray<PlanDay>, preferred: PlanDay): number {
+  if (day === preferred) return 1;
+  if (window.includes(day)) return 0.72;
+  return 0.06;
+}
+
+function extractRecipeCodeFromKet(wo: KetWO): string {
+  return wo.recipeId.match(/FV\d+[A-Z]/)?.[0]
+    ?? wo.recipeName.match(/FV\d+[A-Z]/)?.[0]
+    ?? "";
+}
+
+function planDayDistance(a: PlanDay, b: PlanDay): number {
+  const order: PlanDay[] = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+  const ai = order.indexOf(a);
+  const bi = order.indexOf(b);
+  if (ai < 0 || bi < 0) return 3;
+  return Math.abs(ai - bi);
+}
+
+function inferKetRunFromDay(dayRaw: string, isSeafood: boolean): 1 | 2 | null {
+  const day = normalizePlanDay(dayRaw);
+  if (!day) return null;
+  if (isSeafood) {
+    if (day === "Dienstag" || day === "Mittwoch" || day === "Montag") return 1;
+    return 2;
+  }
+  if (day === "Montag" || day === "Dienstag" || day === "Mittwoch") return 1;
+  return 2;
 }
 
 function statusColor(status: string): string {
@@ -672,20 +769,22 @@ function VolumeBar({ recipe, scheduledPortions }: { recipe: LinePlanRecipe; sche
 
 // ══════════════════════════════════════════════════════════════════════════════
 function KetCard({
-  wo, effectiveStatus, scheduledDays, onDragStart, onDragEnd, onStatusCycle,
+  wo, effectiveStatus, scheduledDays, run, onDragStart, onDragEnd, onStatusCycle,
 }: {
   wo: KetWO;
   effectiveStatus: string;
   scheduledDays: string[];
+  run: 1 | 2 | null;
   onDragStart: () => void;
   onDragEnd: () => void;
   onStatusCycle: () => void;
 }) {
-  const code = wo.recipeId.match(/FV\d+[A-Z]/)?.[0] ?? (wo.recipeName.match(/^(FV\d{4}[A-Z])/)?.[1] ?? "");
+  const code = extractRecipeCodeFromKet(wo);
   const tone = code ? recipeTone(code) : { base: {} as React.CSSProperties, code: {} as React.CSSProperties, title: {} as React.CSSProperties };
   const ketTooltip = [
     code ? `${code} – ${wo.recipeName}` : wo.recipeName,
     wo.subRecipeName ? `Sub-Rezept: ${wo.subRecipeName}` : "",
+    run ? `Run: R${run}` : "",
     `WO: ${wo.woNumber}`,
     wo.hotKitchenDay ? `Küchenstart: ${wo.hotKitchenDay}` : "",
     wo.dateNeeded ? `Benötigt: ${wo.dateNeeded}` : "",
@@ -726,6 +825,14 @@ function KetCard({
       {/* Recipe code + WO number */}
       <div className="flex gap-2 items-center mb-1.5">
         {code && <span className="text-[10px] font-bold" style={tone.code}>{code}</span>}
+        {run && (
+          <span
+            className={`text-[10px] font-black rounded-full px-1.5 py-0.5 border ${run === 1 ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-teal-50 text-teal-700 border-teal-200"}`}
+            title={`Automatisch zugeordnet: Run ${run}`}
+          >
+            R{run}
+          </span>
+        )}
         {wo.woNumber && <span className="text-[10px] font-mono text-slate-400">{wo.woNumber}</span>}
         {wo.woReady && <span className="ml-auto text-[9px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1 rounded">✓ WO ready</span>}
       </div>
@@ -780,7 +887,7 @@ function KetDayColumn({
   day: _day, label, wos, isDragOver,
   onDragEnter, onDragLeave, onDrop,
   ketOverrides, onDragStart, onDragEnd, onStatusCycle,
-  scheduledDaysByCode,
+  scheduledDaysByCode, recipeByCode,
 }: {
   day: string; label: string; wos: KetWO[]; isDragOver: boolean;
   onDragEnter: () => void; onDragLeave: () => void; onDrop: () => void;
@@ -789,6 +896,7 @@ function KetDayColumn({
   onDragEnd: () => void;
   onStatusCycle: (wo: KetWO) => void;
   scheduledDaysByCode: Map<string, Set<string>>;
+  recipeByCode: Map<string, LinePlanRecipe>;
 }) {
   const totalPortions = wos.reduce((s, wo) => s + wo.targetPortions, 0);
   return (
@@ -822,17 +930,24 @@ function KetDayColumn({
 
       {/* Cards */}
       <div className="p-2 space-y-2 min-h-28">
-        {wos.map(wo => (
-          <KetCard
-            key={`${wo.woNumber}-${wo.subRecipeName}`}
-            wo={wo}
-            effectiveStatus={ketOverrides[wo.woNumber]?.status ?? wo.status}
-            scheduledDays={Array.from(scheduledDaysByCode.get(wo.recipeId.match(/FV\d+[A-Z]/)?.[0] ?? "") ?? [])}
-            onDragStart={() => onDragStart(wo)}
-            onDragEnd={onDragEnd}
-            onStatusCycle={() => onStatusCycle(wo)}
-          />
-        ))}
+        {wos.map(wo => {
+          const code = extractRecipeCodeFromKet(wo);
+          const effectiveDayRaw = ketOverrides[wo.woNumber]?.day ?? wo.hotKitchenDay ?? wo.deboxDay;
+          const isSeafood = recipeByCode.get(code)?.isSeafood ?? detectSeafoodByName(wo.recipeName);
+          const run = inferKetRunFromDay(effectiveDayRaw, isSeafood);
+          return (
+            <KetCard
+              key={`${wo.woNumber}-${wo.subRecipeName}`}
+              wo={wo}
+              effectiveStatus={ketOverrides[wo.woNumber]?.status ?? wo.status}
+              scheduledDays={Array.from(scheduledDaysByCode.get(code) ?? [])}
+              run={run}
+              onDragStart={() => onDragStart(wo)}
+              onDragEnd={onDragEnd}
+              onStatusCycle={() => onStatusCycle(wo)}
+            />
+          );
+        })}
         {wos.length === 0 && (
           <div className={`flex items-center justify-center h-16 text-xs transition-colors ${
             isDragOver ? "text-indigo-300" : "text-slate-200"
@@ -874,8 +989,7 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
   const [comments, setComments] = useState<Record<string, string>>({});
   const [targetMealsBySlot, setTargetMealsBySlot] = useState<Record<string, number>>({});
   const [lineCapacityByLane, setLineCapacityByLane] = useState<Record<string, number>>(defaultLineCapacityMap);
-  const [platingLineCount, setPlatingLineCount] = useState<1 | 2 | 3>(3);
-  const [autoPlanMode, setAutoPlanMode] = useState<AutoPlanMode>("fulfillment-smart");
+  const platingLineCount: 1 | 2 | 3 = 3;
   const [autoPlanNotice, setAutoPlanNotice] = useState<string>("");
   const dragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ketDragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -886,6 +1000,38 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
     return Object.fromEntries(
       recipes.map((recipe) => [recipe.code, runSplitForLineRecipe(recipe)])
     ) as Record<string, RunSplitPlan>;
+  }, [recipes]);
+  const subMealRecipeCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const wo of ketWOs) {
+      if (!wo.subRecipeName.trim()) continue;
+      const code = extractRecipeCodeFromKet(wo);
+      if (code) codes.add(code);
+    }
+    return codes;
+  }, [ketWOs]);
+  const runTargetsByRecipe = useMemo(() => {
+    const map = new Map<string, { firstRunTarget: number; secondRunTarget: number; totalTarget: number }>();
+    for (const recipe of recipes) {
+      const base = runSplitByRecipe[recipe.code] ?? runSplitForLineRecipe(recipe);
+      const totalTarget = Math.max(0, base.upliftTotal || recipe.totalPlanned);
+      let firstRunTarget = Math.max(0, Math.min(totalTarget, base.firstRun.total || 0));
+      let secondRunTarget = Math.max(0, Math.min(Math.max(0, totalTarget - firstRunTarget), base.secondRun || 0));
+      const remainder = Math.max(0, totalTarget - firstRunTarget - secondRunTarget);
+      secondRunTarget += remainder;
+
+      if (subMealRecipeCodes.has(recipe.code) && totalTarget > 1 && secondRunTarget <= 0) {
+        secondRunTarget = Math.max(1, Math.round(totalTarget * 0.35));
+        if (secondRunTarget >= totalTarget) secondRunTarget = totalTarget - 1;
+        firstRunTarget = totalTarget - secondRunTarget;
+      }
+
+      map.set(recipe.code, { firstRunTarget, secondRunTarget, totalTarget });
+    }
+    return map;
+  }, [recipes, runSplitByRecipe, subMealRecipeCodes]);
+  const recipeByCode = useMemo(() => {
+    return new Map(recipes.map((recipe) => [recipe.code, recipe] as const));
   }, [recipes]);
 
   // ─── Load data ─────────────────────────────────────────────────────────────
@@ -1001,7 +1147,6 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
               targetMealsBySlot?: Record<string, number>;
               lineCapacityByLane?: Record<string, number>;
               platingLineCount?: number;
-              autoPlanMode?: AutoPlanMode;
             };
             if (d.schedule) dispatch({ type: "load", schedule: d.schedule });
             if (d.comments) setComments(d.comments);
@@ -1009,12 +1154,6 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
             if (d.targetMealsBySlot) setTargetMealsBySlot(d.targetMealsBySlot);
             if (d.lineCapacityByLane) {
               setLineCapacityByLane({ ...defaultLineCapacityMap(), ...d.lineCapacityByLane });
-            }
-            if (d.platingLineCount && d.platingLineCount >= 1 && d.platingLineCount <= 3) {
-              setPlatingLineCount(d.platingLineCount as 1 | 2 | 3);
-            }
-            if (d.autoPlanMode === "balanced" || d.autoPlanMode === "subrecipe-first" || d.autoPlanMode === "fulfillment-smart") {
-              setAutoPlanMode(d.autoPlanMode);
             }
           },
           () => { /* silent – offline / keine Rechte */ }
@@ -1040,7 +1179,6 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
         targetMealsBySlot,
         lineCapacityByLane,
         platingLineCount,
-        autoPlanMode,
         runSplitByRecipe,
       });
       setSaveOk(true);
@@ -1076,7 +1214,6 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
         targetMealsBySlot: {},
         lineCapacityByLane,
         platingLineCount,
-        autoPlanMode,
         runSplitByRecipe,
       });
     } catch (err) {
@@ -1136,12 +1273,48 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
     const next: ScheduleMap = { ...schedule };
     const producedByRecipe = new Map<string, number>();
     const defaultTargetMh = activeLineIdx.reduce((sum, li) => sum + Math.max(0, lineCapacityByLane[String(li)] ?? 0), 0);
+    const forcedLineIdx = [0, 1, 2] as const;
 
-    // Bereits inaktive Linien in jedem Slot leeren, damit 1/2-Linienmodus sauber bleibt.
+    const kitchenDemandByRecipeDay = new Map<string, Map<PlanDay, number>>();
+    const kitchenDemandByRecipeRunDay = new Map<string, { 1: Map<PlanDay, number>; 2: Map<PlanDay, number> }>();
+    for (const wo of ketWOs) {
+      const code = extractRecipeCodeFromKet(wo);
+      if (!code) continue;
+      const overriddenDay = ketOverrides[wo.woNumber]?.day ?? wo.hotKitchenDay ?? wo.deboxDay;
+      const day = normalizePlanDay(overriddenDay);
+      if (!day) continue;
+      if (!kitchenDemandByRecipeDay.has(code)) kitchenDemandByRecipeDay.set(code, new Map<PlanDay, number>());
+      const dayMap = kitchenDemandByRecipeDay.get(code)!;
+      const weight = Math.max(1, Math.round(wo.targetPortions || 0));
+      dayMap.set(day, (dayMap.get(day) ?? 0) + weight);
+
+      if (!kitchenDemandByRecipeRunDay.has(code)) {
+        kitchenDemandByRecipeRunDay.set(code, { 1: new Map<PlanDay, number>(), 2: new Map<PlanDay, number>() });
+      }
+      const runMaps = kitchenDemandByRecipeRunDay.get(code)!;
+      const targets = runTargetsByRecipe.get(code);
+      const upliftTotal = Math.max(1, targets?.totalTarget ?? 1);
+      let run1Share = (targets?.firstRunTarget ?? 0) / upliftTotal;
+      let run2Share = (targets?.secondRunTarget ?? 0) / upliftTotal;
+      if (subMealRecipeCodes.has(code)) {
+        run1Share = Math.max(0.3, run1Share);
+        run2Share = Math.max(0.3, run2Share);
+      }
+      const shareSum = Math.max(0.0001, run1Share + run2Share);
+      run1Share /= shareSum;
+      run2Share /= shareSum;
+
+      // Submeals müssen in beiden Runs vorhanden sein; Nachfrage wird daher auf Run1+Run2 verteilt.
+      runMaps[1].set(day, (runMaps[1].get(day) ?? 0) + weight * run1Share);
+      runMaps[2].set(day, (runMaps[2].get(day) ?? 0) + weight * run2Share);
+    }
+
+    // Harte Vorgabe: immer alle drei Plating-Linien automatisch nutzen.
     for (const day of DAYS) {
       for (const slot of SLOTS) {
-        for (let li = platingLineCount; li < LINES.length; li++) {
-          delete next[`${day}|${slot.key}|${li}`];
+        for (const li of forcedLineIdx) {
+          const key = `${day}|${slot.key}|${li}`;
+          if (!(key in next)) next[key] = null;
         }
       }
     }
@@ -1162,11 +1335,11 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
         const targetMh = Math.max(0, targetMealsBySlot[targetKey] ?? defaultTargetMh);
         if (targetMh <= 0) continue;
 
-        const freeLineIdx = [...activeLineIdx]
+        const freeLineIdx = [...forcedLineIdx]
           .filter((li) => !next[`${day}|${slot.key}|${li}`] && (lineCapacityByLane[String(li)] ?? 0) > 0)
-          .sort((a, b) => Number(a === LINES.length - 1) - Number(b === LINES.length - 1));
+          .sort((a, b) => a - b);
 
-        let currentMh = activeLineIdx.reduce((sum, li) => {
+        let currentMh = forcedLineIdx.reduce((sum, li) => {
           return next[`${day}|${slot.key}|${li}`] ? sum + Math.max(0, lineCapacityByLane[String(li)] ?? 0) : sum;
         }, 0);
         while (freeLineIdx.length > 0 && currentMh < targetMh) {
@@ -1179,44 +1352,49 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
 
           for (const recipe of recipes) {
             const produced = producedByRecipe.get(recipe.code) ?? 0;
-            const runSplit = runSplitForLineRecipe(recipe);
-            const remaining = Math.max(0, runSplit.upliftTotal - produced);
+            const targets = runTargetsByRecipe.get(recipe.code) ?? {
+              firstRunTarget: runSplitForLineRecipe(recipe).firstRun.total,
+              secondRunTarget: runSplitForLineRecipe(recipe).secondRun,
+              totalTarget: runSplitForLineRecipe(recipe).upliftTotal,
+            };
+            const remaining = Math.max(0, targets.totalTarget - produced);
             if (remaining <= 0) continue;
 
             const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
             const recipeMh = Math.max(0, lineTarget);
             const fitScore = 1 - Math.min(1, Math.abs(missingMh - recipeMh) / Math.max(targetMh, recipeMh, 1));
             const volumeScore = Math.min(1, remaining / Math.max(slotPortions, 1));
-            const lineFitScore = lineTarget > 0 ? 1 : fitScore;
 
-            // Run-Template aus der Planning OASE:
-            // 1. Run = BENL 50%, Nordics 100%, DE 70%.
-            // 2. Run = Restmenge + 10% vom Gesamtvolumen (= Ziel 110%).
-            const totalPlanned = Math.max(1, runSplit.upliftTotal);
-            const isRunOneDay = day === "Dienstag" || day === "Mittwoch" || day === "Donnerstag";
-            const runOneOpen = Math.max(0, runSplit.firstRun.total - produced);
-            const runTwoOpen = Math.max(0, runSplit.upliftTotal - Math.max(produced, runSplit.firstRun.total));
-            let dayDemandScore = 0;
-            if (isRunOneDay) dayDemandScore = runOneOpen / totalPlanned;
-            else if (day === "Freitag" || day === "Samstag" || day === "Sonntag" || day === "Montag") dayDemandScore = runTwoOpen / totalPlanned;
-            else dayDemandScore = remaining / totalPlanned;
+            const currentRun: 1 | 2 = produced < targets.firstRunTarget ? 1 : 2;
+            const runWindow = mhdRunWindow(recipe, currentRun);
+            const runAnchor = recommendedRunDay(currentRun);
+            const runDayScore = runWindowScore(day, runWindow, runAnchor);
+            const runOpen = currentRun === 1
+              ? Math.max(0, targets.firstRunTarget - produced)
+              : Math.max(0, targets.totalTarget - produced);
+            const runTarget = currentRun === 1 ? Math.max(1, targets.firstRunTarget) : Math.max(1, targets.secondRunTarget);
+            const runPressure = Math.min(1, runOpen / runTarget);
 
-            const recipeWos = ketWOs.filter(wo => (wo.recipeName.match(/FV\d{4}[A-Z]/)?.[0] ?? "") === recipe.code);
-            const longSubCount = recipeWos.reduce((sum, wo) => {
-              const joined = wo.cookMethods.join(" /").toUpperCase();
-              const isLong = /BRAISER|BLAST CHILLER|MARINADE|THAW|IMMERSION BLENDER|PLANETARY MIXER/.test(joined);
-              return sum + (isLong ? 1 : 0);
-            }, 0);
-            const longSubScore = Math.min(1, longSubCount / 6);
-            const isEarlyCookDay = day === "Montag" || day === "Dienstag" || day === "Mittwoch" || day === "Donnerstag";
-
-            let modeBoost = 0;
-            if (autoPlanMode === "subrecipe-first" && isEarlyCookDay) modeBoost = longSubScore;
-            if (autoPlanMode === "fulfillment-smart") {
-              modeBoost = dayDemandScore * 0.75 + (isEarlyCookDay ? longSubScore * 0.5 : 0);
+            const runDemand = kitchenDemandByRecipeRunDay.get(recipe.code)?.[currentRun];
+            const dayDemand = runDemand && runDemand.size > 0 ? runDemand : kitchenDemandByRecipeDay.get(recipe.code);
+            let kitchenDayScore = 0.2;
+            if (dayDemand && dayDemand.size > 0) {
+              const totalDemand = Array.from(dayDemand.values()).reduce((sum, value) => sum + value, 0);
+              const exactShare = totalDemand > 0 ? (dayDemand.get(day) ?? 0) / totalDemand : 0;
+              const minDist = Math.min(
+                ...Array.from(dayDemand.keys()).map((d) => planDayDistance(day, d)),
+              );
+              const nearScore = 1 - Math.min(3, minDist) / 3;
+              kitchenDayScore = Math.min(1, exactShare * 0.75 + nearScore * 0.55);
             }
 
-            const score = fitScore * 0.38 + lineFitScore * 0.22 + volumeScore * 0.2 + dayDemandScore * 0.12 + modeBoost * 0.08;
+            const recipeWos = ketWOs.filter((wo) => extractRecipeCodeFromKet(wo) === recipe.code && wo.subRecipeName.trim().length > 0);
+            const backwardSubMealScore = subMealBackwardDayScore(day, recipe, recipeWos);
+            const subMealRunScore = recipeWos.length > 0
+              ? Math.min(1, backwardSubMealScore * 0.6 + runDayScore * 0.4)
+              : 0;
+
+            const score = kitchenDayScore * 0.34 + runDayScore * 0.22 + runPressure * 0.18 + subMealRunScore * 0.2 + volumeScore * 0.04 + fitScore * 0.02;
 
             if (score > bestScore) {
               bestScore = score;
@@ -1230,7 +1408,12 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
             let maxRemaining = 0;
             for (const recipe of recipes) {
               const produced = producedByRecipe.get(recipe.code) ?? 0;
-              const remaining = Math.max(0, runSplitForLineRecipe(recipe).upliftTotal - produced);
+              const targets = runTargetsByRecipe.get(recipe.code) ?? {
+                firstRunTarget: runSplitForLineRecipe(recipe).firstRun.total,
+                secondRunTarget: runSplitForLineRecipe(recipe).secondRun,
+                totalTarget: runSplitForLineRecipe(recipe).upliftTotal,
+              };
+              const remaining = Math.max(0, targets.totalTarget - produced);
               if (remaining > maxRemaining) {
                 maxRemaining = remaining;
                 fallback = recipe;
@@ -1244,7 +1427,7 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
             best.code,
             (producedByRecipe.get(best.code) ?? 0) + portionsInSlotByLineCapacity(lineTarget, slot.key)
           );
-          currentMh = activeLineIdx.reduce((sum, idx) => {
+          currentMh = forcedLineIdx.reduce((sum, idx) => {
             return next[`${day}|${slot.key}|${idx}`] ? sum + Math.max(0, lineCapacityByLane[String(idx)] ?? 0) : sum;
           }, 0);
           assignments += 1;
@@ -1254,8 +1437,8 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
 
     dispatch({ type: "load", schedule: next });
     setAutoPlanNotice(assignments > 0
-      ? `${assignments} Slots automatisch belegt (${platingLineCount} Linie(n), Modus: ${autoPlanMode}).`
-      : "Keine neuen Slots belegt. Prüfe Ziel-Meals/h und Restvolumen.");
+      ? `${assignments} Slots automatisch belegt (3 Linien, Küche -> Batch-Split MHD/Fulfillment, Submeals Run1+Run2).`
+      : "Keine neuen Slots belegt. Prüfe Ziel-Meals/h, Küchenzuordnung und Restvolumen.");
     setTimeout(() => setAutoPlanNotice(""), 3500);
   }
 
@@ -1486,9 +1669,13 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
                         if (!recipe) continue;
                         const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
                         const portions = Math.round(portionsInSlotByLineCapacity(lineTarget, slot.key));
-                        const split = runSplitByRecipe[recipe.code] ?? runSplitForLineRecipe(recipe);
+                        const targets = runTargetsByRecipe.get(recipe.code) ?? {
+                          firstRunTarget: runSplitForLineRecipe(recipe).firstRun.total,
+                          secondRunTarget: runSplitForLineRecipe(recipe).secondRun,
+                          totalTarget: runSplitForLineRecipe(recipe).upliftTotal,
+                        };
                         const before = producedBefore.get(recipe.code) ?? 0;
-                        const run: 1 | 2 = before < split.firstRun.total ? 1 : 2;
+                        const run: 1 | 2 = before < targets.firstRunTarget ? 1 : 2;
                         producedBefore.set(recipe.code, before + portions);
                         cockpitByDay[day]?.push({
                           slot: slot.key,
@@ -1511,7 +1698,6 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
                     targetMealsBySlot,
                     lineCapacityByLane,
                     platingLineCount,
-                    autoPlanMode,
                     runSplitByRecipe,
                     cockpitPlan: cockpitByDay,
                     cockpitBuiltAt: new Date().toISOString(),
@@ -1565,7 +1751,7 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
               <div><span className="font-semibold text-slate-900">📋 Plating Linien Plannung</span> – Wechselt zum Raster-Tab: 7 Tage × 9 Zeitslots × 3 P-Linien. Rezepte per Drag&amp;Drop aus dem Rezept-Pool (rechts) in die Slots ziehen.</div>
               <div><span className="font-semibold text-slate-900">🍳 KET</span> – Kitchen Equipment Tracking: zeigt alle Produktionsaufträge (Work Orders) aus dem Google Sheet, geordnet nach Produktionstag. Cards per Drag&amp;Drop in andere Tage verschieben, Klick auf Status schaltet weiter.</div>
               <div><span className="font-semibold text-slate-900">QR / URL</span> – Öffnet ein Modal mit QR-Code und direktem Link zu dieser Woche. Link direkt in Teams/WhatsApp teilen – Empfänger landen sofort auf der richtigen KW.</div>
-              <div><span className="font-semibold text-slate-900">🤖 Auto-Plan</span> – Füllt alle leeren Slots automatisch nach Zielwerten und Rezept-Volumen. Bereits belegte Slots werden nicht überschrieben.</div>
+              <div><span className="font-semibold text-slate-900">🤖 Auto-Plan</span> – Füllt freie Slots küchengeführt und im festen Batch-Split-Schema (MHD + Fulfillment), immer über alle 3 Plating-Linien. Bereits belegte Slots werden nicht überschrieben.</div>
               <div><span className="font-semibold text-slate-900">💾 Plan sichern</span> – Speichert die komplette Planung (Schedule, KET-Status, Zielwerte) in Firestore. Alle anderen Planer sehen die Änderungen sofort (Echtzeit-Sync).</div>
               <div><span className="font-semibold text-slate-900">Rezept-Pool (rechts)</span> – Zeigt alle Rezepte der KW mit Volumen pro Markt. Von hier per Drag&amp;Drop in Slots ziehen. Volumen-Balance unten zeigt Fortschritt.</div>
               <div><span className="font-semibold text-slate-900">P-Linienleistung</span> – Manuelle Soll-Kapazität (Portionen/h) pro Linie. Wird für Auto-Plan und Delta-Berechnung verwendet.</div>
@@ -1578,11 +1764,11 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
 
       {/* ─── LINIENPLANUNG TAB ────────────────────────────────────────────── */}
       {subTab === "lineplanning" && (
-        <div className="overflow-x-auto">
-        <div className="flex gap-4 items-start min-w-[860px]">
+        <div className="overflow-x-auto pb-2">
+        <div className="flex gap-4 items-start min-w-[1320px] pr-2">
 
           {/* ── Schedule Grid ─────────────────────────────────────────────── */}
-          <div className="flex-1 min-w-0 space-y-3">
+          <div className="flex-1 min-w-[980px] space-y-3">
             {/* Line header */}
             <div className="card px-4 py-2">
               <div className="grid gap-2" style={{ gridTemplateColumns: lineGridTemplate }}>
@@ -1622,7 +1808,7 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
                           {LINES.map((_, li) => {
                             const cellKey = `${day}|${slot.key}|${li}`;
                             const r = schedule[cellKey] ?? null;
-                            const disabledLine = li >= platingLineCount;
+                            const disabledLine = false;
                             if (disabledLine) {
                               return (
                                 <div key={cellKey} className="min-h-[5rem] rounded-xl border border-dashed border-slate-200 bg-slate-100/70 flex items-center justify-center text-[10px] font-semibold text-slate-400">
@@ -1714,7 +1900,7 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
           </div>
 
           {/* ── Right Panel: Recipe Pool + Volume Balance ─────────────────── */}
-          <div className="w-72 shrink-0 sticky top-4 space-y-3">
+          <div className="w-80 shrink-0 space-y-3 xl:sticky xl:top-4">
 
             {/* Plating line capacity inputs */}
             <div className="card p-3">
@@ -1742,8 +1928,7 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
                           const value = Math.max(0, Number(e.target.value) || 0);
                           setLineCapacityByLane(prev => ({ ...prev, [String(li)]: value }));
                         }}
-                        className={`w-20 rounded-md border px-2 py-1 text-right font-semibold ${li >= platingLineCount ? "border-slate-200 bg-slate-100 text-slate-400" : "border-slate-300 text-slate-700"}`}
-                        disabled={li >= platingLineCount}
+                        className="w-20 rounded-md border border-slate-300 px-2 py-1 text-right font-semibold text-slate-700"
                       />
                       <span className="text-[10px] text-slate-400">/h</span>
                     </div>
@@ -1751,28 +1936,9 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
                 ))}
               </div>
               <div className="mt-3 space-y-2">
-                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">Plating-Linien aktiv</div>
-                <div className="flex gap-1">
-                  {[1, 2, 3].map(count => (
-                    <button
-                      key={count}
-                      onClick={() => setPlatingLineCount(count as 1 | 2 | 3)}
-                      className={`flex-1 rounded-md px-2 py-1 text-xs font-semibold ${platingLineCount === count ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-                    >
-                      {count} Linie{count > 1 ? "n" : ""}
-                    </button>
-                  ))}
+                <div className="rounded-md bg-indigo-50 px-2 py-2 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                  Feste Steuerung: 3 aktive Plating-Linien, Automatik folgt Küche + Batch-Split nach MHD/Fulfillment.
                 </div>
-                <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">Automatik-Modus</div>
-                <select
-                  value={autoPlanMode}
-                  onChange={e => setAutoPlanMode(e.target.value as AutoPlanMode)}
-                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700"
-                >
-                  <option value="fulfillment-smart">Fulfillment smart (Do BENL/NORD 50%, Fr BENL/NORD/DE 50%, So DE 50%)</option>
-                  <option value="subrecipe-first">Lange Sub-Rezepte zuerst (Mo-Do)</option>
-                  <option value="balanced">Balanced</option>
-                </select>
               </div>
               <div className="mt-2 text-[10px] text-slate-500">
                 Linienzahl + Modus werden von der Auto-Planung berücksichtigt und mitgespeichert.
@@ -1930,6 +2096,7 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
                   onDragEnd={onKetDragEnd}
                   onStatusCycle={onKetStatusCycle}
                   scheduledDaysByCode={scheduledDaysByCode}
+                  recipeByCode={recipeByCode}
                 />
               ))}
               {ketDayColumns.length === 0 && (

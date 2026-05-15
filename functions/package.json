@@ -6,6 +6,8 @@
     "node": "22"
   },
   "dependencies": {
+    "@google-cloud/vision": "^4.3.2",
+    "exceljs": "^4.4.0",
     "firebase-admin": "^13.0.1",
     "firebase-functions": "^6.0.1",
     "googleapis": "^144.0.0",

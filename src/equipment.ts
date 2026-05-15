@@ -126,6 +126,18 @@ export function getBaseVerdenVolume(wr: WeekRecipe): number {
   return wr.verdenVolume.BENL + wr.verdenVolume.DKSE + wr.verdenVolume.DE;
 }
 
+function recipeDigitKey(code: string): string {
+  const match = /(\d{4,5})/.exec(String(code ?? ""));
+  return match ? match[1] : String(code ?? "");
+}
+
+function resolveRecipeByCode(data: DataBundle, code: string): Recipe | undefined {
+  const exact = data.recipes[code];
+  if (exact) return exact;
+  const wanted = recipeDigitKey(code);
+  return Object.values(data.recipes).find((recipe) => recipeDigitKey(recipe.code) === wanted);
+}
+
 export interface SubRecipeMassProfile {
   outputGramsPerPortion: number;
   grossInputGramsPerPortion: number;
@@ -247,7 +259,7 @@ export function computeWeekLoad(data: DataBundle, week: string, options?: { port
   const portionMultiplier = options?.portionMultiplier ?? 1;
 
   for (const wr of wrs) {
-    const recipe = data.recipes[wr.code];
+    const recipe = resolveRecipeByCode(data, wr.code);
     if (!recipe) {
       // Kein Recipe-Eintrag vorhanden → trotzdem im Kalender zeigen (0 Stationslast)
       recipeLoads.push({ weekRecipe: wr, subs: [], perStationMin: {}, totalActiveMin: 0 });

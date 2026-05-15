@@ -263,13 +263,13 @@ type CommandRecipeRow = {
   statusText: string;
 };
 
-const LOCAL_PLATING_ENDPOINT = "http://127.0.0.1:3141/wms-plating";
-const LOCAL_PLATING_HISTORY_ENDPOINT = "http://127.0.0.1:3141/wms-plating-history";
-const LOCAL_SLEEVING_ENDPOINT = "http://127.0.0.1:3141/wms-sleeving";
-const LOCAL_INBOUND_ENDPOINT = "http://127.0.0.1:3141/wms-inbound";
-const LOCAL_STAGING_ENDPOINT = "http://127.0.0.1:3141/wms-staging";
-const LOCAL_DEBOX_ENDPOINT = "http://127.0.0.1:3141/wms-debox";
-const LOCAL_POSTBLAST_ENDPOINT = "http://127.0.0.1:3141/wms-postblast";
+const LOCAL_PLATING_ENDPOINT = "/api/wms-plating";
+const LOCAL_PLATING_HISTORY_ENDPOINT = "/api/wms-plating-history";
+const LOCAL_SLEEVING_ENDPOINT = "/api/wms-sleeving";
+const LOCAL_INBOUND_ENDPOINT = "/api/wms-inbound";
+const LOCAL_STAGING_ENDPOINT = "/api/wms-staging";
+const LOCAL_DEBOX_ENDPOINT = "/api/wms-debox";
+const LOCAL_POSTBLAST_ENDPOINT = "/api/wms-postblast";
 
 function fmtNum(value: number | null | undefined, digits = 0): string {
   if (value == null || !Number.isFinite(value)) return "-";

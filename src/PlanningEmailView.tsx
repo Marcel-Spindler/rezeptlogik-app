@@ -9,7 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { DataBundle } from "./types";
-import { computeBatchSplitPlan, loadPlannerStorage, getActiveScenario, type PlannerDay, type LinePlatingSummary, type LinePlatingEntry } from "./planner";
+import { analyzePlan, computeBatchSplitPlan, loadPlannerStorage, getActiveScenario, type PlannerDay, type LinePlatingSummary, type LinePlatingEntry } from "./planner";
 import { usePlanningOasisData } from "./planningOasisData";
 
 // ── Konstanten ──────────────────────────────────────────────────────────────
@@ -28,6 +28,36 @@ const DAY_MAP: Record<string, PlannerDay> = {
 const DAY_LONG: Record<PlannerDay, string> = {
   Mo: "Montag", Di: "Dienstag", Mi: "Mittwoch", Do: "Donnerstag",
   Fr: "Freitag", Sa: "Samstag", So: "Sonntag",
+};
+
+type ManufacturingMailDay = {
+  id: string;
+  day: PlannerDay;
+  label: string;
+  lane: "prep" | "regular";
+};
+
+const MANUFACTURING_MAIL_DAYS: readonly ManufacturingMailDay[] = [
+  { id: "prep-so", day: "So", label: "Sonntag Prep", lane: "prep" },
+  { id: "mo", day: "Mo", label: "Montag", lane: "regular" },
+  { id: "di", day: "Di", label: "Dienstag", lane: "regular" },
+  { id: "mi", day: "Mi", label: "Mittwoch", lane: "regular" },
+  { id: "do", day: "Do", label: "Donnerstag", lane: "regular" },
+  { id: "fr", day: "Fr", label: "Freitag", lane: "regular" },
+  { id: "sa", day: "Sa", label: "Samstag", lane: "regular" },
+  { id: "so", day: "So", label: "Sonntag", lane: "regular" },
+];
+
+const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi", "Do"];
+const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do", "Fr"];
+
+type ManufacturingMailSummary = {
+  column: ManufacturingMailDay;
+  mainCount: number;
+  subRunCount: number;
+  mainPortions: number;
+  subPortions: number;
+  items: string[];
 };
 // ── Typen ───────────────────────────────────────────────────────────────────
 
@@ -98,6 +128,63 @@ function dayDate(week: string, day: PlannerDay): string {
 function staffPerLine(recipes: LinePlanRec[]): number {
   const hasHighSpeed = recipes.some(r => r.speedPerMin > 15);
   return 4 + (hasHighSpeed ? 1 : 0);
+}
+
+function parseBoardNote(note?: string): { notes: string } {
+  const raw = String(note ?? "").trim();
+  if (!raw) return { notes: "" };
+  const notesPart = raw.split("||").find((part) => part.startsWith("notes=")) ?? "";
+  return { notes: notesPart ? notesPart.slice(6).trim() : "" };
+}
+
+function extractSplitSpecFromNotes(notes: string): string {
+  const match = /(?:^|\s)split=([^\s]+)/i.exec(String(notes ?? "").trim());
+  return match?.[1]?.trim() ?? "";
+}
+
+function distributedRunSubDay(runIndex: number, subIndex: number): PlannerDay {
+  const window = runIndex === 0 ? RUN_ONE_SUB_DAYS : RUN_TWO_SUB_DAYS;
+  const offset = runIndex === 0 ? 0 : 2;
+  return window[(subIndex + offset) % window.length] ?? window[0];
+}
+
+function parseSplitSpecToBatches(splitSpec: string, fallbackDay: PlannerDay, totalTarget: number): Array<{ day: PlannerDay; portions: number }> {
+  const tokens = splitSpec.split("|").map((part) => part.trim()).filter(Boolean);
+  if (tokens.length === 0) return totalTarget > 0 ? [{ day: fallbackDay, portions: totalTarget }] : [];
+  const parsed: Array<{ day: PlannerDay; portions: number }> = [];
+  for (const token of tokens) {
+    const [rawDay, rawPortions] = token.split(":");
+    if (!rawDay || !rawPortions) continue;
+    const day = rawDay.trim() as PlannerDay;
+    if (!DAY_LONG[day]) continue;
+    const portions = Math.max(0, Math.round(Number(rawPortions) || 0));
+    if (portions > 0) parsed.push({ day, portions });
+  }
+  return parsed.length > 0 ? parsed : totalTarget > 0 ? [{ day: fallbackDay, portions: totalTarget }] : [];
+}
+
+function runSubBatchesForMail(
+  mainAssignment: { day: PlannerDay; targetPortions?: number; note?: string },
+  subAssignment: { targetPortions?: number },
+  fallbackPortions: number,
+  subIndex: number
+): Array<{ label: string; portions: number; day: PlannerDay }> {
+  const mainPortions = Math.max(0, Math.round(mainAssignment.targetPortions ?? 0));
+  const splitSpec = extractSplitSpecFromNotes(parseBoardNote(mainAssignment.note).notes);
+  const mainBatches = parseSplitSpecToBatches(splitSpec, mainAssignment.day, mainPortions);
+  if (mainBatches.length <= 1) return [];
+  const mainTotal = mainBatches.reduce((sum, batch) => sum + batch.portions, 0);
+  if (mainTotal <= 0) return [];
+  const subTotal = subAssignment.targetPortions ?? fallbackPortions;
+  return mainBatches.map((batch, index) => ({
+    label: `B${index + 1}`,
+    portions: Math.max(0, Math.round(subTotal * batch.portions / mainTotal)),
+    day: distributedRunSubDay(index, subIndex),
+  }));
+}
+
+function isSundayPrepSub(category: string): boolean {
+  return /spice|gewürz|gewuerz|marinade|marinated|mariniert|butter/i.test(String(category ?? ""));
 }
 
 // ── Hauptkomponente ──────────────────────────────────────────────────────────
@@ -197,6 +284,7 @@ export function PlanningEmailView({
   // Küchenplan (localStorage)
   const plannerStorage = useMemo(() => loadPlannerStorage(), []);
   const scenario = useMemo(() => getActiveScenario(plannerStorage, week), [plannerStorage, week]);
+  const manufacturingAnalysis = useMemo(() => analyzePlan(data, week, scenario), [data, week, scenario]);
 
   // Cockpit-Bestätigung: Wochenplaner hat mindestens 1 Rezept zugewiesen
   const cockpitHasAssignments = useMemo(
@@ -302,6 +390,59 @@ export function PlanningEmailView({
     return result;
   }, [scenario]);
 
+  const manufacturingDaySummaries = useMemo((): ManufacturingMailSummary[] => {
+    const rows = MANUFACTURING_MAIL_DAYS.map((column) => ({
+      column,
+      mainCount: 0,
+      subRunCount: 0,
+      mainPortions: 0,
+      subPortions: 0,
+      items: [] as string[],
+    }));
+    const byColumnId = new Map(rows.map((row) => [row.column.id, row]));
+    const forecastByCode = new Map(data.weekRecipes.filter(row => row.hfWeek === week).map(row => [row.code, row.totalVerdenVolume ?? 0]));
+    const addMain = (day: PlannerDay, portions: number, label: string) => {
+      const column = MANUFACTURING_MAIL_DAYS.find((item) => item.day === day && item.lane === "regular");
+      const row = column ? byColumnId.get(column.id) : undefined;
+      if (!row) return;
+      row.mainCount += 1;
+      row.mainPortions += portions;
+      if (row.items.length < 7) row.items.push(label);
+    };
+    const addSub = (day: PlannerDay, portions: number, label: string, prepSunday: boolean) => {
+      const column = MANUFACTURING_MAIL_DAYS.find((item) => item.day === day && (day === "So" && prepSunday ? item.lane === "prep" : item.lane === "regular"));
+      const row = column ? byColumnId.get(column.id) : undefined;
+      if (!row) return;
+      row.subRunCount += 1;
+      row.subPortions += portions;
+      if (row.items.length < 7) row.items.push(label);
+    };
+
+    for (const recipe of manufacturingAnalysis.recipes) {
+      const forecast = forecastByCode.get(recipe.recipeCode) ?? 0;
+      if (recipe.assigned) {
+        addMain(recipe.assigned.day, Math.max(0, Math.round(recipe.assigned.targetPortions ?? forecast)), `${recipe.recipeCode} Main`);
+      }
+      recipe.subRecipes.forEach((sub, subIndex) => {
+        if (!sub.assigned) return;
+        const splitBatches = recipe.assigned ? runSubBatchesForMail(recipe.assigned, sub.assigned, forecast, subIndex) : [];
+        if (splitBatches.length > 0) {
+          for (const batch of splitBatches) {
+            addSub(batch.day, batch.portions, `${recipe.recipeCode} ${batch.label} ${sub.subRecipeName}`, batch.day === "So" || isSundayPrepSub(sub.category));
+          }
+          return;
+        }
+        addSub(
+          sub.assigned.day,
+          Math.max(0, Math.round(sub.assigned.targetPortions ?? forecast)),
+          `${recipe.recipeCode} ${sub.subRecipeName}`,
+          sub.assigned.day === "So" && isSundayPrepSub(sub.category)
+        );
+      });
+    }
+    return rows;
+  }, [data.weekRecipes, manufacturingAnalysis.recipes, week]);
+
   // ── Gesamt-Portionen aus Forecast ─────────────────────────────────────────
   const totalPortionsForecast = useMemo(() =>
     batchSplitPlan.reduce((s, p) => s + p.totalPortions, 0),
@@ -361,6 +502,15 @@ export function PlanningEmailView({
         const versand = batch.fulfillmentDay !== batch.platDay ? String(batch.fulfillmentDay) : "-";
         h(`${flag}${plan.recipeCode.padEnd(10)} ${(plan.recipeName.replace(/\[.*?\]/g, "").trim()).slice(0, 28).padEnd(30)} ${String(batch.platDay).padEnd(10)} ${versand.padEnd(9)} ${String(kitchenDay).padEnd(12)} ${fmtNum(batch.portions).padStart(10)}`);
       }
+    }
+    sep();
+
+    h("MANUFACTURING-TAGESZUSAMMENRECHNUNG");
+    h("Regel fixiert: B1-Submeals laufen von Sonntag Prep bis Donnerstag; B2-Submeals von Montag bis Freitag. Samstag bleibt frei.");
+    for (const row of manufacturingDaySummaries) {
+      const totalJobs = row.mainCount + row.subRunCount;
+      h(`  ${row.column.label.padEnd(14)} ${String(totalJobs).padStart(3)} Jobs | Main ${String(row.mainCount).padStart(2)} / ${fmtNum(row.mainPortions).padStart(8)} Port. | Sub-Runs ${String(row.subRunCount).padStart(2)} / ${fmtNum(row.subPortions).padStart(8)} Port.`);
+      for (const item of row.items.slice(0, 5)) h(`    - ${item}`);
     }
     sep();
 
@@ -431,6 +581,11 @@ export function PlanningEmailView({
       .slot-time{font-size:11px;color:#94a3b8;min-width:110px}
       .slot-recipe{font-size:12px;font-weight:600;color:#1e3a8a}
       .slot-portions{font-size:11px;color:#64748b;margin-left:auto}
+      .mfg-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+      .mfg-card{border:1px solid ${border};border-radius:8px;padding:8px;background:${lightGray}}
+      .mfg-card.active{background:#ecfdf5;border-color:#a7f3d0}
+      .mfg-day{font-weight:800;font-size:12px;color:#0f172a;margin-bottom:4px}
+      .mfg-line{font-size:11px;color:#475569;line-height:1.35}
       .warn{background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:13px;color:#92400e}
       .info{background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:13px;color:#1e40af}
       .footer{margin-top:24px;padding-top:12px;border-top:1px solid ${border};font-size:11px;color:#94a3b8}
@@ -506,6 +661,17 @@ export function PlanningEmailView({
         }).join("")
       : `<p style="color:#94a3b8;font-size:13px">Keine Anmerkungen vorhanden.</p>`;
 
+    const manufacturingSummaryHtml = manufacturingDaySummaries.map(row => {
+      const totalJobs = row.mainCount + row.subRunCount;
+      const itemHtml = row.items.slice(0, 4).map(item => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#64748b">${item}</div>`).join("");
+      return `<div class="mfg-card ${totalJobs > 0 ? "active" : ""}">
+        <div class="mfg-day">${row.column.label} <span style="float:right;border-radius:999px;background:${totalJobs > 0 ? "#047857" : "#e2e8f0"};color:${totalJobs > 0 ? "#fff" : "#64748b"};padding:1px 6px">${totalJobs}</span></div>
+        <div class="mfg-line">Main: <strong>${row.mainCount}</strong> · ${fmtNum(row.mainPortions)} Port.</div>
+        <div class="mfg-line">Sub-Runs: <strong>${row.subRunCount}</strong> · ${fmtNum(row.subPortions)} Port.</div>
+        <div class="mfg-line" style="margin-top:4px">${itemHtml || "<em>keine Jobs</em>"}</div>
+      </div>`;
+    }).join("");
+
     return `<!DOCTYPE html>
 <html lang="de"><head><meta charset="utf-8"><style>${css}</style></head>
 <body><div class="wrap">
@@ -532,6 +698,10 @@ export function PlanningEmailView({
     </tr></thead>
     <tbody>${recipesHtml || `<tr><td colspan="6" style="color:#94a3b8;text-align:center">Keine Rezepte für diese Woche</td></tr>`}</tbody>
   </table>
+
+  <h2>Manufacturing-Tageszusammenrechnung</h2>
+  <div class="info">Fixe Küchenregel: B1-Submeals werden von Sonntag Prep bis Donnerstag verteilt. B2-Submeals werden von Montag bis Freitag verteilt. Samstag bleibt frei.</div>
+  <div class="mfg-grid">${manufacturingSummaryHtml}</div>
 
   <h2>Personalbedarf Plating</h2>
   <table>
@@ -846,6 +1016,31 @@ export function PlanningEmailView({
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div>
+            <h2 className="text-base font-bold text-slate-800 border-b-2 border-blue-700 pb-1 mb-3">Manufacturing-Tageszusammenrechnung</h2>
+            <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+              Fixe Küchenregel: B1-Submeals von Sonntag Prep bis Donnerstag, B2-Submeals von Montag bis Freitag. Samstag bleibt frei.
+            </div>
+            <div className="grid gap-2 md:grid-cols-4">
+              {manufacturingDaySummaries.map(row => {
+                const totalJobs = row.mainCount + row.subRunCount;
+                return (
+                  <div key={`mail-mfg-${row.column.id}`} className={`rounded-lg border p-2 ${totalJobs > 0 ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-800">{row.column.label}</span>
+                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${totalJobs > 0 ? "bg-emerald-700 text-white" : "bg-slate-200 text-slate-500"}`}>{totalJobs}</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-600">Main: <strong>{row.mainCount}</strong> · {fmtNum(row.mainPortions)} Port.</div>
+                    <div className="text-[11px] text-slate-600">Sub-Runs: <strong>{row.subRunCount}</strong> · {fmtNum(row.subPortions)} Port.</div>
+                    <div className="mt-2 space-y-0.5 text-[10px] text-slate-500">
+                      {row.items.length > 0 ? row.items.slice(0, 4).map(item => <div key={`${row.column.id}-${item}`} className="truncate">{item}</div>) : <em>keine Jobs</em>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Personalbedarf */}

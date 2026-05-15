@@ -22,6 +22,17 @@
     ],
     "rewrites": [
       { "source": "/api/refresh-ramp-up", "function": "refreshRampUp", "region": "europe-west3" },
+      { "source": "/api/agent-run", "function": "agentRun", "region": "europe-west3" },
+      { "source": "/api/agent-approve", "function": "agentApprove", "region": "europe-west3" },
+      { "source": "/api/agent-apply", "function": "agentApply", "region": "europe-west3" },
+      { "source": "/api/wms-plating", "function": "wmsPlating", "region": "europe-west3" },
+      { "source": "/api/wms-plating-history", "function": "wmsPlatingHistory", "region": "europe-west3" },
+      { "source": "/api/wms-sleeving", "function": "wmsSleeving", "region": "europe-west3" },
+      { "source": "/api/wms-inbound", "function": "wmsInbound", "region": "europe-west3" },
+      { "source": "/api/wms-staging", "function": "wmsStaging", "region": "europe-west3" },
+      { "source": "/api/wms-debox", "function": "wmsDebox", "region": "europe-west3" },
+      { "source": "/api/wms-postblast", "function": "wmsPostblast", "region": "europe-west3" },
+      { "source": "/api/wms-workorders", "function": "wmsWorkorders", "region": "europe-west3" },
       { "source": "**", "destination": "/index.html" }
     ]
   }

@@ -99,9 +99,14 @@ function num(v: unknown): number {
 }
 
 // "FE0628B - Mushroom Chicken & Wild Rice [BNL]" -> { code: "FE0628B", base: "Mushroom Chicken & Wild Rice" }
+// "FV1646A Lemon Garlic Shrimp & Spanakopita Rice DKSE" -> { code: "FV1646A", base: "Lemon Garlic Shrimp & Spanakopita Rice" }
 function parseRecipeName(full: string): { code: string; base: string } {
   const m = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s*-\s*(.+?)(?:\s*\[(?:BNL|BENL|DE|DKSE|NORD)\])?\s*$/.exec(full);
   if (m) return { code: m[1], base: m[2].trim() };
+  const suffix = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s+(.+?)\s+(?:BNL|BENL|DE|DKSE|NORD)\s*$/i.exec(full);
+  if (suffix) return { code: suffix[1], base: suffix[2].trim() };
+  const plain = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s+(.+?)\s*$/.exec(full);
+  if (plain) return { code: plain[1], base: plain[2].trim() };
   return { code: full, base: full };
 }
 
@@ -172,6 +177,9 @@ function detectMarket(fullName: string): Market | null {
   if (/\[BNL\]|\[BENL\]/i.test(fullName)) return "BENL";
   if (/\[DKSE\]|\[NORD\]/i.test(fullName)) return "DKSE";
   if (/\[DE\]/i.test(fullName)) return "DE";
+  if (/\s(BNL|BENL)\s*$/i.test(fullName)) return "BENL";
+  if (/\s(DKSE|NORD)\s*$/i.test(fullName)) return "DKSE";
+  if (/\sDE\s*$/i.test(fullName)) return "DE";
   return null;
 }
 

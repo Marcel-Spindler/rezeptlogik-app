@@ -515,7 +515,7 @@ export function analyzePlan(
 }
 
 function recipePlanningHints(data: DataBundle, week: string, recipeCode: string): { thaw: boolean; preproduction: boolean; seafood: boolean } {
-  const recipe = data.recipes[recipeCode];
+  const recipe = resolvePlannerRecipe(data, recipeCode);
   if (!recipe) return { thaw: false, preproduction: false, seafood: false };
   const subRecipes = Object.values(recipe.markets).flatMap(market => market.subRecipes);
   const categories = subRecipes.map(sub => sub.category.toLowerCase());
@@ -653,8 +653,20 @@ export interface LinePlatingSummary {
 
 const CUSTOMER_TARGET_DAYS = 7;
 
+function plannerRecipeDigitKey(code: string): string {
+  const match = /(\d{4,5})/.exec(String(code ?? ""));
+  return match ? match[1] : String(code ?? "");
+}
+
+function resolvePlannerRecipe(data: DataBundle, code: string) {
+  const exact = data.recipes[code];
+  if (exact) return exact;
+  const wanted = plannerRecipeDigitKey(code);
+  return Object.values(data.recipes).find((recipe) => plannerRecipeDigitKey(recipe.code) === wanted);
+}
+
 function recipeIsSeafood(data: DataBundle, recipeCode: string): boolean {
-  const recipe = data.recipes[recipeCode];
+  const recipe = resolvePlannerRecipe(data, recipeCode);
   if (!recipe) return false;
   return Object.values(recipe.grossIngredients)
     .flatMap(rows => rows ?? [])
