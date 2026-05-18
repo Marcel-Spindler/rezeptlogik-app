@@ -121,6 +121,31 @@ type WmsStagingPayload = {
 type WmsDeboxPayload = WmsStagingPayload;
 type WmsPostblastPayload = WmsStagingPayload;
 
+type WmsWorkordersRow = {
+  woNumber: string;
+  week: string;
+  submealItemNumber: string;
+  submealItemDescription: string;
+  mealItemNumber: string;
+  mealItemDescription: string;
+  quantity: number | null;
+  uom: string;
+  plates: number | null;
+  targetPerPlate: number | null;
+  preBlastQuantity: number | null;
+  preBlastLocation: string;
+  status: string;
+  expirationDate: string | null;
+  productionTime: string | null;
+  lastUpdated: string | null;
+};
+
+type WmsWorkordersPayload = {
+  ok: boolean;
+  rows: WmsWorkordersRow[];
+  error?: string;
+};
+
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 type PlannedSkuInfo = {
@@ -270,6 +295,7 @@ const LOCAL_INBOUND_ENDPOINT = "/api/wms-inbound";
 const LOCAL_STAGING_ENDPOINT = "/api/wms-staging";
 const LOCAL_DEBOX_ENDPOINT = "/api/wms-debox";
 const LOCAL_POSTBLAST_ENDPOINT = "/api/wms-postblast";
+const LOCAL_WORKORDERS_ENDPOINT = "/api/wms-workorders";
 
 function fmtNum(value: number | null | undefined, digits = 0): string {
   if (value == null || !Number.isFinite(value)) return "-";
@@ -334,6 +360,26 @@ function isoWeekLabel(date: Date): string {
   const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
+// Convert "2026-W22" → "202622" (WMS workorders week format)
+function toolWeekToWmsWeek(toolWeek: string): string {
+  const m = toolWeek.match(/^(20\d{2})-W(\d{2})$/);
+  if (!m) return "";
+  return `${m[1]}${m[2]}`;
+}
+
+// Build index: submealItemNumber → workorders rows for fast PLH lookup
+function buildWorkordersIndex(rows: WmsWorkordersRow[]): Map<string, WmsWorkordersRow[]> {
+  const map = new Map<string, WmsWorkordersRow[]>();
+  for (const row of rows) {
+    const key = row.submealItemNumber;
+    if (!key) continue;
+    const list = map.get(key) ?? [];
+    list.push(row);
+    map.set(key, list);
+  }
+  return map;
 }
 
 function wmsRangeForToolWeek(toolWeek: string): { wmsWeek: string; rangeStart: string; rangeEnd: string } {
@@ -707,27 +753,77 @@ function gramsPerPieceFromPlatingInstructions(
   };
 }
 
+function finishedGramsPerPieceFromStructure(data: DataBundle, skuId: string): { grams: number; note: string } | null {
+  const targetKey = skuKey(skuId);
+  const massUoms = new Set(["grams", "g", "gram", "ml"]);
+
+  function searchNode(node: DetailedSubRecipe): DetailedSubRecipe | null {
+    if (skuKey(node.id) === targetKey) return node;
+    for (const child of node.subRecipes) {
+      const found = searchNode(child);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  let firstNode: DetailedSubRecipe | null = null;
+  outer:
+  for (const structure of Object.values(data.structures ?? {})) {
+    for (const nodes of Object.values(structure.markets)) {
+      for (const node of (nodes ?? [])) {
+        const found = searchNode(node);
+        if (found) { firstNode = found; break outer; }
+      }
+    }
+  }
+  if (!firstNode) return null;
+
+  const uomLow = (firstNode.uom ?? "").trim().toLowerCase();
+  if (massUoms.has(uomLow) && firstNode.quantity && firstNode.quantity > 0) {
+    return { grams: firstNode.quantity, note: `${fmtNum(firstNode.quantity, 1)} g/Stk (Rezeptstruktur)` };
+  }
+
+  if (firstNode.ingredients && firstNode.ingredients.length > 0) {
+    let totalFinishedGrams = 0;
+    let yieldPct = 1;
+    for (const ing of firstNode.ingredients) {
+      if (!massUoms.has((ing.uom ?? "").trim().toLowerCase())) continue;
+      const base = ing.netQty > 0 ? ing.netQty : ing.grossQty;
+      const yf = ing.yieldPct && ing.yieldPct > 0 && ing.yieldPct <= 1 ? ing.yieldPct : 1;
+      yieldPct = yf;
+      totalFinishedGrams += base * yf;
+    }
+    if (totalFinishedGrams > 0) {
+      const yieldLabel = yieldPct < 1 ? ` · ${fmtNum(yieldPct * 100, 1)}% Yield` : "";
+      return { grams: totalFinishedGrams, note: `${fmtNum(totalFinishedGrams, 1)} g/Stk (Rohgew. × Yield${yieldLabel})` };
+    }
+  }
+  return null;
+}
+
 function piecesFromPlhGrams(rawQty: number, info: PlannedSkuInfo, data: DataBundle, week: string): { pieces: number; gramsPerPiece: number | null; note: string } {
   if (rawQty <= 0) return { pieces: 0, gramsPerPiece: null, note: "PLH leer" };
+
+  // 1. Plating-Anleitung: direkte Gramm-Angabe (für Batch-/Sauce-Artikel)
   const instructionRule = gramsPerPieceFromPlatingInstructions(data, week, info.sku, info.recipes);
   if (instructionRule.gramsPerPiece && instructionRule.gramsPerPiece > 0) {
     return {
       pieces: rawQty / instructionRule.gramsPerPiece,
       gramsPerPiece: instructionRule.gramsPerPiece,
-      note: `${fmtNum(instructionRule.gramsPerPiece, 1)} g/Stk aus MSKU-Plating${instructionRule.source ? ` (${instructionRule.source})` : ""}`,
+      note: `${fmtNum(instructionRule.gramsPerPiece, 1)} g/Stk aus Plating-Anleitung${instructionRule.source ? ` (${instructionRule.source})` : ""}`,
     };
   }
-  const recipePieces = plannedPiecesForRecipes(data, week, info.recipes);
-  if (info.plannedQty > 0 && recipePieces > 0 && (isMassUom(info.uom) || skuKey(info.sku).startsWith("SUB"))) {
-    const gramsPerPiece = info.plannedQty / recipePieces;
-    if (Number.isFinite(gramsPerPiece) && gramsPerPiece > 0) {
-      return {
-        pieces: rawQty / gramsPerPiece,
-        gramsPerPiece,
-        note: `${fmtNum(gramsPerPiece, 1)} g/Stk aus Packanleitung`,
-      };
-    }
+
+  // 2. Rezeptstruktur: Rohgewicht × Yield = Fertiggewicht pro Stk (für ea/each-Artikel)
+  const structureResult = finishedGramsPerPieceFromStructure(data, info.sku);
+  if (structureResult) {
+    return {
+      pieces: rawQty / structureResult.grams,
+      gramsPerPiece: structureResult.grams,
+      note: structureResult.note,
+    };
   }
+
   return { pieces: 0, gramsPerPiece: null, note: "keine g/Stk-Regel" };
 }
 
@@ -1403,6 +1499,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
   const [stagingPayload, setStagingPayload] = useState<WmsStagingPayload | null>(null);
   const [deboxPayload, setDeboxPayload] = useState<WmsDeboxPayload | null>(null);
   const [postblastPayload, setPostblastPayload] = useState<WmsPostblastPayload | null>(null);
+  const [workordersPayload, setWorkordersPayload] = useState<WmsWorkordersPayload | null>(null);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [limit, setLimit] = useState(25000);
@@ -1427,7 +1524,8 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
         limit: String(limit),
         ts: String(Date.now()),
       });
-      const [platingResponse, platingHistoryResponse, sleevingResponse, inboundResponse, stagingResponse, deboxResponse, postblastResponse] = await Promise.all([
+      const workordersParams = new URLSearchParams({ whId: "VF", limit: String(limit), ts: String(Date.now()) });
+      const [platingResponse, platingHistoryResponse, sleevingResponse, inboundResponse, stagingResponse, deboxResponse, postblastResponse, workordersResponse] = await Promise.all([
         fetch(`${LOCAL_PLATING_ENDPOINT}?${params.toString()}`, { cache: "no-store" }),
         fetch(`${LOCAL_PLATING_HISTORY_ENDPOINT}?${params.toString()}&lookbackDays=28`, { cache: "no-store" }),
         fetch(`${LOCAL_SLEEVING_ENDPOINT}?${params.toString()}`, { cache: "no-store" }),
@@ -1435,6 +1533,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
         fetch(`${LOCAL_STAGING_ENDPOINT}?${params.toString()}`, { cache: "no-store" }),
         fetch(`${LOCAL_DEBOX_ENDPOINT}?${params.toString()}`, { cache: "no-store" }),
         fetch(`${LOCAL_POSTBLAST_ENDPOINT}?${params.toString()}`, { cache: "no-store" }),
+        fetch(`${LOCAL_WORKORDERS_ENDPOINT}?${workordersParams.toString()}`, { cache: "no-store" }),
       ]);
       if (!platingResponse.ok) throw new Error(`Plating Query HTTP ${platingResponse.status}`);
       if (!platingHistoryResponse.ok) throw new Error(`Plating History Query HTTP ${platingHistoryResponse.status}`);
@@ -1450,6 +1549,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
       const stagingJson = await stagingResponse.json() as WmsStagingPayload;
       const deboxJson = await deboxResponse.json() as WmsDeboxPayload;
       const postblastJson = await postblastResponse.json() as WmsPostblastPayload;
+      const workordersJson = workordersResponse.ok ? await workordersResponse.json() as WmsWorkordersPayload : { ok: true, rows: [] };
       if (!platingJson.ok) throw new Error(platingJson.error ?? "Plating Query fehlgeschlagen");
       if (!platingHistoryJson.ok) throw new Error(platingHistoryJson.error ?? "Plating History Query fehlgeschlagen");
       if (!sleevingJson.ok) throw new Error(sleevingJson.error ?? "Sleeving Query fehlgeschlagen");
@@ -1464,6 +1564,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
       setStagingPayload(stagingJson);
       setDeboxPayload(deboxJson);
       setPostblastPayload(postblastJson);
+      setWorkordersPayload(workordersJson);
       setState("ready");
     } catch (loadError) {
       setPlatingPayload(null);
@@ -1473,6 +1574,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
       setStagingPayload(null);
       setDeboxPayload(null);
       setPostblastPayload(null);
+      setWorkordersPayload(null);
       setState("error");
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     }
@@ -1484,6 +1586,52 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
 
   const rawRows = platingPayload?.rows ?? [];
   const platingHistoryRawRows = platingHistoryPayload?.rows ?? [];
+  const workordersRawRows = workordersPayload?.rows ?? [];
+  const wmsWeekCode = useMemo(() => toolWeekToWmsWeek(week), [week]);
+  const workordersIndex = useMemo(() => buildWorkordersIndex(workordersRawRows), [workordersRawRows]);
+
+  // Workorders für aktuelle KW + ±1 (wegen HF-Offset)
+  const workordersForWeek = useMemo(() => {
+    if (workordersRawRows.length === 0) return [];
+    const m = week.match(/^(20\d{2})-W(\d{2})$/);
+    if (!m) return workordersRawRows;
+    const codes = new Set([
+      toolWeekToWmsWeek(week),
+      toolWeekToWmsWeek(`${m[1]}-W${String(Number(m[2]) - 1).padStart(2, "0")}`),
+    ]);
+    const filtered = workordersRawRows.filter((r) => codes.has(r.week));
+    return filtered.length > 0 ? filtered : workordersRawRows;
+  }, [week, wmsWeekCode, workordersRawRows]);
+
+  // Gruppiert nach Meal für die UI
+  type WorkordersMealGroup = {
+    mealItemNumber: string;
+    mealItemDescription: string;
+    submeals: WmsWorkordersRow[];
+    totalQtyG: number;
+    matchedRecipe: string | null;
+  };
+  const workordersByMeal = useMemo((): WorkordersMealGroup[] => {
+    const map = new Map<string, WorkordersMealGroup>();
+    for (const row of workordersForWeek) {
+      const key = row.mealItemNumber || row.mealItemDescription;
+      const group = map.get(key) ?? {
+        mealItemNumber: row.mealItemNumber,
+        mealItemDescription: row.mealItemDescription,
+        submeals: [],
+        totalQtyG: 0,
+        matchedRecipe: null,
+      };
+      group.submeals.push(row);
+      group.totalQtyG += row.quantity ?? 0;
+      if (!group.matchedRecipe) {
+        const recipeCode = row.mealItemNumber?.match(/^(REC-\d{6}-\d-\d{3})$/)?.[1] ?? null;
+        group.matchedRecipe = recipeCode;
+      }
+      map.set(key, group);
+    }
+    return [...map.values()].sort((a, b) => b.totalQtyG - a.totalQtyG);
+  }, [workordersForWeek]);
   const sleevingRawRows = sleevingPayload?.rows ?? [];
   const inboundRawRows = inboundPayload?.rows ?? [];
   const stagingRawRows = stagingPayload?.rows ?? [];
@@ -3220,6 +3368,153 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* ── Workorders (V_SUBMEAL_PRODUCTION) ── */}
+      <section className="card overflow-hidden">
+        <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-950 px-5 py-4 text-white">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">Produktionsaufträge · V_SUBMEAL_PRODUCTION</div>
+            <h2 className="text-lg font-black">
+              {workordersByMeal.length} Meals · {workordersForWeek.length} Submeals · KW {week}
+            </h2>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-slate-300">WMS-Code: {wmsWeekCode || "—"}</div>
+            <div className="text-[10px] text-slate-400">{workordersRawRows.length} Aufträge gesamt im System</div>
+          </div>
+        </div>
+
+        {workordersForWeek.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">
+            Keine Workorders für KW {week} gefunden. Sync ausführen: <code className="rounded bg-slate-100 px-1 py-0.5">npm run wms:sync && npm run wms:push</code>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {workordersByMeal.slice(0, 30).map((group) => {
+              const plhRows = group.submeals
+                .map((s) => {
+                  const plhMatches = (workordersIndex.get(s.submealItemNumber) ?? []);
+                  return plhMatches;
+                })
+                .flat();
+              const totalPlates = group.submeals.reduce((sum, s) => sum + (s.plates ?? 0), 0);
+              const totalPreblast = group.submeals.reduce((sum, s) => sum + (s.preBlastQuantity ?? 0), 0);
+              const totalQtyKg = group.totalQtyG / 1000;
+              const completedCount = group.submeals.filter((s) => s.status?.trim() === "C").length;
+              const progressPct = group.submeals.length > 0 ? (completedCount / group.submeals.length) * 100 : 0;
+
+              return (
+                <div key={group.mealItemNumber} className="p-4">
+                  {/* Meal Header */}
+                  <div className="mb-3 flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-mono text-[11px] font-black text-slate-400">{group.mealItemNumber}</div>
+                      <div className="text-sm font-black text-slate-900">{group.mealItemDescription}</div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 text-right">
+                      <div>
+                        <div className="font-mono text-base font-black text-slate-900">{fmtNum(totalQtyKg, 1)} kg</div>
+                        <div className="text-[10px] text-slate-500">{group.submeals.length} Submeals</div>
+                      </div>
+                      {progressPct > 0 && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200">
+                          {fmtNum(progressPct, 0)}% fertig
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  {group.submeals.length > 0 && (
+                    <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full transition-all ${progressPct >= 100 ? "bg-emerald-500" : progressPct >= 50 ? "bg-sky-400" : "bg-amber-400"}`}
+                        style={{ width: `${Math.max(3, progressPct)}%` }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Submeal rows */}
+                  <div className="overflow-hidden rounded-lg ring-1 ring-slate-200">
+                    <table className="min-w-full border-collapse text-left text-xs">
+                      <thead className="bg-slate-50 text-[10px] uppercase text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2">Submeal</th>
+                          <th className="px-3 py-2 text-right">Menge</th>
+                          <th className="px-3 py-2 text-right">Pre-Blast</th>
+                          <th className="px-3 py-2 text-right">g/Stk (aus WO)</th>
+                          <th className="px-3 py-2">WO-Nr</th>
+                          <th className="px-3 py-2">Status</th>
+                          <th className="px-3 py-2">Produktion</th>
+                          <th className="px-3 py-2">MHD</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.submeals.map((sub, idx) => {
+                          const qty = sub.quantity ?? 0;
+                          const preblast = sub.preBlastQuantity ?? 0;
+                          const plates = sub.plates ?? 0;
+                          const gPerStk = plates > 0 && qty > 0 ? qty / plates : (sub.targetPerPlate ?? 0);
+                          const isCompleted = sub.status?.trim() === "C";
+                          const isActive = sub.status?.trim() === "A";
+                          // Match to PLH holding: find plating rows for this SKU
+                          const plhMatched = platingRows.filter((r) => r.sku === sub.submealItemNumber && r.area === "Holding");
+                          const plhPieces = plhMatched.reduce((sum, r) => sum + r.pieces, 0);
+                          const plhKg = plhMatched.reduce((sum, r) => sum + r.kg, 0);
+
+                          return (
+                            <tr key={idx} className={`odd:bg-white even:bg-slate-50/70 ${isCompleted ? "opacity-60" : ""}`}>
+                              <td className="border-b border-slate-100 px-3 py-2">
+                                <div className="font-mono text-[10px] font-black text-slate-500">{sub.submealItemNumber}</div>
+                                <div className="text-[11px] font-bold text-slate-800">{sub.submealItemDescription}</div>
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-2 text-right font-mono font-black text-slate-900">
+                                {qty >= 1000 ? `${fmtNum(qty / 1000, 1)} kg` : `${fmtNum(qty, 0)} g`}
+                                <div className="text-[10px] font-normal text-slate-400">{sub.uom}</div>
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-2 text-right font-mono text-slate-700">
+                                {preblast > 0 ? (preblast >= 1000 ? `${fmtNum(preblast / 1000, 1)} kg` : `${fmtNum(preblast, 0)} g`) : "—"}
+                                {plhPieces > 0 && (
+                                  <div className="text-[10px] text-violet-600">PLH: {fmtNum(plhKg, 1)} kg / {fmtNum(plhPieces, 0)} Stk</div>
+                                )}
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-2 text-right font-mono text-slate-700">
+                                {gPerStk > 0 ? `${fmtNum(gPerStk, 1)} g` : plates > 0 ? `${fmtNum(plates, 0)} Stk` : "—"}
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-2 font-mono text-[11px] text-slate-600">{sub.woNumber || "—"}</td>
+                              <td className="border-b border-slate-100 px-3 py-2">
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                                  isCompleted ? "bg-emerald-50 text-emerald-800 ring-emerald-200" :
+                                  isActive ? "bg-sky-50 text-sky-800 ring-sky-200" :
+                                  sub.status?.trim() ? "bg-amber-50 text-amber-800 ring-amber-200" :
+                                  "bg-slate-50 text-slate-500 ring-slate-200"
+                                }`}>
+                                  {isCompleted ? "Fertig" : isActive ? "Aktiv" : sub.status?.trim() || "Offen"}
+                                </span>
+                              </td>
+                              <td className="border-b border-slate-100 px-3 py-2 text-[11px] text-slate-500">{fmtDateTime(sub.productionTime)}</td>
+                              <td className={`border-b border-slate-100 px-3 py-2 text-[11px] ${mhdTone(sub.expirationDate)}`}>{mhdDaysLabel(sub.expirationDate)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="mt-2 flex gap-4 text-[11px] text-slate-500">
+                    {totalPlates > 0 && <span>Platten gesamt: <span className="font-bold text-slate-900">{fmtNum(totalPlates)}</span></span>}
+                    {totalPreblast > 0 && <span>Pre-Blast gesamt: <span className="font-bold text-slate-900">{totalPreblast >= 1000 ? `${fmtNum(totalPreblast / 1000, 1)} kg` : `${fmtNum(totalPreblast, 0)} g`}</span></span>}
+                  </div>
+                </div>
+              );
+            })}
+            {workordersByMeal.length > 30 && (
+              <div className="p-4 text-center text-sm text-slate-400">+ {workordersByMeal.length - 30} weitere Meals nicht angezeigt</div>
+            )}
+          </div>
+        )}
       </section>
     </div>
   );

@@ -466,7 +466,7 @@ async function runWmsQuery(req, res, config) {
     // Versuche aus Firestore zu laden (falls deployed)
     let cachedData = null;
     try {
-      const cacheDoc = await db.collection("wmsCache").doc(params.wmsWeek).get();
+      const cacheDoc = await db.collection("wmsCache").doc(`${config.name}-${params.wmsWeek}`).get();
       if (cacheDoc.exists) {
         cachedData = cacheDoc.data();
       }

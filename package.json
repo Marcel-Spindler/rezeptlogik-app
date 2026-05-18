@@ -19,6 +19,9 @@
     "sync:factor:forecast": "tsx scripts/sync-factor-forecast.ts",
     "test:smoke:oase": "playwright test Test/planning-oase-smoke.spec.ts --browser=chromium",
     "deploy": "npm run build && firebase deploy --only hosting",
+    "deploy:functions": "firebase deploy --only functions",
+    "wms:sync": "tsx scripts/sync-wms-cache.ts",
+    "wms:push": "tsx scripts/push-wms-firestore.ts",
     "wms:server": "tsx scripts/wms-local-server.ts"
   },
   "dependencies": {

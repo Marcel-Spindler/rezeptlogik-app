@@ -10,11 +10,16 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as snowflake from "snowflake-sdk";
-import * as dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import snowflake from "snowflake-sdk";
+import { config as loadEnv } from "dotenv";
+import admin from "firebase-admin";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Load .env
-dotenv.config({ path: ".env" });
+loadEnv({ path: "functions/.env" });
+loadEnv({ path: ".env.local" });
 
 // ============================================================
 // Snowflake Connection (lokal mit SSO/externalbrowser)
@@ -108,12 +113,14 @@ function isoWeekLabel(date: Date): string {
 function getWeekRange(weekStr: string): { start: string; end: string; label: string } {
   const match = (weekStr || "").trim().match(/^(20\d{2})-W(\d{2})$/);
   if (!match) {
-    const today = localDateIso();
-    return {
-      start: today,
-      end: today,
-      label: isoWeekLabel(new Date(`${today}T12:00:00Z`)),
-    };
+    const today = new Date();
+    const label = isoWeekLabel(today);
+    const m2 = label.match(/^(20\d{2})-W(\d{2})$/)!;
+    const start = isoWeekStart(Number(m2[1]), Number(m2[2]));
+    start.setUTCDate(start.getUTCDate() - 7);
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 7);
+    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), label };
   }
   const year = Number(match[1]);
   const week = Number(match[2]);
@@ -152,7 +159,128 @@ WHERE WH_ID = ?
 ORDER BY LOCATION_ID, ITEM_NUMBER
 LIMIT ?`;
 
-// Add more SQL constants as needed (WMS_SLEEVING_SQL, etc.)
+const WMS_SLEEVING_SQL = `
+SELECT
+    LOCATION_ID AS VON,
+    LOCATION_ID_2 AS NACH,
+    TRAN_TYPE,
+    ITEM_NUMBER,
+    TRAN_QTY,
+    START_TRAN_DATE,
+    END_TRAN_DATE,
+    WEEKOFYEAR(COALESCE(END_TRAN_DATE, START_TRAN_DATE)) AS KW,
+    EMPLOYEE_ID,
+    DESCRIPTION
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_TRAN_LOG
+WHERE WH_ID = ?
+  AND (LOCATION_ID ILIKE '%SLEEV%' OR LOCATION_ID_2 ILIKE '%SLEEV%')
+  AND COALESCE(END_TRAN_DATE, START_TRAN_DATE) >= TO_TIMESTAMP_NTZ(?)
+  AND COALESCE(END_TRAN_DATE, START_TRAN_DATE) < TO_TIMESTAMP_NTZ(?)
+ORDER BY COALESCE(END_TRAN_DATE, START_TRAN_DATE) DESC
+LIMIT ?`;
+
+const WMS_PLATING_HISTORY_SQL = `
+SELECT
+    LOCATION_ID AS VON,
+    LOCATION_ID_2 AS NACH,
+    TRAN_TYPE,
+    ITEM_NUMBER,
+    TRAN_QTY,
+    START_TRAN_DATE,
+    END_TRAN_DATE,
+    WEEKOFYEAR(COALESCE(END_TRAN_DATE, START_TRAN_DATE)) AS KW,
+    EMPLOYEE_ID,
+    DESCRIPTION
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_TRAN_LOG
+WHERE WH_ID = ?
+  AND (LOCATION_ID ILIKE 'PLATING-LINE-%' OR LOCATION_ID_2 ILIKE 'PLATING-LINE-%')
+  AND COALESCE(END_TRAN_DATE, START_TRAN_DATE) >= TO_TIMESTAMP_NTZ(?)
+  AND COALESCE(END_TRAN_DATE, START_TRAN_DATE) < TO_TIMESTAMP_NTZ(?)
+ORDER BY COALESCE(END_TRAN_DATE, START_TRAN_DATE) DESC
+LIMIT ?`;
+
+const WMS_INBOUND_SQL = `
+SELECT
+    PO_NUMBER,
+    ITEM_NUMBER,
+    QTY_RECEIVED,
+    QTY_DAMAGED,
+    RECEIPT_DATE,
+    VENDOR_CODE,
+    HU_ID,
+    LOT_NUMBER,
+    EXPIRATION_DATE,
+    SHIPMENT_NUMBER,
+    TRAN_STATUS,
+    STATUS,
+    DB_CHANGE_COMMIT_TIME,
+    WEEKOFYEAR(RECEIPT_DATE) AS KW
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_RECEIPT
+WHERE WH_ID = ?
+  AND RECEIPT_DATE >= TO_TIMESTAMP_NTZ(?)
+  AND RECEIPT_DATE < TO_TIMESTAMP_NTZ(?)
+ORDER BY RECEIPT_DATE DESC
+LIMIT ?`;
+
+const WMS_STAGING_SQL = `
+SELECT
+    LOCATION_ID,
+    ITEM_NUMBER,
+    ACTUAL_QTY,
+    LOT_NUMBER,
+    HU_ID,
+    STATUS,
+    FIFO_DATE,
+    EXPIRATION_DATE,
+    DB_CHANGE_COMMIT_TIME,
+    WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
+WHERE WH_ID = ?
+  AND LOCATION_ID ILIKE 'PHSTG%'
+  AND DB_CHANGE_COMMIT_TIME >= TO_TIMESTAMP_NTZ(?)
+  AND DB_CHANGE_COMMIT_TIME < TO_TIMESTAMP_NTZ(?)
+ORDER BY LOCATION_ID, ITEM_NUMBER
+LIMIT ?`;
+
+const WMS_DEBOX_SQL = `
+SELECT
+    LOCATION_ID,
+    ITEM_NUMBER,
+    ACTUAL_QTY,
+    LOT_NUMBER,
+    HU_ID,
+    STATUS,
+    FIFO_DATE,
+    EXPIRATION_DATE,
+    DB_CHANGE_COMMIT_TIME,
+    WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
+WHERE WH_ID = ?
+  AND LOCATION_ID ILIKE '%DEBOX%'
+  AND DB_CHANGE_COMMIT_TIME >= TO_TIMESTAMP_NTZ(?)
+  AND DB_CHANGE_COMMIT_TIME < TO_TIMESTAMP_NTZ(?)
+ORDER BY LOCATION_ID, ITEM_NUMBER
+LIMIT ?`;
+
+const WMS_POSTBLAST_SQL = `
+SELECT
+    LOCATION_ID,
+    ITEM_NUMBER,
+    ACTUAL_QTY,
+    LOT_NUMBER,
+    HU_ID,
+    STATUS,
+    FIFO_DATE,
+    EXPIRATION_DATE,
+    DB_CHANGE_COMMIT_TIME,
+    WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
+WHERE WH_ID = ?
+  AND LOCATION_ID = 'PostB-01'
+  AND DB_CHANGE_COMMIT_TIME >= TO_TIMESTAMP_NTZ(?)
+  AND DB_CHANGE_COMMIT_TIME < TO_TIMESTAMP_NTZ(?)
+ORDER BY ITEM_NUMBER
+LIMIT ?`;
 
 const WMS_WORKORDERS_SQL = `
 SELECT
@@ -206,23 +334,27 @@ async function main() {
     console.log("✅ Verbunden");
     console.log("");
 
-    // Beispiel: WMS Plating Daten abfragen
-    console.log("⏳ Lade wms-plating...");
-    const platingRows = await executeQuery(conn, WMS_PLATING_SQL, [
-      whId,
-      range.start,
-      range.end,
-      limit,
-    ]);
-    console.log(`   ✅ ${platingRows.length} Zeilen`);
+    // plating-history braucht 28 Tage Lookback
+    const historyStart = shiftDate(range.start, -28);
 
-    // Workorders Daten abfragen
-    console.log("⏳ Lade wms-workorders...");
-    const workordersRows = await executeQuery(conn, WMS_WORKORDERS_SQL, [
-      whId,
-      limit,
-    ]);
-    console.log(`   ✅ ${workordersRows.length} Zeilen`);
+    const queries: Array<{ key: string; sql: string; binds: any[]; mapper: (r: any) => any }> = [
+      { key: "wms-plating",         sql: WMS_PLATING_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
+      { key: "wms-sleeving",        sql: WMS_SLEEVING_SQL,        binds: [whId, range.start, range.end, limit], mapper: mapWmsSleevingRow },
+      { key: "wms-plating-history", sql: WMS_PLATING_HISTORY_SQL, binds: [whId, historyStart, range.end, limit], mapper: mapWmsSleevingRow },
+      { key: "wms-inbound",         sql: WMS_INBOUND_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsInboundRow },
+      { key: "wms-staging",         sql: WMS_STAGING_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
+      { key: "wms-debox",           sql: WMS_DEBOX_SQL,           binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
+      { key: "wms-postblast",       sql: WMS_POSTBLAST_SQL,       binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
+      { key: "workorders",          sql: WMS_WORKORDERS_SQL,      binds: [whId, limit],                        mapper: mapWmsWorkordersRow },
+    ];
+
+    const datasets: Record<string, any[]> = {};
+    for (const q of queries) {
+      console.log(`⏳ Lade ${q.key}...`);
+      const rows = await executeQuery(conn, q.sql, q.binds);
+      datasets[q.key] = rows.map(q.mapper);
+      console.log(`   ✅ ${rows.length} Zeilen`);
+    }
 
     // Speichere alle Daten in public/data/
     const cacheFile = path.join(__dirname, "../public/data/wms-cache.json");
@@ -231,17 +363,25 @@ async function main() {
       week: range.label,
       range: { start: range.start, end: range.end },
       whId,
-      datasets: {
-        plating: platingRows.map(mapWmsPlatingRow),
-        workorders: workordersRows.map(mapWmsWorkordersRow),
-        // Add more datasets here
-      },
+      datasets,
     };
 
     fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
     fs.writeFileSync(cacheFile, JSON.stringify(cacheData, null, 2));
-    console.log(`\n✅ Gespeichert: ${cacheFile}`);
+    console.log(`\n✅ JSON gespeichert: ${cacheFile}`);
     console.log(`   Größe: ${(fs.statSync(cacheFile).size / 1024).toFixed(1)} KB`);
+
+    // Push nach Firestore
+    console.log("\n📤 Push nach Firestore...");
+    admin.initializeApp({ credential: admin.credential.applicationDefault() });
+    const db = admin.firestore();
+    const generatedAt = cacheData.timestamp;
+    for (const [datasetKey, rows] of Object.entries(datasets)) {
+      const docId = datasetKey === "workorders" ? "workorders" : `${datasetKey}-${range.label}`;
+      await db.collection("wmsCache").doc(docId).set({ rows, source: "sync", week: range.label, generatedAt, pushedAt: new Date().toISOString() });
+      console.log(`   ✅ wmsCache/${docId}: ${rows.length} Zeilen`);
+    }
+    console.log("✅ Firestore aktualisiert");
 
   } finally {
     if (conn) {
@@ -252,7 +392,20 @@ async function main() {
   }
 }
 
+// ============================================================
+// Helper
+// ============================================================
+
+function shiftDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// ============================================================
 // Mapper (aus functions/index.js)
+// ============================================================
+
 function str(value: any): string {
   return value == null ? "" : String(value);
 }
@@ -278,6 +431,40 @@ function mapWmsPlatingRow(row: any) {
     status: str(row.STATUS),
     fifoDate: dateIsoOrNull(row.FIFO_DATE),
     expirationDate: dateIsoOrNull(row.EXPIRATION_DATE),
+    dbChangeCommitTime: dateIsoOrNull(row.DB_CHANGE_COMMIT_TIME),
+    kw: numOrNull(row.KW),
+  };
+}
+
+function mapWmsSleevingRow(row: any) {
+  return {
+    von: str(row.VON),
+    nach: str(row.NACH),
+    tranType: str(row.TRAN_TYPE),
+    itemNumber: str(row.ITEM_NUMBER),
+    tranQty: numOrNull(row.TRAN_QTY),
+    startTranDate: dateIsoOrNull(row.START_TRAN_DATE),
+    endTranDate: dateIsoOrNull(row.END_TRAN_DATE),
+    kw: numOrNull(row.KW),
+    employeeId: str(row.EMPLOYEE_ID),
+    description: str(row.DESCRIPTION),
+  };
+}
+
+function mapWmsInboundRow(row: any) {
+  return {
+    poNumber: str(row.PO_NUMBER),
+    itemNumber: str(row.ITEM_NUMBER),
+    qtyReceived: numOrNull(row.QTY_RECEIVED),
+    qtyDamaged: numOrNull(row.QTY_DAMAGED),
+    receiptDate: dateIsoOrNull(row.RECEIPT_DATE),
+    vendorCode: str(row.VENDOR_CODE),
+    huId: str(row.HU_ID),
+    lotNumber: str(row.LOT_NUMBER),
+    expirationDate: dateIsoOrNull(row.EXPIRATION_DATE),
+    shipmentNumber: str(row.SHIPMENT_NUMBER),
+    tranStatus: str(row.TRAN_STATUS),
+    status: str(row.STATUS),
     dbChangeCommitTime: dateIsoOrNull(row.DB_CHANGE_COMMIT_TIME),
     kw: numOrNull(row.KW),
   };
