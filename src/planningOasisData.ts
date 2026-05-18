@@ -96,6 +96,10 @@ export interface PlanningOasisDataset {
 
 let planningOasisPromise: Promise<PlanningOasisDataset> | null = null;
 
+function invalidatePlanningOasisDatasetCache(): void {
+  planningOasisPromise = null;
+}
+
 function normalizeCell(value: unknown): string {
   return String(value ?? "").trim();
 }
@@ -437,15 +441,31 @@ export function usePlanningOasisData(): {
 
   useEffect(() => {
     let cancelled = false;
-    loadPlanningOasisDataset()
-      .then((result) => {
-        if (!cancelled) setData(result);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(String(err?.message ?? err));
-      });
+
+    const refresh = (force = false) => {
+      if (force) invalidatePlanningOasisDatasetCache();
+      loadPlanningOasisDataset()
+        .then((result) => {
+          if (!cancelled) {
+            setData(result);
+            setError(null);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) setError(String(err?.message ?? err));
+        });
+    };
+
+    refresh(false);
+
+    const interval = window.setInterval(() => refresh(true), 120000);
+    const onFocus = () => refresh(true);
+    window.addEventListener("focus", onFocus);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 

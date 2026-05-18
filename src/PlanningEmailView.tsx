@@ -50,6 +50,7 @@ const MANUFACTURING_MAIL_DAYS: readonly ManufacturingMailDay[] = [
 
 const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi"];
 const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
+const RACK_REQUIRED_LINE_IDS = ["ASL1", "ASL2", "ASL3", "ASL4", "ASL5", "ASL6"] as const;
 
 type ManufacturingMailSummary = {
   column: ManufacturingMailDay;
@@ -59,6 +60,13 @@ type ManufacturingMailSummary = {
   subPortions: number;
   items: string[];
 };
+type ManufacturingActionRow = {
+  dayLabel: string;
+  areaLabel: string;
+  totalPortions: number;
+  instruction: string;
+};
+type MailAudience = "management" | "shift";
 // ── Typen ───────────────────────────────────────────────────────────────────
 
 type LinePlanRec = { code: string; name: string; speedPerMin: number };
@@ -235,6 +243,33 @@ function runSubBatchesForMail(
 function isSundayPrepSub(category: string): boolean {
   return /spice|gewürz|gewuerz|marinade|marinated|mariniert|butter/i.test(String(category ?? ""));
 }
+function manufacturingInstruction(row: ManufacturingMailSummary): string {
+  const total = row.mainPortions + row.subPortions;
+  if (total <= 0) {
+    return "Keine aktive Produktion. Slot fuer Hygiene, Setup und Materialvorbereitung nutzen.";
+  }
+  if (row.mainCount > 0 && row.subRunCount > 0) {
+    return "Main-Rezepte zuerst stabil fahren, danach Sub-Runs sequenziell abarbeiten und Rueckmeldung bei Engpaessen geben.";
+  }
+  if (row.mainCount > 0) {
+    return "Fokus auf Main-Produktion; Zielmengen pro Rezept vollstaendig auf Tagesende absichern.";
+  }
+  return "Fokus auf Submeal-Runs; Chargen sauber nach Reihenfolge fertigstellen und fuer Plating bereitstellen.";
+}
+
+function platingInstruction(row: DayOperationsSummary): string {
+  if (row.planned <= 0) return "Keine aktive Plating-Produktion. Linie auf Reinigung, Wartung und Materialbereitstellung setzen.";
+  if (row.utilization > 1) return "Ueberlast erkannt. Prioritaet auf Run 1, Slot-Folge strikt halten und Engpass sofort an Schichtfuehrung melden.";
+  if (row.utilization >= 0.85) return "Hohe Auslastung. Team eng takten, Slot-Wechsel ohne Wartezeit fahren, Qualitaetskontrollen engmaschig.";
+  return "Stabile Last. Linie gemaess Slot-Plan fahren und freie Zeit fuer Vorruestung des Folgeslots nutzen.";
+}
+
+function rackInstruction(releaseStatus: string): string {
+  if (releaseStatus === "released") return "Freigegeben. Pick/Pack im Standardmodus fahren und Bestand laufend rueckmelden.";
+  if (releaseStatus === "ready") return "Befuellung abgeschlossen, finale Freigabe durch Schichtleitung erforderlich.";
+  if (releaseStatus === "blocked") return "Blockiert. Prioritaet auf Stoerungsbehebung und unmittelbare Eskalation an OPS Lead.";
+  return "In Arbeit. Rack vervollstaendigen und anschliessend auf released setzen.";
+}
 
 // ── Hauptkomponente ──────────────────────────────────────────────────────────
 
@@ -300,6 +335,14 @@ export function PlanningEmailView({
   // Rack-Status aus Firestore (alle Linien released?)
   const [rackAllReleased, setRackAllReleased] = useState<boolean>(false);
   const [rackLoaded, setRackLoaded] = useState(false);
+  const [rackReleaseByLine, setRackReleaseByLine] = useState<Record<string, string>>({
+    ASL1: "open",
+    ASL2: "open",
+    ASL3: "open",
+    ASL4: "open",
+    ASL5: "open",
+    ASL6: "open",
+  });
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -315,10 +358,14 @@ export function PlanningEmailView({
             if (snap.exists()) {
               const d = snap.data() as { lines?: Record<string, { releaseStatus?: string }> };
               const lines = d.lines ?? {};
-              const requiredLineIds = ["ASL1", "ASL2", "ASL3", "ASL4", "ASL5", "ASL6"];
-              const allReleased = requiredLineIds.every((lineId) => lines[lineId]?.releaseStatus === "released");
+              const releaseByLine = Object.fromEntries(
+                RACK_REQUIRED_LINE_IDS.map((lineId) => [lineId, String(lines[lineId]?.releaseStatus ?? "open")])
+              ) as Record<string, string>;
+              const allReleased = RACK_REQUIRED_LINE_IDS.every((lineId) => releaseByLine[lineId] === "released");
+              setRackReleaseByLine(releaseByLine);
               setRackAllReleased(allReleased);
             } else {
+              setRackReleaseByLine({ ASL1: "open", ASL2: "open", ASL3: "open", ASL4: "open", ASL5: "open", ASL6: "open" });
               setRackAllReleased(false);
             }
             setRackLoaded(true);
@@ -342,6 +389,37 @@ export function PlanningEmailView({
     () => Object.keys(scenario.assignments).length > 0,
     [scenario]
   );
+  const [manufacturingSnapshotSavedAt, setManufacturingSnapshotSavedAt] = useState<string | null>(null);
+  const [manufacturingSnapshotLoaded, setManufacturingSnapshotLoaded] = useState(false);
+
+  useEffect(() => {
+    const refreshSnapshotStatus = () => {
+      try {
+        const raw = window.localStorage.getItem(`rezeptlogik-plan-snapshot-${week}`);
+        if (!raw) {
+          setManufacturingSnapshotSavedAt(null);
+          setManufacturingSnapshotLoaded(true);
+          return;
+        }
+        const parsed = JSON.parse(raw) as { savedAtLabel?: string; savedAtIso?: string };
+        setManufacturingSnapshotSavedAt(parsed.savedAtLabel ?? parsed.savedAtIso ?? null);
+      } catch {
+        setManufacturingSnapshotSavedAt(null);
+      } finally {
+        setManufacturingSnapshotLoaded(true);
+      }
+    };
+
+    refreshSnapshotStatus();
+    window.addEventListener("focus", refreshSnapshotStatus);
+    window.addEventListener("storage", refreshSnapshotStatus);
+    window.addEventListener("rezeptlogik:plan-snapshot-saved", refreshSnapshotStatus as EventListener);
+    return () => {
+      window.removeEventListener("focus", refreshSnapshotStatus);
+      window.removeEventListener("storage", refreshSnapshotStatus);
+      window.removeEventListener("rezeptlogik:plan-snapshot-saved", refreshSnapshotStatus as EventListener);
+    };
+  }, [week]);
 
   const targetPortionsByRecipe = useMemo(() => {
     const map = new Map<string, number>();
@@ -389,8 +467,9 @@ export function PlanningEmailView({
 
   // Freigabe-Gate: Rundmail basiert auf gesichertem Plating-Plan + Küchenplan.
   const linePlanConfirmed = linePlanLoaded && linePlanSavedAt !== null;
+  const manufacturingPlanConfirmed = manufacturingSnapshotLoaded && manufacturingSnapshotSavedAt !== null && cockpitHasAssignments;
   const rackConfirmed = rackLoaded && rackAllReleased;
-  const allConfirmed = linePlanConfirmed && cockpitHasAssignments;
+  const allConfirmed = linePlanConfirmed && manufacturingPlanConfirmed && rackConfirmed;
 
   // LinePlatingSummary (für computeBatchSplitPlan)
   const linePlatingSummary = useMemo((): LinePlatingSummary => {
@@ -599,13 +678,56 @@ export function PlanningEmailView({
   const hasSeafood = batchSplitPlan.some(p => p.isSeafood);
   const allergenRecipeCount = batchSplitPlan.filter(p => (allergensByRecipe[p.recipeCode] ?? []).length > 0).length;
   const totalManufacturingJobs = manufacturingDaySummaries.reduce((sum, row) => sum + row.mainCount + row.subRunCount, 0);
+    const totalManufacturingPortions = manufacturingDaySummaries.reduce((sum, row) => sum + row.mainPortions + row.subPortions, 0);
+    const manufacturingActionRows = useMemo<ManufacturingActionRow[]>(() => {
+      return manufacturingDaySummaries.map((row) => ({
+        dayLabel: row.column.label,
+        areaLabel: row.column.lane === "prep" ? "Sunday Prep" : "Kueche Regular",
+        totalPortions: row.mainPortions + row.subPortions,
+        instruction: manufacturingInstruction(row),
+      }));
+    }, [manufacturingDaySummaries]);
   const maxPlatingStaff = dayPlatingSummaries.reduce((max, day) => Math.max(max, day.staffNeeded), 0);
+  const rackActionRows = useMemo(() => {
+    return RACK_REQUIRED_LINE_IDS.map((lineId) => {
+      const status = rackReleaseByLine[lineId] ?? "open";
+      return {
+        lineId,
+        status,
+        done: status === "released",
+        instruction: rackInstruction(status),
+      };
+    });
+  }, [rackReleaseByLine]);
+  const rackReleasedCount = rackActionRows.filter((row) => row.done).length;
+
+  const liveLinks = useMemo(() => {
+    const build = (view: string, kitchen = false) => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("week", week);
+      url.searchParams.set("view", view);
+      if (kitchen) url.searchParams.set("surface", "kitchen");
+      else url.searchParams.delete("surface");
+      url.searchParams.delete("mode");
+      url.searchParams.delete("kitchen");
+      return url.toString();
+    };
+    return {
+      cockpit: build("planning"),
+      plating: build("ket"),
+      rack: build("rack"),
+      rundmail: build("rundmail"),
+      kitchenShare: build("breakdown", true),
+    };
+  }, [week]);
 
   // ── Export-Funktionen ─────────────────────────────────────────────────────
   const [copyState, setCopyState] = useState<"idle" | "ok">("idle");
   const [htmlCopyState, setHtmlCopyState] = useState<"idle" | "ok">("idle");
+  const [mailAudience, setMailAudience] = useState<MailAudience>("shift");
 
-  function buildPlainText(): string {
+  function buildPlainText(audience: MailAudience): string {
+    const managementMode = audience === "management";
     const kw = week.split("-W")[1] ?? week;
     const lines: string[] = [];
     const h = (s: string) => lines.push(s);
@@ -613,8 +735,11 @@ export function PlanningEmailView({
 
     h(`PLANUNGSRUNDMAIL – KW ${kw} / ${fmtDate(week)}`);
     h(`Standort: Verden (VF)  |  Erstellt: ${new Date().toLocaleString("de-DE")}`);
+    h(`Version: ${managementMode ? "Management" : "Schichtleitung"}`);
+    h("Factor OPS Edition: Manufacturing + Rack + Plating in einem operativen Auftrag.");
     sep();
     h("ZUSAMMENFASSUNG");
+    h("Operative Empfehlung: Fokus auf stabilem Run-1-Durchsatz, Forecast-Differenzen werden als Run-2-Anpassung gefahren. Kritische Abweichungen im Tagesverlauf sofort rueckmelden.");
     h(`Rezepte gesamt:        ${batchSplitPlan.length}`);
     h(`Forecast Portionen:    ${fmtNum(totalPortionsForecast)}`);
     h(`Plating geplant:       ${fmtNum(totalPortionsLine)}`);
@@ -622,13 +747,15 @@ export function PlanningEmailView({
     h(`Aktive Plating-Linien: ${platingLineCount}`);
     h(`Max. MA Plating/Tag:   ${maxPlatingStaff}`);
     h(`Küchenjobs:            ${totalManufacturingJobs}`);
+      h(`Kuechen-Portionen:     ${fmtNum(totalManufacturingPortions)}`);
     if (hasSeafood) h("HINWEIS: Enthält Fisch-Rezepte (MHD 9 Tage - Küchen-Deadline beachten!)");
     sep();
 
-    if (dayPlatingSummaries.length > 0) {
+    if (!managementMode && dayPlatingSummaries.length > 0) {
       h("PLATING-AUSHANG: WAS IST ZU TUN?");
       for (const ops of operationsDaySummaries) {
         h(`\n${ops.dayLong.toUpperCase()} (${ops.dateLabel})  -  ${fmtNum(ops.planned)} Port. | ${pct(ops.utilization)} Auslastung | Personal: ${ops.staffNeeded} MA`);
+        h(`  Auftragston: ${platingInstruction(ops)}`);
         h(`  Fokus: ${ops.recipeCodes.length > 0 ? ops.recipeCodes.join(", ") : "keine Rezepte"}`);
         // Gruppiert nach Linie
         for (const line of ops.lineSummaries) {
@@ -642,18 +769,27 @@ export function PlanningEmailView({
       sep();
     }
 
-    h("KÜCHEN-DEADLINES");
-    h(`${"Rezept".padEnd(12)} ${"Name".padEnd(30)} ${"Plating".padEnd(10)} ${"Versand".padEnd(9)} ${"Küche bis".padEnd(12)} ${"Portionen".padStart(10)}`);
-    h("-".repeat(85));
-    for (const plan of batchSplitPlan) {
-      for (const batch of plan.batches) {
-        const kitchenDay = assignedByRecipe[plan.recipeCode] ?? batch.recommendedProductionDay;
-        const flag = plan.isSeafood ? "🐟 " : "   ";
-        const versand = batch.fulfillmentDay !== batch.platDay ? String(batch.fulfillmentDay) : "-";
-        h(`${flag}${plan.recipeCode.padEnd(10)} ${(plan.recipeName.replace(/\[.*?\]/g, "").trim()).slice(0, 28).padEnd(30)} ${String(batch.platDay).padEnd(10)} ${versand.padEnd(9)} ${String(kitchenDay).padEnd(12)} ${fmtNum(batch.portions).padStart(10)}`);
+    if (!managementMode) {
+      h("KÜCHEN-DEADLINES");
+      h(`${"Rezept".padEnd(12)} ${"Name".padEnd(30)} ${"Plating".padEnd(10)} ${"Versand".padEnd(9)} ${"Küche bis".padEnd(12)} ${"Portionen".padStart(10)}`);
+      h("-".repeat(85));
+      for (const plan of batchSplitPlan) {
+        for (const batch of plan.batches) {
+          const kitchenDay = assignedByRecipe[plan.recipeCode] ?? batch.recommendedProductionDay;
+          const flag = plan.isSeafood ? "🐟 " : "   ";
+          const versand = batch.fulfillmentDay !== batch.platDay ? String(batch.fulfillmentDay) : "-";
+          h(`${flag}${plan.recipeCode.padEnd(10)} ${(plan.recipeName.replace(/\[.*?\]/g, "").trim()).slice(0, 28).padEnd(30)} ${String(batch.platDay).padEnd(10)} ${versand.padEnd(9)} ${String(kitchenDay).padEnd(12)} ${fmtNum(batch.portions).padStart(10)}`);
+        }
       }
+      sep();
+    } else {
+      h("MANAGEMENT-KURZLAGE");
+      h(`  Rack-Freigabe:          ${fmtNum(rackReleasedCount)} / ${fmtNum(RACK_REQUIRED_LINE_IDS.length)} Linien`);
+      h(`  Kapazitaetsluecken:     ${fmtNum(coverageWarnings.length)} Rezepte`);
+      h(`  Allergen-Rezepte:       ${fmtNum(allergenRecipeCount)}`);
+      h(`  Seafood-Risiko aktiv:   ${hasSeafood ? "JA" : "NEIN"}`);
+      sep();
     }
-    sep();
 
     h("MANUFACTURING-TAGESZUSAMMENRECHNUNG");
     h("Regel fixiert: B1-Submeals laufen von Sonntag Prep bis Mittwoch; B2-Submeals von Montag bis Donnerstag. Freitag/Samstag bleiben frei für Submeal-Runs.");
@@ -662,17 +798,38 @@ export function PlanningEmailView({
       h(`  ${row.column.label.padEnd(14)} ${String(totalJobs).padStart(3)} Jobs | Main ${String(row.mainCount).padStart(2)} / ${fmtNum(row.mainPortions).padStart(8)} Port. | Sub-Runs ${String(row.subRunCount).padStart(2)} / ${fmtNum(row.subPortions).padStart(8)} Port.`);
       for (const item of row.items.slice(0, 5)) h(`    - ${item}`);
     }
+    h("\nARBEITSAUFTRAG JE TAG (Manufacturing)");
+    for (const row of manufacturingActionRows) {
+      h(`  ${row.dayLabel} [${row.areaLabel}] -> ${fmtNum(row.totalPortions)} Port. | ${row.instruction}`);
+    }
+    h("\nRACK + PLATING EINSATZAUFTRAG (Bereichston)");
+    h("PLATING - pro Tag");
+    for (const ops of operationsDaySummaries) {
+      h(`  ${ops.dayLong.padEnd(10)} | ${fmtNum(ops.planned).padStart(8)} Port. | ${pct(ops.utilization).padStart(5)} | ${platingInstruction(ops)}`);
+    }
+    h("RACK - Linienstatus");
+    for (const row of rackActionRows) {
+      h(`  ${row.lineId}: ${row.status.toUpperCase()} | ${row.instruction}`);
+    }
+    h("\nMANUFACTURING-CALENDAR (kompakt)");
+    h(`${"Tag".padEnd(14)} ${"Main Jobs".padStart(9)} ${"Sub Jobs".padStart(9)} ${"Main Port.".padStart(11)} ${"Sub Port.".padStart(11)}`);
+    h("-".repeat(65));
+    for (const row of manufacturingDaySummaries) {
+      h(`${row.column.label.padEnd(14)} ${String(row.mainCount).padStart(9)} ${String(row.subRunCount).padStart(9)} ${fmtNum(row.mainPortions).padStart(11)} ${fmtNum(row.subPortions).padStart(11)}`);
+    }
     sep();
 
-    h("PERSONALBEDARF PLATING (pro Tag)");
-    for (const ds of dayPlatingSummaries) {
-      h(`  ${ds.dayLong}: ${ds.staffNeeded} MA (${ds.activeLines.size} Linie${ds.activeLines.size !== 1 ? "n" : ""} × ~4 MA)`);
+    if (!managementMode) {
+      h("PERSONALBEDARF PLATING (pro Tag)");
+      for (const ds of dayPlatingSummaries) {
+        h(`  ${ds.dayLong}: ${ds.staffNeeded} MA (${ds.activeLines.size} Linie${ds.activeLines.size !== 1 ? "n" : ""} × ~4 MA)`);
+      }
+      if (dayPlatingSummaries.length === 0) h("  Kein Linienplan hinterlegt.");
+      sep();
     }
-    if (dayPlatingSummaries.length === 0) h("  Kein Linienplan hinterlegt.");
-    sep();
 
     const recipesWithAllergens = batchSplitPlan.filter(p => (allergensByRecipe[p.recipeCode] ?? []).length > 0);
-    if (recipesWithAllergens.length > 0) {
+    if (!managementMode && recipesWithAllergens.length > 0) {
       h("ALLERGENE (FSQA-Hinweis)");
       for (const plan of recipesWithAllergens) {
         const a = allergensByRecipe[plan.recipeCode] ?? [];
@@ -682,7 +839,7 @@ export function PlanningEmailView({
       sep();
     }
 
-    if (filledComments.length > 0) {
+    if (!managementMode && filledComments.length > 0) {
       h("ANMERKUNGEN AUS LINIENPLANUNG");
       for (const [key, comment] of filledComments) {
         const [dayDE, slot, li] = key.split("|");
@@ -691,11 +848,20 @@ export function PlanningEmailView({
       sep();
     }
 
+    h("LIVE-LINKS INS TOOL");
+    h(`  Cockpit (Manufacturing): ${liveLinks.cockpit}`);
+    h(`  Plating Line (KET):      ${liveLinks.plating}`);
+    h(`  Rack:                    ${liveLinks.rack}`);
+    h(`  Kitchen Surface:         ${liveLinks.kitchenShare}`);
+    h(`  Rundmail:                ${liveLinks.rundmail}`);
+    sep();
+
     h("Diese Mail wurde automatisch aus dem Rezeptlogik-Planungssystem generiert.");
     return lines.join("\n");
   }
 
-  function buildHtmlEmail(): string {
+  function buildHtmlEmail(audience: MailAudience): string {
+    const managementMode = audience === "management";
     const kwNum = week.split("-W")[1] ?? week;
     const accent = "#1e40af";
     const lightBlue = "#eff6ff";
@@ -745,10 +911,26 @@ export function PlanningEmailView({
       .mfg-card.active{background:#ecfdf5;border-color:#a7f3d0}
       .mfg-day{font-weight:800;font-size:12px;color:#0f172a;margin-bottom:4px}
       .mfg-line{font-size:11px;color:#475569;line-height:1.35}
+      .pro-note{background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;color:#334155;font-size:13px;line-height:1.45}
+      .brand-hero{display:flex;gap:14px;align-items:stretch;border:1px solid #cbd5e1;border-radius:12px;background:linear-gradient(135deg,#f0fdf4,#ecfeff);padding:12px;margin:0 0 14px 0}
+      .brand-lockup{flex:1}
+      .brand-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#14532d;color:#fff;padding:4px 10px;font-size:11px;font-weight:800;letter-spacing:.03em;text-transform:uppercase}
+      .brand-dot{width:8px;height:8px;border-radius:999px;background:#34d399;display:inline-block}
+      .brand-title{margin:8px 0 2px 0;font-size:18px;font-weight:800;color:#0f172a}
+      .brand-sub{font-size:12px;color:#334155;line-height:1.4}
+      .meal-hero{width:170px;min-width:170px;border-radius:10px;object-fit:cover;border:1px solid #bae6fd}
+      .quick-links{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 2px}
+      .quick-link{display:inline-block;padding:6px 10px;border-radius:8px;background:#e2e8f0;color:#0f172a;font-size:12px;font-weight:700;text-decoration:none}
+      .quick-link:hover{background:#cbd5e1}
+      .mgmt-only{display:none}
+      .management .mgmt-only{display:block}
+      .management .detail-only{display:none !important}
       .warn{background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:13px;color:#92400e}
       .info{background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;padding:8px 12px;margin:8px 0;font-size:13px;color:#1e40af}
       .footer{margin-top:24px;padding-top:12px;border-top:1px solid ${border};font-size:11px;color:#94a3b8}
     `;
+
+    const mealImageUrl = "https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=640&q=80";
 
     const recipesHtml = batchSplitPlan.map(plan => {
       const allergens = allergensByRecipe[plan.recipeCode] ?? [];
@@ -842,12 +1024,55 @@ export function PlanningEmailView({
         <div class="mfg-line" style="margin-top:4px">${itemHtml || "<em>keine Jobs</em>"}</div>
       </div>`;
     }).join("");
+    const manufacturingCalendarRowsHtml = manufacturingDaySummaries.map((row) => {
+      return `<tr>
+        <td><strong>${escapeHtml(row.column.label)}</strong></td>
+        <td style="text-align:right">${fmtNum(row.mainCount)}</td>
+        <td style="text-align:right">${fmtNum(row.subRunCount)}</td>
+        <td style="text-align:right">${fmtNum(row.mainPortions)}</td>
+        <td style="text-align:right">${fmtNum(row.subPortions)}</td>
+        <td>${row.items.slice(0, 4).map((item) => escapeHtml(item)).join("<br/>") || "<span style=\"color:#94a3b8\">keine Jobs</span>"}</td>
+      </tr>`;
+    }).join("");
+
+    const rackRowsHtml = rackActionRows.map((row) => {
+      const badgeClass = row.done ? "badge-green" : row.status === "blocked" ? "badge-red" : row.status === "ready" ? "badge-blue" : "badge-amber";
+      return `<tr>
+        <td><strong>${escapeHtml(row.lineId)}</strong></td>
+        <td><span class="badge ${badgeClass}">${escapeHtml(row.status.toUpperCase())}</span></td>
+        <td>${escapeHtml(row.instruction)}</td>
+      </tr>`;
+    }).join("");
+
+    const platingMissionRowsHtml = operationsDaySummaries.map((row) => `<tr>
+      <td><strong>${escapeHtml(`${row.dayLong} (${row.dateLabel})`)}</strong></td>
+      <td style="text-align:right">${fmtNum(row.planned)}</td>
+      <td style="text-align:right">${pct(row.utilization)}</td>
+      <td>${escapeHtml(platingInstruction(row))}</td>
+    </tr>`).join("");
 
     return `<!DOCTYPE html>
 <html lang="de"><head><meta charset="utf-8"><style>${css}</style></head>
-<body><div class="wrap">
+<body><div class="wrap ${managementMode ? "management" : "shift"}">
+  <div class="brand-hero">
+    <div class="brand-lockup">
+      <div class="brand-chip"><span class="brand-dot"></span>Factor OPS</div>
+      <div class="brand-title">Planungsrundmail KW ${kwNum}</div>
+      <div class="brand-sub">Manufacturing, Rack und Plating als abgestimmter Einsatzauftrag. Alle Teams arbeiten auf derselben Zahlengrundlage.</div>
+    </div>
+    <img class="meal-hero" src="${mealImageUrl}" alt="Factor Meal" />
+  </div>
   <h1>📋 Planungsrundmail – KW ${kwNum}</h1>
   <div class="meta">Standort: Verden (VF) &nbsp;·&nbsp; ${fmtDate(week)} &nbsp;·&nbsp; Erstellt: ${new Date().toLocaleString("de-DE")}</div>
+  <div class="meta"><strong>Version:</strong> ${managementMode ? "Management" : "Schichtleitung"}</div>
+  <div class="pro-note"><strong>Professionelle Einordnung:</strong> Diese Planung synchronisiert Manufacturing-Calendar, Linienplan und Forecast-Realität in einem operativen Arbeitsbild. Run&nbsp;1 wird stabil gefahren; Forecast-Fluktuationen werden kontrolliert in Run&nbsp;2 absorbiert, um die Tagesproduktion robust zu halten.</div>
+  <div class="quick-links">
+    <a class="quick-link" href="${liveLinks.cockpit}">Manufacturing Live</a>
+    <a class="quick-link" href="${liveLinks.plating}">Plating Live</a>
+    <a class="quick-link" href="${liveLinks.rack}">Rack Live</a>
+    <a class="quick-link" href="${liveLinks.kitchenShare}">Kitchen Surface</a>
+    <a class="quick-link" href="${liveLinks.rundmail}">Rundmail Live</a>
+  </div>
 
   ${hasSeafood ? `<div class="warn">Diese Woche enthält <strong>Fisch-Rezepte</strong> - MHD 9 Tage. Küchen-Deadlines besonders beachten.</div>` : ""}
 
@@ -864,6 +1089,20 @@ export function PlanningEmailView({
     <div class="ops-box"><div class="ops-title">Besetzung / Risiko</div><div class="ops-main">${maxPlatingStaff} MA Peak</div><div style="font-size:11px;color:#64748b;margin-top:4px">${coverageWarnings.length} Kapalücken · ${allergenRecipeCount} Allergen-Rezepte</div></div>
   </div>
 
+  <div class="mgmt-only">
+    <h2>Management-Kurzlage</h2>
+    <table>
+      <thead><tr><th>KPI</th><th>Wert</th></tr></thead>
+      <tbody>
+        <tr><td>Rack-Freigabe</td><td>${fmtNum(rackReleasedCount)} / ${fmtNum(RACK_REQUIRED_LINE_IDS.length)} Linien released</td></tr>
+        <tr><td>Kapazitaetsluecken</td><td>${fmtNum(coverageWarnings.length)} Rezepte</td></tr>
+        <tr><td>Allergen-Rezepte</td><td>${fmtNum(allergenRecipeCount)}</td></tr>
+        <tr><td>Seafood-Risiko (MHD 9)</td><td>${hasSeafood ? "Aktiv" : "Nicht aktiv"}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="detail-only">
   <h2>Plating-Aushang: Was ist zu tun?</h2>
   ${dayPlatingSummaries.length > 0 ? daysHtml : `<p style="color:#94a3b8;font-size:13px">Kein Linienplan für diese Woche hinterlegt (Linienplanung öffnen und befüllen).</p>`}
 
@@ -874,11 +1113,39 @@ export function PlanningEmailView({
     </tr></thead>
     <tbody>${recipesHtml || `<tr><td colspan="7" style="color:#94a3b8;text-align:center">Keine Rezepte für diese Woche</td></tr>`}</tbody>
   </table>
+  </div>
 
   <h2>Manufacturing-Tageszusammenrechnung</h2>
   <div class="info">Fixe Küchenregel: B1-Submeals werden von Sonntag Prep bis Mittwoch verteilt. B2-Submeals werden von Montag bis Donnerstag verteilt. Freitag/Samstag bleiben frei für Submeal-Runs.</div>
   <div class="mfg-grid">${manufacturingSummaryHtml}</div>
+  <h3>Manufacturing Calendar (ähnlich zum Cockpit)</h3>
+  <table>
+      <h3>Arbeitsauftrag je Tag (Was / Wann / Wo / Wieviel)</h3>
+      <table>
+        <thead><tr><th>Tag</th><th>Bereich</th><th style="text-align:right">Gesamt Portionen</th><th>Auftrag</th></tr></thead>
+        <tbody>
+          ${manufacturingActionRows.map((row) => `<tr><td><strong>${escapeHtml(row.dayLabel)}</strong></td><td>${escapeHtml(row.areaLabel)}</td><td style="text-align:right">${fmtNum(row.totalPortions)}</td><td>${escapeHtml(row.instruction)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+    <thead><tr><th>Tag</th><th style="text-align:right">Main Jobs</th><th style="text-align:right">Sub-Runs</th><th style="text-align:right">Main Portionen</th><th style="text-align:right">Sub Portionen</th><th>Top Items</th></tr></thead>
+    <tbody>${manufacturingCalendarRowsHtml}</tbody>
+  </table>
 
+  <h2>Rack + Plating Einsatzauftrag</h2>
+  <h3>Plating Auftrag pro Tag</h3>
+  <table>
+    <thead><tr><th>Tag</th><th style="text-align:right">Portionen</th><th style="text-align:right">Auslastung</th><th>Auftrag</th></tr></thead>
+    <tbody>${platingMissionRowsHtml || `<tr><td colspan="4" style="color:#94a3b8;text-align:center">Keine Plating-Daten vorhanden</td></tr>`}</tbody>
+  </table>
+
+  <h3>Rack Auftrag pro Linie</h3>
+  <table>
+    <thead><tr><th>Rack-Linie</th><th>Status</th><th>Auftrag</th></tr></thead>
+    <tbody>${rackRowsHtml}</tbody>
+  </table>
+  <div class="info">Rack Freigabe: ${fmtNum(rackReleasedCount)} / ${fmtNum(RACK_REQUIRED_LINE_IDS.length)} Linien sind auf released.</div>
+
+  <div class="detail-only">
   <h2>Personalbedarf Plating</h2>
   <table>
     <thead><tr><th>Tag</th><th>Datum</th><th>Aktive Linien</th><th>MA Plating</th><th style="text-align:right">Portionen</th></tr></thead>
@@ -897,15 +1164,18 @@ export function PlanningEmailView({
     </tbody>
   </table>
   <div class="info" style="font-size:12px">Plating-Besetzung: 1 Maschinenführer + 2 Bestücker/Packer + 1 Flex/Endkontrolle pro Linie. Bei Rezepten mit Speed &gt; 15 Port./min +1 MA.</div>
+  </div>
 
-  ${allergenHtml ? `<h2>Allergene – FSQA-Hinweis</h2>
+  ${allergenHtml ? `<div class="detail-only"><h2>Allergene – FSQA-Hinweis</h2>
   <table>
     <thead><tr><th>Rezept</th><th>Name</th><th>Allergene</th></tr></thead>
     <tbody>${allergenHtml}</tbody>
-  </table>` : ""}
+  </table></div>` : ""}
 
-  <h2>Anmerkungen aus Linienplanung</h2>
-  ${commentHtml}
+  <div class="detail-only">
+    <h2>Anmerkungen aus Linienplanung</h2>
+    ${commentHtml}
+  </div>
 
   <div class="footer">
     Automatisch generiert aus Rezeptlogik-Planungssystem &nbsp;·&nbsp; Woche ${week} &nbsp;·&nbsp; ${new Date().toLocaleString("de-DE")}
@@ -914,20 +1184,20 @@ export function PlanningEmailView({
   }
 
   async function copyPlainText() {
-    await navigator.clipboard.writeText(buildPlainText());
+    await navigator.clipboard.writeText(buildPlainText(mailAudience));
     setCopyState("ok");
     setTimeout(() => setCopyState("idle"), 2500);
   }
 
   async function copyHtml() {
     try {
-      const html = buildHtmlEmail();
+      const html = buildHtmlEmail(mailAudience);
       await navigator.clipboard.write([
         new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }) })
       ]);
     } catch {
       // Fallback: Plain HTML-Code kopieren
-      await navigator.clipboard.writeText(buildHtmlEmail());
+      await navigator.clipboard.writeText(buildHtmlEmail(mailAudience));
     }
     setHtmlCopyState("ok");
     setTimeout(() => setHtmlCopyState("idle"), 2500);
@@ -955,12 +1225,22 @@ export function PlanningEmailView({
                 : "Noch nicht gespeichert – bitte ‘💾 Plan sichern’ in Linienplanung klicken",
             },
             {
-              label: "Wochenplaner",
-              ok: cockpitHasAssignments,
-              loading: false,
-              hint: cockpitHasAssignments
-                ? `${Object.keys(scenario.assignments).length} Küchen-Zuordnungen vorhanden`
-                : "Kein Küchenplan – bitte im Cockpit Rezepte zuordnen",
+              label: "Manufacturing Calendar",
+              ok: manufacturingPlanConfirmed,
+              loading: !manufacturingSnapshotLoaded,
+              hint: manufacturingPlanConfirmed
+                ? `Gespeichert ${manufacturingSnapshotSavedAt}`
+                : cockpitHasAssignments
+                ? "Küchenplan vorhanden, aber nicht gesichert – bitte im Manufacturing Calendar auf 'Plan sichern' klicken"
+                : "Kein Küchenplan – bitte im Manufacturing Calendar zuerst Rezepte zuordnen",
+            },
+            {
+              label: "Rack",
+              ok: rackConfirmed,
+              loading: !rackLoaded,
+              hint: rackConfirmed
+                ? "Alle Rack-Linien freigegeben"
+                : "Rack-Plan noch nicht komplett freigegeben (ASL1-ASL6)",
             },
           ].map(({ label, ok, loading, hint }) => (
             <div
@@ -981,7 +1261,7 @@ export function PlanningEmailView({
         </div>
         {!allConfirmed && (
           <p className="mt-3 text-xs text-slate-500">
-            Bitte Linienplanung speichern und Küchenplan im Wochenplaner befüllen, bevor die Rundmail versendet wird.
+            Rundmail-Export ist gesperrt, bis alle drei Bereiche bestaetigt sind: Linienplanung gespeichert, Manufacturing Calendar gespeichert und Rack vollstaendig freigegeben.
           </p>
         )}
       </div>
@@ -998,11 +1278,28 @@ export function PlanningEmailView({
                   : "Kein Linienplan für diese Woche – bitte Linienplanung befüllen"
                 : "Linienplan wird geladen …"}
             </p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              Live-Links: <a className="text-blue-700 underline" href={liveLinks.cockpit} target="_blank" rel="noreferrer">Manufacturing</a> · <a className="text-blue-700 underline" href={liveLinks.plating} target="_blank" rel="noreferrer">Plating</a> · <a className="text-blue-700 underline" href={liveLinks.rack} target="_blank" rel="noreferrer">Rack</a>
+            </p>
+            <div className="mt-2 inline-flex overflow-hidden rounded-lg border border-slate-200">
+              <button
+                onClick={() => setMailAudience("management")}
+                className={`px-3 py-1.5 text-xs font-semibold ${mailAudience === "management" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                Management-Version
+              </button>
+              <button
+                onClick={() => setMailAudience("shift")}
+                className={`px-3 py-1.5 text-xs font-semibold ${mailAudience === "shift" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                Schichtleiter-Version
+              </button>
+            </div>
           </div>
           <button
             onClick={() => void copyPlainText()}
             disabled={!allConfirmed}
-            title={!allConfirmed ? "Bitte zuerst Linienplanung und Wochenplaner bestätigen" : undefined}
+            title={!allConfirmed ? "Bitte zuerst Linienplanung, Manufacturing Calendar und Rack bestaetigen" : undefined}
             className={`rounded-lg px-4 py-2 text-sm font-semibold ring-1 transition-colors ${
               copyState === "ok"
                 ? "bg-emerald-100 text-emerald-800 ring-emerald-300"
@@ -1011,12 +1308,12 @@ export function PlanningEmailView({
                 : "bg-slate-100 text-slate-400 ring-slate-200 cursor-not-allowed"
             }`}
           >
-            {copyState === "ok" ? "✓ Text kopiert" : "Als Text kopieren"}
+            {copyState === "ok" ? "✓ Text kopiert" : `Als Text kopieren (${mailAudience === "management" ? "Management" : "Schichtleitung"})`}
           </button>
           <button
             onClick={() => void copyHtml()}
             disabled={!allConfirmed}
-            title={!allConfirmed ? "Bitte zuerst Linienplanung und Wochenplaner bestätigen" : undefined}
+            title={!allConfirmed ? "Bitte zuerst Linienplanung, Manufacturing Calendar und Rack bestaetigen" : undefined}
             className={`rounded-lg px-4 py-2 text-sm font-semibold ring-1 transition-colors ${
               htmlCopyState === "ok"
                 ? "bg-emerald-100 text-emerald-800 ring-emerald-300"
@@ -1025,7 +1322,7 @@ export function PlanningEmailView({
                 : "bg-blue-200 text-blue-400 ring-blue-200 cursor-not-allowed"
             }`}
           >
-            {htmlCopyState === "ok" ? "✓ HTML kopiert" : "Als HTML kopieren (Outlook)"}
+            {htmlCopyState === "ok" ? "✓ HTML kopiert" : `Als HTML kopieren (${mailAudience === "management" ? "Management" : "Schichtleitung"})`}
           </button>
         </div>
       </div>
@@ -1050,7 +1347,7 @@ export function PlanningEmailView({
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Mail-Vorschau</span>
-          <span className="text-xs text-slate-400">· In Outlook einfügen via HTML kopieren</span>
+          <span className="text-xs text-slate-400">· {mailAudience === "management" ? "Management-Kurzlage" : "Schichtleiter-Detail"} · via HTML kopieren in Gmail/Outlook</span>
         </div>
 
         <div className="p-6 space-y-6 font-sans text-sm text-slate-800">
@@ -1093,7 +1390,7 @@ export function PlanningEmailView({
                 {
                   label: "Küche",
                   value: `${totalManufacturingJobs} Jobs`,
-                  detail: "Main + Sub-Runs aus dem Wochenplan",
+                  detail: `Main + Sub-Runs · ${fmtNum(totalManufacturingPortions)} Port.`,
                   bar: null,
                 },
                 {
@@ -1265,6 +1562,29 @@ export function PlanningEmailView({
                   </div>
                 );
               })}
+            </div>
+            <div className="mt-3">
+              <h3 className="mb-2 text-sm font-bold text-slate-700">Arbeitsauftrag je Tag (Was / Wann / Wo / Wieviel)</h3>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-blue-800 text-white">
+                    <th className="p-2 text-left">Tag</th>
+                    <th className="p-2 text-left">Bereich</th>
+                    <th className="p-2 text-right">Gesamt Portionen</th>
+                    <th className="p-2 text-left">Auftrag</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {manufacturingActionRows.map((row, index) => (
+                    <tr key={`mail-mfg-action-${row.dayLabel}-${index}`} className={index % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                      <td className="p-2 font-bold text-slate-800">{row.dayLabel}</td>
+                      <td className="p-2 text-slate-600">{row.areaLabel}</td>
+                      <td className="p-2 text-right tabular-nums text-slate-700">{fmtNum(row.totalPortions)}</td>
+                      <td className="p-2 text-slate-700">{row.instruction}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 

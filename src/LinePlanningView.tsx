@@ -87,6 +87,14 @@ type ManufacturingPlanSnapshot = {
   assignments: PlannerScenario["assignments"];
 };
 
+type ForecastVarianceRow = {
+  code: string;
+  recipeName: string;
+  forecastPortions: number;
+  targetPortions: number;
+  delta: number;
+};
+
 // KET-Sheets liefern englische Wochentage – auf deutsche DAYS mappen
 const DAY_EN_TO_DE: Record<string, string> = {
   "Friday": "Freitag",
@@ -416,6 +424,41 @@ function normalizedCookMethodText(wo: KetWO): string {
   return wo.cookMethods.join(" /").toUpperCase();
 }
 
+function hasThawContent(wo: KetWO): boolean {
+  const text = [
+    normalizedCookMethodText(wo),
+    String(wo.subRecipeName ?? "").toUpperCase(),
+    String(wo.recipeName ?? "").toUpperCase(),
+    String(wo.comments ?? "").toUpperCase(),
+  ].join(" ");
+  return /\bTHAW\b/.test(text);
+}
+
+function hasMarinadeContent(wo: KetWO): boolean {
+  const text = [
+    normalizedCookMethodText(wo),
+    String(wo.subRecipeName ?? "").toUpperCase(),
+    String(wo.recipeName ?? "").toUpperCase(),
+    String(wo.comments ?? "").toUpperCase(),
+  ].join(" ");
+  return /\bMARINADE\b|\bMARINAD\w*\b/.test(text);
+}
+
+function prepPriorityTier(wo: KetWO): 0 | 1 | 2 {
+  if (hasThawContent(wo)) return 0;
+  if (hasMarinadeContent(wo)) return 1;
+  return 2;
+}
+
+function ketPrioritySort(left: KetWO, right: KetWO): number {
+  const tierDelta = prepPriorityTier(left) - prepPriorityTier(right);
+  if (tierDelta !== 0) return tierDelta;
+  const leftPriority = Number.isFinite(left.priority) ? left.priority : Number.MAX_SAFE_INTEGER;
+  const rightPriority = Number.isFinite(right.priority) ? right.priority : Number.MAX_SAFE_INTEGER;
+  if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+  return String(left.woNumber ?? "").localeCompare(String(right.woNumber ?? ""), "de");
+}
+
 function longSubMethodScore(wo: KetWO): number {
   const methods = normalizedCookMethodText(wo);
   const longHits = [
@@ -442,16 +485,31 @@ function subMealBackwardDayScore(day: PlanDay, recipe: LinePlanRecipe, recipeWos
   for (const wo of recipeWos) {
     const needDay = normalizePlanDay(wo.hotKitchenDay) ?? normalizePlanDay(wo.deboxDay) ?? (recipe.isSeafood ? "Donnerstag" : "Freitag");
     const needIdx = dayOrder.indexOf(needDay);
+    const thawFirst = hasThawContent(wo);
+    const marinadeEarly = !thawFirst && hasMarinadeContent(wo);
     const complexity = longSubMethodScore(wo);
-    const weight = 0.4 + complexity;
+    const weight = 0.4 + complexity + (thawFirst ? 0.45 : 0) + (marinadeEarly ? 0.35 : 0);
 
-    const leadDays = complexity >= 0.6 ? 2 : complexity >= 0.25 ? 1 : 0;
+    const leadDays = thawFirst
+      ? Math.max(2, complexity >= 0.6 ? 2 : complexity >= 0.25 ? 1 : 0) + 1
+      : marinadeEarly
+      ? Math.max(2, complexity >= 0.6 ? 2 : complexity >= 0.25 ? 1 : 0)
+      : (complexity >= 0.6 ? 2 : complexity >= 0.25 ? 1 : 0);
     const preferredIdx = Math.max(0, needIdx - leadDays);
     const distToPreferred = Math.abs(dayIdx - preferredIdx);
     const tooLate = dayIdx > needIdx;
 
     let score = Math.max(0, 1 - distToPreferred / 3);
     if (tooLate) score *= 0.25;
+    if (thawFirst) {
+      // Thaw muss als erster Schritt laufen: spaete Tage werden hart entwertet.
+      if (dayIdx > preferredIdx) score *= 0.12;
+      if (day === "Montag" || day === "Dienstag") score = Math.min(1, score + 0.12);
+    } else if (marinadeEarly) {
+      // Marinade ist der naechste langlaufende Schritt und soll ebenfalls frueh starten.
+      if (dayIdx > preferredIdx) score *= 0.35;
+      if (day === "Montag" || day === "Dienstag") score = Math.min(1, score + 0.09);
+    }
     if (day === "Mittwoch" || day === "Donnerstag") score = Math.min(1, score + 0.08);
 
     weightedScore += score * weight;
@@ -496,6 +554,12 @@ function statusColor(status: string): string {
   if (/done|complete|fertig/i.test(status)) return "bg-emerald-100 text-emerald-800";
   if (/progress|running|aktiv/i.test(status)) return "bg-amber-100 text-amber-800";
   return "bg-slate-100 text-slate-600";
+}
+
+function runBadgeTone(run: 1 | 2): string {
+  return run === 1
+    ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+    : "bg-teal-50 text-teal-700 border-teal-200";
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -641,7 +705,7 @@ function parseKet(rows: string[][]): KetWO[] {
       });
     }
   }
-  return result.sort((a, b) => a.priority - b.priority);
+  return result.sort(ketPrioritySort);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -957,7 +1021,15 @@ function VolumeBar({ recipe, scheduledPortions }: { recipe: LinePlanRecipe; sche
           <div className={`text-sm font-bold tabular-nums ${over ? "text-rose-600" : pct >= 100 ? "text-emerald-600" : "text-slate-700"}`}>
             {Math.round(pct)}%
           </div>
-          <div className="text-[10px] text-slate-400 tabular-nums">{fmtNum(scheduledPortions)}/{fmtNum(targetTotal)} · R1 {fmtNum(runTargets.firstRunTarget)}</div>
+          <div className="mt-0.5 text-[10px] text-slate-400 tabular-nums">{fmtNum(scheduledPortions)}/{fmtNum(targetTotal)}</div>
+          <div className="mt-1 flex items-center justify-end gap-1">
+            <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black ${runBadgeTone(1)}`}>
+              R1 {fmtNum(runTargets.firstRunTarget)}
+            </span>
+            <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-black ${runBadgeTone(2)}`}>
+              R2 {fmtNum(runTargets.secondRunTarget)}
+            </span>
+          </div>
         </div>
       </div>
       <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
@@ -1031,7 +1103,7 @@ function KetCard({
         {code && <span className="text-[10px] font-bold" style={tone.code}>{code}</span>}
         {run && (
           <span
-            className={`text-[10px] font-black rounded-full px-1.5 py-0.5 border ${run === 1 ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-teal-50 text-teal-700 border-teal-200"}`}
+            className={`text-[10px] font-black rounded-full px-1.5 py-0.5 border ${runBadgeTone(run)}`}
             title={`Automatisch zugeordnet: Run ${run}`}
           >
             R{run}
@@ -1044,6 +1116,12 @@ function KetCard({
       {/* Cook methods */}
       {wo.cookMethods.length > 0 && (
         <div className="flex flex-wrap gap-0.5 mb-1.5">
+          {hasThawContent(wo) && (
+            <span className="px-1 py-0.5 rounded text-[9px] font-black bg-cyan-100 text-cyan-800 border border-cyan-200">THAW FIRST</span>
+          )}
+          {!hasThawContent(wo) && hasMarinadeContent(wo) && (
+            <span className="px-1 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-200">MARINADE EARLY</span>
+          )}
           {wo.cookMethods.slice(0, 3).map(m => (
             <span key={m} className="px-1 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600">{m}</span>
           ))}
@@ -1168,7 +1246,7 @@ function KetDayColumn({
 //  MAIN VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function LinePlanningView({ week, locale: _locale }: { week: string; locale: UiLocale }) {
+export function LinePlanningView({ week, locale: _locale, autoPlanTrigger }: { week: string; locale: UiLocale; autoPlanTrigger?: number }) {
   const { data: planningOasis } = usePlanningOasisData();
   const [subTab, setSubTab] = useState<"lineplanning" | "ket">("lineplanning");
   const [recipes, setRecipes] = useState<LinePlanRecipe[]>([]);
@@ -1197,8 +1275,18 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
   const [lineCapacityByLane, setLineCapacityByLane] = useState<Record<string, number>>(defaultLineCapacityMap);
   const [platingLineCount, setPlatingLineCount] = useState<1 | 2 | 3>(3);
   const [autoPlanNotice, setAutoPlanNotice] = useState<string>("");
+  const [pendingSnapshotAutoplan, setPendingSnapshotAutoplan] = useState(0);
+  const [forecastAutoThreshold, setForecastAutoThreshold] = useState<number>(() => {
+    if (typeof window === "undefined") return 100;
+    const raw = window.localStorage.getItem("rezeptlogik-forecast-auto-threshold");
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? Math.round(value) : 100;
+  });
+  const [forecastAlertRows, setForecastAlertRows] = useState<ForecastVarianceRow[]>([]);
+  const [forecastAlertStamp, setForecastAlertStamp] = useState<string | null>(null);
   const dragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ketDragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoPlanTriggerRef = useRef<number | undefined>(undefined);
   const weekStr = week.split("-W")[1] ?? week;
   const hasSavedManufacturingPlan = !!manufacturingSnapshot && Object.keys(manufacturingSnapshot.assignments ?? {}).length > 0;
   const activeLineIdx = useMemo(() => Array.from({ length: platingLineCount }, (_, idx) => idx), [platingLineCount]);
@@ -1225,9 +1313,17 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
     const map = new Map<string, { firstRunTarget: number; secondRunTarget: number; totalTarget: number }>();
     for (const recipe of recipes) {
       const base = lineRunTargetsForRecipe(recipe);
-      const totalTarget = base.totalTarget;
+      let totalTarget = base.totalTarget;
       let firstRunTarget = base.firstRunTarget;
       let secondRunTarget = base.secondRunTarget;
+
+      const forecastPortions = Math.max(0, Math.round(planningOasis?.recipes[recipe.code]?.forecastTotal ?? 0));
+      if (forecastPortions > 0) {
+        const fluctuation = forecastPortions - totalTarget;
+        // Forecast-Fluktuation wird zuerst in Run 2 verarbeitet, Run 1 bleibt stabil planbar.
+        secondRunTarget = Math.max(0, secondRunTarget + fluctuation);
+        totalTarget = firstRunTarget + secondRunTarget;
+      }
 
       if (subMealRecipeCodes.has(recipe.code) && totalTarget > 1 && secondRunTarget <= 0) {
         secondRunTarget = Math.max(1, Math.round(totalTarget * 0.35));
@@ -1238,10 +1334,32 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
       map.set(recipe.code, { firstRunTarget, secondRunTarget, totalTarget });
     }
     return map;
-  }, [recipes, subMealRecipeCodes]);
+  }, [planningOasis?.recipes, recipes, subMealRecipeCodes]);
   const recipeByCode = useMemo(() => {
     return new Map(recipes.map((recipe) => [recipe.code, recipe] as const));
   }, [recipes]);
+  const forecastVarianceRows = useMemo<ForecastVarianceRow[]>(() => {
+    return recipes
+      .map((recipe) => {
+        const forecastPortions = Math.max(0, Math.round(planningOasis?.recipes[recipe.code]?.forecastTotal ?? 0));
+        const targetPortions = Math.max(0, Math.round(recipe.totalPlanned || 0));
+        const delta = forecastPortions - targetPortions;
+        return {
+          code: recipe.code,
+          recipeName: recipe.name,
+          forecastPortions,
+          targetPortions,
+          delta,
+        };
+      })
+      .filter((row) => row.forecastPortions > 0 && row.delta !== 0)
+      .sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta));
+  }, [planningOasis?.recipes, recipes]);
+  const forecastVarianceSignature = useMemo(() => {
+    return JSON.stringify(
+      forecastVarianceRows.map((row) => ({ code: row.code, forecast: row.forecastPortions, target: row.targetPortions }))
+    );
+  }, [forecastVarianceRows]);
   const cockpitRunReadiness = useMemo(() => {
     const map = new Map<string, Partial<Record<1 | 2, CockpitRunReadiness>>>();
     if (!appData || !manufacturingSnapshot) return map;
@@ -1411,6 +1529,62 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
       window.removeEventListener("storage", refreshSnapshot);
     };
   }, [week]);
+
+  useEffect(() => {
+    if (autoPlanTrigger === undefined) return;
+    if (lastAutoPlanTriggerRef.current === autoPlanTrigger) return;
+    lastAutoPlanTriggerRef.current = autoPlanTrigger;
+    setSubTab("lineplanning");
+    setPendingSnapshotAutoplan((value) => value + 1);
+  }, [autoPlanTrigger]);
+
+  useEffect(() => {
+    const onSnapshotSaved = (event: Event) => {
+      const custom = event as CustomEvent<{ week?: string }>;
+      if (custom.detail?.week !== week) return;
+      setSubTab("lineplanning");
+      setPendingSnapshotAutoplan((value) => value + 1);
+    };
+    window.addEventListener("rezeptlogik:plan-snapshot-saved", onSnapshotSaved as EventListener);
+    return () => window.removeEventListener("rezeptlogik:plan-snapshot-saved", onSnapshotSaved as EventListener);
+  }, [week]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("rezeptlogik-forecast-auto-threshold", String(Math.max(0, Math.round(forecastAutoThreshold))));
+  }, [forecastAutoThreshold]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storageKey = `rezeptlogik-forecast-monitor-${week}`;
+    const previousSignature = window.localStorage.getItem(storageKey);
+    window.localStorage.setItem(storageKey, forecastVarianceSignature);
+    if (!previousSignature || previousSignature === forecastVarianceSignature) return;
+
+    const changedRows = forecastVarianceRows.filter((row) => Math.abs(row.delta) >= forecastAutoThreshold).slice(0, 6);
+    if (changedRows.length === 0) return;
+    setForecastAlertRows(changedRows);
+    setForecastAlertStamp(new Date().toLocaleString("de-DE"));
+
+    if (hasSavedManufacturingPlan) {
+      setPendingSnapshotAutoplan((value) => value + 1);
+      setAutoPlanNotice("Forecast-Fluktuation erkannt: Run-2-Ziele wurden aktualisiert und die Plating-Planung automatisch nachgezogen.");
+      setTimeout(() => setAutoPlanNotice(""), 6000);
+    }
+  }, [forecastAutoThreshold, forecastVarianceRows, forecastVarianceSignature, hasSavedManufacturingPlan, week]);
+
+  useEffect(() => {
+    if (pendingSnapshotAutoplan <= 0 || loading) return;
+    setPendingSnapshotAutoplan(0);
+    const snapshot = loadManufacturingPlanSnapshot(week);
+    setManufacturingSnapshot(snapshot);
+    if (!snapshot || Object.keys(snapshot.assignments ?? {}).length === 0) {
+      setAutoPlanNotice("Kein gesicherter Kuechenplan gefunden. Bitte im Manufacturing Calendar zuerst auf 'Plan sichern' klicken.");
+      setTimeout(() => setAutoPlanNotice(""), 4200);
+      return;
+    }
+    autoPlanFromTargets();
+  }, [pendingSnapshotAutoplan, loading, week]);
 
   // ─── Echtzeit-Listener: alle Planer sehen denselben Stand ─────────────────
   useEffect(() => {
@@ -1997,7 +2171,7 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
     }
     if (ketStatusFilter === "open") wos = wos.filter(wo => !/done|done/i.test(wo.status));
     if (ketStatusFilter === "done") wos = wos.filter(wo => /done|fertig/i.test(wo.status));
-    return wos;
+    return [...wos].sort(ketPrioritySort);
   }, [ketWOs, ketSearch, ketStatusFilter]);
 
   // KET Kanban columns (group by effective day)
@@ -2009,6 +2183,9 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
       const key = day || "__unassigned__";
       if (!map[key]) map[key] = [];
       map[key].push(wo);
+    }
+    for (const day of Object.keys(map)) {
+      map[day].sort(ketPrioritySort);
     }
     return map;
   }, [filteredKet, ketOverrides]);
@@ -2199,6 +2376,39 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
         {autoPlanNotice && (
           <div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
             {autoPlanNotice}
+          </div>
+        )}
+        {forecastVarianceRows.length > 0 && subTab === "lineplanning" && (
+          <div className="mt-2 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3">
+            <div className="text-sm font-black tracking-wide text-rose-800">FORECAST-FLUKTUATION AKTIV - RUN 2 WIRD DYNAMISCH ANGEPASST</div>
+            <div className="mt-1 text-xs font-semibold text-rose-700">
+              {forecastAlertStamp ? `Letzte erkannte Aenderung: ${forecastAlertStamp}.` : "Forecast-Werte weichen von den Planwerten ab."} Ziel-Logik: Run 1 bleibt stabil, die Differenz geht automatisch in Run 2.
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-semibold text-rose-800">Auto-Trigger ab Δ</span>
+              <input
+                type="number"
+                min={0}
+                step={10}
+                value={forecastAutoThreshold}
+                onChange={(event) => setForecastAutoThreshold(Math.max(0, Number(event.target.value) || 0))}
+                className="w-24 rounded-md border border-rose-300 bg-white px-2 py-1 text-right font-bold text-rose-800"
+              />
+              <span className="font-semibold text-rose-700">Portionen</span>
+            </div>
+            <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {(forecastAlertRows.length > 0 ? forecastAlertRows : forecastVarianceRows.slice(0, 6)).map((row) => (
+                <div key={`forecast-alert-${row.code}`} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs">
+                  <div className="font-black text-rose-800">{row.code}</div>
+                  <div className="truncate text-slate-600" title={row.recipeName}>{row.recipeName}</div>
+                  <div className="mt-1 flex items-center justify-between tabular-nums gap-2">
+                    <span className="text-slate-500">Plan {fmtNum(row.targetPortions)}</span>
+                    <span className="text-slate-500">Forecast {fmtNum(row.forecastPortions)}</span>
+                    <span className={`${row.delta > 0 ? "text-rose-700" : "text-emerald-700"} font-black`}>{row.delta > 0 ? `+${fmtNum(row.delta)}` : fmtNum(row.delta)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {!hasSavedManufacturingPlan && subTab === "lineplanning" && (
@@ -2649,6 +2859,15 @@ export function LinePlanningView({ week, locale: _locale }: { week: string; loca
           <div className="w-48 shrink-0 sticky top-4 space-y-3">
             <div className="card p-3 space-y-2">
               <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Suche</div>
+              <div className="rounded-lg bg-slate-50 px-2 py-1.5 text-[10px] text-slate-600 ring-1 ring-slate-200 space-y-1">
+                <div className="font-bold text-slate-700">Prioritaets-Legende</div>
+                <div className="flex flex-wrap gap-1">
+                  <span className="rounded border border-cyan-200 bg-cyan-100 px-1.5 py-0.5 font-black text-cyan-800">THAW FIRST</span>
+                  <span className="rounded border border-amber-200 bg-amber-100 px-1.5 py-0.5 font-black text-amber-800">MARINADE EARLY</span>
+                  <span className={`rounded border px-1.5 py-0.5 font-black ${runBadgeTone(1)}`}>R1</span>
+                  <span className={`rounded border px-1.5 py-0.5 font-black ${runBadgeTone(2)}`}>R2</span>
+                </div>
+              </div>
               <input
                 type="text"
                 value={ketSearch}

@@ -160,6 +160,7 @@ export function PlanningOasisView({
   defaultSection?: OasisSection;
 }): JSX.Element {
   const [section, setSection] = useState<OasisSection>(() => oasisSectionFromUrl(defaultSection));
+  const [lineAutoPlanTrigger, setLineAutoPlanTrigger] = useState(0);
   useEffect(() => {
     setSection(oasisSectionFromUrl(defaultSection));
   }, [defaultSection]);
@@ -336,6 +337,10 @@ export function PlanningOasisView({
             upliftPercent={upliftPercent}
             selectedRecipe={selectedRecipe}
             onSelectRecipe={onSelectRecipe}
+            onPlanSnapshotSaved={() => {
+              setSection("lines");
+              setLineAutoPlanTrigger((prev) => prev + 1);
+            }}
           />
 
           <div className="card p-4">
@@ -353,11 +358,11 @@ export function PlanningOasisView({
                     <th className="px-2 py-2 text-right">Fr DE-1</th>
                     <th className="px-2 py-2 text-right">So DE-2</th>
                     <th className="px-2 py-2 text-right">BENL</th>
-                    <th className="px-2 py-2 text-right">Run1 Ziel</th>
-                    <th className="px-2 py-2 text-right">Run2 Ziel</th>
+                    <th className="px-2 py-2 text-right text-indigo-700">Run1 Ziel</th>
+                    <th className="px-2 py-2 text-right text-teal-700">Run2 Ziel</th>
                     <th className="px-2 py-2 text-right">Submeals</th>
-                    <th className="px-2 py-2 text-right">Sub R1</th>
-                    <th className="px-2 py-2 text-right">Sub R2</th>
+                    <th className="px-2 py-2 text-right text-indigo-700">Sub R1</th>
+                    <th className="px-2 py-2 text-right text-teal-700">Sub R2</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -376,11 +381,19 @@ export function PlanningOasisView({
                       <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(row.split.deFriday)}</td>
                       <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(row.split.deSunday)}</td>
                       <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(row.split.benl)}</td>
-                      <td className="px-2 py-2 text-right font-bold text-indigo-700">{fmtNum(row.run1Target)}</td>
-                      <td className="px-2 py-2 text-right font-bold text-teal-700">{fmtNum(row.run2Target)}</td>
+                      <td className="px-2 py-2 text-right">
+                        <span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-bold text-indigo-700">{fmtNum(row.run1Target)}</span>
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <span className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 font-bold text-teal-700">{fmtNum(row.run2Target)}</span>
+                      </td>
                       <td className="px-2 py-2 text-right font-semibold text-slate-600">{fmtNum(row.subCount)}</td>
-                      <td className="px-2 py-2 text-right font-semibold text-indigo-700">{fmtNum(row.subRun1)}</td>
-                      <td className="px-2 py-2 text-right font-semibold text-teal-700">{fmtNum(row.subRun2)}</td>
+                      <td className="px-2 py-2 text-right">
+                        <span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-700">{fmtNum(row.subRun1)}</span>
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <span className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 font-semibold text-teal-700">{fmtNum(row.subRun2)}</span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -454,7 +467,7 @@ export function PlanningOasisView({
 
       {section === "lines" && (
         <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
-          <LinePlanningSection week={week} locale={locale} />
+          <LinePlanningSection week={week} locale={locale} autoPlanTrigger={lineAutoPlanTrigger} />
         </Suspense>
       )}
 

@@ -1028,8 +1028,8 @@ function getSubRecipeInfo(
 }
 
 export function PlanningView(
-  { data, week, locale, upliftPercent = 0, selectedRecipe, onSelectRecipe }:
-  { data: DataBundle; week: string; locale: UiLocale; upliftPercent?: number; selectedRecipe?: string | null; onSelectRecipe?: (recipeCode: string) => void }
+  { data, week, locale, upliftPercent = 0, selectedRecipe, onSelectRecipe, onPlanSnapshotSaved }:
+  { data: DataBundle; week: string; locale: UiLocale; upliftPercent?: number; selectedRecipe?: string | null; onSelectRecipe?: (recipeCode: string) => void; onPlanSnapshotSaved?: () => void }
 ) {
   const { data: planningOasis } = usePlanningOasisData();
   const [storage, setStorage] = useState(() => loadPlannerStorage());
@@ -2074,7 +2074,15 @@ export function PlanningView(
       }
     };
     window.localStorage.setItem(`rezeptlogik-plan-snapshot-${week}`, JSON.stringify(snapshot));
+    window.dispatchEvent(new CustomEvent("rezeptlogik:plan-snapshot-saved", {
+      detail: {
+        week,
+        scenarioId: scenario.id,
+        savedAtIso: snapshot.savedAtIso,
+      }
+    }));
     setSavePlanStamp(stamp);
+    onPlanSnapshotSaved?.();
   }
 
   return (
