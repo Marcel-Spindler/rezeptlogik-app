@@ -196,9 +196,9 @@ function pickLowestLoadSlot(
   return best ? { day: best.day, shift: best.shift } : null;
 }
 
-const REGULAR_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do", "Fr"];
-const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi", "Do"];
-const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do", "Fr"];
+const REGULAR_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
+const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi"];
+const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
 
 function pickLowestRegularSubSlot(
   slotLoads: Map<string, number>,
@@ -359,7 +359,7 @@ function avoidSaturday(day: PlannerDay): PlannerDay {
 }
 
 function clampRegularSubDay(day: PlannerDay): PlannerDay {
-  if (day === "So" || day === "Sa") return "Fr";
+  if (day === "So" || day === "Fr" || day === "Sa") return "Do";
   return day;
 }
 
@@ -2558,12 +2558,13 @@ export function PlanningView(
             </tbody>
           </table>
         </div>
+      </div>
 
-        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h3 className="text-base font-black text-slate-900">Tages-Zusammenrechnung Manufacturing</h3>
-              <p className="mt-0.5 text-xs text-slate-500">B1-Submeals: So (Prep) bis Do · B2-Submeals: Mo bis Fr · Samstag bleibt frei.</p>
+              <p className="mt-0.5 text-xs text-slate-500">B1-Submeals: So (Prep) bis Mi · B2-Submeals: Mo bis Do · Freitag/Samstag bleiben frei für Submeal-Runs.</p>
             </div>
             <div className="grid grid-cols-2 gap-2 text-right text-xs sm:grid-cols-3">
               <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
@@ -2631,7 +2632,6 @@ export function PlanningView(
             })}
           </div>
         </div>
-      </div>
 
       {boardEditor && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setBoardEditor(null)}>

@@ -771,8 +771,8 @@ export function computeBatchSplitPlan(
   for (const wr of rows) {
     const runSplit = runSplitForRecipeLike(wr);
     const runOnePortions = runSplit.firstRun.total;
-    const runTwoPortions = runSplit.secondRun;
-    const totalPortions = runSplit.upliftTotal;
+    const totalPortions = runSplit.baseTotal;
+    const runTwoPortions = Math.max(0, totalPortions - runOnePortions);
     if (totalPortions <= 0) continue;
 
     const isSeafood = recipeIsSeafood(data, wr.code);
@@ -786,10 +786,18 @@ export function computeBatchSplitPlan(
       const sorted = [...lineEntries].sort(
         (a, b) => PLANNER_DAYS.indexOf(a.platDay) - PLANNER_DAYS.indexOf(b.platDay)
       );
-      const totalLineCapacity = sorted.reduce((s, e) => s + e.capacityPortions, 0);
+      let remainingLineTarget = totalPortions;
+      const cappedEntries = sorted
+        .map((entry) => {
+          const capacityPortions = Math.max(0, Math.min(entry.capacityPortions, remainingLineTarget));
+          remainingLineTarget -= capacityPortions;
+          return { ...entry, capacityPortions };
+        })
+        .filter((entry) => entry.capacityPortions > 0);
+      const totalLineCapacity = cappedEntries.reduce((s, e) => s + e.capacityPortions, 0);
       const lineCoverageGap = totalPortions - totalLineCapacity; // positiv = Lücke
 
-      const batches: BatchSplit[] = sorted.map((entry) => {
+      const batches: BatchSplit[] = cappedEntries.map((entry) => {
         const { earliest, latest, recommended } = computeProductionWindowForPlatDay(
           entry.platDay, maxGapDays
         );
@@ -822,7 +830,7 @@ export function computeBatchSplitPlan(
 
     // ── Fallback: Run-Template aus Planning OASE ───────────────────────────
     // Run 1 = BENL 50% + Nordics 100% + DE 70%.
-    // Run 2 = Differenz auf 110% Gesamtvolumen.
+    // Run 2 = Restmenge des echten Verden-Plans, ohne automatischen 10%-Puffer.
     const batches: BatchSplit[] = [];
 
     if (runOnePortions > 0) {
@@ -851,14 +859,14 @@ export function computeBatchSplitPlan(
       batches.push({
         fulfillmentDay: "So",
         platDay,
-        fulfillmentLabel: "Run 2 (Rest + 10% Gesamtvolumen)",
+        fulfillmentLabel: "Run 2 (Restmenge Verden Plan)",
         portions: runTwoPortions,
         earliestProductionDay: earliest,
         latestProductionDay: latest,
         recommendedProductionDay: recommended,
         reason: isSeafood
-          ? `Run 2 = 110% Gesamt minus Run 1 (${runSplit.baseRemainder.toLocaleString("de-DE")} Rest + ${runSplit.upliftPortions.toLocaleString("de-DE")} Buffer) → Fisch MHD 9d`
-          : `Run 2 = 110% Gesamt minus Run 1 (${runSplit.baseRemainder.toLocaleString("de-DE")} Rest + ${runSplit.upliftPortions.toLocaleString("de-DE")} Buffer)`
+          ? `Run 2 = Verden Plan minus Run 1 (${runSplit.baseRemainder.toLocaleString("de-DE")} Rest) → Fisch MHD 9d`
+          : `Run 2 = Verden Plan minus Run 1 (${runSplit.baseRemainder.toLocaleString("de-DE")} Rest)`
       });
     }
 

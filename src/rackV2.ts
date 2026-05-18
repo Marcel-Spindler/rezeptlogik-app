@@ -75,6 +75,7 @@ export type RackV2Block = {
   minSlot: number;
   maxSlot: number;
   maxTier: 2 | 3;
+  pLabel?: string;
   wallBefore?: boolean;
   defaultActive: boolean;
 };
@@ -107,39 +108,39 @@ const NORDICS_FOREZONE: RackV2ForezoneSlot[] = [
 const DE_BLOCKS: RackV2Block[] = [
   { number: 1, id: "de-b1", label: "Block 1", subtitle: "F13-F18", kind: "window", area: "rack", minSlot: 13, maxSlot: 18, maxTier: 3, defaultActive: false },
   { number: 2, id: "de-b2", label: "Block 2", subtitle: "F19-F27", kind: "window", area: "rack", minSlot: 19, maxSlot: 27, maxTier: 3, defaultActive: false },
-  { number: 3, id: "de-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, defaultActive: false },
+  { number: 3, id: "de-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, pLabel: "P1", defaultActive: true },
   { number: 4, id: "de-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: false },
-  { number: 5, id: "de-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, defaultActive: false },
+  { number: 5, id: "de-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, pLabel: "P2", defaultActive: true },
   { number: 6, id: "de-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: false },
-  { number: 7, id: "de-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, defaultActive: false },
+  { number: 7, id: "de-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, pLabel: "P3", defaultActive: true },
   { number: 8, id: "de-b8", label: "Block 8", subtitle: "F73-F78", kind: "window", area: "rack", minSlot: 73, maxSlot: 78, maxTier: 3, defaultActive: false },
   { number: 9, id: "de-b9", label: "Block 9", subtitle: "F79-F84", kind: "window", area: "rack", minSlot: 79, maxSlot: 84, maxTier: 3, defaultActive: false },
-  { number: 10, id: "de-b10", label: "Block 10", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, defaultActive: false },
-  { number: 11, id: "de-b11", label: "Block 11", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: false },
-  { number: 12, id: "de-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack", minSlot: 103, maxSlot: 112, maxTier: 2, defaultActive: false },
+  { number: 10, id: "de-b10", label: "Block 10", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, pLabel: "P4", defaultActive: true },
+  { number: 11, id: "de-b11", label: "Block 11", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, pLabel: "P5", wallBefore: true, defaultActive: true },
+  { number: 12, id: "de-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack", minSlot: 103, maxSlot: 112, maxTier: 2, pLabel: "P6", defaultActive: true },
   { number: 13, id: "de-b13", label: "Block 13", subtitle: "F113-F120", kind: "window", area: "rack", minSlot: 113, maxSlot: 120, maxTier: 2, defaultActive: false },
-  { number: 14, id: "de-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack", minSlot: 121, maxSlot: 128, maxTier: 2, defaultActive: false },
-  { number: 15, id: "de-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack", minSlot: 129, maxSlot: 136, maxTier: 2, defaultActive: false },
-  { number: 16, id: "de-b16", label: "Block 16", subtitle: "F137-F144", kind: "gifts", area: "gifts", minSlot: 137, maxSlot: 144, maxTier: 2, defaultActive: false },
+  { number: 14, id: "de-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack", minSlot: 121, maxSlot: 128, maxTier: 2, pLabel: "P7", defaultActive: true },
+  { number: 15, id: "de-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack", minSlot: 129, maxSlot: 136, maxTier: 2, pLabel: "P8", defaultActive: true },
+  { number: 16, id: "de-b16", label: "Block 16", subtitle: "F137-F144", kind: "gifts", area: "gifts", minSlot: 137, maxSlot: 144, maxTier: 2, pLabel: "P9", defaultActive: true },
 ];
 
 const NORDICS_BLOCKS: RackV2Block[] = [
   { number: 1, id: "nordics-b1", label: "Block 1", subtitle: "F13-F18", kind: "window", area: "rack", minSlot: 13, maxSlot: 18, maxTier: 3, defaultActive: false },
   { number: 2, id: "nordics-b2", label: "Block 2", subtitle: "F19-F27", kind: "window", area: "rack", minSlot: 19, maxSlot: 27, maxTier: 3, defaultActive: false },
-  { number: 3, id: "nordics-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, defaultActive: false },
+  { number: 3, id: "nordics-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, pLabel: "P1", defaultActive: true },
   { number: 4, id: "nordics-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: false },
-  { number: 5, id: "nordics-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, defaultActive: false },
+  { number: 5, id: "nordics-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, pLabel: "P2", defaultActive: true },
   { number: 6, id: "nordics-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: false },
-  { number: 7, id: "nordics-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, defaultActive: false },
+  { number: 7, id: "nordics-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, pLabel: "P3", defaultActive: true },
   { number: 8, id: "nordics-b8", label: "Block 8", subtitle: "F73-F78", kind: "window", area: "rack", minSlot: 73, maxSlot: 78, maxTier: 3, defaultActive: false },
   { number: 9, id: "nordics-b9", label: "Block 9", subtitle: "F79-F84", kind: "window", area: "rack", minSlot: 79, maxSlot: 84, maxTier: 3, defaultActive: false },
-  { number: 10, id: "nordics-b10", label: "Block 10", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, defaultActive: false },
+  { number: 10, id: "nordics-b10", label: "Block 10", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, pLabel: "P4", defaultActive: true },
   { number: 11, id: "nordics-b11", label: "Block 11", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: false },
-  { number: 12, id: "nordics-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack", minSlot: 103, maxSlot: 112, maxTier: 2, defaultActive: false },
+  { number: 12, id: "nordics-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack", minSlot: 103, maxSlot: 112, maxTier: 2, pLabel: "P5", defaultActive: true },
   { number: 13, id: "nordics-b13", label: "Block 13", subtitle: "F113-F120", kind: "window", area: "rack", minSlot: 113, maxSlot: 120, maxTier: 2, defaultActive: false },
-  { number: 14, id: "nordics-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack", minSlot: 121, maxSlot: 128, maxTier: 2, defaultActive: false },
+  { number: 14, id: "nordics-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack", minSlot: 121, maxSlot: 128, maxTier: 2, pLabel: "P6", defaultActive: true },
   { number: 15, id: "nordics-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack", minSlot: 129, maxSlot: 136, maxTier: 2, defaultActive: false },
-  { number: 16, id: "nordics-b16", label: "Block 16", subtitle: "F137-F144", kind: "window", area: "rack", minSlot: 137, maxSlot: 144, maxTier: 2, defaultActive: false },
+  { number: 16, id: "nordics-b16", label: "Block 16", subtitle: "F137-F144", kind: "window", area: "rack", minSlot: 137, maxSlot: 144, maxTier: 2, pLabel: "P7", defaultActive: true },
 ];
 
 const MARKET_LAYOUTS: Record<RackV2MarketId, RackV2MarketLayout> = {
@@ -210,6 +211,88 @@ export function rackV2SlotTier(slotNumber: number, market: RackV2MarketId): 1 | 
 }
 
 export type RackV2PackagingZone = "box" | "liner" | "packaging";
+export type RackV2SlotPurpose = "meal" | "ice" | "smoothie" | "flyer" | "gift" | "emergency" | "reserve";
+export type RackV2EntryPurpose = Exclude<RackV2SlotPurpose, "emergency" | "reserve">;
+
+type RackV2CellRef = `${number}:${1 | 2 | 3}`;
+type RackV2PurposeMap = Partial<Record<RackV2SlotPurpose, RackV2CellRef[]>>;
+
+const DE_SLOT_PURPOSES: RackV2PurposeMap = {
+  meal: [
+    "29:2", "32:2", "50:2", "53:2", "68:2", "71:2", "86:2", "89:2", "98:2", "101:2", "124:2",
+    "46:1", "49:1", "52:1", "64:1", "67:1", "70:1", "85:1", "88:1", "94:1", "97:1", "100:1", "107:1", "123:1", "125:1",
+  ],
+  ice: ["31:1", "105:1", "133:1"],
+  smoothie: ["106:2", "108:2", "126:2", "128:2", "132:2", "134:2"],
+  flyer: ["136:2", "140:2", "142:2", "137:1", "141:1", "143:1"],
+  gift: ["138:2", "144:2", "135:1", "139:1"],
+  emergency: [
+    "15:3", "18:3", "21:3", "24:3", "27:3", "30:3", "33:3", "36:3", "39:3", "42:3", "45:3",
+    "48:3", "51:3", "54:3", "57:3", "60:3", "63:3", "66:3", "69:3", "72:3", "75:3", "78:3",
+    "81:3", "84:3", "87:3", "90:3", "93:3", "96:3", "99:3", "102:3", "1:1", "4:1",
+  ],
+};
+
+const NORDICS_SLOT_PURPOSES: RackV2PurposeMap = {
+  meal: [
+    "32:2", "35:2", "50:2", "53:2", "68:2", "71:2", "86:2", "89:2", "124:2",
+    "31:1", "34:1", "49:1", "52:1", "67:1", "70:1", "85:1", "88:1", "105:1", "107:1", "109:1", "121:1", "123:1", "125:1",
+  ],
+  ice: ["137:1"],
+  smoothie: ["106:2", "108:2", "122:2"],
+  flyer: ["138:2", "140:2"],
+  emergency: [
+    "15:3", "18:3", "21:3", "24:3", "27:3", "30:3", "33:3", "36:3", "39:3", "42:3", "45:3",
+    "48:3", "51:3", "54:3", "57:3", "60:3", "63:3", "66:3", "69:3", "72:3", "75:3", "78:3",
+    "81:3", "84:3", "87:3", "90:3", "93:3", "96:3", "99:3", "102:3", "6:2", "8:2", "10:2",
+    "12:2", "7:1", "9:1", "11:1",
+  ],
+};
+
+function purposeMapForMarket(market: RackV2MarketId): RackV2PurposeMap {
+  return market === "DE" ? DE_SLOT_PURPOSES : NORDICS_SLOT_PURPOSES;
+}
+
+function cellKey(slot: number, tier: 1 | 2 | 3): RackV2CellRef {
+  return `${slot}:${tier}`;
+}
+
+export function rackV2SlotPurpose(slot: number, tier: 1 | 2 | 3, market: RackV2MarketId): RackV2SlotPurpose {
+  const key = cellKey(slot, tier);
+  const purposeMap = purposeMapForMarket(market);
+  for (const [purpose, cells] of Object.entries(purposeMap) as Array<[RackV2SlotPurpose, RackV2CellRef[] | undefined]>) {
+    if ((cells ?? []).includes(key)) return purpose;
+  }
+  return "reserve";
+}
+
+export function rackV2PurposeSlots(market: RackV2MarketId, purpose: RackV2EntryPurpose): Array<{ slot: number; tier: 1 | 2 | 3 }> {
+  return (purposeMapForMarket(market)[purpose] ?? []).map((cell) => {
+    const [slot, tier] = cell.split(":").map(Number) as [number, 1 | 2 | 3];
+    return { slot, tier };
+  });
+}
+
+export function rackV2EntryPurpose(entry: RackEntry, market: RackV2MarketId): RackV2EntryPurpose {
+  if (rackV2IsIceLike(entry)) return "ice";
+  if (rackV2IsSmoothieLike(entry)) return "smoothie";
+  const hay = rackV2EntryHaystack(entry);
+  if (hay.includes("flyer")) return "flyer";
+  if (hay.includes("gift") || deriveEntryKind(entry) === "loyalty") return market === "DE" ? "gift" : "flyer";
+  return "meal";
+}
+
+export function rackV2SlotPurposeLabel(purpose: RackV2SlotPurpose): string {
+  switch (purpose) {
+    case "meal": return "Meal";
+    case "ice": return "Eis";
+    case "smoothie": return "Smoothie";
+    case "flyer": return "Flyer";
+    case "gift": return "Gifts";
+    case "emergency": return "Nur im Notfall";
+    default: return "Reserve";
+  }
+}
 
 export function rackV2PackagingZoneForEntry(entry: RackEntry): RackV2PackagingZone {
   const hay = `${entry.recipe} ${entry.sku} ${entry.ingredient} ${entry.displayName}`.toLowerCase();
@@ -322,13 +405,9 @@ export function rackV2RecommendedActiveBlockIds(market: RackV2MarketId, plannedW
   const blocks = rackV2BlocksForMarket(market);
   if (plannedWorkers <= 0) return [];
   const count = rackV2RecommendedActiveCount(market, plannedWorkers);
-  if (market === "DE") {
-    const preferred = blocks.filter((block) => block.number >= 11).map((block) => block.id);
-    if (preferred.length >= count) return preferred.slice(0, count);
-    const rest = blocks.filter((block) => block.number < 11).map((block) => block.id);
-    return [...preferred, ...rest].slice(0, count);
-  }
-  return blocks.slice(0, count).map((block) => block.id);
+  const pBlocks = blocks.filter((block) => block.pLabel).map((block) => block.id);
+  if (pBlocks.length >= count) return pBlocks.slice(0, count);
+  return [...pBlocks, ...blocks.filter((block) => !block.pLabel).map((block) => block.id)].slice(0, count);
 }
 
 export function rackV2ResolveActiveBlockIds(
@@ -351,8 +430,8 @@ export function rackV2DynamicRoleLabels(activeBlockIds: string[], market: RackV2
   let roleIndex = 1;
   for (const block of rackV2BlocksForMarket(market)) {
     if (!active.has(block.id)) continue;
-    labels[block.id] = `P${roleIndex}`;
-    roleIndex += 1;
+    labels[block.id] = block.pLabel ?? `P${roleIndex}`;
+    if (!block.pLabel) roleIndex += 1;
   }
   return labels;
 }
@@ -453,46 +532,39 @@ export function rackV2AutoFillLayout(
   }));
 
   const ice: RackEntry[] = [];
-  const tailOnly: RackEntry[] = [];
+  const smoothies: RackEntry[] = [];
+  const flyers: RackEntry[] = [];
+  const gifts: RackEntry[] = [];
   const meals: RackEntry[] = [];
 
   for (const entry of remaining) {
-    if (rackV2IsIceLike(entry)) {
-      ice.push(entry);
-      continue;
+    switch (rackV2EntryPurpose(entry, market)) {
+      case "ice":
+        ice.push(entry);
+        break;
+      case "smoothie":
+        smoothies.push(entry);
+        break;
+      case "flyer":
+        flyers.push(entry);
+        break;
+      case "gift":
+        gifts.push(entry);
+        break;
+      default:
+        meals.push(entry);
     }
-    if (market === "DE" && rackV2IsFlyerOrGiftLike(entry) && !rackV2IsSmoothieLike(entry)) {
-      tailOnly.push(entry);
-      continue;
-    }
-    meals.push(entry);
   }
 
   const sortedMeals = [...meals].sort((left, right) => rackV2EffectivePickQuantity(right) - rackV2EffectivePickQuantity(left));
-  const highPickCutoff = sortedMeals.length > 0
-    ? rackV2EffectivePickQuantity(sortedMeals[Math.max(0, Math.ceil(sortedMeals.length / 3) - 1)])
-    : Number.POSITIVE_INFINITY;
-  const lowPickCutoff = sortedMeals.length > 0
-    ? rackV2EffectivePickQuantity(sortedMeals[Math.max(0, Math.floor(sortedMeals.length * 2 / 3) - 1)])
-    : Number.POSITIVE_INFINITY;
 
-  function ergonomicTierForEntry(entry: RackEntry): 1 | 2 | 3 {
-    const picks = rackV2EffectivePickQuantity(entry);
-    if (picks >= highPickCutoff) return 2;
-    if (picks <= lowPickCutoff) return 3;
-    return 1;
-  }
-
-  function allocate(blocks: RackV2Block[], preferredTier: 1 | 2 | 3): { slot: number; tier: 1 | 2 | 3 } | null {
-    for (const block of blocks) {
-      for (const tier of rackV2AllocationTier(block, preferredTier)) {
-        for (const slot of rackV2BlockSlotsForTier(block, tier)) {
-          const key = `${slot}:${tier}`;
-          if (occupied.has(key)) continue;
-          occupied.add(key);
-          return { slot, tier };
-        }
-      }
+  function allocatePurpose(purpose: RackV2EntryPurpose): { slot: number; tier: 1 | 2 | 3 } | null {
+    for (const target of rackV2PurposeSlots(market, purpose)) {
+      if (!isSlotInActiveBlocks(target.slot)) continue;
+      const key = `${target.slot}:${target.tier}`;
+      if (occupied.has(key)) continue;
+      occupied.add(key);
+      return target;
     }
     return null;
   }
@@ -509,41 +581,75 @@ export function rackV2AutoFillLayout(
     });
   }
 
-  const descActive = [...activeBlocks].sort((a, b) => b.number - a.number);
-  const ascActive = [...activeBlocks].sort((a, b) => a.number - b.number);
-
-  if (market === "DE") {
-    const giftBlocks = ascActive.filter((block) => block.area === "gifts");
-    const tailBlocks = ascActive.filter((block) => block.number >= 15);
-
-    for (const entry of tailOnly) {
-      const target =
-        allocate(giftBlocks, 1) ??
-        allocate(tailBlocks, 1);
-      place(entry, target);
+  function placeIceEntries() {
+    if (market !== "DE") {
+      for (const entry of ice) place(entry, allocatePurpose("ice"));
+      return;
     }
-
-    for (const entry of ice) {
-      const target = allocate(tailBlocks, 2);
-      place(entry, target);
-    }
-
-    for (const entry of sortedMeals) {
-      const preferredTier = ergonomicTierForEntry(entry);
-      const target = allocate(ascActive, preferredTier) ?? allocate(descActive, preferredTier);
-      place(entry, target);
-    }
-  } else {
-    for (const entry of ice) {
-      const target = allocate(descActive, 2) ?? allocate(ascActive, 2);
-      place(entry, target);
-    }
-    for (const entry of sortedMeals) {
-      const preferredTier = ergonomicTierForEntry(entry);
-      const target = allocate(ascActive, preferredTier) ?? allocate(descActive, preferredTier);
-      place(entry, target);
+    for (let index = 0; index < ice.length; index += 3) {
+      const target = allocatePurpose("ice");
+      if (!target) return;
+      for (const entry of ice.slice(index, index + 3)) {
+        place(entry, target);
+      }
     }
   }
+
+  // Meal-Slots pro Pickface gruppieren.
+  // Innerhalb jedes Pickfaces: T2 zuerst (Mitte = ergonomisch + schneller Griff), dann T1.
+  const mealSlotsByPickface = new Map<string, Array<{ slot: number; tier: 1 | 2 | 3 }>>();
+  for (const target of rackV2PurposeSlots(market, "meal")) {
+    if (!isSlotInActiveBlocks(target.slot)) continue;
+    const block = rackV2BlockForSlot(target.slot, market);
+    if (!block) continue;
+    const pfKey = block.pLabel ?? block.id;
+    if (!mealSlotsByPickface.has(pfKey)) mealSlotsByPickface.set(pfKey, []);
+    mealSlotsByPickface.get(pfKey)!.push(target);
+  }
+  for (const slots of mealSlotsByPickface.values()) {
+    slots.sort((a, b) => (a.tier === 2 ? -1 : b.tier === 2 ? 1 : 0) || (a.slot - b.slot));
+  }
+
+  // Initiale Last aus bereits platzierten Existing-Meals berücksichtigen (manuelle Vorbelegung).
+  const loadByPickface = new Map<string, number>(
+    [...mealSlotsByPickface.keys()].map((k) => [k, 0]),
+  );
+  for (const entry of existing) {
+    const slot = rackV2SlotNumber(entry.flowRackPosition);
+    if (!Number.isFinite(slot) || slot <= 12) continue;
+    const tier = (entry.tier ?? 1) as 1 | 2 | 3;
+    if (rackV2SlotPurpose(slot, tier, market) !== "meal") continue;
+    const block = rackV2BlockForSlot(slot, market);
+    if (!block) continue;
+    const pfKey = block.pLabel ?? block.id;
+    loadByPickface.set(pfKey, (loadByPickface.get(pfKey) ?? 0) + rackV2EffectivePickQuantity(entry));
+  }
+
+  // Nächstes Meal immer dem Pickface mit der geringsten aktuellen Picklast zuweisen.
+  // Gleiche Last → erster Pickface gewinnt (stabile Reihenfolge).
+  function allocateMealBalanced(qty: number): { slot: number; tier: 1 | 2 | 3 } | null {
+    let bestKey: string | null = null;
+    let bestLoad = Infinity;
+    for (const [pfKey, slots] of mealSlotsByPickface.entries()) {
+      if (!slots.some(({ slot, tier }) => !occupied.has(`${slot}:${tier}`))) continue;
+      const load = loadByPickface.get(pfKey) ?? 0;
+      if (load < bestLoad) { bestLoad = load; bestKey = pfKey; }
+    }
+    if (!bestKey) return null;
+    const target = mealSlotsByPickface.get(bestKey)!.find(({ slot, tier }) => !occupied.has(`${slot}:${tier}`));
+    if (!target) return null;
+    occupied.add(`${target.slot}:${target.tier}`);
+    loadByPickface.set(bestKey, (loadByPickface.get(bestKey) ?? 0) + qty);
+    return target;
+  }
+
+  placeIceEntries();
+  for (const entry of [...smoothies].sort((left, right) => rackV2EffectivePickQuantity(right) - rackV2EffectivePickQuantity(left))) {
+    place(entry, allocatePurpose("smoothie"));
+  }
+  for (const entry of gifts) place(entry, allocatePurpose("gift"));
+  for (const entry of flyers) place(entry, allocatePurpose("flyer"));
+  for (const entry of sortedMeals) place(entry, allocateMealBalanced(rackV2EffectivePickQuantity(entry)));
 
   return merged;
 }
@@ -575,6 +681,9 @@ function validateLineV2(assignment: RackV2LineAssignment, entries: RackEntry[]):
     if (kind === "packaging" && slot > 12) {
       issues.push({ severity: "error", message: `${assignment.line.code}: Packaging darf nur in F1-F12 liegen (${entry.recipe} @ ${entry.flowRackPosition}).` });
     }
+    if (kind !== "packaging" && rackV2IsForezoneSlot(slot, assignment.market)) {
+      issues.push({ severity: "error", message: `${assignment.line.code}: ${entry.recipe} liegt in der Vorzone; dort darf nur Packaging liegen.` });
+    }
     if (kind === "packaging") {
       const zone = rackV2PackagingZoneForEntry(entry);
       const allowedSlots = rackV2PackagingAllowedSlots(assignment.market, zone);
@@ -598,6 +707,16 @@ function validateLineV2(assignment: RackV2LineAssignment, entries: RackEntry[]):
     }
     if (expectedTier && tier !== expectedTier) {
       issues.push({ severity: "error", message: `${assignment.line.code}: ${entry.flowRackPosition} muss auf Ebene ${expectedTier} liegen, nicht Ebene ${tier}.` });
+    }
+    if (block && kind !== "packaging") {
+      const expectedPurpose = rackV2EntryPurpose(entry, assignment.market);
+      const actualPurpose = rackV2SlotPurpose(slot, tier, assignment.market);
+      if (actualPurpose !== expectedPurpose) {
+        issues.push({
+          severity: "error",
+          message: `${assignment.line.code}: ${entry.recipe} passt nicht auf ${entry.flowRackPosition} Tier ${tier}. Erwartet ${rackV2SlotPurposeLabel(expectedPurpose)}, Platz ist ${rackV2SlotPurposeLabel(actualPurpose)}.`,
+        });
+      }
     }
     const key = `${slot}:${tier}`;
     const existing = seen.get(key);

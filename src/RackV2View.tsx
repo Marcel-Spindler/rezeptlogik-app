@@ -19,6 +19,7 @@ import {
   rackV2DynamicRoleLabels,
   rackV2EffectivePickQuantity,
   rackV2EntryFingerprint,
+  rackV2EntryPurpose,
   rackV2ForezoneSlotsForTier,
   rackV2ForezoneForMarket,
   rackV2HallLayoutWorkers,
@@ -29,6 +30,8 @@ import {
   rackV2PackagingZoneForEntry,
   rackV2RecommendedActiveBlockIds,
   rackV2ResolveActiveBlockIds,
+  rackV2SlotPurpose,
+  rackV2SlotPurposeLabel,
   rackV2SlotTier,
   rackV2SlotNumber,
   validateV2Plan,
@@ -308,6 +311,25 @@ function blockTone(active: boolean): string {
   return active
     ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
     : "bg-rose-50 text-rose-800 ring-rose-200";
+}
+
+function slotPurposeTone(purpose: ReturnType<typeof rackV2SlotPurpose>): string {
+  switch (purpose) {
+    case "meal":
+      return "border-orange-300 bg-orange-50";
+    case "ice":
+      return "border-sky-300 bg-sky-50";
+    case "smoothie":
+      return "border-emerald-300 bg-emerald-50";
+    case "flyer":
+      return "border-violet-300 bg-violet-50";
+    case "gift":
+      return "border-blue-400 bg-blue-50";
+    case "emergency":
+      return "border-rose-400 bg-rose-50";
+    default:
+      return "border-slate-300 bg-white";
+  }
 }
 
 function isPackagingLike(entry: RackEntry): boolean {
@@ -661,6 +683,13 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     if (inForezone && !isPackagingLike(entry)) return "In der Vorzone darf nur Packaging liegen.";
     if (block && isPackagingLike(entry)) return "Packaging darf nur in der Vorzone liegen.";
     if (expectedTier && tier !== expectedTier) return `F${slot} liegt fest auf Ebene ${expectedTier}.`;
+    if (block && !isPackagingLike(entry)) {
+      const expectedPurpose = rackV2EntryPurpose(entry, currentMarket);
+      const actualPurpose = rackV2SlotPurpose(slot, tier, currentMarket);
+      if (actualPurpose !== expectedPurpose) {
+        return `${entry.recipe} gehoert auf ${rackV2SlotPurposeLabel(expectedPurpose)}; dieser Platz ist ${rackV2SlotPurposeLabel(actualPurpose)}.`;
+      }
+    }
     if (!rackV2IsIceLike(entry) && !isPackagingLike(entry)) {
       const fingerprint = rackV2EntryFingerprint(entry);
       const duplicate = currentEntries.find((candidate) => candidate.id !== entry.id && rackV2EntryFingerprint(candidate) === fingerprint);
@@ -1049,7 +1078,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
           )}
 
           <div className="rounded-xl bg-amber-50 p-3 text-[11px] text-amber-900 ring-1 ring-amber-200">
-            Alle Bloecke bleiben testweise schaltbar. Die aktive Reihenfolge bildet automatisch P1, P2, P3 ... und laeuft je Linie separat.
+            Die P-Bloecke und farbigen Faecher folgen dem Excel-Liniennachbau fuer DE und Nordics.
           </div>
 
           <div className="space-y-3">
@@ -1164,9 +1193,11 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                                 <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.max(blockSlots.length, 1)}, minmax(0, 1fr))` }}>
                                   {blockSlots.map((slot) => {
                                     const entry = boardByCell.get(buildBoardKey(slot, tier));
+                                    const purpose = rackV2SlotPurpose(slot, tier, currentMarket);
                                     return (
                                       <div
                                         key={`${block.id}-${slot}-${tier}`}
+                                        title={rackV2SlotPurposeLabel(purpose)}
                                         onDragOver={(event) => {
                                           if (currentLocked) return;
                                           event.preventDefault();
@@ -1182,7 +1213,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                                           writeEntry(source, slot, tier);
                                           setDragPayload(null);
                                         }}
-                                        className="min-h-[48px] rounded-md border border-dashed border-slate-300 bg-white px-1 py-1"
+                                        className={`min-h-[48px] rounded-md border border-dashed px-1 py-1 ${slotPurposeTone(purpose)}`}
                                       >
                                         {entry ? (
                                           <button

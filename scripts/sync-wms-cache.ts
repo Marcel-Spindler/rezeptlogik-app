@@ -245,7 +245,7 @@ async function main() {
 
   } finally {
     if (conn) {
-      conn.destroy((err) => {
+      conn.destroy((err: unknown) => {
         if (err) console.error("Disconnect error:", err);
       });
     }

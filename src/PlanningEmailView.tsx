@@ -15,7 +15,7 @@ import { usePlanningOasisData } from "./planningOasisData";
 // ── Konstanten ──────────────────────────────────────────────────────────────
 
 const SLOT_DURATIONS: Record<string, number> = {
-  "06:00-07:00": 60, "07:00-08:00": 60, "08:00-08:30": 30,
+  "07:00-08:00": 60, "08:00-08:30": 30,
   "09:00-10:00": 60, "10:00-11:00": 60, "11:30-12:00": 30,
   "12:00-13:00": 60, "13:00-14:00": 60, "14:00-15:00": 60,
 };
@@ -48,8 +48,8 @@ const MANUFACTURING_MAIL_DAYS: readonly ManufacturingMailDay[] = [
   { id: "so", day: "So", label: "Sonntag", lane: "regular" },
 ];
 
-const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi", "Do"];
-const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do", "Fr"];
+const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi"];
+const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
 
 type ManufacturingMailSummary = {
   column: ManufacturingMailDay;
@@ -79,6 +79,26 @@ interface DayPlatingSummary {
   /** MA-Bedarf Plating: 4 pro aktiver Linie, +1 bei Speed > 15 Port/min */
   staffNeeded: number;
   totalPortions: number;
+}
+
+interface LineOperationsSummary {
+  lineIdx: number;
+  planned: number;
+  capacity: number;
+  utilization: number;
+  blocks: SlotBlock[];
+}
+
+interface DayOperationsSummary {
+  day: PlannerDay;
+  dayLong: string;
+  dateLabel: string;
+  planned: number;
+  capacity: number;
+  utilization: number;
+  staffNeeded: number;
+  lineSummaries: LineOperationsSummary[];
+  recipeCodes: string[];
 }
 
 // ── Helfer ───────────────────────────────────────────────────────────────────
@@ -128,6 +148,35 @@ function dayDate(week: string, day: PlannerDay): string {
 function staffPerLine(recipes: LinePlanRec[]): number {
   const hasHighSpeed = recipes.some(r => r.speedPerMin > 15);
   return 4 + (hasHighSpeed ? 1 : 0);
+}
+
+function pct(n: number): string {
+  if (!Number.isFinite(n)) return "0%";
+  return `${Math.round(n * 100)}%`;
+}
+
+function cleanName(name: string, max = 45): string {
+  return name.replace(/\[.*?\]/g, "").trim().slice(0, max);
+}
+
+function escapeHtml(value: string): string {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function clampPlatingLineCount(value: number | undefined): number {
+  if (value === 1 || value === 2 || value === 3) return value;
+  return 3;
+}
+
+function slotPortionsFromLineCapacity(lineCapacityByLane: Record<string, number>, lineIdx: number, slotKey: string): number {
+  const capacityPerHour = Math.max(0, Number(lineCapacityByLane[String(lineIdx)] ?? 0));
+  const duration = SLOT_DURATIONS[slotKey];
+  if (!duration) return 0;
+  return Math.round((capacityPerHour / 60) * duration);
 }
 
 function parseBoardNote(note?: string): { notes: string } {
@@ -200,7 +249,7 @@ export function PlanningEmailView({
 
   // Linienplan aus Firestore
   const [linePlanRaw, setLinePlanRaw] = useState<ScheduleMap>({});
-  const [, setLineCapacityByLane] = useState<Record<string, number>>({ "0": 1200, "1": 1200, "2": 1200 });
+  const [lineCapacityByLane, setLineCapacityByLane] = useState<Record<string, number>>({ "0": 1200, "1": 1200, "2": 1200 });
   const [platingLineCount, setPlatingLineCount] = useState<number>(3);
   const [linePlanComments, setLinePlanComments] = useState<Record<string, string>>({});
   const [linePlanLoaded, setLinePlanLoaded] = useState(false);
@@ -226,12 +275,14 @@ export function PlanningEmailView({
                 savedAt?: string;
               };
               setLinePlanRaw(d.schedule ?? {});
-              if (d.lineCapacityByLane) setLineCapacityByLane(prev => ({ ...prev, ...d.lineCapacityByLane }));
-              if (d.platingLineCount && d.platingLineCount >= 1) setPlatingLineCount(d.platingLineCount);
+              setLineCapacityByLane({ "0": 1200, "1": 1200, "2": 1200, ...(d.lineCapacityByLane ?? {}) });
+              setPlatingLineCount(clampPlatingLineCount(d.platingLineCount));
               setLinePlanComments(d.comments ?? {});
               setLinePlanSavedAt(d.savedAt ?? null);
             } else {
               setLinePlanRaw({});
+              setLineCapacityByLane({ "0": 1200, "1": 1200, "2": 1200 });
+              setPlatingLineCount(3);
               setLinePlanComments({});
               setLinePlanSavedAt(null);
             }
@@ -292,10 +343,54 @@ export function PlanningEmailView({
     [scenario]
   );
 
-  // Freigabe-Gate: alle 3 Quellen bestätigt?
+  const targetPortionsByRecipe = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of data.weekRecipes) {
+      if (row.hfWeek !== week) continue;
+      const total = Math.max(0, Math.round(row.totalVerdenVolume ?? ((row.verdenVolume.BENL ?? 0) + (row.verdenVolume.DKSE ?? 0) + (row.verdenVolume.DE ?? 0))));
+      if (total > 0) map.set(row.code, total);
+    }
+    return map;
+  }, [data.weekRecipes, week]);
+
+  const allocatedLinePortionsByCell = useMemo(() => {
+    const allocated = new Map<string, number>();
+    const producedByRecipe = new Map<string, number>();
+    const entries = Object.entries(linePlanRaw)
+      .filter(([, recipe]) => !!recipe)
+      .sort(([left], [right]) => {
+        const [leftDay, leftSlot, leftLine] = left.split("|");
+        const [rightDay, rightSlot, rightLine] = right.split("|");
+        const leftPlannerDay = DAY_MAP[leftDay ?? ""];
+        const rightPlannerDay = DAY_MAP[rightDay ?? ""];
+        const dayOrder: PlannerDay[] = ["Di", "Mi", "Do", "Fr", "Sa", "So", "Mo"];
+        const dayDelta = (leftPlannerDay ? dayOrder.indexOf(leftPlannerDay) : 99)
+          - (rightPlannerDay ? dayOrder.indexOf(rightPlannerDay) : 99);
+        if (dayDelta !== 0) return dayDelta;
+        const slotDelta = Object.keys(SLOT_DURATIONS).indexOf(leftSlot ?? "") - Object.keys(SLOT_DURATIONS).indexOf(rightSlot ?? "");
+        if (slotDelta !== 0) return slotDelta;
+        return Number(leftLine ?? 0) - Number(rightLine ?? 0);
+      });
+
+    for (const [key, recipe] of entries) {
+      if (!recipe) continue;
+      const [, slotKey, lineIdxStr] = key.split("|");
+      const lineIdx = parseInt(lineIdxStr ?? "0");
+      if (!Number.isFinite(lineIdx) || lineIdx < 0 || lineIdx >= platingLineCount) continue;
+      const target = targetPortionsByRecipe.get(recipe.code) ?? Number.MAX_SAFE_INTEGER;
+      const alreadyProduced = producedByRecipe.get(recipe.code) ?? 0;
+      const slotPortions = slotPortionsFromLineCapacity(lineCapacityByLane, lineIdx, slotKey ?? "");
+      const portions = Math.max(0, Math.min(slotPortions, target - alreadyProduced));
+      allocated.set(key, portions);
+      producedByRecipe.set(recipe.code, alreadyProduced + portions);
+    }
+    return allocated;
+  }, [lineCapacityByLane, linePlanRaw, platingLineCount, targetPortionsByRecipe]);
+
+  // Freigabe-Gate: Rundmail basiert auf gesichertem Plating-Plan + Küchenplan.
   const linePlanConfirmed = linePlanLoaded && linePlanSavedAt !== null;
   const rackConfirmed = rackLoaded && rackAllReleased;
-  const allConfirmed = linePlanConfirmed && rackConfirmed && cockpitHasAssignments;
+  const allConfirmed = linePlanConfirmed && cockpitHasAssignments;
 
   // LinePlatingSummary (für computeBatchSplitPlan)
   const linePlatingSummary = useMemo((): LinePlatingSummary => {
@@ -304,18 +399,20 @@ export function PlanningEmailView({
       if (!recipe) continue;
       const parts = key.split("|");
       if (parts.length !== 3) continue;
-      const [dayDE, slotKey] = parts;
+      const [dayDE, slotKey, lineIdxStr] = parts;
       const platDay = DAY_MAP[dayDE ?? ""];
       if (!platDay) continue;
-      const duration = SLOT_DURATIONS[slotKey ?? ""] ?? 60;
-      const portions = (recipe.speedPerMin ?? 10) * duration;
+      const lineIdx = parseInt(lineIdxStr ?? "0");
+      if (!Number.isFinite(lineIdx) || lineIdx < 0 || lineIdx >= platingLineCount) continue;
+      const portions = allocatedLinePortionsByCell.get(key) ?? slotPortionsFromLineCapacity(lineCapacityByLane, lineIdx, slotKey ?? "");
+      if (portions <= 0) continue;
       const entries = (byRecipe[recipe.code] ??= []);
       const existing = entries.find(e => e.platDay === platDay);
       if (existing) { existing.capacityPortions += portions; existing.slotCount += 1; }
       else entries.push({ platDay, capacityPortions: portions, slotCount: 1 });
     }
     return { byRecipe };
-  }, [linePlanRaw]);
+  }, [allocatedLinePortionsByCell, lineCapacityByLane, linePlanRaw, platingLineCount]);
 
   const batchSplitPlan = useMemo(
     () => computeBatchSplitPlan(data, week, linePlatingSummary),
@@ -333,8 +430,9 @@ export function PlanningEmailView({
       const day = DAY_MAP[dayDE ?? ""];
       if (!day) continue;
       const lineIdx = parseInt(lineIdxStr ?? "0");
-      const duration = SLOT_DURATIONS[slotKey ?? ""] ?? 60;
-      const portions = (recipe.speedPerMin ?? 10) * duration;
+      if (!Number.isFinite(lineIdx) || lineIdx < 0 || lineIdx >= platingLineCount) continue;
+      const portions = allocatedLinePortionsByCell.get(key) ?? slotPortionsFromLineCapacity(lineCapacityByLane, lineIdx, slotKey ?? "");
+      if (portions <= 0) continue;
       const blocks = byDay.get(day) ?? [];
       blocks.push({ slotKey: slotKey ?? "", recipe, lineIdx, portions });
       byDay.set(day, blocks);
@@ -362,7 +460,48 @@ export function PlanningEmailView({
           totalPortions: blocks.reduce((s, b) => s + b.portions, 0),
         };
       });
-  }, [linePlanRaw]);
+  }, [allocatedLinePortionsByCell, lineCapacityByLane, linePlanRaw, platingLineCount]);
+
+  const activePlatingLineIdx = useMemo(
+    () => Array.from({ length: platingLineCount }, (_, index) => index),
+    [platingLineCount]
+  );
+
+  const operationsDaySummaries = useMemo((): DayOperationsSummary[] => {
+    return dayPlatingSummaries.map((daySummary) => {
+      const lineSummaries = activePlatingLineIdx.map((lineIdx) => {
+        const blocks = daySummary.blocks
+          .filter((block) => block.lineIdx === lineIdx)
+          .sort((a, b) => a.slotKey.localeCompare(b.slotKey));
+        const planned = blocks.reduce((sum, block) => sum + block.portions, 0);
+        const capacity = Object.keys(SLOT_DURATIONS).reduce(
+          (sum, slotKey) => sum + slotPortionsFromLineCapacity(lineCapacityByLane, lineIdx, slotKey),
+          0
+        );
+        return {
+          lineIdx,
+          planned,
+          capacity,
+          utilization: capacity > 0 ? planned / capacity : 0,
+          blocks,
+        };
+      });
+      const planned = lineSummaries.reduce((sum, line) => sum + line.planned, 0);
+      const capacity = lineSummaries.reduce((sum, line) => sum + line.capacity, 0);
+      const recipeCodes = Array.from(new Set(daySummary.blocks.map((block) => block.recipe.code))).sort();
+      return {
+        day: daySummary.day,
+        dayLong: daySummary.dayLong,
+        dateLabel: dayDate(week, daySummary.day),
+        planned,
+        capacity,
+        utilization: capacity > 0 ? planned / capacity : 0,
+        staffNeeded: daySummary.staffNeeded,
+        lineSummaries,
+        recipeCodes,
+      };
+    });
+  }, [activePlatingLineIdx, dayPlatingSummaries, lineCapacityByLane, week]);
 
   // ── Allergene aus PlanningOasis ───────────────────────────────────────────
   const allergensByRecipe = useMemo(() => {
@@ -452,7 +591,15 @@ export function PlanningEmailView({
     dayPlatingSummaries.reduce((s, d) => s + d.totalPortions, 0),
     [dayPlatingSummaries]
   );
+  const totalAvailableLineCapacity = useMemo(
+    () => operationsDaySummaries.reduce((sum, day) => sum + day.capacity, 0),
+    [operationsDaySummaries]
+  );
+  const totalLineUtilization = totalAvailableLineCapacity > 0 ? totalPortionsLine / totalAvailableLineCapacity : 0;
   const hasSeafood = batchSplitPlan.some(p => p.isSeafood);
+  const allergenRecipeCount = batchSplitPlan.filter(p => (allergensByRecipe[p.recipeCode] ?? []).length > 0).length;
+  const totalManufacturingJobs = manufacturingDaySummaries.reduce((sum, row) => sum + row.mainCount + row.subRunCount, 0);
+  const maxPlatingStaff = dayPlatingSummaries.reduce((max, day) => Math.max(max, day.staffNeeded), 0);
 
   // ── Export-Funktionen ─────────────────────────────────────────────────────
   const [copyState, setCopyState] = useState<"idle" | "ok">("idle");
@@ -470,22 +617,25 @@ export function PlanningEmailView({
     h("ZUSAMMENFASSUNG");
     h(`Rezepte gesamt:        ${batchSplitPlan.length}`);
     h(`Forecast Portionen:    ${fmtNum(totalPortionsForecast)}`);
-    h(`Linienkapazität (Plan):${fmtNum(totalPortionsLine)}`);
+    h(`Plating geplant:       ${fmtNum(totalPortionsLine)}`);
+    h(`Plating Tageskapa:     ${fmtNum(totalAvailableLineCapacity)} (${pct(totalLineUtilization)} Auslastung)`);
     h(`Aktive Plating-Linien: ${platingLineCount}`);
-    if (hasSeafood) h("⚠  Enthält Fisch-Rezepte (MHD 9 Tage – Küchen-Deadline beachten!)");
+    h(`Max. MA Plating/Tag:   ${maxPlatingStaff}`);
+    h(`Küchenjobs:            ${totalManufacturingJobs}`);
+    if (hasSeafood) h("HINWEIS: Enthält Fisch-Rezepte (MHD 9 Tage - Küchen-Deadline beachten!)");
     sep();
 
     if (dayPlatingSummaries.length > 0) {
-      h("PLATING-PLAN");
-      for (const ds of dayPlatingSummaries) {
-        h(`\n${ds.dayLong.toUpperCase()} (${dayDate(week, ds.day)})  –  ${fmtNum(ds.totalPortions)} Port. | Personal: ${ds.staffNeeded} MA`);
+      h("PLATING-AUSHANG: WAS IST ZU TUN?");
+      for (const ops of operationsDaySummaries) {
+        h(`\n${ops.dayLong.toUpperCase()} (${ops.dateLabel})  -  ${fmtNum(ops.planned)} Port. | ${pct(ops.utilization)} Auslastung | Personal: ${ops.staffNeeded} MA`);
+        h(`  Fokus: ${ops.recipeCodes.length > 0 ? ops.recipeCodes.join(", ") : "keine Rezepte"}`);
         // Gruppiert nach Linie
-        const lineNums = Array.from(ds.activeLines).sort();
-        for (const li of lineNums) {
-          const lineBlocks = ds.blocks.filter(b => b.lineIdx === li).sort((a, b) => a.slotKey.localeCompare(b.slotKey));
-          h(`  P-Linie ${li + 1}:`);
-          for (const block of lineBlocks) {
-            h(`    ${block.slotKey}  ${block.recipe.code} „${block.recipe.name.replace(/\[.*?\]/g, "").trim().slice(0, 40)}"  →  ${fmtNum(block.portions)} Port.`);
+        for (const line of ops.lineSummaries) {
+          if (line.blocks.length === 0) continue;
+          h(`  P-Linie ${line.lineIdx + 1}: ${fmtNum(line.planned)}/${fmtNum(line.capacity)} Port. (${pct(line.utilization)})`);
+          for (const block of line.blocks) {
+            h(`    ${block.slotKey}  ${block.recipe.code} "${cleanName(block.recipe.name, 40)}"  ->  ${fmtNum(block.portions)} Port.`);
           }
         }
       }
@@ -506,7 +656,7 @@ export function PlanningEmailView({
     sep();
 
     h("MANUFACTURING-TAGESZUSAMMENRECHNUNG");
-    h("Regel fixiert: B1-Submeals laufen von Sonntag Prep bis Donnerstag; B2-Submeals von Montag bis Freitag. Samstag bleibt frei.");
+    h("Regel fixiert: B1-Submeals laufen von Sonntag Prep bis Mittwoch; B2-Submeals von Montag bis Donnerstag. Freitag/Samstag bleiben frei für Submeal-Runs.");
     for (const row of manufacturingDaySummaries) {
       const totalJobs = row.mainCount + row.subRunCount;
       h(`  ${row.column.label.padEnd(14)} ${String(totalJobs).padStart(3)} Jobs | Main ${String(row.mainCount).padStart(2)} / ${fmtNum(row.mainPortions).padStart(8)} Port. | Sub-Runs ${String(row.subRunCount).padStart(2)} / ${fmtNum(row.subPortions).padStart(8)} Port.`);
@@ -572,6 +722,15 @@ export function PlanningEmailView({
       .stat{background:${lightBlue};border:1px solid #bfdbfe;border-radius:8px;padding:12px;text-align:center}
       .stat-val{font-size:22px;font-weight:800;color:${accent}}
       .stat-lbl{font-size:11px;color:#64748b;margin-top:2px}
+      .ops-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:10px 0 14px}
+      .ops-box{border:1px solid ${border};border-radius:8px;background:#fff;padding:10px}
+      .ops-title{font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.03em;margin-bottom:5px}
+      .ops-main{font-size:16px;font-weight:800;color:#0f172a}
+      .bar{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden;margin-top:6px}
+      .bar-fill{height:100%;border-radius:999px;background:#2563eb}
+      .bar-fill.warn{background:#f59e0b}
+      .bar-fill.danger{background:#dc2626}
+      .recipe-chip{display:inline-block;margin:2px 3px 2px 0;padding:2px 6px;border-radius:5px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:800}
       .day-card{border:1px solid ${border};border-radius:8px;margin-bottom:12px;overflow:hidden}
       .day-header{background:${accent};color:#fff;padding:8px 14px;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center}
       .day-body{padding:8px 14px}
@@ -605,8 +764,8 @@ export function PlanningEmailView({
           ? `<span style="color:#64748b;font-size:12px">${b.fulfillmentDay}</span>`
           : `<span style="color:#94a3b8;font-size:11px">–</span>`;
         return `<tr>
-          <td>${plan.recipeCode}${plan.isSeafood ? " 🐟" : ""}</td>
-          <td>${plan.recipeName.replace(/\[.*?\]/g, "").trim().slice(0, 45)}</td>
+          <td>${escapeHtml(plan.recipeCode)}${plan.isSeafood ? " Fisch" : ""}</td>
+          <td>${escapeHtml(cleanName(plan.recipeName, 45))}</td>
           <td><strong>${b.platDay}</strong></td>
           <td>${versandCell}</td>
           <td>${kitchenDay !== b.recommendedProductionDay ? `<strong>${kitchenDay}</strong> <span style="color:#94a3b8;font-size:11px">(geplant)</span>` : b.recommendedProductionDay}</td>
@@ -617,29 +776,41 @@ export function PlanningEmailView({
       return batches;
     }).join("");
 
-    const daysHtml = dayPlatingSummaries.map(ds => {
-      const lineNums = Array.from(ds.activeLines).sort();
-      const linesHtml = lineNums.map(li => {
-        const blocks = ds.blocks.filter(b => b.lineIdx === li).sort((a, b) => a.slotKey.localeCompare(b.slotKey));
+    const daysHtml = operationsDaySummaries.map(ds => {
+      const dayBarClass = ds.utilization > 1 ? "danger" : ds.utilization >= 0.85 ? "warn" : "";
+      const linesHtml = ds.lineSummaries.map(line => {
+        const blocks = line.blocks;
+        if (blocks.length === 0) {
+          return `<div class="line-block">
+            <div class="line-label">P-Linie ${line.lineIdx + 1} &nbsp;·&nbsp; frei</div>
+            <div class="bar"><div class="bar-fill" style="width:0%"></div></div>
+          </div>`;
+        }
+        const lineBarClass = line.utilization > 1 ? "danger" : line.utilization >= 0.85 ? "warn" : "";
         const slotsHtml = blocks.map(block =>
           `<div class="slot-row">
             <span class="slot-time">${block.slotKey}</span>
-            <span class="slot-recipe">${block.recipe.code} &nbsp;${block.recipe.name.replace(/\[.*?\]/g, "").trim().slice(0, 40)}</span>
+            <span class="slot-recipe">${escapeHtml(block.recipe.code)} &nbsp;${escapeHtml(cleanName(block.recipe.name, 40))}</span>
             <span class="slot-portions">${fmtNum(block.portions)} Port.</span>
           </div>`
         ).join("");
-        const staff = staffPerLine(blocks.map(b => b.recipe));
         return `<div class="line-block">
-          <div class="line-label">P-Linie ${li + 1} &nbsp;·&nbsp; ${staff} MA</div>
+          <div class="line-label">P-Linie ${line.lineIdx + 1} &nbsp;·&nbsp; ${fmtNum(line.planned)}/${fmtNum(line.capacity)} Port. &nbsp;·&nbsp; ${pct(line.utilization)}</div>
+          <div class="bar"><div class="bar-fill ${lineBarClass}" style="width:${Math.min(100, Math.round(line.utilization * 100))}%"></div></div>
           ${slotsHtml}
         </div>`;
       }).join("");
+      const chips = ds.recipeCodes.map(code => `<span class="recipe-chip">${escapeHtml(code)}</span>`).join("");
       return `<div class="day-card">
         <div class="day-header">
-          <span>${ds.dayLong} &nbsp;(${dayDate(week, ds.day)})</span>
-          <span style="font-size:13px;font-weight:400">${fmtNum(ds.totalPortions)} Port. &nbsp;|&nbsp; ${ds.staffNeeded} MA Plating</span>
+          <span>${ds.dayLong} &nbsp;(${ds.dateLabel})</span>
+          <span style="font-size:13px;font-weight:400">${fmtNum(ds.planned)} Port. &nbsp;|&nbsp; ${pct(ds.utilization)} Auslastung &nbsp;|&nbsp; ${ds.staffNeeded} MA</span>
         </div>
-        <div class="day-body">${linesHtml || "<em style='color:#94a3b8'>Kein Linienplan für diesen Tag</em>"}</div>
+        <div class="day-body">
+          <div style="font-size:12px;color:#475569;margin-bottom:6px"><strong>Auftrag:</strong> ${chips || "Keine Rezepte"} sauber nach Slot-Reihenfolge abarbeiten, Kommentare am Linienplan beachten.</div>
+          <div class="bar"><div class="bar-fill ${dayBarClass}" style="width:${Math.min(100, Math.round(ds.utilization * 100))}%"></div></div>
+          ${linesHtml || "<em style='color:#94a3b8'>Kein Linienplan für diesen Tag</em>"}
+        </div>
       </div>`;
     }).join("");
 
@@ -648,22 +819,22 @@ export function PlanningEmailView({
       .map(p => {
         const a = allergensByRecipe[p.recipeCode] ?? [];
         return `<tr>
-          <td>${p.recipeCode}</td>
-          <td>${p.recipeName.replace(/\[.*?\]/g, "").trim().slice(0, 45)}</td>
-          <td>${a.map(al => `<span class="badge badge-amber">${al}</span>`).join(" ")}</td>
+          <td>${escapeHtml(p.recipeCode)}</td>
+          <td>${escapeHtml(cleanName(p.recipeName, 45))}</td>
+          <td>${a.map(al => `<span class="badge badge-amber">${escapeHtml(al)}</span>`).join(" ")}</td>
         </tr>`;
       }).join("");
 
     const commentHtml = filledComments.length > 0
       ? filledComments.map(([key, comment]) => {
           const [dayDE, slot, li] = key.split("|");
-          return `<div class="info"><strong>${dayDE ?? ""} | ${slot ?? ""} | Linie ${parseInt(li ?? "0") + 1}:</strong> ${comment}</div>`;
+          return `<div class="info"><strong>${escapeHtml(dayDE ?? "")} | ${escapeHtml(slot ?? "")} | Linie ${parseInt(li ?? "0") + 1}:</strong> ${escapeHtml(comment)}</div>`;
         }).join("")
       : `<p style="color:#94a3b8;font-size:13px">Keine Anmerkungen vorhanden.</p>`;
 
     const manufacturingSummaryHtml = manufacturingDaySummaries.map(row => {
       const totalJobs = row.mainCount + row.subRunCount;
-      const itemHtml = row.items.slice(0, 4).map(item => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#64748b">${item}</div>`).join("");
+      const itemHtml = row.items.slice(0, 4).map(item => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#64748b">${escapeHtml(item)}</div>`).join("");
       return `<div class="mfg-card ${totalJobs > 0 ? "active" : ""}">
         <div class="mfg-day">${row.column.label} <span style="float:right;border-radius:999px;background:${totalJobs > 0 ? "#047857" : "#e2e8f0"};color:${totalJobs > 0 ? "#fff" : "#64748b"};padding:1px 6px">${totalJobs}</span></div>
         <div class="mfg-line">Main: <strong>${row.mainCount}</strong> · ${fmtNum(row.mainPortions)} Port.</div>
@@ -678,17 +849,22 @@ export function PlanningEmailView({
   <h1>📋 Planungsrundmail – KW ${kwNum}</h1>
   <div class="meta">Standort: Verden (VF) &nbsp;·&nbsp; ${fmtDate(week)} &nbsp;·&nbsp; Erstellt: ${new Date().toLocaleString("de-DE")}</div>
 
-  ${hasSeafood ? `<div class="warn">⚠ Diese Woche enthält <strong>Fisch-Rezepte</strong> – MHD 9 Tage! Küchen-Deadlines besonders beachten.</div>` : ""}
+  ${hasSeafood ? `<div class="warn">Diese Woche enthält <strong>Fisch-Rezepte</strong> - MHD 9 Tage. Küchen-Deadlines besonders beachten.</div>` : ""}
 
-  <h2>Zusammenfassung</h2>
+  <h2>Operations-Lage</h2>
   <div class="summary-grid">
     <div class="stat"><div class="stat-val">${batchSplitPlan.length}</div><div class="stat-lbl">Rezepte</div></div>
     <div class="stat"><div class="stat-val">${fmtNum(totalPortionsForecast)}</div><div class="stat-lbl">Forecast-Portionen</div></div>
-    <div class="stat"><div class="stat-val">${fmtNum(totalPortionsLine)}</div><div class="stat-lbl">Linienplan-Kapazität</div></div>
+    <div class="stat"><div class="stat-val">${fmtNum(totalPortionsLine)}</div><div class="stat-lbl">Geplante Plating-Portionen</div></div>
     <div class="stat"><div class="stat-val">${platingLineCount}</div><div class="stat-lbl">Aktive Plating-Linien</div></div>
   </div>
+  <div class="ops-strip">
+    <div class="ops-box"><div class="ops-title">Plating-Auslastung</div><div class="ops-main">${pct(totalLineUtilization)}</div><div class="bar"><div class="bar-fill ${totalLineUtilization > 1 ? "danger" : totalLineUtilization >= 0.85 ? "warn" : ""}" style="width:${Math.min(100, Math.round(totalLineUtilization * 100))}%"></div></div><div style="font-size:11px;color:#64748b;margin-top:4px">${fmtNum(totalPortionsLine)} von ${fmtNum(totalAvailableLineCapacity)} Tageskapa geplant</div></div>
+    <div class="ops-box"><div class="ops-title">Küche</div><div class="ops-main">${totalManufacturingJobs} Jobs</div><div style="font-size:11px;color:#64748b;margin-top:4px">Main + Sub-Runs aus dem Wochenplan</div></div>
+    <div class="ops-box"><div class="ops-title">Besetzung / Risiko</div><div class="ops-main">${maxPlatingStaff} MA Peak</div><div style="font-size:11px;color:#64748b;margin-top:4px">${coverageWarnings.length} Kapalücken · ${allergenRecipeCount} Allergen-Rezepte</div></div>
+  </div>
 
-  <h2>Plating-Plan (Linienübersicht)</h2>
+  <h2>Plating-Aushang: Was ist zu tun?</h2>
   ${dayPlatingSummaries.length > 0 ? daysHtml : `<p style="color:#94a3b8;font-size:13px">Kein Linienplan für diese Woche hinterlegt (Linienplanung öffnen und befüllen).</p>`}
 
   <h2>Küchen-Deadlines</h2>
@@ -696,11 +872,11 @@ export function PlanningEmailView({
     <thead><tr>
       <th>Rezept</th><th>Name</th><th>Plating</th><th>Versand</th><th>Küche bis</th><th style="text-align:right">Portionen</th><th>Status</th>
     </tr></thead>
-    <tbody>${recipesHtml || `<tr><td colspan="6" style="color:#94a3b8;text-align:center">Keine Rezepte für diese Woche</td></tr>`}</tbody>
+    <tbody>${recipesHtml || `<tr><td colspan="7" style="color:#94a3b8;text-align:center">Keine Rezepte für diese Woche</td></tr>`}</tbody>
   </table>
 
   <h2>Manufacturing-Tageszusammenrechnung</h2>
-  <div class="info">Fixe Küchenregel: B1-Submeals werden von Sonntag Prep bis Donnerstag verteilt. B2-Submeals werden von Montag bis Freitag verteilt. Samstag bleibt frei.</div>
+  <div class="info">Fixe Küchenregel: B1-Submeals werden von Sonntag Prep bis Mittwoch verteilt. B2-Submeals werden von Montag bis Donnerstag verteilt. Freitag/Samstag bleiben frei für Submeal-Runs.</div>
   <div class="mfg-grid">${manufacturingSummaryHtml}</div>
 
   <h2>Personalbedarf Plating</h2>
@@ -779,14 +955,6 @@ export function PlanningEmailView({
                 : "Noch nicht gespeichert – bitte ‘💾 Plan sichern’ in Linienplanung klicken",
             },
             {
-              label: "Rack freigegeben",
-              ok: rackConfirmed,
-              loading: !rackLoaded,
-              hint: rackConfirmed
-                ? "Alle sechs Linien freigegeben"
-                : "Noch nicht alle Linien freigegeben - bitte jede Linie im Rack freigeben",
-            },
-            {
               label: "Wochenplaner",
               ok: cockpitHasAssignments,
               loading: false,
@@ -813,7 +981,7 @@ export function PlanningEmailView({
         </div>
         {!allConfirmed && (
           <p className="mt-3 text-xs text-slate-500">
-            ⚠ Bitte alle drei Quellen bestätigen, bevor die Rundmail versendet wird.
+            Bitte Linienplanung speichern und Küchenplan im Wochenplaner befüllen, bevor die Rundmail versendet wird.
           </p>
         )}
       </div>
@@ -834,7 +1002,7 @@ export function PlanningEmailView({
           <button
             onClick={() => void copyPlainText()}
             disabled={!allConfirmed}
-            title={!allConfirmed ? "Bitte zuerst alle 3 Quellen bestätigen" : undefined}
+            title={!allConfirmed ? "Bitte zuerst Linienplanung und Wochenplaner bestätigen" : undefined}
             className={`rounded-lg px-4 py-2 text-sm font-semibold ring-1 transition-colors ${
               copyState === "ok"
                 ? "bg-emerald-100 text-emerald-800 ring-emerald-300"
@@ -848,7 +1016,7 @@ export function PlanningEmailView({
           <button
             onClick={() => void copyHtml()}
             disabled={!allConfirmed}
-            title={!allConfirmed ? "Bitte zuerst alle 3 Quellen bestätigen" : undefined}
+            title={!allConfirmed ? "Bitte zuerst Linienplanung und Wochenplaner bestätigen" : undefined}
             className={`rounded-lg px-4 py-2 text-sm font-semibold ring-1 transition-colors ${
               htmlCopyState === "ok"
                 ? "bg-emerald-100 text-emerald-800 ring-emerald-300"
@@ -900,12 +1068,12 @@ export function PlanningEmailView({
 
           {/* Summary */}
           <div>
-            <h2 className="text-base font-bold text-slate-800 border-b-2 border-blue-700 pb-1 mb-3">Zusammenfassung</h2>
+            <h2 className="text-base font-bold text-slate-800 border-b-2 border-blue-700 pb-1 mb-3">Operations-Lage</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 { val: batchSplitPlan.length, lbl: "Rezepte" },
                 { val: fmtNum(totalPortionsForecast), lbl: "Forecast-Portionen" },
-                { val: fmtNum(totalPortionsLine), lbl: "Linienplan-Kapazität" },
+                { val: fmtNum(totalPortionsLine), lbl: "Geplante Plating-Portionen" },
                 { val: platingLineCount, lbl: "Aktive Plating-Linien" },
               ].map(({ val, lbl }) => (
                 <div key={lbl} className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-center">
@@ -914,42 +1082,99 @@ export function PlanningEmailView({
                 </div>
               ))}
             </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              {[
+                {
+                  label: "Plating-Auslastung",
+                  value: pct(totalLineUtilization),
+                  detail: `${fmtNum(totalPortionsLine)} von ${fmtNum(totalAvailableLineCapacity)} Tageskapa geplant`,
+                  bar: totalLineUtilization,
+                },
+                {
+                  label: "Küche",
+                  value: `${totalManufacturingJobs} Jobs`,
+                  detail: "Main + Sub-Runs aus dem Wochenplan",
+                  bar: null,
+                },
+                {
+                  label: "Besetzung / Risiko",
+                  value: `${maxPlatingStaff} MA Peak`,
+                  detail: `${coverageWarnings.length} Kapalücken · ${allergenRecipeCount} Allergen-Rezepte`,
+                  bar: null,
+                },
+              ].map((item) => {
+                const barTone = item.bar !== null && item.bar > 1 ? "bg-red-600" : item.bar !== null && item.bar >= 0.85 ? "bg-amber-500" : "bg-blue-600";
+                return (
+                  <div key={item.label} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">{item.label}</div>
+                    <div className="mt-1 text-lg font-black text-slate-900">{item.value}</div>
+                    {item.bar !== null && (
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                        <div className={`h-full rounded-full ${barTone}`} style={{ width: `${Math.min(100, Math.round(item.bar * 100))}%` }} />
+                      </div>
+                    )}
+                    <div className="mt-1 text-[11px] text-slate-500">{item.detail}</div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* Plating-Plan */}
           <div>
-            <h2 className="text-base font-bold text-slate-800 border-b-2 border-blue-700 pb-1 mb-3">Plating-Plan</h2>
+            <h2 className="text-base font-bold text-slate-800 border-b-2 border-blue-700 pb-1 mb-3">Plating-Aushang: Was ist zu tun?</h2>
             {dayPlatingSummaries.length === 0 ? (
               <p className="text-sm text-slate-400 italic">Kein Linienplan hinterlegt – bitte Linienplanung befüllen.</p>
             ) : (
               <div className="space-y-3">
-                {dayPlatingSummaries.map(ds => {
-                  const lineNums = Array.from(ds.activeLines).sort();
+                {operationsDaySummaries.map(ds => {
+                  const dayTone = ds.utilization > 1 ? "bg-red-600" : ds.utilization >= 0.85 ? "bg-amber-500" : "bg-blue-600";
                   return (
                     <div key={ds.day} className="rounded-lg border border-slate-200 overflow-hidden">
                       <div className="bg-blue-800 text-white px-4 py-2 flex justify-between items-center">
-                        <span className="font-bold">{ds.dayLong} · {dayDate(week, ds.day)}</span>
-                        <span className="text-sm font-normal">{fmtNum(ds.totalPortions)} Port. · <strong>{ds.staffNeeded} MA</strong> Plating</span>
+                        <span className="font-bold">{ds.dayLong} · {ds.dateLabel}</span>
+                        <span className="text-sm font-normal">{fmtNum(ds.planned)} Port. · {pct(ds.utilization)} Auslastung · <strong>{ds.staffNeeded} MA</strong></span>
                       </div>
                       <div className="p-3 space-y-3">
-                        {lineNums.map(li => {
-                          const blocks = ds.blocks.filter(b => b.lineIdx === li).sort((a, b) => a.slotKey.localeCompare(b.slotKey));
-                          const staff = staffPerLine(blocks.map(b => b.recipe));
+                        <div className="rounded-md bg-slate-50 px-3 py-2">
+                          <div className="text-xs text-slate-600">
+                            <strong>Auftrag:</strong>{" "}
+                            {ds.recipeCodes.length > 0 ? ds.recipeCodes.map(code => (
+                              <span key={code} className="mr-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-black text-indigo-800">{code}</span>
+                            )) : "Keine Rezepte"}
+                          </div>
+                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                            <div className={`h-full rounded-full ${dayTone}`} style={{ width: `${Math.min(100, Math.round(ds.utilization * 100))}%` }} />
+                          </div>
+                        </div>
+                        {ds.lineSummaries.map(line => {
+                          const blocks = line.blocks;
+                          const lineTone = line.utilization > 1 ? "bg-red-600" : line.utilization >= 0.85 ? "bg-amber-500" : "bg-blue-600";
                           return (
-                            <div key={li}>
-                              <div className="text-xs font-bold text-slate-500 mb-1">P-Linie {li + 1} · {staff} MA</div>
-                              <table className="w-full text-xs">
-                                <tbody>
-                                  {blocks.map(block => (
-                                    <tr key={`${block.slotKey}-${li}`} className="border-b border-slate-100 last:border-0">
-                                      <td className="py-1 pr-3 text-slate-400 font-mono w-28">{block.slotKey}</td>
-                                      <td className="py-1 pr-3 font-bold text-blue-900">{block.recipe.code}</td>
-                                      <td className="py-1 pr-3 text-slate-600">{block.recipe.name.replace(/\[.*?\]/g, "").trim().slice(0, 40)}</td>
-                                      <td className="py-1 text-right text-slate-500 tabular-nums">{fmtNum(block.portions)} Port.</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                            <div key={line.lineIdx}>
+                              <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                                <span className="font-bold text-slate-500">P-Linie {line.lineIdx + 1}</span>
+                                <span className="font-semibold tabular-nums text-slate-500">{fmtNum(line.planned)}/{fmtNum(line.capacity)} Port. · {pct(line.utilization)}</span>
+                              </div>
+                              <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                                <div className={`h-full rounded-full ${lineTone}`} style={{ width: `${Math.min(100, Math.round(line.utilization * 100))}%` }} />
+                              </div>
+                              {blocks.length === 0 ? (
+                                <div className="rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-400">frei</div>
+                              ) : (
+                                <table className="w-full text-xs">
+                                  <tbody>
+                                    {blocks.map(block => (
+                                      <tr key={`${block.slotKey}-${line.lineIdx}`} className="border-b border-slate-100 last:border-0">
+                                        <td className="py-1 pr-3 text-slate-400 font-mono w-28">{block.slotKey}</td>
+                                        <td className="py-1 pr-3 font-bold text-blue-900">{block.recipe.code}</td>
+                                        <td className="py-1 pr-3 text-slate-600">{cleanName(block.recipe.name, 40)}</td>
+                                        <td className="py-1 text-right text-slate-500 tabular-nums">{fmtNum(block.portions)} Port.</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
                             </div>
                           );
                         })}
@@ -1021,7 +1246,7 @@ export function PlanningEmailView({
           <div>
             <h2 className="text-base font-bold text-slate-800 border-b-2 border-blue-700 pb-1 mb-3">Manufacturing-Tageszusammenrechnung</h2>
             <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-              Fixe Küchenregel: B1-Submeals von Sonntag Prep bis Donnerstag, B2-Submeals von Montag bis Freitag. Samstag bleibt frei.
+              Fixe Küchenregel: B1-Submeals von Sonntag Prep bis Mittwoch, B2-Submeals von Montag bis Donnerstag. Freitag/Samstag bleiben frei für Submeal-Runs.
             </div>
             <div className="grid gap-2 md:grid-cols-4">
               {manufacturingDaySummaries.map(row => {
