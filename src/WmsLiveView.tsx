@@ -369,6 +369,12 @@ function toolWeekToWmsWeek(toolWeek: string): string {
   return `${m[1]}${m[2]}`;
 }
 
+function wmsWeekToToolWeek(wmsWeek: string): string {
+  const m = wmsWeek.match(/^(20\d{2})(\d{2})$/);
+  if (!m) return "";
+  return `${m[1]}-W${m[2]}`;
+}
+
 // Build index: submealItemNumber → workorders rows for fast PLH lookup
 function buildWorkordersIndex(rows: WmsWorkordersRow[]): Map<string, WmsWorkordersRow[]> {
   const map = new Map<string, WmsWorkordersRow[]>();
@@ -1510,6 +1516,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
   const [deboxSearch, setDeboxSearch] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState<string | null>(null);
   const [compareRecipe, setCompareRecipe] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"overview" | "meals" | "workorders" | "plating" | "sleeving" | "inbound" | "prozess">("overview");
   const detailRef = useRef<HTMLElement>(null);
   const toolRange = useMemo(() => wmsRangeForToolWeek(week), [week]);
   const plannedSkuIndex = useMemo(() => buildPlannedSkuIndex(data, week), [data, week]);
@@ -1590,18 +1597,14 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
   const wmsWeekCode = useMemo(() => toolWeekToWmsWeek(week), [week]);
   const workordersIndex = useMemo(() => buildWorkordersIndex(workordersRawRows), [workordersRawRows]);
 
-  // Workorders für aktuelle KW + ±1 (wegen HF-Offset)
+  // Workorders: kein -7d Shift — V_SUBMEAL_PRODUCTION hat eigene week-Spalte (z.B. "202622")
+  // direkt nach Tool-KW filtern, kein Vorwoche-Fallback
   const workordersForWeek = useMemo(() => {
     if (workordersRawRows.length === 0) return [];
-    const m = week.match(/^(20\d{2})-W(\d{2})$/);
-    if (!m) return workordersRawRows;
-    const codes = new Set([
-      toolWeekToWmsWeek(week),
-      toolWeekToWmsWeek(`${m[1]}-W${String(Number(m[2]) - 1).padStart(2, "0")}`),
-    ]);
-    const filtered = workordersRawRows.filter((r) => codes.has(r.week));
-    return filtered.length > 0 ? filtered : workordersRawRows;
-  }, [week, wmsWeekCode, workordersRawRows]);
+    const code = toolWeekToWmsWeek(week); // "2026-W22" → "202622"
+    if (!code) return [];
+    return workordersRawRows.filter((r) => r.week === code);
+  }, [week, workordersRawRows]);
 
   // Gruppiert nach Meal für die UI
   type WorkordersMealGroup = {
@@ -2073,9 +2076,78 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
   const lineRows = matchedFilteredRows.filter((row) => row.area === "Line");
   const holdingRows = matchedFilteredRows.filter((row) => row.area !== "Line");
 
+  const tabs: { id: typeof activeTab; label: string; badge?: number; color?: string }[] = [
+    { id: "overview",   label: "Übersicht",   badge: commandKpis.criticalSkus > 0 ? commandKpis.criticalSkus : undefined, color: commandKpis.criticalSkus > 0 ? "rose" : undefined },
+    { id: "meals",      label: "Meals",       badge: commandRecipeRows.length },
+    { id: "workorders", label: "Workorders",  badge: workordersForWeek.length },
+    { id: "plating",    label: "Plating",     badge: platingRows.length },
+    { id: "sleeving",   label: "Sleeving",    badge: sleevingKpis.rawRows > 0 ? sleevingSummaryRows.length : undefined },
+    { id: "inbound",    label: "Inbound",     badge: inboundKpis.rawRows > 0 ? inboundSummaryRows.length : undefined },
+    { id: "prozess",    label: "Prozess",     badge: deboxKpis.deboxRows + deboxKpis.postblastRows > 0 ? processRecipeRows.length : undefined },
+  ];
+
   return (
     <div className="space-y-4">
+      {/* ── Immer sichtbar: Compact Header + Tab Bar ── */}
+      <section className="card overflow-hidden">
+        <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-950 px-5 py-3 text-white">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-violet-200">WMS Live · VF</div>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+              <span className="text-base font-black">KW {week} · {wmsWeek}</span>
+              <span className="text-xs text-slate-300">{rangeStart} – {rangeEnd}</span>
+              {state === "loading" && <span className="text-xs font-bold text-sky-300 animate-pulse">Snowflake lädt…</span>}
+              {state === "error"   && <span className="text-xs font-bold text-rose-300">{error}</span>}
+              {state === "ready"   && (
+                <span className="text-[11px] text-slate-400">
+                  {fmtNum(kpis.rawRows)} Plating · {fmtNum(sleevingKpis.rawRows)} Slv · {fmtNum(inboundKpis.rawRows)} Inb · {fmtNum(deboxKpis.deboxRows + deboxKpis.postblastRows)} Db/PB · {fmtNum(workordersForWeek.length)} WO
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))} className="rounded-lg border border-white/20 bg-slate-900 px-2 py-1 text-xs font-bold text-white">
+              <option value={5000}>5.000</option>
+              <option value={25000}>25.000</option>
+              <option value={50000}>50.000</option>
+            </select>
+            <button type="button" onClick={() => void load()} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-slate-100">
+              Aktualisieren
+            </button>
+          </div>
+        </div>
+        {/* Tab Bar */}
+        <div className="flex overflow-x-auto bg-slate-50">
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-xs font-bold transition-colors ${
+                  isActive
+                    ? "border-violet-600 bg-white text-violet-700"
+                    : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                }`}
+              >
+                {tab.label}
+                {tab.badge != null && (
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black leading-none ${
+                    isActive ? "bg-violet-100 text-violet-700" :
+                    tab.color === "rose" ? "bg-rose-100 text-rose-700" : "bg-slate-200 text-slate-600"
+                  }`}>
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {/* ── Meal Navigator ── */}
+      {activeTab === "meals" && (<>
       <section className="card overflow-hidden">
         <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-950 px-5 py-4 text-white">
           <div>
@@ -2562,6 +2634,8 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
         </section>
       )}
 
+      </>)}
+      {activeTab === "overview" && (<>
       {/* ── Bestehende Header-Sektion ── */}
       <section className="card overflow-hidden">
         <div className="border-b border-slate-200 bg-slate-950 p-5 text-white">
@@ -2614,6 +2688,165 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           {state === "error" && <span className="font-semibold text-rose-700">{error}</span>}
         </div>
       </section>
+
+      {/* ── Ramp-Up Verlauf ── */}
+      {(() => {
+        const rampWeeks = data.weeks.slice().sort();
+        if (rampWeeks.length < 2) return null;
+
+        // Live WMS-Daten aus Workorders aggregieren (alle KWs im Cache)
+        // quantity = Produktionsvolumen in Gramm; mealItemNumber = eindeutiges Rezept
+        const wmsRampMap = new Map<string, { meals: number; quantityKg: number }>();
+        for (const row of workordersRawRows) {
+          const toolW = wmsWeekToToolWeek(row.week);
+          if (!toolW) continue;
+          const entry = wmsRampMap.get(toolW) ?? { meals: 0, quantityKg: 0 };
+          entry.quantityKg += (row.quantity ?? 0) / 1000;
+          wmsRampMap.set(toolW, entry);
+        }
+        // Unique meals per WMS week
+        const wmsMealSets = new Map<string, Set<string>>();
+        for (const row of workordersRawRows) {
+          const toolW = wmsWeekToToolWeek(row.week);
+          if (!toolW || !row.mealItemNumber) continue;
+          const s = wmsMealSets.get(toolW) ?? new Set<string>();
+          s.add(row.mealItemNumber);
+          wmsMealSets.set(toolW, s);
+        }
+        for (const [w, s] of wmsMealSets) {
+          const entry = wmsRampMap.get(w) ?? { meals: 0, quantityKg: 0 };
+          entry.meals = s.size;
+          wmsRampMap.set(w, entry);
+        }
+
+        type RampRow = {
+          w: string;
+          planMeals: number;
+          planPortions: number;
+          wmsMeals: number | null;
+          wmsQuantityKg: number | null;
+          isCurrentWeek: boolean;
+        };
+        const rows: RampRow[] = rampWeeks.map((w) => {
+          const wrs = data.weekRecipes.filter((r) => r.hfWeek === w);
+          const planMeals = new Set(wrs.map((r) => r.code)).size;
+          const planPortions = wrs.reduce((s, r) => s + (r.verdenVolume.BENL ?? 0) + (r.verdenVolume.DKSE ?? 0) + (r.verdenVolume.DE ?? 0), 0);
+          const wmsEntry = wmsRampMap.get(w) ?? null;
+          return {
+            w,
+            planMeals,
+            planPortions,
+            wmsMeals: wmsEntry ? wmsEntry.meals : null,
+            wmsQuantityKg: wmsEntry ? wmsEntry.quantityKg : null,
+            isCurrentWeek: w === week,
+          };
+        });
+
+        const hasWmsData = rows.some((r) => r.wmsMeals !== null);
+        const maxMeals = Math.max(1, ...rows.map((r) => Math.max(r.planMeals, r.wmsMeals ?? 0)));
+        const maxPortions = Math.max(1, ...rows.map((r) => Math.max(r.planPortions, r.wmsQuantityKg ?? 0)));
+        const currentIdx = rows.findIndex((r) => r.isCurrentWeek);
+        const prev = currentIdx > 0 ? rows[currentIdx - 1] : null;
+        const curr = rows[currentIdx];
+        // Delta: WMS wenn verfügbar, sonst Plan
+        const mealsA = curr ? (curr.wmsMeals ?? curr.planMeals) : 0;
+        const mealsB = prev ? (prev.wmsMeals ?? prev.planMeals) : 0;
+        const platesA = curr ? (curr.wmsQuantityKg ?? curr.planPortions) : 0;
+        const platesB = prev ? (prev.wmsQuantityKg ?? prev.planPortions) : 0;
+        const mealsDelta = curr && prev ? mealsA - mealsB : null;
+        const portionsDelta = curr && prev ? platesA - platesB : null;
+        return (
+          <section className="card overflow-hidden">
+            <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-5 py-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-violet-500">Ramp-Up Verlauf</div>
+                <h3 className="text-base font-black text-slate-900">
+                  Meal-Entwicklung über alle Wochen
+                  {hasWmsData && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">WMS Live</span>}
+                </h3>
+              </div>
+              {curr && (
+                <div className="flex items-center gap-3 text-right">
+                  {mealsDelta !== null && (
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${mealsDelta >= 0 ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-rose-50 text-rose-800 ring-rose-200"}`}>
+                      {mealsDelta >= 0 ? "▲" : "▼"} {Math.abs(mealsDelta)} Meals vs. Vorwoche
+                    </span>
+                  )}
+                  {portionsDelta !== null && (
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ring-1 ${portionsDelta >= 0 ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-rose-50 text-rose-800 ring-rose-200"}`}>
+                      {portionsDelta >= 0 ? "▲" : "▼"} {fmtNum(Math.abs(Math.round(portionsDelta)))} {hasWmsData ? "kg" : "Portionen"}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="overflow-x-auto p-4">
+              <div className="flex min-w-max items-end gap-2">
+                {rows.map((row) => {
+                  const planMealH = Math.max(4, Math.round((row.planMeals / maxMeals) * 80));
+                  const planPortH = Math.max(4, Math.round((row.planPortions / maxPortions) * 80));
+                  const wmsMealH = row.wmsMeals !== null ? Math.max(4, Math.round((row.wmsMeals / maxMeals) * 80)) : null;
+                  const wmsVolH = row.wmsQuantityKg !== null ? Math.max(4, Math.round((row.wmsQuantityKg / maxPortions) * 80)) : null;
+                  return (
+                    <div key={row.w} className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2 ${row.isCurrentWeek ? "bg-violet-50 ring-2 ring-violet-400" : "bg-slate-50 ring-1 ring-slate-200"}`}>
+                      <div className="flex items-end gap-0.5" style={{ height: 88 }}>
+                        {/* Plan bars (lighter) */}
+                        <div
+                          className={`w-4 rounded-t transition-all ${row.isCurrentWeek ? "bg-violet-300" : "bg-violet-100"}`}
+                          style={{ height: planMealH }}
+                          title={`Plan: ${row.planMeals} Meals`}
+                        />
+                        <div
+                          className={`w-4 rounded-t transition-all ${row.isCurrentWeek ? "bg-emerald-300" : "bg-emerald-100"}`}
+                          style={{ height: planPortH }}
+                          title={`Plan: ${fmtNum(Math.round(row.planPortions / 1000))}k Portionen`}
+                        />
+                        {/* WMS Live bars (bright) */}
+                        {wmsMealH !== null && (
+                          <div
+                            className="w-4 rounded-t bg-amber-500 transition-all"
+                            style={{ height: wmsMealH }}
+                            title={`WMS: ${row.wmsMeals} Meals`}
+                          />
+                        )}
+                        {wmsVolH !== null && (
+                          <div
+                            className="w-4 rounded-t bg-teal-500 transition-all"
+                            style={{ height: wmsVolH }}
+                            title={`WMS: ${fmtNum(Math.round(row.wmsQuantityKg ?? 0))} kg`}
+                          />
+                        )}
+                      </div>
+                      <div className={`text-[10px] font-black ${row.isCurrentWeek ? "text-violet-700" : "text-slate-500"}`}>{row.w.replace("2026-", "")}</div>
+                      <div className="text-[10px] font-bold text-slate-600">
+                        {row.wmsMeals !== null ? (
+                          <span className="text-amber-700">{row.wmsMeals}M</span>
+                        ) : (
+                          <span className={row.isCurrentWeek ? "text-violet-900" : "text-slate-700"}>{row.planMeals}M</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {row.wmsQuantityKg !== null ? (
+                          <span className="text-teal-700">{fmtNum(Math.round(row.wmsQuantityKg / 1000))}t</span>
+                        ) : (
+                          <span className={row.isCurrentWeek ? "text-emerald-800" : "text-slate-400"}>{fmtNum(Math.round(row.planPortions / 1000))}k</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-400">
+                <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-violet-300" /> Plan Meals</span>
+                <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-300" /> Plan Portionen</span>
+                {hasWmsData && <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-500" /> WMS Meals (live)</span>}
+                {hasWmsData && <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-teal-500" /> WMS Volumen in Tonnen (live)</span>}
+                <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-violet-100 ring-1 ring-violet-400" /> Aktuelle KW</span>
+              </div>
+            </div>
+          </section>
+        );
+      })()}
 
       <section className="card overflow-hidden">
         <div className={`flex items-center gap-4 border-b p-4 text-white ${weekBilanz.overallStatus === "ok" ? "bg-emerald-900" : weekBilanz.overallStatus === "warn" ? "bg-amber-900" : weekBilanz.overallStatus === "err" ? "bg-rose-900" : "bg-slate-800"}`}>
@@ -2842,7 +3075,9 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           </div>
         </div>
       </section>
+      </>)}
 
+      {activeTab === "plating" && (<>
       <section className="card overflow-hidden">
         <div className="border-b border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2940,7 +3175,9 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           {filteredRows.length === 0 && <div className="p-8 text-center text-sm text-slate-500">Keine Plating-/PLH-Zeilen geladen.</div>}
         </div>
       </section>
+      </>)}
 
+      {activeTab === "sleeving" && (<>
       <section className="card overflow-hidden">
         <div className="border-b border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3048,7 +3285,9 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           </div>
         </div>
       </section>
+      </>)}
 
+      {activeTab === "prozess" && (<>
       <section className="card overflow-hidden">
         <div className="border-b border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3159,7 +3398,9 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           {filteredProcessRecipeRows.length === 0 && <div className="p-8 text-center text-sm text-slate-500">Keine Debox/Postblast-Matches geladen.</div>}
         </div>
       </section>
+      </>)}
 
+      {activeTab === "inbound" && (<>
       <section className="card overflow-hidden">
         <div className="border-b border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3369,7 +3610,9 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           </div>
         </div>
       </section>
+      </>)}
 
+      {activeTab === "workorders" && (<>
       {/* ── Workorders (V_SUBMEAL_PRODUCTION) ── */}
       <section className="card overflow-hidden">
         <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-950 px-5 py-4 text-white">
@@ -3387,7 +3630,13 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
 
         {workordersForWeek.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-500">
-            Keine Workorders für KW {week} gefunden. Sync ausführen: <code className="rounded bg-slate-100 px-1 py-0.5">npm run wms:sync && npm run wms:push</code>
+            Keine Workorders für KW {week} (WMS-Code: {wmsWeekCode}) gefunden.{" "}
+            {workordersRawRows.length > 0 && (
+              <span className="text-amber-600">
+                Im Cache sind {workordersRawRows.length} Aufträge aus anderen KWs — bitte für diese KW neu synchronisieren:{" "}
+              </span>
+            )}
+            <code className="rounded bg-slate-100 px-1 py-0.5">npm run wms:sync -- --week {week} && npm run wms:push</code>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -3516,6 +3765,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           </div>
         )}
       </section>
+      </>)}
     </div>
   );
 }

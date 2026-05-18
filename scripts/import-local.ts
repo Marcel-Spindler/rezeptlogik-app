@@ -282,12 +282,36 @@ function loadGross(recipes: Record<string, Recipe>) {
         const fullName = (row["Recipe Name"] ?? "").trim();
         if (!fullName) continue;
         const { code } = parseRecipeName(fullName);
-        if (!code) continue;
-        const market = parseDetailedMarket(fullName);
-        if (!market) continue; // Nur Hauptrezepte mit Markt-Tag ([DE], [BNL], [DKSE])
+        if (!code || !/^[A-Z]{2}\d{4}[A-Z0-9]+$/.test(code)) continue;
+        const market = parseDetailedMarket(fullName) ?? "BENL";
         if (!recipes[code]) {
           recipes[code] = { code, baseName: parseRecipeName(fullName).base, markets: {}, grossIngredients: {} };
         }
+        // Sub-Rezepte (Top-Level = Sub-Recipe 1) aus Detailed-CSV befüllen,
+        // falls die Recipe-CSV diesen Code nicht enthält (z. B. neue KW-Rezepte).
+        if (!recipes[code].markets[market]) {
+          recipes[code].markets[market] = {
+            market,
+            msku: "",
+            recipeNameLocal: fullName,
+            subRecipes: [],
+            ingredients: []
+          };
+        }
+        const md = recipes[code].markets[market]!;
+        const sub1Id   = (row["Sub-Recipe 1 ID"]                ?? "").trim();
+        const sub1Name = (row["Sub-Recipe 1 Name"]              ?? "").trim();
+        const sub1Cat  = (row["Sub-Recipe 1 Recipe Categories"] ?? "").trim();
+        if (sub1Id && !md.subRecipes.find(s => s.id === sub1Id)) {
+          md.subRecipes.push({
+            id: sub1Id,
+            name: sub1Name,
+            category: sub1Cat,
+            yield: numStr(row["Sub-Recipe 1 Quantity"]) || undefined,
+            yieldUom: (row["Sub-Recipe 1 UOM"] ?? "").trim() || undefined,
+          });
+        }
+
         const arr = (recipes[code].grossIngredients[market] ??= []);
         const ingredientId = row["Ingredient ID"] || "";
         // Kategorie aus Ingredient-ID ableiten (z.B. "PHF" aus "PHF-00-139175-3")

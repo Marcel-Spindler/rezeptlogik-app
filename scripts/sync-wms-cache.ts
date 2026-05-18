@@ -113,8 +113,9 @@ function isoWeekLabel(date: Date): string {
 function getWeekRange(weekStr: string): { start: string; end: string; label: string } {
   const match = (weekStr || "").trim().match(/^(20\d{2})-W(\d{2})$/);
   if (!match) {
+    // Kein --week: aktuelle KW als Label (= Tool-KW), Datumsrange = eine Woche davor
     const today = new Date();
-    const label = isoWeekLabel(today);
+    const label = isoWeekLabel(today); // z.B. "2026-W22"
     const m2 = label.match(/^(20\d{2})-W(\d{2})$/)!;
     const start = isoWeekStart(Number(m2[1]), Number(m2[2]));
     start.setUTCDate(start.getUTCDate() - 7);
@@ -122,6 +123,7 @@ function getWeekRange(weekStr: string): { start: string; end: string; label: str
     end.setUTCDate(start.getUTCDate() + 7);
     return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), label };
   }
+  // Mit --week 2026-W23: label = "2026-W23", range = Woche davor (wie Cloud Function erwartet)
   const year = Number(match[1]);
   const week = Number(match[2]);
   const start = isoWeekStart(year, week);
@@ -131,7 +133,7 @@ function getWeekRange(weekStr: string): { start: string; end: string; label: str
   return {
     start: start.toISOString().slice(0, 10),
     end: end.toISOString().slice(0, 10),
-    label: weekStr,
+    label: weekStr, // "2026-W23" bleibt "2026-W23" — kein Shift im Key
   };
 }
 
@@ -322,7 +324,7 @@ async function main() {
   const limit = 25000;
 
   console.log(`📦 WMS Cache Sync`);
-  console.log(`   Week: ${range.label}`);
+  console.log(`   Cache-Key: ${range.label}`);
   console.log(`   Range: ${range.start} to ${range.end}`);
   console.log(`   Warehouse: ${whId}`);
   console.log("");

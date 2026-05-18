@@ -258,14 +258,25 @@ function wmsRangeForToolWeek(raw) {
   const match = String(raw || "").trim().match(/^(20\d{2})-W(\d{2})$/);
   if (!match) {
     const today = localDateIso();
-    return { wmsWeek: isoWeekLabel(new Date(`${today}T12:00:00Z`)), rangeStart: today, rangeEnd: today };
+    const todayWeek = isoWeekLabel(new Date(`${today}T12:00:00Z`));
+    const m2 = todayWeek.match(/^(20\d{2})-W(\d{2})$/);
+    if (!m2) return { wmsWeek: todayWeek, rangeStart: today, rangeEnd: today };
+    const start = isoWeekStart(Number(m2[1]), Number(m2[2]));
+    start.setUTCDate(start.getUTCDate() - 7);
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 7);
+    return {
+      wmsWeek: todayWeek, // Tool-KW direkt als Cache-Key (kein Shift)
+      rangeStart: start.toISOString().slice(0, 10),
+      rangeEnd: end.toISOString().slice(0, 10),
+    };
   }
   const start = isoWeekStart(Number(match[1]), Number(match[2]));
   start.setUTCDate(start.getUTCDate() - 7);
   const end = new Date(start);
   end.setUTCDate(start.getUTCDate() + 7);
   return {
-    wmsWeek: isoWeekLabel(start),
+    wmsWeek: raw, // Tool-KW direkt als Cache-Key (z.B. "2026-W23" → sucht "2026-W23")
     rangeStart: start.toISOString().slice(0, 10),
     rangeEnd: end.toISOString().slice(0, 10),
   };
@@ -277,38 +288,30 @@ let connectingWmsConn = null;
 function createSnowflakeConnectionOptions() {
   const account = process.env.SNOWFLAKE_ACCOUNT;
   const username = process.env.SNOWFLAKE_USER || "";
-  const password = process.env.SNOWFLAKE_PASSWORD || "";
-  const authenticator = process.env.SNOWFLAKE_AUTHENTICATOR || "username_password_mfa";
+  const privateKeyRaw = process.env.SNOWFLAKE_PRIVATE_KEY || "";
   const role = process.env.SNOWFLAKE_ROLE || "US_OPS_ANALYTICS_USER";
   const warehouse = process.env.SNOWFLAKE_WAREHOUSE || "US_OPS_ANALYTICS";
   const database = process.env.SNOWFLAKE_DATABASE || "US_OPS_ANALYTICS";
   const schema = process.env.SNOWFLAKE_SCHEMA || "HIGHJUMP";
 
-  if (!account) {
-    throw new Error("SNOWFLAKE_ACCOUNT erforderlich.");
-  }
+  if (!account) throw new Error("SNOWFLAKE_ACCOUNT erforderlich.");
+  if (!username) throw new Error("SNOWFLAKE_USER erforderlich.");
+  if (!privateKeyRaw) throw new Error("SNOWFLAKE_PRIVATE_KEY erforderlich.");
 
-  // Cloud Functions (Service Account): username + password erforderlich
-  // Lokal (SSO): authenticator = externalbrowser (username/password leer)
-  if (process.env.SNOWFLAKE_AUTHENTICATOR !== "externalbrowser" && (!username || !password)) {
-    throw new Error("Fuer Service Account Auth brauchst du SNOWFLAKE_USER + SNOWFLAKE_PASSWORD.");
-  }
+  // Private Key aus env var rekonstruieren (PKCS8 PEM, 64-Zeichen-Zeilen)
+  const privateKey = `-----BEGIN PRIVATE KEY-----\n${privateKeyRaw.match(/.{1,64}/g).join("\n")}\n-----END PRIVATE KEY-----`;
 
-  const options = {
+  return {
     account,
+    username,
     role,
     warehouse,
     database,
     schema,
     application: "rezeptlogik_wms_functions",
-    authenticator,
+    authenticator: "SNOWFLAKE_JWT",
+    privateKey,
   };
-
-  // Nur setzen wenn vorhanden (bei externalbrowser leer lassen)
-  if (username) options.username = username;
-  if (password) options.password = password;
-
-  return options;
 }
 
 function connectSnowflake() {
@@ -460,40 +463,35 @@ function parseWmsParams(req, options = {}) {
 async function runWmsQuery(req, res, config) {
   const params = parseWmsParams(req, config);
   try {
-    // CLOUD FUNCTIONS: Nutze gecachte Daten statt live Snowflake Query
-    // Daten werden lokal mit scripts/sync-wms-cache.ts in public/data/wms-cache.json gespeichert
-    
-    // Versuche aus Firestore zu laden (falls deployed)
+    // Live Snowflake Query (Key Pair Auth, kein SSO, kein Cache)
     let cachedData = null;
     try {
-      const cacheDoc = await db.collection("wmsCache").doc(`${config.name}-${params.wmsWeek}`).get();
-      if (cacheDoc.exists) {
-        cachedData = cacheDoc.data();
-      }
-    } catch (firestoreErr) {
-      logger.warn("Could not load from Firestore wmsCache:", firestoreErr.message);
-    }
-
-    if (!cachedData) {
-      // Fallback: Versuche live Snowflake zu querien (wenn Credentials vorhanden)
+      const conn = await connectSnowflake();
+      const rowsRaw = await executeSnowflakeQuery(conn, config.sql, [
+        params.whId,
+        params.rangeStart,
+        params.rangeEnd,
+        params.limit,
+      ]);
+      cachedData = {
+        rows: rowsRaw.map(config.mapper),
+        source: "snowflake-live",
+      };
+    } catch (snowflakeErr) {
+      logger.warn("Snowflake live query failed, trying Firestore cache:", snowflakeErr.message);
+      // Fallback: Firestore-Cache (falls Snowflake temporär nicht erreichbar)
       try {
-        const conn = await connectSnowflake();
-        const rowsRaw = await executeSnowflakeQuery(conn, config.sql, [
-          params.whId,
-          params.rangeStart,
-          params.rangeEnd,
-          params.limit,
-        ]);
-        cachedData = {
-          rows: rowsRaw.map(config.mapper),
-          source: "snowflake-live",
-        };
-      } catch (snowflakeErr) {
-        logger.error("WMS endpoint " + config.name + " Snowflake failed", snowflakeErr);
-        // Kein Cache und keine Snowflake-Connection -> 500
-        throw new Error(
-          "WMS data nicht verfügbar. Bitte lokal: npx ts-node scripts/sync-wms-cache.ts"
-        );
+        const cacheDoc = await db.collection("wmsCache").doc(`${config.name}-${params.wmsWeek}`).get();
+        if (cacheDoc.exists) {
+          cachedData = cacheDoc.data();
+          logger.info("Using Firestore cache for " + config.name);
+        }
+      } catch (firestoreErr) {
+        logger.warn("Firestore cache also failed:", firestoreErr.message);
+      }
+      if (!cachedData) {
+        logger.error("WMS endpoint " + config.name + " both Snowflake and cache failed", snowflakeErr);
+        throw new Error("WMS data nicht verfügbar: " + snowflakeErr.message);
       }
     }
 
@@ -1752,34 +1750,27 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
   // Note: workorders doesn't use date range filtering, just whId and limit
   const params = parseWmsParams(req, {});
   try {
-    // Try to load from cache first (Firestore or public/data/)
+    // Live Snowflake Query
     let cachedData = null;
     try {
-      const cacheDoc = await db.collection("wmsCache").doc("workorders").get();
-      if (cacheDoc.exists) {
-        cachedData = cacheDoc.data();
-      }
-    } catch (firestoreErr) {
-      logger.warn("Could not load workorders from Firestore:", firestoreErr.message);
-    }
-
-    if (!cachedData) {
+      const conn = await connectSnowflake();
+      const rowsRaw = await executeSnowflakeQuery(conn, WMS_WORKORDERS_SQL, [
+        params.whId,
+        params.limit,
+      ]);
+      cachedData = {
+        rows: rowsRaw.map(mapWmsWorkordersRow),
+        source: "snowflake-live",
+      };
+    } catch (snowflakeErr) {
+      logger.warn("Workorders Snowflake failed, trying Firestore cache:", snowflakeErr.message);
       try {
-        const conn = await connectSnowflake();
-        const rowsRaw = await executeSnowflakeQuery(conn, WMS_WORKORDERS_SQL, [
-          params.whId,
-          params.limit,
-        ]);
-        cachedData = {
-          rows: rowsRaw.map(mapWmsWorkordersRow),
-          source: "snowflake-live",
-        };
-      } catch (snowflakeErr) {
-        logger.error("WMS workorders Snowflake failed", snowflakeErr);
-        throw new Error(
-          "Workorders not available. Please run locally: npx ts-node scripts/sync-wms-cache.ts"
-        );
+        const cacheDoc = await db.collection("wmsCache").doc("workorders").get();
+        if (cacheDoc.exists) cachedData = cacheDoc.data();
+      } catch (firestoreErr) {
+        logger.warn("Firestore workorders cache also failed:", firestoreErr.message);
       }
+      if (!cachedData) throw new Error("Workorders nicht verfügbar: " + snowflakeErr.message);
     }
 
     const rows = cachedData.rows || [];
