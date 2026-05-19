@@ -97,3 +97,47 @@
 {"level":"INFO","message":"[10:48:31.217 AM]: Easy Logging is disabled as no config has been found"}
 {"level":"INFO","message":"[10:48:35.402 AM]: Connection[id: 24edb9a9-6933-460e-8a6f-230459e78050] - authentication successful using: EXTERNALBROWSER"}
 {"level":"INFO","message":"[10:48:35.615 AM]: Connection[id: 24edb9a9-6933-460e-8a6f-230459e78050] - connection established successfully after 4409.68 milliseconds"}
+{"level":"INFO","message":"[12:10:28.034 PM]: Creating new connection object"}
+{"level":"INFO","message":"[12:10:28.048 PM]: Creating Connection[id: 98925e4e-25a8-4d4d-b81b-0e8d0a04e423] with host: XG02811-OO69432.snowflakecomputing.com, account: XG02811-OO69432, accessUrl: https://XG02811-OO69432.snowflakecomputing.com, user: MARCEL.SPINDLER@HELLOFRESH.DE, role: US_OPS_ANALYTICS_USER, database: US_OPS_ANALYTICS, schema: HIGHJUMP, warehouse: US_OPS_ANALYTICS, proxy was not configured, password is not provided, region: undefined, authenticator: EXTERNALBROWSER, ocsp mode: FAIL_OPEN, os: win32, os version: 10.0.26100"}
+{"level":"INFO","message":"[12:10:28.049 PM]: Connection[id: 98925e4e-25a8-4d4d-b81b-0e8d0a04e423] additional details: passcode in password is provided, passcode is not provided, private key is not provided, application: rezeptlogik_wms_cache_sync, client name: snowflake-sdk, client version: 2.4.1, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[12:10:28.050 PM]: Connection[id: 98925e4e-25a8-4d4d-b81b-0e8d0a04e423] - connection object created successfully."}
+{"level":"INFO","message":"[12:10:28.051 PM]: Connection[id: 98925e4e-25a8-4d4d-b81b-0e8d0a04e423] - async connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[12:10:28.052 PM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[12:10:28.065 PM]: No client config detected."}
+{"level":"INFO","message":"[12:10:28.066 PM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[12:10:28.066 PM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[12:10:32.802 PM]: Connection[id: 98925e4e-25a8-4d4d-b81b-0e8d0a04e423] - authentication successful using: EXTERNALBROWSER"}
+{"level":"INFO","message":"[12:10:33.133 PM]: Connection[id: 98925e4e-25a8-4d4d-b81b-0e8d0a04e423] - connection established successfully after 5082.28 milliseconds"}
+{"level":"INFO","message":"[12:11:23.767 PM]: Creating new connection object"}
+{"level":"INFO","message":"[12:11:23.780 PM]: Creating Connection[id: 2f97d5da-4a54-439f-9194-a4693756bc56] with host: XG02811-OO69432.snowflakecomputing.com, account: XG02811-OO69432, accessUrl: https://XG02811-OO69432.snowflakecomputing.com, user: MARCEL.SPINDLER@HELLOFRESH.DE, role: US_OPS_ANALYTICS_USER, database: US_OPS_ANALYTICS, schema: HIGHJUMP, warehouse: US_OPS_ANALYTICS, proxy was not configured, password is not provided, region: undefined, authenticator: EXTERNALBROWSER, ocsp mode: FAIL_OPEN, os: win32, os version: 10.0.26100"}
+{"level":"INFO","message":"[12:11:23.781 PM]: Connection[id: 2f97d5da-4a54-439f-9194-a4693756bc56] additional details: passcode in password is provided, passcode is not provided, private key is not provided, application: rezeptlogik_wms_cache_sync, client name: snowflake-sdk, client version: 2.4.1, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[12:11:23.781 PM]: Connection[id: 2f97d5da-4a54-439f-9194-a4693756bc56] - connection object created successfully."}
+{"level":"INFO","message":"[12:11:23.782 PM]: Connection[id: 2f97d5da-4a54-439f-9194-a4693756bc56] - async connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[12:11:23.783 PM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[12:11:23.795 PM]: No client config detected."}
+{"level":"INFO","message":"[12:11:23.795 PM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[12:11:23.796 PM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[12:11:28.088 PM]: Connection[id: 2f97d5da-4a54-439f-9194-a4693756bc56] - authentication successful using: EXTERNALBROWSER"}
+{"level":"INFO","message":"[12:11:28.390 PM]: Connection[id: 2f97d5da-4a54-439f-9194-a4693756bc56] - connection established successfully after 4608.57 milliseconds"}
+{"level":"INFO","message":"[12:14:05.686 PM]: Creating new connection object"}
+{"level":"INFO","message":"[12:14:05.705 PM]: Creating Connection[id: 57324883-9454-470b-b5cd-05a4ea14f45a] with host: XG02811-OO69432.snowflakecomputing.com, account: XG02811-OO69432, accessUrl: https://XG02811-OO69432.snowflakecomputing.com, user: MARCEL.SPINDLER@HELLOFRESH.DE, role: US_OPS_ANALYTICS_USER, database: US_OPS_ANALYTICS, schema: HIGHJUMP, warehouse: US_OPS_ANALYTICS, proxy was not configured, password is not provided, region: undefined, authenticator: EXTERNALBROWSER, ocsp mode: FAIL_OPEN, os: win32, os version: 10.0.26100"}
+{"level":"INFO","message":"[12:14:05.705 PM]: Connection[id: 57324883-9454-470b-b5cd-05a4ea14f45a] additional details: passcode in password is provided, passcode is not provided, private key is not provided, application: rezeptlogik_wms_cache_sync, client name: snowflake-sdk, client version: 2.4.1, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[12:14:05.706 PM]: Connection[id: 57324883-9454-470b-b5cd-05a4ea14f45a] - connection object created successfully."}
+{"level":"INFO","message":"[12:14:05.707 PM]: Connection[id: 57324883-9454-470b-b5cd-05a4ea14f45a] - async connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[12:14:05.707 PM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[12:14:05.719 PM]: No client config detected."}
+{"level":"INFO","message":"[12:14:05.720 PM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[12:14:05.720 PM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[12:14:10.663 PM]: Connection[id: 57324883-9454-470b-b5cd-05a4ea14f45a] - authentication successful using: EXTERNALBROWSER"}
+{"level":"INFO","message":"[12:14:11.200 PM]: Connection[id: 57324883-9454-470b-b5cd-05a4ea14f45a] - connection established successfully after 5493.53 milliseconds"}
+{"level":"INFO","message":"[12:23:04.048 PM]: Creating new connection object"}
+{"level":"INFO","message":"[12:23:04.059 PM]: Creating Connection[id: 2ec712a0-25f9-4551-ab01-4f4fd48f1836] with host: XG02811-OO69432.snowflakecomputing.com, account: XG02811-OO69432, accessUrl: https://XG02811-OO69432.snowflakecomputing.com, user: MARCEL.SPINDLER@HELLOFRESH.DE, role: US_OPS_ANALYTICS_USER, database: US_OPS_ANALYTICS, schema: HIGHJUMP, warehouse: US_OPS_ANALYTICS, proxy was not configured, password is not provided, region: undefined, authenticator: EXTERNALBROWSER, ocsp mode: FAIL_OPEN, os: win32, os version: 10.0.26100"}
+{"level":"INFO","message":"[12:23:04.061 PM]: Connection[id: 2ec712a0-25f9-4551-ab01-4f4fd48f1836] additional details: passcode in password is provided, passcode is not provided, private key is not provided, application: rezeptlogik_wms_cache_sync, client name: snowflake-sdk, client version: 2.4.1, retry timeout: 300, private key path: undefined, private key pass is not provided, client store temporary credential: false, browser response timeout: 120000"}
+{"level":"INFO","message":"[12:23:04.061 PM]: Connection[id: 2ec712a0-25f9-4551-ab01-4f4fd48f1836] - connection object created successfully."}
+{"level":"INFO","message":"[12:23:04.062 PM]: Connection[id: 2ec712a0-25f9-4551-ab01-4f4fd48f1836] - async connecting. Associated Snowflake domain: GLOBAL"}
+{"level":"INFO","message":"[12:23:04.062 PM]: Trying to initialize Easy Logging"}
+{"level":"INFO","message":"[12:23:04.072 PM]: No client config detected."}
+{"level":"INFO","message":"[12:23:04.072 PM]: No config file path found. Client config will not be used."}
+{"level":"INFO","message":"[12:23:04.072 PM]: Easy Logging is disabled as no config has been found"}
+{"level":"INFO","message":"[12:23:08.941 PM]: Connection[id: 2ec712a0-25f9-4551-ab01-4f4fd48f1836] - authentication successful using: EXTERNALBROWSER"}
+{"level":"INFO","message":"[12:23:09.236 PM]: Connection[id: 2ec712a0-25f9-4551-ab01-4f4fd48f1836] - connection established successfully after 5174.1 milliseconds"}

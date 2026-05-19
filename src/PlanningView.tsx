@@ -30,6 +30,8 @@ import { tl, type UiLocale } from "./i18n";
 import { usePlanningOasisData } from "./planningOasisData";
 import { exportAsTSV, exportAsExcel, exportAsPDF } from "./planExport";
 import type { RunSplitPlan } from "./runPlanning";
+import { calculateRunSplit } from "./runPlanning";
+import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
 
 const PLANNER_UI_SETTINGS_STORAGE_KEY = "rezeptlogik-planner-ui-settings-v1";
 
@@ -137,6 +139,46 @@ const SHIFT_MODEL_AREAS = [
 
 function fmtNum(n: number, digits = 0): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
+}
+
+function RampUpSparkline({ values, width = 50, height = 14 }: { values: number[]; width?: number; height?: number }) {
+  if (values.length < 2) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pad = 2;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (width - pad * 2);
+    const y = pad + ((max - v) / range) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const last = values[values.length - 1];
+  const first = values[0];
+  const stroke = last > first ? "#10b981" : last < first ? "#f43f5e" : "#94a3b8";
+  const lastPt = pts.split(" ").pop()!.split(",");
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: "inline-block", verticalAlign: "middle" }}>
+      <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+      <circle cx={lastPt[0]} cy={lastPt[1]} r="2" fill={stroke} />
+    </svg>
+  );
+}
+
+function RampUpDeltaBadge({ delta }: { delta: number }) {
+  if (delta === 0) return null;
+  const up = delta > 0;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center",
+      fontSize: "9px", fontWeight: 700,
+      padding: "0 4px", borderRadius: "9999px",
+      background: up ? "#ecfdf5" : "#fff1f2",
+      color: up ? "#059669" : "#e11d48",
+      border: `1px solid ${up ? "#a7f3d0" : "#fecdd3"}`,
+    }}>
+      {up ? "+" : ""}{fmtNum(delta)}
+    </span>
+  );
 }
 
 function slotValue(day: PlannerDay, shift: PlannerShift): string {
@@ -426,7 +468,7 @@ function runSubBatchesForAssignment(
 function isSundayPrepSub(category: string, spec?: ProcessSpec): boolean {
   const cat = String(category ?? "").toLowerCase();
   const family = String(spec?.productFamily ?? "").toLowerCase();
-  return /spice|gewürz|gewuerz|marinade|marinated|mariniert|butter/.test(cat) || family === "butter";
+  return /thaw|marinade|marinated|mariniert|hand marinade|patty maker|spice|gewürz|gewuerz|butter/.test(cat) || family === "butter";
 }
 
 function subLeadDaysBeforeNeed(category: string, spec?: ProcessSpec): number {
@@ -1066,6 +1108,9 @@ export function PlanningView(
   /** Manuelle Verschiebungen der Ghost-Pillen per Drag & Drop: tileKey → neuer Produktionstag */
   const [suggestOverrides, setSuggestOverrides] = useState<Record<string, PlannerDay>>({});
   const [draggingSuggestKey, setDraggingSuggestKey] = useState<string | null>(null);
+  const [rampUpHistoryMap, setRampUpHistoryMap] = useState<Map<string, RampUpSnapshot[]>>(new Map());
+  const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);
+  const [rampUpBannerDismissed, setRampUpBannerDismissed] = useState(false);
 
   /** Raw schedule aus dem Linienplan (Firestore), keyed als "{PlanDay}|{slotKey}|{lineIdx}" */
   const [linePlanSchedule, setLinePlanSchedule] = useState<Record<string, { code: string; speedPerMin: number } | null>>({});
@@ -1075,6 +1120,20 @@ export function PlanningView(
   useEffect(() => {
     savePlannerStorage(storage);
   }, [storage]);
+
+  // Ramp-Up Snapshot bei Datenwechsel aufzeichnen
+  useEffect(() => {
+    if (!data.weekRecipes?.length) return;
+    const { changes, history } = recordRampUpSnapshot(week, data.weekRecipes);
+    const allCodes = new Set(data.weekRecipes.filter(r => r.hfWeek === week).map(r => r.code));
+    const histMap = new Map<string, RampUpSnapshot[]>();
+    for (const code of allCodes) histMap.set(code, history.filter(s => code in s.volumes));
+    setRampUpHistoryMap(histMap);
+    if (changes.length > 0) {
+      setRampUpChanges(changes);
+      setRampUpBannerDismissed(false);
+    }
+  }, [data.weekRecipes, week]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2191,12 +2250,41 @@ export function PlanningView(
           </div>
         </div>
 
+        {rampUpChanges.length > 0 && !rampUpBannerDismissed && (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <span className="text-xs font-black text-amber-800">
+                  &#9888; Portionszahlen ge&auml;ndert&nbsp;&mdash;&nbsp;
+                </span>
+                <span className="text-xs text-amber-700">
+                  {rampUpChanges.length} {rampUpChanges.length === 1 ? "Rezept" : "Rezepte"} betroffen:
+                </span>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {rampUpChanges.map(c => (
+                    <span key={c.code} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-[11px]">
+                      <span className="font-black text-amber-900">{c.code}</span>
+                      <span className="tabular-nums text-slate-500">{fmtNum(c.oldTotal)} → {fmtNum(c.newTotal)}</span>
+                      <RampUpDeltaBadge delta={c.delta} />
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => setRampUpBannerDismissed(true)}
+                className="shrink-0 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-200 text-amber-800 text-[10px] font-bold hover:bg-amber-300 transition-colors"
+                title="Schlie&szlig;en"
+              >&#x2715;</button>
+            </div>
+          </div>
+        )}
+
         <div className={`w-full max-w-full overflow-x-auto overflow-y-visible pb-2 [scrollbar-gutter:stable] ${calendarFullView ? "flex-1" : ""}`}>
           <table className="w-max min-w-[1780px] border-collapse text-xs">
             <thead>
               <tr className="bg-white border-b border-slate-300">
                 <th className="sticky left-0 z-20 bg-white px-3 py-2 text-left font-semibold text-slate-700 min-w-[320px]" rowSpan={2}>Recipes</th>
-                <th className="sticky left-[320px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Forecast</th>
+                <th className="sticky left-[320px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[110px]" rowSpan={2}>Forecast / Runs</th>
                 <th className="sticky left-[410px] z-20 bg-white px-2 py-2 text-center font-semibold text-slate-700 min-w-[70px]" rowSpan={2}>WIP</th>
                 <th className="sticky left-[480px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Mapped</th>
                 {MANUFACTURING_DAYS.map((column) => (
@@ -2240,7 +2328,10 @@ export function PlanningView(
                             {isExpanded ? "▾" : "▸"}
                           </button>
                           <div className="min-w-0">
-                            <div className="inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px]" style={tone.badge}>{recipe.recipeCode}</div>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <div className="inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px]" style={tone.badge}>{recipe.recipeCode}</div>
+                              <RampUpDeltaBadge delta={rampUpChanges.find(c => c.code === recipe.recipeCode)?.delta ?? 0} />
+                            </div>
                             <button className="mt-1 block text-left text-sm font-semibold hover:text-verden-700" style={tone.title} onClick={() => onSelectRecipe?.(recipe.recipeCode)}>{recipe.recipeName}</button>
                             <div className="mt-0.5 text-[10px] text-slate-500">
                               {recipe.subRecipes.length} Sub-Rezepte
@@ -2248,10 +2339,71 @@ export function PlanningView(
                                 <span className="ml-1 font-bold text-amber-500" title="Unverplante Sub-Rezepte">!</span>
                               )}
                             </div>
+                            {(() => {
+                              const snaps = rampUpHistoryMap.get(recipe.recipeCode) ?? [];
+                              const vals = snaps.map(s => s.volumes[recipe.recipeCode] ?? 0);
+                              if (vals.length < 2) return null;
+                              return (
+                                <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+                                  <RampUpSparkline values={vals} width={48} height={14} />
+                                  <span style={{ fontSize: 9, color: "#94a3b8", fontVariantNumeric: "tabular-nums" }}>
+                                    {fmtNum(vals[0])} → {fmtNum(vals[vals.length - 1])}
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       </td>
-                      <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{fmtNum(forecast)}</td>
+                      <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-2 align-top" style={tone.sticky}>
+                        {(() => {
+                          const rawVol = wr?.verdenVolume ?? { BENL: 0, DKSE: 0, DE: 0 };
+                          const upliftedBnl     = Math.round((rawVol.BENL ?? 0) * portionMultiplier);
+                          const upliftedNordics  = Math.round((rawVol.DKSE ?? 0) * portionMultiplier);
+                          const upliftedDe      = Math.round((rawVol.DE   ?? 0) * portionMultiplier);
+                          const rs = calculateRunSplit({ bnl: upliftedBnl, nordics: upliftedNordics, de: upliftedDe });
+                          const upliftedTotal = upliftedBnl + upliftedNordics + upliftedDe;
+                          const snaps = rampUpHistoryMap.get(recipe.recipeCode) ?? [];
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                              {/* Forecast (with uplift) */}
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                                <span className="font-semibold tabular-nums text-sm">{fmtNum(upliftedTotal)}</span>
+                                {upliftPercent !== 0 && (
+                                  <span style={{ fontSize: 9, color: upliftPercent > 0 ? "#16a34a" : "#dc2626", fontWeight: 700 }}>
+                                    {upliftPercent > 0 ? "+" : ""}{upliftPercent}%
+                                  </span>
+                                )}
+                              </div>
+                              {/* Run 1 / Run 2 */}
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1, marginTop: 2, borderTop: "1px solid #e2e8f0", paddingTop: 3 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  <span style={{ fontSize: 9, color: "#64748b", fontWeight: 600 }}>R1</span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", fontVariantNumeric: "tabular-nums" }}>{fmtNum(rs.firstRun.total)}</span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  <span style={{ fontSize: 9, color: "#64748b", fontWeight: 600 }}>R2</span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", fontVariantNumeric: "tabular-nums" }}>{fmtNum(rs.secondRun)}</span>
+                                </div>
+                                <div style={{ fontSize: 9, color: "#94a3b8", fontVariantNumeric: "tabular-nums" }}>
+                                  Ziel {fmtNum(rs.upliftTotal)} (+10%)
+                                </div>
+                              </div>
+                              {/* Ramp-up history */}
+                              {snaps.length >= 2 && snaps.slice(-4).reverse().map((snap, idx) => (
+                                <div key={snap.ts} style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                                  <span style={{ fontSize: 9, color: idx === 0 ? "#475569" : "#94a3b8", fontVariantNumeric: "tabular-nums", fontWeight: idx === 0 ? 600 : 400 }}>
+                                    {snap.label}
+                                  </span>
+                                  <span style={{ fontSize: 9, color: idx === 0 ? "#475569" : "#94a3b8", fontVariantNumeric: "tabular-nums" }}>
+                                    {fmtNum(snap.volumes[recipe.recipeCode] ?? 0)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </td>
                       <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-2 text-center text-slate-300" style={tone.sticky}></td>
                       <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{mainMapped > 0 ? fmtNum(mainMapped) : ""}</td>
 

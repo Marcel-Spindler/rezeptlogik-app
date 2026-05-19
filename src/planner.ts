@@ -548,17 +548,20 @@ function subRecipeLeadClass(sub: SubRecipe, spec?: ProcessSpec): number {
   const maxHold = Math.max(0, ...Object.values(spec?.holdTimeMin ?? {}).map(v => v ?? 0));
 
   // Inbound / lange Vorbereitung (>= 2 Tage)
+  if (/thaw|thawed|defrost/i.test(cat)) return 4;
   if (/brine|cure|ferment|marinade .*(over|long)|raw .*(receive|inbound)/i.test(cat)) return 4;
   if (maxHold >= 24 * 60) return 4;
 
   // Saucen, Slow-Cook, Butter-Family, lange Holds (>= 12 h)
-  if (/sauce|broth|stock|gravy|braise|sous vide|slow cook|butter|marinade/i.test(cat)) return 3;
+  if (/sauce|broth|stock|gravy|braise|sous vide|slow cook|butter|marinade|hand marinade/i.test(cat)) return 3;
   if (family === "butter") return 3;
   if (maxHold >= 12 * 60) return 3;
 
   // Blast-Chiller / chilled Hold (>= 4 h)
   if (/blast chiller|chill hold|cold hold|portion .*(chill)/i.test(cat)) return 2;
   if (maxHold >= 4 * 60) return 2;
+
+  if (/patty maker|burger patty|patty/i.test(cat)) return 1;
 
   // Hot Cook / Finishing
   if (/grill|fry|sear|roast|pan cook|wok|hot finish|griddle/i.test(cat)) return 0;

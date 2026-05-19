@@ -16,6 +16,7 @@ import { analyzePlan, type PlannerDay, type PlannerScenario } from "./planner";
 import type { DataBundle, WeekRecipe } from "./types";
 import type { UiLocale } from "./i18n";
 import { calculateRunSplit, type RunSplitPlan } from "./runPlanning";
+import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  DOMAIN TYPES
@@ -45,7 +46,7 @@ function isProducedInVerden(recipe: WeekRecipe): boolean {
   return total > 0;
 }
 
-function deriveRecipesFromWeekRecipes(weekRecipes: WeekRecipe[], requestedWeek: string): LinePlanRecipe[] {
+function deriveRecipesFromWeekRecipes(weekRecipes: WeekRecipe[], requestedWeek: string, upliftFactor = 1): LinePlanRecipe[] {
   return weekRecipes
     .filter(recipe => recipe.hfWeek === requestedWeek)
     .filter(isProducedInVerden)
@@ -54,10 +55,10 @@ function deriveRecipesFromWeekRecipes(weekRecipes: WeekRecipe[], requestedWeek: 
     .map((recipe) => ({
       code: recipe.code,
       name: recipe.recipeName,
-      totalPlanned: recipe.totalVerdenVolume,
-      nordics: recipe.verdenVolume.DKSE,
-      bnl: recipe.verdenVolume.BENL,
-      de: recipe.verdenVolume.DE,
+      totalPlanned: Math.round(recipe.totalVerdenVolume * upliftFactor),
+      nordics: Math.round(recipe.verdenVolume.DKSE * upliftFactor),
+      bnl: Math.round(recipe.verdenVolume.BENL * upliftFactor),
+      de: Math.round(recipe.verdenVolume.DE * upliftFactor),
       speedPerMin: 10,
       isSeafood: detectSeafoodByName(recipe.recipeName),
     }));
@@ -466,6 +467,7 @@ function longSubMethodScore(wo: KetWO): number {
     /BLAST CHILLER/,
     /MARINADE/,
     /THAW/,
+    /PATTY MAKER/,
     /IMMERSION BLENDER/,
     /PLANETARY MIXER/
   ].reduce((sum, rx) => sum + (rx.test(methods) ? 1 : 0), 0);
@@ -747,6 +749,41 @@ const DAY_SHORT: Record<string, string> = {
   Freitag: "Fr", Samstag: "Sa", Sonntag: "So",
   Montag: "Mo", Dienstag: "Di", Mittwoch: "Mi", Donnerstag: "Do",
 };
+
+function Sparkline({ values, width = 60, height = 16 }: { values: number[]; width?: number; height?: number }) {
+  if (values.length < 2) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pad = 2;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (width - pad * 2);
+    const y = pad + ((max - v) / range) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const last = values[values.length - 1];
+  const first = values[0];
+  const stroke = last > first ? "#10b981" : last < first ? "#f43f5e" : "#94a3b8";
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="shrink-0">
+      <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+      <circle cx={pts.split(" ").pop()!.split(",")[0]} cy={pts.split(" ").pop()!.split(",")[1]} r="2" fill={stroke} />
+    </svg>
+  );
+}
+
+function DeltaBadge({ delta }: { delta: number }) {
+  if (delta === 0) return null;
+  const up = delta > 0;
+  return (
+    <span className={`text-[9px] font-bold tabular-nums px-1 rounded-full ring-1 ${
+      up ? "bg-emerald-50 text-emerald-700 ring-emerald-200" : "bg-rose-50 text-rose-700 ring-rose-200"
+    }`}>
+      {up ? "+" : ""}{fmtNum(delta)}
+    </span>
+  );
+}
+
 function RecipePill({
   recipe, compact = false, dimmed = false,
   scheduledDays,
@@ -755,6 +792,9 @@ function RecipePill({
   multiDayCount,
   mhdViolation,
   onDragStart,
+  volumeHistory,
+  volumeDelta,
+  volumeSnapshots,
 }: {
   recipe: LinePlanRecipe;
   compact?: boolean;
@@ -765,6 +805,9 @@ function RecipePill({
   multiDayCount?: number;
   mhdViolation?: boolean;
   onDragStart?: () => void;
+  volumeHistory?: number[];
+  volumeDelta?: number;
+  volumeSnapshots?: RampUpSnapshot[];
 }) {
   const tone = recipeTone(recipe.code);
   const style = tone.base;
@@ -797,7 +840,10 @@ function RecipePill({
               }
             </div>
             <span className="text-[11px] font-medium leading-tight line-clamp-2" style={tone.title}>{recipe.name.replace(/^FV\d+[A-Za-z]?\s*[-\u2013]\s*/i, "")}</span>
-            <span className="text-[10px] opacity-50 tabular-nums">{fmtNum(targetTotal)} Port.</span>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] opacity-50 tabular-nums">{fmtNum(targetTotal)} Port.</span>
+              {volumeDelta !== undefined && volumeDelta !== 0 && <DeltaBadge delta={volumeDelta} />}
+            </div>
           </div>
         ) : (
           <div className="min-w-0">
@@ -817,9 +863,16 @@ function RecipePill({
               {recipe.de > 0 && <span>&#x2B21; DE {fmtNum(recipe.de)}</span>}
               {recipe.bnl > 0 && <span>&#x2B21; BNL {fmtNum(recipe.bnl)}</span>}
             </div>
-            <div className="mt-1.5 text-xs font-semibold tabular-nums">
-              &#x2211; {fmtNum(targetTotal)} Portionen · R1 {fmtNum(runTargets.firstRunTarget)} / R2 {fmtNum(runTargets.secondRunTarget)}
+            <div className="mt-1.5 flex items-center gap-2">
+              <span className="text-xs font-semibold tabular-nums">&#x2211; {fmtNum(targetTotal)} Portionen · R1 {fmtNum(runTargets.firstRunTarget)} / R2 {fmtNum(runTargets.secondRunTarget)}</span>
+              {volumeDelta !== undefined && volumeDelta !== 0 && <DeltaBadge delta={volumeDelta} />}
             </div>
+            {volumeHistory && volumeHistory.length >= 2 && (
+              <div className="mt-1.5 flex items-center gap-2">
+                <Sparkline values={volumeHistory} width={60} height={16} />
+                <span className="text-[10px] text-slate-400 tabular-nums">{fmtNum(volumeHistory[0])} → {fmtNum(volumeHistory[volumeHistory.length - 1])}</span>
+              </div>
+            )}
             <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${planningRoleTone(planningRole)}`}>
               {planningRoleLabel(planningRole)}
             </div>
@@ -924,6 +977,28 @@ function RecipePill({
               ))}
             </div>
           )}
+          {volumeSnapshots && volumeSnapshots.length >= 2 && (
+            <div className="pt-2 border-t border-slate-100 mt-2">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] text-slate-400 font-semibold">Portionen-Verlauf</span>
+                <Sparkline values={volumeSnapshots.map(s => s.volumes[recipe.code] ?? 0)} width={50} height={14} />
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {volumeSnapshots.slice(-5).reverse().map((snap, idx) => {
+                  const vol = snap.volumes[recipe.code] ?? 0;
+                  const prev = volumeSnapshots[volumeSnapshots.indexOf(snap) - 1]?.volumes[recipe.code];
+                  const delta = prev !== undefined ? vol - prev : 0;
+                  return (
+                    <div key={snap.ts} className={`flex items-center justify-between text-[10px] ${idx === 0 ? "font-semibold text-slate-700" : "text-slate-400"}`}>
+                      <span className="tabular-nums">{snap.label}</span>
+                      <span className="tabular-nums">{fmtNum(vol)}</span>
+                      {delta !== 0 && <DeltaBadge delta={delta} />}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -938,6 +1013,7 @@ function DropCell({
   slotKey, recipe, isDragOver, isActiveDrag,
   onDrop, onDragEnter, onDragLeave,
   onDragStartCell, onRemove, multiDayCount, mhdViolation,
+  volumeHistory, volumeDelta, volumeSnapshots,
 }: {
   slotKey: string;
   recipe: LinePlanRecipe | null;
@@ -951,6 +1027,9 @@ function DropCell({
   multiDayCount?: number;
   /** true wenn das Rezept in diesem Slot zu früh geplattet wird (MHD-Verletzung) */
   mhdViolation?: boolean;
+  volumeHistory?: number[];
+  volumeDelta?: number;
+  volumeSnapshots?: RampUpSnapshot[];
 }) {
   return (
     <div
@@ -981,6 +1060,9 @@ function DropCell({
             multiDayCount={multiDayCount}
             mhdViolation={mhdViolation}
             onDragStart={() => onDragStartCell(recipe, slotKey)}
+            volumeHistory={volumeHistory}
+            volumeDelta={volumeDelta}
+            volumeSnapshots={volumeSnapshots}
           />
           <button
             onClick={onRemove}
@@ -1246,7 +1328,7 @@ function KetDayColumn({
 //  MAIN VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
-export function LinePlanningView({ week, locale: _locale, autoPlanTrigger }: { week: string; locale: UiLocale; autoPlanTrigger?: number }) {
+export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, upliftPercent = 0 }: { week: string; locale: UiLocale; autoPlanTrigger?: number; upliftPercent?: number }) {
   const { data: planningOasis } = usePlanningOasisData();
   const [subTab, setSubTab] = useState<"lineplanning" | "ket">("lineplanning");
   const [recipes, setRecipes] = useState<LinePlanRecipe[]>([]);
@@ -1284,6 +1366,9 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger }: { w
   });
   const [forecastAlertRows, setForecastAlertRows] = useState<ForecastVarianceRow[]>([]);
   const [forecastAlertStamp, setForecastAlertStamp] = useState<string | null>(null);
+  const [rampUpHistoryMap, setRampUpHistoryMap] = useState<Map<string, RampUpSnapshot[]>>(new Map());
+  const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);
+  const [rampUpBannerDismissed, setRampUpBannerDismissed] = useState(false);
   const dragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ketDragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAutoPlanTriggerRef = useRef<number | undefined>(undefined);
@@ -1440,10 +1525,26 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger }: { w
         let hasWeekSpecificRecipePool = false;
         setDataWarning(null);
 
-        const weekRecipes = deriveRecipesFromWeekRecipes(appData.weekRecipes ?? [], week);
+        const weekRecipes = deriveRecipesFromWeekRecipes(appData.weekRecipes ?? [], week, 1 + upliftPercent / 100);
         if (weekRecipes.length > 0) {
           setRecipes(weekRecipes);
           hasWeekSpecificRecipePool = true;
+        }
+
+        // Ramp-Up History: Snapshot aufzeichnen + Änderungen erkennen
+        if ((appData.weekRecipes ?? []).length > 0) {
+          const { changes, history } = recordRampUpSnapshot(week, appData.weekRecipes ?? []);
+          // History-Map aufbauen: code → Snapshots (enthält totalVerdenVolume über Zeit)
+          const allCodes = new Set((appData.weekRecipes ?? []).filter(r => r.hfWeek === week).map(r => r.code));
+          const histMap = new Map<string, RampUpSnapshot[]>();
+          for (const code of allCodes) {
+            histMap.set(code, history.filter(snap => code in snap.volumes));
+          }
+          setRampUpHistoryMap(histMap);
+          if (changes.length > 0) {
+            setRampUpChanges(changes);
+            setRampUpBannerDismissed(false);
+          }
         }
 
         // Find week-specific KET sheet (exact match first, then partial)
@@ -2411,6 +2512,31 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger }: { w
             </div>
           </div>
         )}
+        {rampUpChanges.length > 0 && !rampUpBannerDismissed && subTab === "lineplanning" && (
+          <div className="mt-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-black tracking-wide text-amber-800">
+                  &#9888; {rampUpChanges.length} {rampUpChanges.length === 1 ? "Rezept hat" : "Rezepte haben"} neue Portionszahlen
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {rampUpChanges.map(c => (
+                    <div key={c.code} className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs flex items-center gap-2">
+                      <span className="font-black text-amber-900">{c.code}</span>
+                      <span className="text-slate-500 tabular-nums">{fmtNum(c.oldTotal)} → {fmtNum(c.newTotal)}</span>
+                      <DeltaBadge delta={c.delta} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => setRampUpBannerDismissed(true)}
+                className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-amber-200 text-amber-800 text-[10px] font-bold hover:bg-amber-300 transition-colors"
+                title="Schließen"
+              >&#x2715;</button>
+            </div>
+          </div>
+        )}
         {!hasSavedManufacturingPlan && subTab === "lineplanning" && (
           <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 ring-1 ring-amber-200">
             Reihenfolge: erst Manufacturing Calendar planen und dort "Plan sichern" klicken. Danach nutzt die Plating-Automatik den gesicherten Küchenplan fuer Run 1 und Run 2.
@@ -2635,6 +2761,9 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger }: { w
                                 onRemove={() => dispatch({ type: "remove", key: cellKey })}
                                 multiDayCount={r ? (scheduledDaysByCode.get(r.code)?.size ?? 1) : undefined}
                                 mhdViolation={mhdViolation}
+                                volumeHistory={r ? (rampUpHistoryMap.get(r.code) ?? []).map(s => s.volumes[r.code] ?? 0) : undefined}
+                                volumeDelta={r ? rampUpChanges.find(c => c.code === r.code)?.delta : undefined}
+                                volumeSnapshots={r ? (rampUpHistoryMap.get(r.code) ?? []) : undefined}
                               />
                             );
                           })}
@@ -2793,6 +2922,9 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger }: { w
                       : undefined}
                     scheduledPortions={scheduledPortions.get(recipe.code)}
                     onDragStart={() => onDragStartPool(recipe)}
+                    volumeHistory={(rampUpHistoryMap.get(recipe.code) ?? []).map(s => s.volumes[recipe.code] ?? 0)}
+                    volumeDelta={rampUpChanges.find(c => c.code === recipe.code)?.delta}
+                    volumeSnapshots={rampUpHistoryMap.get(recipe.code)}
                   />
                 ))}
                 {recipes.length === 0 && (

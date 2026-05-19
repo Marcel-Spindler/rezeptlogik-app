@@ -264,6 +264,21 @@ type CommandSkuRow = {
   riskScore: number;
 };
 
+type SubFunnelRow = {
+  sku: string;
+  name: string;
+  plannedQty: number;
+  qtyPerPortion: number;
+  inboundQty: number;
+  stagingQty: number;
+  deboxQty: number;
+  preblastQty: number;
+  postblastQty: number;
+  platingHoldingPieces: number;
+  availablePortions: number;
+  coverage: number;
+};
+
 type CommandRecipeRow = {
   key: string;
   recipe: string;
@@ -277,6 +292,7 @@ type CommandRecipeRow = {
   holdingStandPieces: number;
   standPieces: number;
   subPlannedQty: number;
+  subPreblastQty: number;
   subPostblastQty: number;
   subDeboxQty: number;
   subHoldingPieces: number;
@@ -284,6 +300,8 @@ type CommandRecipeRow = {
   sleevingLost: number;
   sleevingHold: number;
   noMatchSignals: number;
+  subFunnel: SubFunnelRow[];
+  availablePortions: number;
   status: "kritisch" | "pruefen" | "laeuft" | "gedeckt" | "offen";
   statusText: string;
 };
@@ -1264,9 +1282,16 @@ function buildCommandSkuRows(
   }).sort((a, b) => b.riskScore - a.riskScore || b.plannedQty - a.plannedQty || a.sku.localeCompare(b.sku, "de"));
 }
 
-function buildCommandRecipeRows(data: DataBundle, week: string, skuRows: CommandSkuRow[], historyRows: WmsSleevingTranRow[] = []): CommandRecipeRow[] {
+function buildCommandRecipeRows(data: DataBundle, week: string, skuRows: CommandSkuRow[], historyRows: WmsSleevingTranRow[] = [], workorders: WmsWorkordersRow[] = []): CommandRecipeRow[] {
   const skuByKey = new Map(skuRows.map((row) => [row.sku, row]));
-  const weekRows = data.weekRecipes.filter((row) => row.hfWeek === week);
+  const weekRows = data.weekRecipes.filter((row) => row.hfWeek === week && row.totalVerdenVolume > 0);
+  // preBlastQuantity per submeal SKU from workorders
+  const preblastBySku = new Map<string, number>();
+  for (const wo of workorders) {
+    const sku = skuKey(wo.submealItemNumber);
+    if (!sku || wo.preBlastQuantity == null) continue;
+    preblastBySku.set(sku, (preblastBySku.get(sku) ?? 0) + (wo.preBlastQuantity ?? 0));
+  }
   const selectedMainSkus = new Set<string>();
   for (const weekRecipe of weekRows) {
     const recipe = data.recipes[weekRecipe.code];
@@ -1346,6 +1371,7 @@ function buildCommandRecipeRows(data: DataBundle, week: string, skuRows: Command
     const mainOutputPieces = mainRows.reduce((sum, row) => sum + row.platingLinePieces, 0);
     const historicalOutputPieces = [...mainSkus].reduce((sum, sku) => sum + (historyBySku.get(sku) ?? 0), 0);
     const totalOutputPieces = mainOutputPieces + historicalOutputPieces;
+    const subPreblastQty = [...subSkus].reduce((sum, sku) => sum + (preblastBySku.get(sku) ?? 0) * recipeShareForSku(weekRecipe.code, sku), 0);
     const subPostblastQty = subRows.reduce((sum, row) => sum + row.postblastQty * recipeShareForSku(weekRecipe.code, row.sku), 0);
     const subDeboxQty = subRows.reduce((sum, row) => sum + row.deboxQty * recipeShareForSku(weekRecipe.code, row.sku), 0);
     const subHoldingPieces = subRows.reduce((sum, row) => sum + row.platingHoldingPieces * recipeShareForSku(weekRecipe.code, row.sku), 0);
@@ -1373,7 +1399,7 @@ function buildCommandRecipeRows(data: DataBundle, week: string, skuRows: Command
     } else if (historicalOutputPieces > 0) {
       status = "laeuft";
       statusText = "Historie gebaut";
-    } else if (subPostblastQty > 0 || subHoldingPieces > 0 || subDeboxQty > 0) {
+    } else if (subPostblastQty > 0 || subHoldingPieces > 0 || subDeboxQty > 0 || subPreblastQty > 0) {
       status = "pruefen";
       statusText = "Sub Meal Signal";
     }
@@ -1381,6 +1407,38 @@ function buildCommandRecipeRows(data: DataBundle, week: string, skuRows: Command
       status = status === "gedeckt" ? "pruefen" : "kritisch";
       statusText = "Bewegung pruefen";
     }
+
+    // Per-sub-recipe funnel: how far has each sub-recipe progressed through the pipeline?
+    const subFunnel: SubFunnelRow[] = [...subSkus]
+      .filter((sku) => skuDemandByRecipe.get(sku)?.has(weekRecipe.code))
+      .map((sku): SubFunnelRow => {
+        const skuRow = skuByKey.get(sku);
+        const demandQty = skuDemandByRecipe.get(sku)?.get(weekRecipe.code) ?? 0;
+        const totalDemand = skuDemandTotal.get(sku) ?? demandQty;
+        const share = totalDemand > 0 ? demandQty / totalDemand : 1;
+        const qtyPerPortion = plannedPieces > 0 ? demandQty / plannedPieces : 0;
+        const postblastQty = (skuRow?.postblastQty ?? 0) * share;
+        const deboxQty = (skuRow?.deboxQty ?? 0) * share;
+        const preblastQtyVal = (preblastBySku.get(sku) ?? 0) * share;
+        const inboundQty = (skuRow?.inboundReceived ?? 0) * share;
+        const stagingQtyVal = (skuRow?.stagingQty ?? 0) * share;
+        const availablePortionsVal = qtyPerPortion > 0 ? Math.floor(postblastQty / qtyPerPortion) : 0;
+        return {
+          sku, name: skuRow?.name ?? sku,
+          plannedQty: demandQty, qtyPerPortion,
+          inboundQty, stagingQty: stagingQtyVal,
+          deboxQty, preblastQty: preblastQtyVal, postblastQty,
+          platingHoldingPieces: (skuRow?.platingHoldingPieces ?? 0) * share,
+          availablePortions: availablePortionsVal,
+          coverage: plannedPieces > 0 ? availablePortionsVal / plannedPieces : 0,
+        };
+      })
+      .sort((a, b) => a.coverage - b.coverage); // bottleneck first
+
+    const subFunnelLimiting = subFunnel.filter((s) => s.plannedQty > 0);
+    const availablePortionsVal = subFunnelLimiting.length > 0
+      ? Math.min(...subFunnelLimiting.map((s) => s.availablePortions))
+      : 0;
 
     return {
       key: weekRecipe.code,
@@ -1395,6 +1453,7 @@ function buildCommandRecipeRows(data: DataBundle, week: string, skuRows: Command
       holdingStandPieces,
       standPieces,
       subPlannedQty: subRows.reduce((sum, row) => sum + row.plannedQty, 0),
+      subPreblastQty,
       subPostblastQty,
       subDeboxQty,
       subHoldingPieces,
@@ -1402,6 +1461,8 @@ function buildCommandRecipeRows(data: DataBundle, week: string, skuRows: Command
       sleevingLost,
       sleevingHold,
       noMatchSignals,
+      subFunnel,
+      availablePortions: availablePortionsVal,
       status,
       statusText,
     };
@@ -1597,14 +1658,20 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
   const wmsWeekCode = useMemo(() => toolWeekToWmsWeek(week), [week]);
   const workordersIndex = useMemo(() => buildWorkordersIndex(workordersRawRows), [workordersRawRows]);
 
-  // Workorders: kein -7d Shift — V_SUBMEAL_PRODUCTION hat eigene week-Spalte (z.B. "202622")
-  // direkt nach Tool-KW filtern, kein Vorwoche-Fallback
+  // Workorders: gleiche KW wie Tool-Woche (N=N)
+  // Wenn wir in KW 22 produzieren, sind die Workorders für KW 22
+  const workordersWmsCode = wmsWeekCode; // "2026-W22" → "202622"
+
   const workordersForWeek = useMemo(() => {
-    if (workordersRawRows.length === 0) return [];
-    const code = toolWeekToWmsWeek(week); // "2026-W22" → "202622"
-    if (!code) return [];
-    return workordersRawRows.filter((r) => r.week === code);
-  }, [week, workordersRawRows]);
+    if (workordersRawRows.length === 0 || !workordersWmsCode) return [];
+    return workordersRawRows.filter((r) => r.week === workordersWmsCode);
+  }, [workordersWmsCode, workordersRawRows]);
+
+  // KW-Nummer für Transaktions-Filter (Sleeving, Inbound sind Log-Tabellen → nur aktuelle KW)
+  const weekNum = useMemo(() => {
+    const m = week.match(/W(\d{2})$/);
+    return m ? parseInt(m[1]) : null;
+  }, [week]);
 
   // Gruppiert nach Meal für die UI
   type WorkordersMealGroup = {
@@ -1635,8 +1702,14 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
     }
     return [...map.values()].sort((a, b) => b.totalQtyG - a.totalQtyG);
   }, [workordersForWeek]);
-  const sleevingRawRows = sleevingPayload?.rows ?? [];
-  const inboundRawRows = inboundPayload?.rows ?? [];
+  const sleevingRawRows = useMemo(() => {
+    const all = sleevingPayload?.rows ?? [];
+    return weekNum ? all.filter((r) => r.kw === weekNum) : all;
+  }, [sleevingPayload, weekNum]);
+  const inboundRawRows = useMemo(() => {
+    const all = inboundPayload?.rows ?? [];
+    return weekNum ? all.filter((r) => r.kw === weekNum) : all;
+  }, [inboundPayload, weekNum]);
   const stagingRawRows = stagingPayload?.rows ?? [];
   const deboxRawRows = deboxPayload?.rows ?? [];
   const postblastRawRows = postblastPayload?.rows ?? [];
@@ -1881,8 +1954,8 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
   );
 
   const commandRecipeRows = useMemo(
-    () => buildCommandRecipeRows(data, week, commandSkuRows, platingHistoryRawRows),
-    [commandSkuRows, data, platingHistoryRawRows, week],
+    () => buildCommandRecipeRows(data, week, commandSkuRows, platingHistoryRawRows, workordersForWeek),
+    [commandSkuRows, data, platingHistoryRawRows, week, workordersForWeek],
   );
 
   const commandKpis = useMemo(() => {
@@ -2039,6 +2112,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
     const hasInbound = selectedInboundRows.length > 0 || selectedSubSkuRows.some((row) => row.inboundReceived > 0 || row.inboundDamaged > 0);
     const hasStaging = selectedStagingRows.length > 0 || selectedSubSkuRows.some((row) => row.stagingQty > 0);
     const hasDebox = selectedRecipeRow?.subDeboxQty ? selectedRecipeRow.subDeboxQty > 0 : selectedSubSkuRows.some((row) => row.deboxQty > 0);
+    const hasPreblast = (selectedRecipeRow?.subPreblastQty ?? 0) > 0;
     const hasPostblast = selectedRecipeRow?.subPostblastQty ? selectedRecipeRow.subPostblastQty > 0 : selectedSubSkuRows.some((row) => row.postblastQty > 0);
     const hasSleeving = selectedSleevingRows.length > 0 || [...selectedMainSkuRows, ...selectedSubSkuRows].some((row) => row.sleevingInbound > 0 || row.sleevingOutbound > 0 || row.sleevingLost > 0 || row.sleevingHold > 0);
     const hasPlatingLine = selectedRecipeRow != null
@@ -2052,6 +2126,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
       hasInbound,
       hasStaging,
       hasDebox,
+      hasPreblast,
       hasPostblast,
       hasSleeving,
       hasPlatingLine,
@@ -2146,95 +2221,163 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
         </div>
       </section>
 
-      {/* ── Meal Navigator ── */}
+      {/* ── Meal Funnel ── */}
       {activeTab === "meals" && (<>
       <section className="card overflow-hidden">
         <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-950 px-5 py-4 text-white">
           <div>
-            <div className="text-[10px] font-black uppercase tracking-widest text-violet-200">Meal-Navigator · KW {week}</div>
-            <h2 className="text-lg font-black">{commandRecipeRows.length} Meals diese Woche · Anklicken für Drill-Down</h2>
+            <div className="text-[10px] font-black uppercase tracking-widest text-violet-200">Meal-Übersicht · KW {week}</div>
+            <h2 className="text-lg font-black">
+              {commandRecipeRows.length} Meals · {commandRecipeRows.filter(r => r.availablePortions >= r.plannedPieces * 0.98 || r.standPieces >= r.plannedPieces * 0.98).length} bereit
+            </h2>
           </div>
-          {selectedRecipe && (
-            <button type="button" onClick={() => setSelectedRecipe(null)} className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-white/20">
-              Auswahl aufheben
-            </button>
-          )}
+          <div className="text-right text-sm opacity-70">
+            <div>Gesamt geplant: <span className="font-black text-white">{fmtNum(commandRecipeRows.reduce((s,r)=>s+r.plannedPieces,0))} Stk</span></div>
+            <div>Verfügbar jetzt: <span className="font-black text-emerald-300">{fmtNum(commandRecipeRows.reduce((s,r)=>s+Math.min(r.availablePortions + r.standPieces, r.plannedPieces),0))} Stk</span></div>
+          </div>
         </div>
-        <div className="space-y-4 p-4">
-          {(["kritisch", "pruefen", "offen", "laeuft", "gedeckt"] as const).map((groupStatus) => {
-            const group = commandRecipeRows.filter((r) => r.status === groupStatus);
-            if (group.length === 0) return null;
-            const groupLabels: Record<typeof groupStatus, string> = {
-              kritisch: "❌ Kritisch", pruefen: "⚠️ Prüfen", offen: "— Offen", laeuft: "🔵 Läuft", gedeckt: "✅ Gedeckt",
-            };
-            const groupHeaderCls: Record<typeof groupStatus, string> = {
-              kritisch: "bg-rose-50 text-rose-800 border-rose-200",
-              pruefen: "bg-amber-50 text-amber-800 border-amber-200",
-              offen: "bg-slate-50 text-slate-700 border-slate-200",
-              laeuft: "bg-sky-50 text-sky-800 border-sky-200",
-              gedeckt: "bg-emerald-50 text-emerald-800 border-emerald-200",
-            };
+
+        {/* Funnel cards — one per recipe */}
+        <div className="divide-y divide-slate-100">
+          {commandRecipeRows.map((recipe) => {
+            const outputCovPct = recipe.plannedPieces > 0 ? Math.min(100, (recipe.standPieces / recipe.plannedPieces) * 100) : 0;
+            const availCovPct  = recipe.plannedPieces > 0 ? Math.min(100, (recipe.availablePortions / recipe.plannedPieces) * 100) : 0;
+            const totalAvail   = recipe.standPieces + recipe.availablePortions;
+            const totalCovPct  = recipe.plannedPieces > 0 ? Math.min(100, (totalAvail / recipe.plannedPieces) * 100) : 0;
+            const bottleneck   = recipe.subFunnel.find(s => s.plannedQty > 0) ?? null; // lowest coverage first
+            const canPlateNow  = recipe.subFunnel.length > 0 && recipe.subFunnel.every(s => s.plannedQty <= 0 || s.coverage >= 0.95);
+            const isPlating    = recipe.mainOutputPieces > 0;
+            const isDone       = recipe.standPieces >= recipe.plannedPieces * 0.98;
+
+            const statusBg =
+              isDone       ? "border-l-4 border-l-emerald-500 bg-emerald-50/30" :
+              isPlating    ? "border-l-4 border-l-sky-500 bg-sky-50/20" :
+              canPlateNow  ? "border-l-4 border-l-violet-500 bg-violet-50/20" :
+              recipe.sleevingLost > 0 ? "border-l-4 border-l-rose-500 bg-rose-50/20" :
+              "border-l-4 border-l-slate-300 bg-white";
+
             return (
-              <div key={groupStatus}>
-                <div className={`mb-2 inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 ${groupHeaderCls[groupStatus]}`}>
-                  <span className="text-xs font-black">{groupLabels[groupStatus]}</span>
-                  <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold">{group.length} Meals</span>
+              <div key={recipe.recipe} className={`px-5 py-4 ${statusBg}`}>
+                {/* ── Header row ── */}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-bold text-slate-400">{recipe.recipe}</span>
+                      {isDone && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800">✓ FERTIG</span>}
+                      {!isDone && isPlating && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-black text-sky-800">▶ LÄUFT</span>}
+                      {!isDone && !isPlating && canPlateNow && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-800">★ BEREIT ZUM PLATTEN</span>}
+                      {recipe.sleevingLost > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-black text-rose-800">! Lost {fmtNum(recipe.sleevingLost)}</span>}
+                    </div>
+                    <div className="mt-0.5 text-base font-black text-slate-900">{recipe.name || recipe.recipe}</div>
+                  </div>
+
+                  {/* Right-side KPIs */}
+                  <div className="flex shrink-0 flex-wrap items-center gap-3 text-right">
+                    <div className="min-w-[80px]">
+                      <div className="text-[9px] uppercase tracking-widest text-slate-400">Geplant</div>
+                      <div className="font-mono text-lg font-black text-slate-700">{fmtNum(recipe.plannedPieces)}</div>
+                    </div>
+                    <div className="min-w-[80px]">
+                      <div className="text-[9px] uppercase tracking-widest text-slate-400">Plating Line</div>
+                      <div className={`font-mono text-lg font-black ${recipe.mainOutputPieces > 0 ? "text-sky-700" : "text-slate-300"}`}>{fmtNum(recipe.mainOutputPieces)}</div>
+                    </div>
+                    <div className="min-w-[80px]">
+                      <div className="text-[9px] uppercase tracking-widest text-slate-400">Noch plattierbar</div>
+                      <div className={`font-mono text-lg font-black ${recipe.availablePortions > 0 ? "text-violet-700" : "text-slate-300"}`}>{fmtNum(recipe.availablePortions)}</div>
+                    </div>
+                    <div className="min-w-[80px]">
+                      <div className="text-[9px] uppercase tracking-widest text-slate-400">Gesamt möglich</div>
+                      <div className={`font-mono text-lg font-black ${totalCovPct >= 98 ? "text-emerald-700" : totalCovPct >= 75 ? "text-sky-700" : "text-amber-700"}`}>{fmtNum(totalAvail)}</div>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {group.map((recipe) => {
-                    const positionNumber = commandRecipeRows.indexOf(recipe) + 1;
-                    const isSelected = selectedRecipe === recipe.recipe;
-                    const isCompare = compareRecipe === recipe.recipe;
-                    const coverage = recipe.plannedPieces > 0 ? Math.min(100, (recipe.standPieces / recipe.plannedPieces) * 100) : 0;
-                    return (
-                      <button
-                        key={recipe.recipe}
-                        type="button"
-                        title={`${recipe.recipe}: ${recipe.statusText} | Coverage ${Math.round(coverage)}% | Stand ${fmtNum(recipe.standPieces)} / ${fmtNum(recipe.plannedPieces)} Stk`}
-                        onClick={() => { setSelectedRecipe(isSelected ? null : recipe.recipe); if (isSelected) setCompareRecipe(null); }}
-                        className={`flex w-48 flex-col rounded-lg p-3 text-left ring-2 transition-all ${
-                          isSelected ? "bg-violet-50 ring-violet-500" :
-                          isCompare ? "bg-fuchsia-50 ring-fuchsia-400" :
-                          "bg-white ring-slate-200 hover:bg-slate-50 hover:ring-slate-300"
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 font-mono text-[9px] font-black text-slate-500">{positionNumber}</span>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate font-mono text-[10px] font-bold text-slate-400">{recipe.recipe}</div>
-                            <div className="truncate text-xs font-bold text-slate-900">{recipe.name || recipe.recipe}</div>
-                          </div>
-                        </div>
-                        <div className="mt-2">
-                          <div className="mb-1 flex justify-between text-[10px] text-slate-500">
-                            <span>{fmtNum(recipe.standPieces)} / {fmtNum(recipe.plannedPieces)} Stk</span>
-                            <span className="font-bold">{fmtNum(coverage, 0)}%</span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className={`h-full rounded-full ${coverage >= 98 ? "bg-emerald-500" : coverage >= 75 ? "bg-sky-400" : "bg-amber-400"}`}
-                              style={{ width: `${Math.max(3, coverage)}%` }}
-                            />
-                          </div>
-                        </div>
-                        {recipe.noMatchSignals > 0 && (
-                          <div className="mt-1.5 text-[10px] font-bold text-rose-600">{recipe.noMatchSignals} No-Match</div>
-                        )}
-                        {selectedRecipe && selectedRecipe !== recipe.recipe && (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setCompareRecipe(isCompare ? null : recipe.recipe); }}
-                            className={`mt-2 w-full rounded px-2 py-1 text-[10px] font-bold transition-colors ${
-                              isCompare ? "bg-fuchsia-100 text-fuchsia-800" : "bg-slate-100 text-slate-600 hover:bg-fuchsia-50 hover:text-fuchsia-700"
-                            }`}
-                          >
-                            {isCompare ? "✓ im Vergleich" : "+ Vergleich"}
-                          </button>
-                        )}
-                      </button>
-                    );
-                  })}
+
+                {/* ── Total progress bar ── */}
+                <div className="mt-2">
+                  <div className="mb-1 flex justify-between text-[10px] font-bold text-slate-500">
+                    <span>Gesamt-Coverage: {fmtNum(totalAvail)} / {fmtNum(recipe.plannedPieces)} Stk</span>
+                    <span className={totalCovPct >= 98 ? "text-emerald-700" : totalCovPct >= 75 ? "text-sky-600" : "text-amber-600"}>{fmtNum(totalCovPct, 0)}%</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    {/* already built */}
+                    <div className="flex h-full">
+                      <div className="h-full bg-sky-500 transition-all" style={{ width: `${outputCovPct}%` }} title={`Bereits auf Line: ${fmtNum(recipe.standPieces)} Stk`} />
+                      <div className="h-full bg-violet-400 transition-all" style={{ width: `${Math.max(0, availCovPct)}%` }} title={`Postblast bereit: ${fmtNum(recipe.availablePortions)} Stk`} />
+                    </div>
+                  </div>
+                  <div className="mt-0.5 flex gap-3 text-[9px] text-slate-400">
+                    <span><span className="inline-block h-2 w-2 rounded-full bg-sky-500 mr-1" />Auf Line/Fertig: {fmtNum(recipe.standPieces)} Stk</span>
+                    <span><span className="inline-block h-2 w-2 rounded-full bg-violet-400 mr-1" />Postblast bereit: {fmtNum(recipe.availablePortions)} Stk</span>
+                    {recipe.plannedPieces - totalAvail > 0 && <span className="text-amber-600">Lücke: {fmtNum(recipe.plannedPieces - totalAvail)} Stk</span>}
+                  </div>
                 </div>
+
+                {/* ── Sub-recipe funnel table ── */}
+                {recipe.subFunnel.length > 0 && (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-[9px] uppercase tracking-widest text-slate-400">
+                          <th className="py-1 pr-3 text-left font-bold">Sub-Rezept</th>
+                          <th className="py-1 px-2 text-right font-bold">Geplant</th>
+                          <th className="py-1 px-2 text-right font-bold">Inbound</th>
+                          <th className="py-1 px-2 text-right font-bold">Debox</th>
+                          <th className="py-1 px-2 text-right font-bold">Preblast</th>
+                          <th className="py-1 px-2 text-right font-bold">Postblast</th>
+                          <th className="py-1 px-2 text-right font-bold">→ Portionen</th>
+                          <th className="py-1 pl-2 text-left font-bold">Fortschritt</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recipe.subFunnel.map((sub) => {
+                          const pct = Math.min(100, sub.coverage * 100);
+                          const isBottleneck = sub === bottleneck && recipe.subFunnel.length > 1;
+                          return (
+                            <tr key={sub.sku} className={`border-b border-slate-50 ${isBottleneck ? "bg-amber-50/60" : "bg-white/60"}`}>
+                              <td className="py-1.5 pr-3">
+                                <div className="flex items-center gap-1.5">
+                                  {isBottleneck && <span className="text-amber-500 font-black text-[10px]" title="Engpass — limitiert die Portionen">⚠</span>}
+                                  <div>
+                                    <div className="font-semibold text-slate-900 leading-tight">{sub.name}</div>
+                                    <div className="font-mono text-[9px] text-slate-400">{sub.sku}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-1.5 px-2 text-right text-slate-500">{sub.plannedQty >= 1000 ? `${fmtNum(sub.plannedQty/1000,1)} kg` : `${fmtNum(sub.plannedQty,0)} g`}</td>
+                              <td className={`py-1.5 px-2 text-right ${sub.inboundQty > 0 ? "text-sky-700" : "text-slate-300"}`}>{sub.inboundQty > 0 ? (sub.inboundQty >= 1000 ? `${fmtNum(sub.inboundQty/1000,1)} kg` : `${fmtNum(sub.inboundQty,0)} g`) : "–"}</td>
+                              <td className={`py-1.5 px-2 text-right ${sub.deboxQty > 0 ? "text-indigo-700" : "text-slate-300"}`}>{sub.deboxQty > 0 ? (sub.deboxQty >= 1000 ? `${fmtNum(sub.deboxQty/1000,1)} kg` : `${fmtNum(sub.deboxQty,0)} g`) : "–"}</td>
+                              <td className={`py-1.5 px-2 text-right ${sub.preblastQty > 0 ? "text-orange-700" : "text-slate-300"}`}>{sub.preblastQty > 0 ? (sub.preblastQty >= 1000 ? `${fmtNum(sub.preblastQty/1000,1)} kg` : `${fmtNum(sub.preblastQty,0)} g`) : "–"}</td>
+                              <td className={`py-1.5 px-2 text-right font-bold ${sub.postblastQty > 0 ? (pct >= 95 ? "text-emerald-700" : pct >= 60 ? "text-sky-700" : "text-amber-700") : "text-slate-300"}`}>{sub.postblastQty > 0 ? (sub.postblastQty >= 1000 ? `${fmtNum(sub.postblastQty/1000,1)} kg` : `${fmtNum(sub.postblastQty,0)} g`) : "–"}</td>
+                              <td className={`py-1.5 px-2 text-right font-black ${sub.availablePortions > 0 ? (pct >= 95 ? "text-emerald-700" : "text-amber-700") : "text-slate-300"}`}>{sub.availablePortions > 0 ? fmtNum(sub.availablePortions) : "0"}</td>
+                              <td className="py-1.5 pl-2">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-20 overflow-hidden rounded-full bg-slate-100 h-1.5">
+                                    <div className={`h-full rounded-full ${pct >= 95 ? "bg-emerald-500" : pct >= 60 ? "bg-sky-400" : "bg-amber-400"}`} style={{ width: `${Math.max(2, pct)}%` }} />
+                                  </div>
+                                  <span className={`text-[9px] font-black min-w-[28px] ${pct >= 95 ? "text-emerald-700" : pct >= 60 ? "text-sky-600" : "text-amber-600"}`}>{fmtNum(pct,0)}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {/* Bottleneck / action line */}
+                    {bottleneck && recipe.subFunnel.length > 1 && bottleneck.coverage < 0.98 && (
+                      <div className="mt-1.5 text-[10px] font-bold text-amber-700">
+                        Engpass: {bottleneck.name} ({fmtNum(bottleneck.coverage*100,0)}%) → max {fmtNum(recipe.availablePortions)} Portionen plattierbar
+                        {recipe.plannedPieces > recipe.availablePortions + recipe.standPieces && (
+                          <span className="ml-2 text-rose-600">· Lücke: {fmtNum(recipe.plannedPieces - recipe.availablePortions - recipe.standPieces)} Stk fehlen</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* No sub-recipes: show direct main MSKU status */}
+                {recipe.subFunnel.length === 0 && (
+                  <div className="mt-2 text-[10px] text-slate-400">Keine Sub-Rezept-Daten im WMS-Cache — Holding / Line-Daten über Plating-Tab sichtbar.</div>
+                )}
               </div>
             );
           })}
@@ -2301,6 +2444,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
                 { label: "Inbound",       active: selectedRecipePipeline.hasInbound },
                 { label: "Staging",       active: selectedRecipePipeline.hasStaging },
                 { label: "Debox",         active: selectedRecipePipeline.hasDebox },
+                { label: "Preblast (WO)", active: selectedRecipePipeline.hasPreblast },
                 { label: "Postblast",     active: selectedRecipePipeline.hasPostblast },
                 { label: "Sleeving",      active: selectedRecipePipeline.hasSleeving },
                 { label: "Plating Line",  active: selectedRecipePipeline.hasPlatingLine },
@@ -3623,14 +3767,14 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
             </h2>
           </div>
           <div className="text-right">
-            <div className="text-xs text-slate-300">WMS-Code: {wmsWeekCode || "—"}</div>
+            <div className="text-xs text-slate-300">WMS-Code: {workordersWmsCode || "—"} (KW {parseInt(week.match(/W(\d+)/)?.[1] ?? "0")})</div>
             <div className="text-[10px] text-slate-400">{workordersRawRows.length} Aufträge gesamt im System</div>
           </div>
         </div>
 
         {workordersForWeek.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-500">
-            Keine Workorders für KW {week} (WMS-Code: {wmsWeekCode}) gefunden.{" "}
+            Keine Workorders für KW {week} (suche WMS-Code: {workordersWmsCode}) gefunden.{" "}
             {workordersRawRows.length > 0 && (
               <span className="text-amber-600">
                 Im Cache sind {workordersRawRows.length} Aufträge aus anderen KWs — bitte für diese KW neu synchronisieren:{" "}

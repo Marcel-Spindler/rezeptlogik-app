@@ -467,7 +467,7 @@ export function PlanningOasisView({
 
       {section === "lines" && (
         <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
-          <LinePlanningSection week={week} locale={locale} autoPlanTrigger={lineAutoPlanTrigger} />
+          <LinePlanningSection week={week} locale={locale} autoPlanTrigger={lineAutoPlanTrigger} upliftPercent={upliftPercent} />
         </Suspense>
       )}
 

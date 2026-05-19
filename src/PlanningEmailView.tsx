@@ -234,14 +234,14 @@ function runSubBatchesForMail(
   if (mainTotal <= 0) return [];
   const subTotal = subAssignment.targetPortions ?? fallbackPortions;
   return mainBatches.map((batch, index) => ({
-    label: `B${index + 1}`,
+    label: `Run ${index + 1}`,
     portions: Math.max(0, Math.round(subTotal * batch.portions / mainTotal)),
     day: distributedRunSubDay(index, subIndex),
   }));
 }
 
 function isSundayPrepSub(category: string): boolean {
-  return /spice|gewürz|gewuerz|marinade|marinated|mariniert|butter/i.test(String(category ?? ""));
+  return /thaw|marinade|marinated|mariniert|hand marinade|patty maker|spice|gewürz|gewuerz|butter/i.test(String(category ?? ""));
 }
 function manufacturingInstruction(row: ManufacturingMailSummary): string {
   const total = row.mainPortions + row.subPortions;
@@ -269,6 +269,101 @@ function rackInstruction(releaseStatus: string): string {
   if (releaseStatus === "ready") return "Befuellung abgeschlossen, finale Freigabe durch Schichtleitung erforderlich.";
   if (releaseStatus === "blocked") return "Blockiert. Prioritaet auf Stoerungsbehebung und unmittelbare Eskalation an OPS Lead.";
   return "In Arbeit. Rack vervollstaendigen und anschliessend auf released setzen.";
+}
+
+// ── SVG-Chart-Helfer ─────────────────────────────────────────────────────────
+
+function buildSvgBarChart(
+  items: Array<{ label: string; value: number }>,
+  opts: { width?: number; height?: number; color?: string; title?: string }
+): string {
+  const W = opts.width ?? 580;
+  const H = opts.height ?? 150;
+  const color = opts.color ?? "#1e40af";
+  const padLeft = 8;
+  const padRight = 8;
+  const padTop = opts.title ? 28 : 8;
+  const padBottom = 30;
+  const chartW = W - padLeft - padRight;
+  const chartH = H - padTop - padBottom;
+  const maxVal = Math.max(...items.map(i => i.value), 1);
+  const colW = Math.floor(chartW / Math.max(items.length, 1));
+  const barW = Math.max(4, colW - 8);
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="font-family:Calibri,Arial,sans-serif;background:#f8fafc;border-radius:8px">`;
+  if (opts.title) {
+    svg += `<text x="12" y="18" font-size="12" font-weight="bold" fill="#1e293b">${escapeHtml(opts.title)}</text>`;
+  }
+  items.forEach((item, i) => {
+    const barH = maxVal > 0 ? Math.max(2, Math.round((item.value / maxVal) * chartH)) : 0;
+    const x = padLeft + i * colW + Math.floor((colW - barW) / 2);
+    const y = padTop + chartH - barH;
+    svg += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="${color}" opacity="0.85"/>`;
+    if (item.value > 0) {
+      svg += `<text x="${x + barW / 2}" y="${y - 3}" text-anchor="middle" font-size="9" fill="#1e3a8a" font-weight="bold">${fmtNum(item.value)}</text>`;
+    }
+    const labelLines = item.label.split(" ");
+    labelLines.forEach((line, li) => {
+      svg += `<text x="${x + barW / 2}" y="${H - padBottom + 12 + li * 11}" text-anchor="middle" font-size="9" fill="#64748b">${escapeHtml(line)}</text>`;
+    });
+  });
+  svg += `</svg>`;
+  return svg;
+}
+
+function buildRackStatusSvg(rows: Array<{ lineId: string; status: string }>): string {
+  const W = 580;
+  const count = rows.length || 1;
+  const tileW = Math.floor((W - 24 - (count - 1) * 6) / count);
+  const H = 66;
+  const colors: Record<string, string> = { released: "#16a34a", ready: "#2563eb", blocked: "#dc2626", open: "#94a3b8" };
+  const bgColors: Record<string, string> = { released: "#dcfce7", ready: "#dbeafe", blocked: "#fee2e2", open: "#f1f5f9" };
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="font-family:Calibri,Arial,sans-serif;background:#f8fafc;border-radius:8px">`;
+  rows.forEach((row, i) => {
+    const x = 12 + i * (tileW + 6);
+    const fill = bgColors[row.status] ?? "#f1f5f9";
+    const stroke = colors[row.status] ?? "#94a3b8";
+    svg += `<rect x="${x}" y="6" width="${tileW}" height="${H - 12}" rx="6" fill="${fill}" stroke="${stroke}" stroke-opacity="0.5" stroke-width="1.5"/>`;
+    svg += `<text x="${x + tileW / 2}" y="26" text-anchor="middle" font-size="13" font-weight="800" fill="#0f172a">${escapeHtml(row.lineId)}</text>`;
+    svg += `<text x="${x + tileW / 2}" y="44" text-anchor="middle" font-size="9" font-weight="700" fill="${stroke}">${row.status.toUpperCase()}</text>`;
+    if (row.status === "released") {
+      svg += `<text x="${x + tileW / 2}" y="57" text-anchor="middle" font-size="10" fill="${stroke}">✓</text>`;
+    }
+  });
+  svg += `</svg>`;
+  return svg;
+}
+
+function buildPlatingUtilSvg(dayRows: Array<{ dayLong: string; utilization: number; planned: number }>): string {
+  const W = 580;
+  const rowH = 26;
+  const labelW = 72;
+  const valW = 50;
+  const barMaxW = W - labelW - valW - 20;
+  const H = 24 + dayRows.length * rowH + 8;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="font-family:Calibri,Arial,sans-serif;background:#f8fafc;border-radius:8px">`;
+  svg += `<text x="8" y="16" font-size="11" font-weight="bold" fill="#1e293b">Plating-Auslastung je Tag</text>`;
+  dayRows.forEach((row, i) => {
+    const y = 24 + i * rowH;
+    const pctVal = Math.min(1, row.utilization);
+    const barW = Math.max(0, Math.round(pctVal * barMaxW));
+    const barColor = row.utilization > 1 ? "#dc2626" : row.utilization >= 0.85 ? "#f59e0b" : "#2563eb";
+    svg += `<text x="8" y="${y + 15}" font-size="10" fill="#475569">${escapeHtml(row.dayLong)}</text>`;
+    svg += `<rect x="${labelW}" y="${y + 4}" width="${barMaxW}" height="16" rx="4" fill="#e2e8f0"/>`;
+    if (barW > 0) svg += `<rect x="${labelW}" y="${y + 4}" width="${barW}" height="16" rx="4" fill="${barColor}"/>`;
+    const pctLabel = `${Math.round(row.utilization * 100)}%`;
+    svg += `<text x="${labelW + barMaxW + 6}" y="${y + 15}" font-size="10" font-weight="bold" fill="#334155">${pctLabel}</text>`;
+  });
+  svg += `</svg>`;
+  return svg;
+}
+
+function svgToDataUri(svgContent: string): string {
+  try {
+    return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgContent)))}`;
+  } catch {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgContent)}`;
+  }
 }
 
 // ── Hauptkomponente ──────────────────────────────────────────────────────────
@@ -701,6 +796,11 @@ export function PlanningEmailView({
   }, [rackReleaseByLine]);
   const rackReleasedCount = rackActionRows.filter((row) => row.done).length;
 
+  const coverageWarnings = useMemo(
+    () => batchSplitPlan.filter(p => p.lineCoverageGap !== undefined && p.lineCoverageGap > 0),
+    [batchSplitPlan]
+  );
+
   const liveLinks = useMemo(() => {
     const build = (view: string, kitchen = false) => {
       const url = new URL(window.location.href);
@@ -792,7 +892,7 @@ export function PlanningEmailView({
     }
 
     h("MANUFACTURING-TAGESZUSAMMENRECHNUNG");
-    h("Regel fixiert: B1-Submeals laufen von Sonntag Prep bis Mittwoch; B2-Submeals von Montag bis Donnerstag. Freitag/Samstag bleiben frei für Submeal-Runs.");
+    h("Regel fixiert: Run-1-Submeals laufen von Sonntag Prep bis Mittwoch; Run-2-Submeals von Montag bis Donnerstag. Freitag/Samstag bleiben frei für Submeal-Runs.");
     for (const row of manufacturingDaySummaries) {
       const totalJobs = row.mainCount + row.subRunCount;
       h(`  ${row.column.label.padEnd(14)} ${String(totalJobs).padStart(3)} Jobs | Main ${String(row.mainCount).padStart(2)} / ${fmtNum(row.mainPortions).padStart(8)} Port. | Sub-Runs ${String(row.subRunCount).padStart(2)} / ${fmtNum(row.subPortions).padStart(8)} Port.`);
@@ -912,13 +1012,7 @@ export function PlanningEmailView({
       .mfg-day{font-weight:800;font-size:12px;color:#0f172a;margin-bottom:4px}
       .mfg-line{font-size:11px;color:#475569;line-height:1.35}
       .pro-note{background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;color:#334155;font-size:13px;line-height:1.45}
-      .brand-hero{display:flex;gap:14px;align-items:stretch;border:1px solid #cbd5e1;border-radius:12px;background:linear-gradient(135deg,#f0fdf4,#ecfeff);padding:12px;margin:0 0 14px 0}
-      .brand-lockup{flex:1}
-      .brand-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#14532d;color:#fff;padding:4px 10px;font-size:11px;font-weight:800;letter-spacing:.03em;text-transform:uppercase}
-      .brand-dot{width:8px;height:8px;border-radius:999px;background:#34d399;display:inline-block}
-      .brand-title{margin:8px 0 2px 0;font-size:18px;font-weight:800;color:#0f172a}
-      .brand-sub{font-size:12px;color:#334155;line-height:1.4}
-      .meal-hero{width:170px;min-width:170px;border-radius:10px;object-fit:cover;border:1px solid #bae6fd}
+
       .quick-links{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 2px}
       .quick-link{display:inline-block;padding:6px 10px;border-radius:8px;background:#e2e8f0;color:#0f172a;font-size:12px;font-weight:700;text-decoration:none}
       .quick-link:hover{background:#cbd5e1}
@@ -930,7 +1024,6 @@ export function PlanningEmailView({
       .footer{margin-top:24px;padding-top:12px;border-top:1px solid ${border};font-size:11px;color:#94a3b8}
     `;
 
-    const mealImageUrl = "https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=640&q=80";
 
     const recipesHtml = batchSplitPlan.map(plan => {
       const allergens = allergensByRecipe[plan.recipeCode] ?? [];
@@ -957,6 +1050,17 @@ export function PlanningEmailView({
       }).join("");
       return batches;
     }).join("");
+
+    const platingUtilSvg = buildPlatingUtilSvg(
+      operationsDaySummaries.map(d => ({ dayLong: d.dayLong, utilization: d.utilization, planned: d.planned }))
+    );
+    const mfgBarSvg = buildSvgBarChart(
+      manufacturingDaySummaries
+        .filter(r => r.mainPortions + r.subPortions > 0)
+        .map(r => ({ label: r.column.label, value: r.mainPortions + r.subPortions })),
+      { width: 580, height: 150, color: "#1e40af", title: "Manufacturing-Portionen je Tag" }
+    );
+    const rackStatusSvg = buildRackStatusSvg(rackActionRows.map(r => ({ lineId: r.lineId, status: r.status })));
 
     const daysHtml = operationsDaySummaries.map(ds => {
       const dayBarClass = ds.utilization > 1 ? "danger" : ds.utilization >= 0.85 ? "warn" : "";
@@ -1053,19 +1157,19 @@ export function PlanningEmailView({
 
     return `<!DOCTYPE html>
 <html lang="de"><head><meta charset="utf-8"><style>${css}</style></head>
-<body><div class="wrap ${managementMode ? "management" : "shift"}">
-  <div class="brand-hero">
-    <div class="brand-lockup">
-      <div class="brand-chip"><span class="brand-dot"></span>Factor OPS</div>
-      <div class="brand-title">Planungsrundmail KW ${kwNum}</div>
-      <div class="brand-sub">Manufacturing, Rack und Plating als abgestimmter Einsatzauftrag. Alle Teams arbeiten auf derselben Zahlengrundlage.</div>
+<body><div class="wrap">
+  <div style="border-left:6px solid #1e40af;padding:12px 20px;background:linear-gradient(135deg,#eff6ff,#f0fdf4);margin-bottom:18px;border-radius:0 8px 8px 0">
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#1e40af;letter-spacing:.08em;margin-bottom:4px">FACTOR OPS &nbsp;·&nbsp; VERDEN &nbsp;·&nbsp; ${managementMode ? "MANAGEMENT" : "SCHICHTLEITUNG"}</div>
+    <div style="font-size:22px;font-weight:900;color:#0f172a;line-height:1.1">Planungsrundmail &nbsp;<span style="color:#1e40af">KW ${kwNum}</span></div>
+    <div style="font-size:12px;color:#334155;margin-top:4px">${fmtDate(week)} &nbsp;·&nbsp; Erstellt: ${new Date().toLocaleString("de-DE")}</div>
+    <div style="margin-top:8px;font-size:12px;color:#475569;line-height:1.5">Was in dieser Mail steht ist <strong>verbindlich</strong>. Manufacturing, Rack und Plating arbeiten auf derselben Zahlengrundlage. Run&nbsp;1 läuft stabil; Run&nbsp;2 absorbiert Forecast-Schwankungen kontrolliert.</div>
+    <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">
+      <span style="background:#1e40af;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px">Run 1 · So–Mi</span>
+      <span style="background:#4f46e5;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px">Run 2 · Mo–Do</span>
+      <span style="background:#0f766e;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px">Plating</span>
+      <span style="background:#c2410c;color:#fff;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px">Rack</span>
     </div>
-    <img class="meal-hero" src="${mealImageUrl}" alt="Factor Meal" />
   </div>
-  <h1>📋 Planungsrundmail – KW ${kwNum}</h1>
-  <div class="meta">Standort: Verden (VF) &nbsp;·&nbsp; ${fmtDate(week)} &nbsp;·&nbsp; Erstellt: ${new Date().toLocaleString("de-DE")}</div>
-  <div class="meta"><strong>Version:</strong> ${managementMode ? "Management" : "Schichtleitung"}</div>
-  <div class="pro-note"><strong>Professionelle Einordnung:</strong> Diese Planung synchronisiert Manufacturing-Calendar, Linienplan und Forecast-Realität in einem operativen Arbeitsbild. Run&nbsp;1 wird stabil gefahren; Forecast-Fluktuationen werden kontrolliert in Run&nbsp;2 absorbiert, um die Tagesproduktion robust zu halten.</div>
   <div class="quick-links">
     <a class="quick-link" href="${liveLinks.cockpit}">Manufacturing Live</a>
     <a class="quick-link" href="${liveLinks.plating}">Plating Live</a>
@@ -1076,7 +1180,7 @@ export function PlanningEmailView({
 
   ${hasSeafood ? `<div class="warn">Diese Woche enthält <strong>Fisch-Rezepte</strong> - MHD 9 Tage. Küchen-Deadlines besonders beachten.</div>` : ""}
 
-  <h2>Operations-Lage</h2>
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #1e40af;background:#eff6ff">Operations-Lage</h2>
   <div class="summary-grid">
     <div class="stat"><div class="stat-val">${batchSplitPlan.length}</div><div class="stat-lbl">Rezepte</div></div>
     <div class="stat"><div class="stat-val">${fmtNum(totalPortionsForecast)}</div><div class="stat-lbl">Forecast-Portionen</div></div>
@@ -1088,56 +1192,52 @@ export function PlanningEmailView({
     <div class="ops-box"><div class="ops-title">Küche</div><div class="ops-main">${totalManufacturingJobs} Jobs</div><div style="font-size:11px;color:#64748b;margin-top:4px">Main + Sub-Runs aus dem Wochenplan</div></div>
     <div class="ops-box"><div class="ops-title">Besetzung / Risiko</div><div class="ops-main">${maxPlatingStaff} MA Peak</div><div style="font-size:11px;color:#64748b;margin-top:4px">${coverageWarnings.length} Kapalücken · ${allergenRecipeCount} Allergen-Rezepte</div></div>
   </div>
+  ${operationsDaySummaries.length > 0 ? `<img src="${svgToDataUri(platingUtilSvg)}" alt="Plating-Auslastung" style="width:100%;max-width:580px;display:block;margin:12px 0;border-radius:8px"/>` : ""}
 
-  <div class="mgmt-only">
-    <h2>Management-Kurzlage</h2>
-    <table>
-      <thead><tr><th>KPI</th><th>Wert</th></tr></thead>
-      <tbody>
-        <tr><td>Rack-Freigabe</td><td>${fmtNum(rackReleasedCount)} / ${fmtNum(RACK_REQUIRED_LINE_IDS.length)} Linien released</td></tr>
-        <tr><td>Kapazitaetsluecken</td><td>${fmtNum(coverageWarnings.length)} Rezepte</td></tr>
-        <tr><td>Allergen-Rezepte</td><td>${fmtNum(allergenRecipeCount)}</td></tr>
-        <tr><td>Seafood-Risiko (MHD 9)</td><td>${hasSeafood ? "Aktiv" : "Nicht aktiv"}</td></tr>
-      </tbody>
-    </table>
-  </div>
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #1e40af;background:#eff6ff">Management-Kurzlage (KPIs)</h2>
+  <table>
+    <thead><tr><th>KPI</th><th>Wert</th></tr></thead>
+    <tbody>
+      <tr><td>Rack-Freigabe</td><td>${fmtNum(rackReleasedCount)} / ${fmtNum(RACK_REQUIRED_LINE_IDS.length)} Linien released</td></tr>
+      <tr><td>Kapazitaetsluecken</td><td>${fmtNum(coverageWarnings.length)} Rezepte</td></tr>
+      <tr><td>Allergen-Rezepte</td><td>${fmtNum(allergenRecipeCount)}</td></tr>
+      <tr><td>Seafood-Risiko (MHD 9)</td><td>${hasSeafood ? "Aktiv" : "Nicht aktiv"}</td></tr>
+    </tbody>
+  </table>
 
-  <div class="detail-only">
-  <h2>Plating-Aushang: Was ist zu tun?</h2>
+  ${managementMode ? "" : `
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #0f766e;background:#f0fdfa">Plating-Aushang: Was ist zu tun?</h2>
   ${dayPlatingSummaries.length > 0 ? daysHtml : `<p style="color:#94a3b8;font-size:13px">Kein Linienplan für diese Woche hinterlegt (Linienplanung öffnen und befüllen).</p>`}
 
-  <h2>Küchen-Deadlines</h2>
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #0f766e;background:#f0fdfa">Küchen-Deadlines</h2>
   <table>
     <thead><tr>
       <th>Rezept</th><th>Name</th><th>Plating</th><th>Versand</th><th>Küche bis</th><th style="text-align:right">Portionen</th><th>Status</th>
     </tr></thead>
     <tbody>${recipesHtml || `<tr><td colspan="7" style="color:#94a3b8;text-align:center">Keine Rezepte für diese Woche</td></tr>`}</tbody>
   </table>
-  </div>
+  `}
 
-  <h2>Manufacturing-Tageszusammenrechnung</h2>
-  <div class="info">Fixe Küchenregel: B1-Submeals werden von Sonntag Prep bis Mittwoch verteilt. B2-Submeals werden von Montag bis Donnerstag verteilt. Freitag/Samstag bleiben frei für Submeal-Runs.</div>
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #1e40af;background:#eff6ff">Manufacturing-Kalender</h2>
+  <div class="info">Fixe Küchenregel: Run-1-Submeals werden von Sonntag Prep bis Mittwoch verteilt. Run-2-Submeals werden von Montag bis Donnerstag verteilt. Freitag/Samstag bleiben frei für Submeal-Runs.</div>
   <div class="mfg-grid">${manufacturingSummaryHtml}</div>
-  <h3>Manufacturing Calendar (ähnlich zum Cockpit)</h3>
+  <h3>Manufacturing Calendar</h3>
   <table>
-      <h3>Arbeitsauftrag je Tag (Was / Wann / Wo / Wieviel)</h3>
-      <table>
-        <thead><tr><th>Tag</th><th>Bereich</th><th style="text-align:right">Gesamt Portionen</th><th>Auftrag</th></tr></thead>
-        <tbody>
-          ${manufacturingActionRows.map((row) => `<tr><td><strong>${escapeHtml(row.dayLabel)}</strong></td><td>${escapeHtml(row.areaLabel)}</td><td style="text-align:right">${fmtNum(row.totalPortions)}</td><td>${escapeHtml(row.instruction)}</td></tr>`).join("")}
-        </tbody>
-      </table>
     <thead><tr><th>Tag</th><th style="text-align:right">Main Jobs</th><th style="text-align:right">Sub-Runs</th><th style="text-align:right">Main Portionen</th><th style="text-align:right">Sub Portionen</th><th>Top Items</th></tr></thead>
     <tbody>${manufacturingCalendarRowsHtml}</tbody>
   </table>
-
-  <h2>Rack + Plating Einsatzauftrag</h2>
-  <h3>Plating Auftrag pro Tag</h3>
+  <h3>Arbeitsauftrag je Tag (Was / Wann / Wo / Wieviel)</h3>
   <table>
-    <thead><tr><th>Tag</th><th style="text-align:right">Portionen</th><th style="text-align:right">Auslastung</th><th>Auftrag</th></tr></thead>
-    <tbody>${platingMissionRowsHtml || `<tr><td colspan="4" style="color:#94a3b8;text-align:center">Keine Plating-Daten vorhanden</td></tr>`}</tbody>
+    <thead><tr><th>Tag</th><th>Bereich</th><th style="text-align:right">Gesamt Portionen</th><th>Auftrag</th></tr></thead>
+    <tbody>
+      ${manufacturingActionRows.map((row) => `<tr><td><strong>${escapeHtml(row.dayLabel)}</strong></td><td>${escapeHtml(row.areaLabel)}</td><td style="text-align:right">${fmtNum(row.totalPortions)}</td><td>${escapeHtml(row.instruction)}</td></tr>`).join("")}
+    </tbody>
   </table>
 
+  <img src="${svgToDataUri(mfgBarSvg)}" alt="Manufacturing-Portionen" style="width:100%;max-width:580px;display:block;margin:12px 0;border-radius:8px"/>
+
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #c2410c;background:#fff7ed">Rack-Status</h2>
+  <img src="${svgToDataUri(rackStatusSvg)}" alt="Rack-Status" style="width:100%;max-width:580px;display:block;margin:8px 0 12px;border-radius:8px"/>
   <h3>Rack Auftrag pro Linie</h3>
   <table>
     <thead><tr><th>Rack-Linie</th><th>Status</th><th>Auftrag</th></tr></thead>
@@ -1145,8 +1245,14 @@ export function PlanningEmailView({
   </table>
   <div class="info">Rack Freigabe: ${fmtNum(rackReleasedCount)} / ${fmtNum(RACK_REQUIRED_LINE_IDS.length)} Linien sind auf released.</div>
 
-  <div class="detail-only">
-  <h2>Personalbedarf Plating</h2>
+  <h3>Plating Auftrag pro Tag</h3>
+  <table>
+    <thead><tr><th>Tag</th><th style="text-align:right">Portionen</th><th style="text-align:right">Auslastung</th><th>Auftrag</th></tr></thead>
+    <tbody>${platingMissionRowsHtml || `<tr><td colspan="4" style="color:#94a3b8;text-align:center">Keine Plating-Daten vorhanden</td></tr>`}</tbody>
+  </table>
+
+  ${managementMode ? "" : `
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #0f766e;background:#f0fdfa">Personalbedarf Plating</h2>
   <table>
     <thead><tr><th>Tag</th><th>Datum</th><th>Aktive Linien</th><th>MA Plating</th><th style="text-align:right">Portionen</th></tr></thead>
     <tbody>
@@ -1164,18 +1270,16 @@ export function PlanningEmailView({
     </tbody>
   </table>
   <div class="info" style="font-size:12px">Plating-Besetzung: 1 Maschinenführer + 2 Bestücker/Packer + 1 Flex/Endkontrolle pro Linie. Bei Rezepten mit Speed &gt; 15 Port./min +1 MA.</div>
-  </div>
 
-  ${allergenHtml ? `<div class="detail-only"><h2>Allergene – FSQA-Hinweis</h2>
+  ${allergenHtml ? `<h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #b45309;background:#fffbeb">Allergene – FSQA-Hinweis</h2>
   <table>
     <thead><tr><th>Rezept</th><th>Name</th><th>Allergene</th></tr></thead>
     <tbody>${allergenHtml}</tbody>
-  </table></div>` : ""}
+  </table>` : ""}
 
-  <div class="detail-only">
-    <h2>Anmerkungen aus Linienplanung</h2>
-    ${commentHtml}
-  </div>
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #475569;background:#f8fafc">Anmerkungen aus Linienplanung</h2>
+  ${commentHtml}
+  `}
 
   <div class="footer">
     Automatisch generiert aus Rezeptlogik-Planungssystem &nbsp;·&nbsp; Woche ${week} &nbsp;·&nbsp; ${new Date().toLocaleString("de-DE")}
@@ -1202,12 +1306,6 @@ export function PlanningEmailView({
     setHtmlCopyState("ok");
     setTimeout(() => setHtmlCopyState("idle"), 2500);
   }
-
-  // ── Kapazitätslücken-Warnung ───────────────────────────────────────────────
-  const coverageWarnings = useMemo(() =>
-    batchSplitPlan.filter(p => p.lineCoverageGap !== undefined && p.lineCoverageGap > 0),
-    [batchSplitPlan]
-  );
 
   return (
     <div className="space-y-4">
@@ -1543,7 +1641,7 @@ export function PlanningEmailView({
           <div>
             <h2 className="text-base font-bold text-slate-800 border-b-2 border-blue-700 pb-1 mb-3">Manufacturing-Tageszusammenrechnung</h2>
             <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-              Fixe Küchenregel: B1-Submeals von Sonntag Prep bis Mittwoch, B2-Submeals von Montag bis Donnerstag. Freitag/Samstag bleiben frei für Submeal-Runs.
+              Fixe Küchenregel: Run-1-Submeals von Sonntag Prep bis Mittwoch, Run-2-Submeals von Montag bis Donnerstag. Freitag/Samstag bleiben frei für Submeal-Runs.
             </div>
             <div className="grid gap-2 md:grid-cols-4">
               {manufacturingDaySummaries.map(row => {
@@ -1556,8 +1654,18 @@ export function PlanningEmailView({
                     </div>
                     <div className="mt-1 text-[11px] text-slate-600">Main: <strong>{row.mainCount}</strong> · {fmtNum(row.mainPortions)} Port.</div>
                     <div className="text-[11px] text-slate-600">Sub-Runs: <strong>{row.subRunCount}</strong> · {fmtNum(row.subPortions)} Port.</div>
-                    <div className="mt-2 space-y-0.5 text-[10px] text-slate-500">
-                      {row.items.length > 0 ? row.items.slice(0, 4).map(item => <div key={`${row.column.id}-${item}`} className="truncate">{item}</div>) : <em>keine Jobs</em>}
+                    <div className="mt-2 space-y-0.5">
+                      {row.items.length > 0 ? row.items.slice(0, 5).map(item => {
+                        const isRun1 = item.includes("Run 1");
+                        const isRun2 = item.includes("Run 2");
+                        return (
+                          <div key={`${row.column.id}-${item}`} className={`truncate rounded px-1 text-[10px] font-medium ${
+                            isRun1 ? "bg-blue-50 text-blue-700"
+                            : isRun2 ? "bg-indigo-50 text-indigo-700"
+                            : "bg-slate-50 text-slate-600"
+                          }`}>{item}</div>
+                        );
+                      }) : <em className="text-[10px] text-slate-400">keine Jobs</em>}
                     </div>
                   </div>
                 );
@@ -1586,6 +1694,70 @@ export function PlanningEmailView({
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Rack-Status */}
+          <div>
+            <h2 className="text-base font-bold text-slate-800 border-b-2 border-blue-700 pb-1 mb-3">Rack-Status (ASL1–ASL6)</h2>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-3">
+              {rackActionRows.map(row => (
+                <div
+                  key={row.lineId}
+                  title={row.instruction}
+                  className={`rounded-lg border p-3 text-center ${
+                    row.done
+                      ? "border-emerald-300 bg-emerald-50"
+                      : row.status === "blocked"
+                      ? "border-red-300 bg-red-50"
+                      : row.status === "ready"
+                      ? "border-blue-300 bg-blue-50"
+                      : "border-amber-200 bg-amber-50"
+                  }`}
+                >
+                  <div className="text-sm font-black text-slate-900">{row.lineId}</div>
+                  <div className={`mt-1 text-[10px] font-bold uppercase tracking-wide ${
+                    row.done ? "text-emerald-700"
+                    : row.status === "blocked" ? "text-red-700"
+                    : row.status === "ready" ? "text-blue-700"
+                    : "text-amber-700"
+                  }`}>{row.status}</div>
+                  {row.done && <div className="text-emerald-600 text-sm">✓</div>}
+                </div>
+              ))}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-700">
+              Freigabe: <strong>{rackReleasedCount}</strong> / <strong>{RACK_REQUIRED_LINE_IDS.length}</strong> Linien released
+              {rackReleasedCount < RACK_REQUIRED_LINE_IDS.length && (
+                <span className="ml-2 text-amber-700 font-semibold">
+                  — {RACK_REQUIRED_LINE_IDS.length - rackReleasedCount} Linie{RACK_REQUIRED_LINE_IDS.length - rackReleasedCount !== 1 ? "n" : ""} noch offen
+                </span>
+              )}
+            </div>
+            <table className="w-full text-xs border-collapse mt-3">
+              <thead>
+                <tr className="bg-blue-800 text-white">
+                  <th className="p-2 text-left">Rack-Linie</th>
+                  <th className="p-2 text-left">Status</th>
+                  <th className="p-2 text-left">Auftrag</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rackActionRows.map((row, i) => (
+                  <tr key={row.lineId} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                    <td className="p-2 font-bold text-slate-800">{row.lineId}</td>
+                    <td className="p-2">
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                        row.done ? "bg-emerald-100 text-emerald-800"
+                        : row.status === "blocked" ? "bg-red-100 text-red-800"
+                        : row.status === "ready" ? "bg-blue-100 text-blue-800"
+                        : "bg-amber-100 text-amber-800"
+                      }`}>{row.status}</span>
+                    </td>
+                    <td className="p-2 text-slate-600">{row.instruction}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
           {/* Personalbedarf */}

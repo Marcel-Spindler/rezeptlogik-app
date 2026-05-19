@@ -299,7 +299,8 @@ function createSnowflakeConnectionOptions() {
   if (!privateKeyRaw) throw new Error("SNOWFLAKE_PRIVATE_KEY erforderlich.");
 
   // Private Key aus env var rekonstruieren (PKCS8 PEM, 64-Zeichen-Zeilen)
-  const privateKey = `-----BEGIN PRIVATE KEY-----\n${privateKeyRaw.match(/.{1,64}/g).join("\n")}\n-----END PRIVATE KEY-----`;
+  const lines = privateKeyRaw.replace(/\s+/g, "").match(/.{1,64}/g) || [];
+  const privateKey = `-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----`;
 
   return {
     account,
@@ -445,16 +446,19 @@ function parseWmsParams(req, options = {}) {
   const week = str(req.query.week || "");
   const limitRaw = Number(req.query.limit || DEFAULT_WMS_LIMIT);
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(100000, limitRaw)) : DEFAULT_WMS_LIMIT;
-  const range = wmsRangeForToolWeek(week);
-  const lookbackDaysRaw = Number(req.query.lookbackDays || options.lookbackDays || 0);
-  const lookbackDays = Number.isFinite(lookbackDaysRaw) ? Math.max(0, Math.min(180, lookbackDaysRaw)) : 0;
-  const rangeStart = lookbackDays > 0 ? shiftedIsoDate(range.rangeStart, -lookbackDays) : range.rangeStart;
+  const defaultLookback = options.defaultLookbackDays || 60;
+  const lookbackDaysRaw = Number(req.query.lookbackDays || options.lookbackDays || defaultLookback);
+  const lookbackDays = Number.isFinite(lookbackDaysRaw) ? Math.max(1, Math.min(365, lookbackDaysRaw)) : defaultLookback;
+  const today = localDateIso();
+  const rangeStart = shiftedIsoDate(today, -lookbackDays);
+  const rangeEnd = shiftedIsoDate(today, 1);
+  const wmsWeek = week || isoWeekLabel(new Date(`${today}T12:00:00Z`));
   return {
     whId,
     week,
-    wmsWeek: range.wmsWeek,
+    wmsWeek,
     rangeStart,
-    rangeEnd: range.rangeEnd,
+    rangeEnd,
     limit,
     lookbackDays,
   };
@@ -463,8 +467,7 @@ function parseWmsParams(req, options = {}) {
 async function runWmsQuery(req, res, config) {
   const params = parseWmsParams(req, config);
   try {
-    // Live Snowflake Query (Key Pair Auth, kein SSO, kein Cache)
-    let cachedData = null;
+    // Snowflake live (JWT key pair auth)
     try {
       const conn = await connectSnowflake();
       const rowsRaw = await executeSnowflakeQuery(conn, config.sql, [
@@ -473,45 +476,48 @@ async function runWmsQuery(req, res, config) {
         params.rangeEnd,
         params.limit,
       ]);
-      cachedData = {
-        rows: rowsRaw.map(config.mapper),
+      return res.json({
+        ok: true,
+        whId: params.whId,
+        week: params.week,
+        wmsWeek: params.wmsWeek,
+        rangeStart: params.rangeStart,
+        rangeEnd: params.rangeEnd,
+        limit: params.limit,
+        lookbackDays: params.lookbackDays,
+        generatedAt: nowIso(),
         source: "snowflake-live",
-      };
+        rows: rowsRaw.map(config.mapper),
+      });
     } catch (snowflakeErr) {
-      logger.warn("Snowflake live query failed, trying Firestore cache:", snowflakeErr.message);
-      // Fallback: Firestore-Cache (falls Snowflake temporär nicht erreichbar)
-      try {
-        const cacheDoc = await db.collection("wmsCache").doc(`${config.name}-${params.wmsWeek}`).get();
-        if (cacheDoc.exists) {
-          cachedData = cacheDoc.data();
-          logger.info("Using Firestore cache for " + config.name);
-        }
-      } catch (firestoreErr) {
-        logger.warn("Firestore cache also failed:", firestoreErr.message);
-      }
-      if (!cachedData) {
-        logger.error("WMS endpoint " + config.name + " both Snowflake and cache failed", snowflakeErr);
-        throw new Error("WMS data nicht verfügbar: " + snowflakeErr.message);
-      }
+      logger.warn(`WMS Snowflake failed (${config.name}), trying Firestore cache`, { error: snowflakeErr.message });
+      cachedWmsConn = null; // force reconnect next time
     }
 
-    const rows = cachedData.rows || [];
-    res.json({
-      ok: true,
-      whId: params.whId,
-      week: params.week,
-      wmsWeek: params.wmsWeek,
-      rangeStart: params.rangeStart,
-      rangeEnd: params.rangeEnd,
-      limit: params.limit,
-      lookbackDays: params.lookbackDays || undefined,
-      generatedAt: nowIso(),
-      cached: true,
-      source: cachedData.source || "firestore",
-      rows,
-    });
+    // Firestore-Cache fallback (befüllt via: npm run wms:sync)
+    const cacheKey = `${config.name}-latest`;
+    const cacheDoc = await db.collection("wmsCache").doc(cacheKey).get();
+    if (cacheDoc.exists) {
+      const cached = cacheDoc.data();
+      return res.json({
+        ok: true,
+        whId: params.whId,
+        week: params.week,
+        wmsWeek: params.wmsWeek,
+        rangeStart: params.rangeStart,
+        rangeEnd: params.rangeEnd,
+        limit: params.limit,
+        lookbackDays: params.lookbackDays,
+        generatedAt: nowIso(),
+        source: "firestore-cache",
+        cachedAt: cached.pushedAt || cached.generatedAt,
+        rows: cached.rows || [],
+      });
+    }
+
+    throw new Error("Keine Daten: Snowflake JWT ungültig und kein Firestore-Cache. Bitte 'npm run wms:sync' ausführen.");
   } catch (error) {
-    logger.error(`WMS endpoint ${config.name} failed`, error);
+    logger.error(`WMS endpoint ${config.name} failed`, { error: error?.message });
     res.status(500).json({
       ok: false,
       whId: params.whId,
@@ -520,11 +526,10 @@ async function runWmsQuery(req, res, config) {
       rangeStart: params.rangeStart,
       rangeEnd: params.rangeEnd,
       limit: params.limit,
-      lookbackDays: params.lookbackDays || undefined,
+      lookbackDays: params.lookbackDays,
       generatedAt: nowIso(),
       rows: [],
       error: error?.message || String(error),
-      hint: "Lokal: npx ts-node scripts/sync-wms-cache.ts",
     });
   }
 }
@@ -1699,7 +1704,7 @@ exports.wmsPlatingHistory = onRequest({ region: "europe-west3", timeoutSeconds: 
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
   }
-  await runWmsQuery(req, res, { name: "wms-plating-history", sql: WMS_PLATING_HISTORY_SQL, mapper: mapWmsSleevingRow, lookbackDays: 28 });
+  await runWmsQuery(req, res, { name: "wms-plating-history", sql: WMS_PLATING_HISTORY_SQL, mapper: mapWmsSleevingRow, defaultLookbackDays: 90 });
 });
 
 exports.wmsSleeving = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
@@ -1747,52 +1752,41 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
   }
-  // Note: workorders doesn't use date range filtering, just whId and limit
   const params = parseWmsParams(req, {});
   try {
-    // Live Snowflake Query
-    let cachedData = null;
     try {
       const conn = await connectSnowflake();
-      const rowsRaw = await executeSnowflakeQuery(conn, WMS_WORKORDERS_SQL, [
-        params.whId,
-        params.limit,
-      ]);
-      cachedData = {
-        rows: rowsRaw.map(mapWmsWorkordersRow),
+      const rowsRaw = await executeSnowflakeQuery(conn, WMS_WORKORDERS_SQL, [params.whId, params.limit]);
+      return res.json({
+        ok: true,
+        whId: params.whId,
+        limit: params.limit,
+        generatedAt: nowIso(),
         source: "snowflake-live",
-      };
+        rows: rowsRaw.map(mapWmsWorkordersRow),
+      });
     } catch (snowflakeErr) {
-      logger.warn("Workorders Snowflake failed, trying Firestore cache:", snowflakeErr.message);
-      try {
-        const cacheDoc = await db.collection("wmsCache").doc("workorders").get();
-        if (cacheDoc.exists) cachedData = cacheDoc.data();
-      } catch (firestoreErr) {
-        logger.warn("Firestore workorders cache also failed:", firestoreErr.message);
-      }
-      if (!cachedData) throw new Error("Workorders nicht verfügbar: " + snowflakeErr.message);
+      logger.warn("WMS workorders Snowflake failed, trying Firestore cache", { error: snowflakeErr.message });
+      cachedWmsConn = null;
     }
 
-    const rows = cachedData.rows || [];
-    res.json({
-      ok: true,
-      whId: params.whId,
-      limit: params.limit,
-      generatedAt: nowIso(),
-      cached: true,
-      source: cachedData.source || "firestore",
-      rows,
-    });
+    const cacheDoc = await db.collection("wmsCache").doc("workorders").get();
+    if (cacheDoc.exists) {
+      const cached = cacheDoc.data();
+      return res.json({
+        ok: true,
+        whId: params.whId,
+        limit: params.limit,
+        generatedAt: nowIso(),
+        source: "firestore-cache",
+        cachedAt: cached.pushedAt || cached.generatedAt,
+        rows: cached.rows || [],
+      });
+    }
+
+    throw new Error("Keine Workorders-Daten. Bitte 'npm run wms-sync' ausführen.");
   } catch (error) {
-    logger.error("WMS workorders failed", error);
-    res.status(500).json({
-      ok: false,
-      whId: params.whId,
-      limit: params.limit,
-      generatedAt: nowIso(),
-      rows: [],
-      error: error?.message || String(error),
-      hint: "Run locally: npx ts-node scripts/sync-wms-cache.ts",
-    });
+    logger.error("WMS workorders failed", { error: error?.message });
+    res.status(500).json({ ok: false, whId: params.whId, limit: params.limit, generatedAt: nowIso(), rows: [], error: error?.message || String(error) });
   }
 });

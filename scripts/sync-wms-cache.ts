@@ -39,13 +39,14 @@ interface SnowflakeOptions {
 
 function getConnectionOptions(): SnowflakeOptions {
   const account = process.env.SNOWFLAKE_ACCOUNT;
-  if (!account) {
-    throw new Error("SNOWFLAKE_ACCOUNT erforderlich (.env)");
-  }
+  if (!account) throw new Error("SNOWFLAKE_ACCOUNT erforderlich (.env)");
+  const username = process.env.SNOWFLAKE_USER;
+  if (!username) throw new Error("SNOWFLAKE_USER erforderlich (.env)");
 
   return {
     account,
-    authenticator: process.env.SNOWFLAKE_AUTHENTICATOR || "externalbrowser",
+    username,
+    authenticator: "externalbrowser",
     warehouse: process.env.SNOWFLAKE_WAREHOUSE || "US_OPS_ANALYTICS",
     database: process.env.SNOWFLAKE_DATABASE || "US_OPS_ANALYTICS",
     schema: process.env.SNOWFLAKE_SCHEMA || "HIGHJUMP",
@@ -110,30 +111,11 @@ function isoWeekLabel(date: Date): string {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
-function getWeekRange(weekStr: string): { start: string; end: string; label: string } {
-  const match = (weekStr || "").trim().match(/^(20\d{2})-W(\d{2})$/);
-  if (!match) {
-    // Kein --week: aktuelle KW als Label (= Tool-KW), Datumsrange = eine Woche davor
-    const today = new Date();
-    const label = isoWeekLabel(today); // z.B. "2026-W22"
-    const m2 = label.match(/^(20\d{2})-W(\d{2})$/)!;
-    const start = isoWeekStart(Number(m2[1]), Number(m2[2]));
-    start.setUTCDate(start.getUTCDate() - 7);
-    const end = new Date(start);
-    end.setUTCDate(start.getUTCDate() + 7);
-    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), label };
-  }
-  // Mit --week 2026-W23: label = "2026-W23", range = Woche davor (wie Cloud Function erwartet)
-  const year = Number(match[1]);
-  const week = Number(match[2]);
-  const start = isoWeekStart(year, week);
-  start.setUTCDate(start.getUTCDate() - 7);
-  const end = new Date(start);
-  end.setUTCDate(start.getUTCDate() + 7);
+function getLookbackRange(lookbackDays = 60): { start: string; end: string } {
+  const today = localDateIso();
   return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
-    label: weekStr, // "2026-W23" bleibt "2026-W23" — kein Shift im Key
+    start: shiftDate(today, -lookbackDays),
+    end: shiftDate(today, 1),
   };
 }
 
@@ -313,84 +295,60 @@ LIMIT ?`;
 
 async function main() {
   const args = process.argv.slice(2);
-  const weekIdx = args.indexOf("--week");
-  const daysIdx = args.indexOf("--days");
-
-  const weekArg = weekIdx >= 0 ? args[weekIdx + 1] : null;
-  const daysArg = daysIdx >= 0 ? parseInt(args[daysIdx + 1]) : 7;
-
-  const range = getWeekRange(weekArg || "");
   const whId = process.env.SNOWFLAKE_WH_ID || "VF";
   const limit = 25000;
 
+  // --days N: wie viele Tage zurück (default 60)
+  const daysIdx = args.indexOf("--days");
+  const lookbackDays = daysIdx >= 0 ? parseInt(args[daysIdx + 1]) || 60 : 60;
+
+  const range = getLookbackRange(lookbackDays);
+  const historyStart = shiftDate(range.start, -28); // plating-history braucht etwas mehr
+
   console.log(`📦 WMS Cache Sync`);
-  console.log(`   Cache-Key: ${range.label}`);
-  console.log(`   Range: ${range.start} to ${range.end}`);
+  console.log(`   Zeitraum: ${range.start} → ${range.end}  (${lookbackDays} Tage)`);
   console.log(`   Warehouse: ${whId}`);
-  console.log("");
 
-  let conn;
+  const queries: Array<{ key: string; sql: string; binds: any[]; mapper: (r: any) => any }> = [
+    { key: "wms-plating",         sql: WMS_PLATING_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
+    { key: "wms-sleeving",        sql: WMS_SLEEVING_SQL,        binds: [whId, range.start, range.end, limit], mapper: mapWmsSleevingRow },
+    { key: "wms-plating-history", sql: WMS_PLATING_HISTORY_SQL, binds: [whId, historyStart, range.end, limit], mapper: mapWmsSleevingRow },
+    { key: "wms-inbound",         sql: WMS_INBOUND_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsInboundRow },
+    { key: "wms-staging",         sql: WMS_STAGING_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
+    { key: "wms-debox",           sql: WMS_DEBOX_SQL,           binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
+    { key: "wms-postblast",       sql: WMS_POSTBLAST_SQL,       binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
+    { key: "workorders",          sql: WMS_WORKORDERS_SQL,      binds: [whId, limit],                        mapper: mapWmsWorkordersRow },
+  ];
+
+  let conn: any;
   try {
-    console.log("🔗 Verbinde mit Snowflake (SSO)...");
+    console.log("\n🔗 Verbinde mit Snowflake (SSO)...");
     conn = await connectSnowflake();
-    console.log("✅ Verbunden");
-    console.log("");
+    console.log("✅ Verbunden\n");
 
-    // plating-history braucht 28 Tage Lookback
-    const historyStart = shiftDate(range.start, -28);
-
-    const queries: Array<{ key: string; sql: string; binds: any[]; mapper: (r: any) => any }> = [
-      { key: "wms-plating",         sql: WMS_PLATING_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
-      { key: "wms-sleeving",        sql: WMS_SLEEVING_SQL,        binds: [whId, range.start, range.end, limit], mapper: mapWmsSleevingRow },
-      { key: "wms-plating-history", sql: WMS_PLATING_HISTORY_SQL, binds: [whId, historyStart, range.end, limit], mapper: mapWmsSleevingRow },
-      { key: "wms-inbound",         sql: WMS_INBOUND_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsInboundRow },
-      { key: "wms-staging",         sql: WMS_STAGING_SQL,         binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
-      { key: "wms-debox",           sql: WMS_DEBOX_SQL,           binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
-      { key: "wms-postblast",       sql: WMS_POSTBLAST_SQL,       binds: [whId, range.start, range.end, limit], mapper: mapWmsPlatingRow },
-      { key: "workorders",          sql: WMS_WORKORDERS_SQL,      binds: [whId, limit],                        mapper: mapWmsWorkordersRow },
-    ];
-
-    const datasets: Record<string, any[]> = {};
-    for (const q of queries) {
-      console.log(`⏳ Lade ${q.key}...`);
-      const rows = await executeQuery(conn, q.sql, q.binds);
-      datasets[q.key] = rows.map(q.mapper);
-      console.log(`   ✅ ${rows.length} Zeilen`);
-    }
-
-    // Speichere alle Daten in public/data/
-    const cacheFile = path.join(__dirname, "../public/data/wms-cache.json");
-    const cacheData = {
-      timestamp: new Date().toISOString(),
-      week: range.label,
-      range: { start: range.start, end: range.end },
-      whId,
-      datasets,
-    };
-
-    fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-    fs.writeFileSync(cacheFile, JSON.stringify(cacheData, null, 2));
-    console.log(`\n✅ JSON gespeichert: ${cacheFile}`);
-    console.log(`   Größe: ${(fs.statSync(cacheFile).size / 1024).toFixed(1)} KB`);
-
-    // Push nach Firestore
-    console.log("\n📤 Push nach Firestore...");
     admin.initializeApp({ credential: admin.credential.applicationDefault() });
     const db = admin.firestore();
-    const generatedAt = cacheData.timestamp;
-    for (const [datasetKey, rows] of Object.entries(datasets)) {
-      const docId = datasetKey === "workorders" ? "workorders" : `${datasetKey}-${range.label}`;
-      await db.collection("wmsCache").doc(docId).set({ rows, source: "sync", week: range.label, generatedAt, pushedAt: new Date().toISOString() });
-      console.log(`   ✅ wmsCache/${docId}: ${rows.length} Zeilen`);
-    }
-    console.log("✅ Firestore aktualisiert");
+    const generatedAt = new Date().toISOString();
 
-  } finally {
-    if (conn) {
-      conn.destroy((err: unknown) => {
-        if (err) console.error("Disconnect error:", err);
+    for (const q of queries) {
+      process.stdout.write(`   ⏳ ${q.key}... `);
+      const rows = await executeQuery(conn, q.sql, q.binds);
+      const mapped = rows.map(q.mapper);
+      // Immer als "latest" speichern — kein KW-Suffix, App filtert nach kw-Feld
+      await db.collection("wmsCache").doc(`${q.key}-latest`).set({
+        rows: mapped,
+        source: "sync",
+        rangeStart: range.start,
+        rangeEnd: range.end,
+        generatedAt,
+        pushedAt: new Date().toISOString(),
       });
+      console.log(`${rows.length} Zeilen ✅`);
     }
+
+    console.log("\n✅ Fertig — Firestore aktualisiert");
+  } finally {
+    if (conn) conn.destroy((err: unknown) => { if (err) console.error("Disconnect error:", err); });
   }
 }
 
