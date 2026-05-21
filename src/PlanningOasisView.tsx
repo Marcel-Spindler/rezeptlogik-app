@@ -160,7 +160,6 @@ export function PlanningOasisView({
   defaultSection?: OasisSection;
 }): JSX.Element {
   const [section, setSection] = useState<OasisSection>(() => oasisSectionFromUrl(defaultSection));
-  const [lineAutoPlanTrigger, setLineAutoPlanTrigger] = useState(0);
   useEffect(() => {
     setSection(oasisSectionFromUrl(defaultSection));
   }, [defaultSection]);
@@ -338,8 +337,7 @@ export function PlanningOasisView({
             selectedRecipe={selectedRecipe}
             onSelectRecipe={onSelectRecipe}
             onPlanSnapshotSaved={() => {
-              setSection("lines");
-              setLineAutoPlanTrigger((prev) => prev + 1);
+              // Snapshot bleibt live verfügbar; die Plating-Automatik startet erst per Klick.
             }}
           />
 
@@ -467,7 +465,7 @@ export function PlanningOasisView({
 
       {section === "lines" && (
         <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
-          <LinePlanningSection week={week} locale={locale} autoPlanTrigger={lineAutoPlanTrigger} upliftPercent={upliftPercent} />
+          <LinePlanningSection week={week} locale={locale} upliftPercent={upliftPercent} />
         </Suspense>
       )}
 

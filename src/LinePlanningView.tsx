@@ -1,10 +1,6 @@
 /**
  * LinePlanningView – Interaktive Linienplanung mit Drag-and-Drop
  *
- * Sub-Tabs:
- *  1. "Linienplanung" – 5-Tage × 9-Slot × 3-Linien Raster mit Drag-&-Drop-Pills
- *  2. "KET"           – Kitchen Equipment Tracking: Produktionsaufträge nach Rezept / Tag
- *
  * Datenquelle: /data/gsheet-dump-Kitchen_Priority_List-Verden-2026.json
  * Persistenz:  Firestore  apps/rezeptlogik/lineplanning/{week}
  */
@@ -88,6 +84,10 @@ type ManufacturingPlanSnapshot = {
   scenarioId: string;
   scenarioName: string;
   assignments: PlannerScenario["assignments"];
+  stats?: {
+    plannedCount?: number;
+    unplannedCount?: number;
+  };
 };
 
 type ForecastVarianceRow = {
@@ -96,6 +96,17 @@ type ForecastVarianceRow = {
   forecastPortions: number;
   targetPortions: number;
   delta: number;
+};
+
+type LineCollisionHint = {
+  key: string;
+  severity: "error" | "warn";
+  domain: "volume" | "readiness" | "mhd" | "slot" | "run";
+  location: string;
+  message: string;
+  action: string;
+  cellKey?: string;
+  recipeCode?: string;
 };
 
 // KET-Sheets liefern englische Wochentage – auf deutsche DAYS mappen
@@ -124,7 +135,7 @@ const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do", "Fr"];
 
 const RUN_PLATING_WINDOWS: Record<1 | 2, { startDay: PlanDay; dueDay: PlanDay }> = {
   1: { startDay: "Dienstag", dueDay: "Donnerstag" },
-  2: { startDay: "Donnerstag", dueDay: "Samstag" },
+  2: { startDay: "Mittwoch", dueDay: "Samstag" },
 };
 
 const SLOTS: ReadonlyArray<{ key: string; label: string; duration: number }> = [
@@ -163,24 +174,6 @@ type ScheduleMap = Record<string, LinePlanRecipe | null>;  // key: `${day}|${slo
 type DragPayload = {
   recipe: LinePlanRecipe;
   source: "pool" | string;  // "pool" or slot key
-};
-
-type KetWO = {
-  priority: number;
-  stagingBy: string;
-  deboxDay: string;
-  woReady: boolean;
-  hotKitchenDay: string;
-  dateNeeded: string;
-  woNumber: string;
-  recipeId: string;
-  recipeName: string;
-  subRecipeName: string;
-  cookMethods: string[];
-  targetPortions: number;
-  allergens: string[];
-  status: string;
-  comments: string;
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -335,6 +328,11 @@ function loadManufacturingPlanSnapshot(week: string): ManufacturingPlanSnapshot 
   }
 }
 
+function manufacturingSnapshotSignature(snapshot: ManufacturingPlanSnapshot | null): string {
+  if (!snapshot) return "";
+  return JSON.stringify(snapshot.assignments ?? {});
+}
+
 function extractLineSplitSpec(notes: string): string {
   const match = /(?:^|\s)split=([^\s]+)/i.exec(String(notes ?? "").trim());
   return match?.[1]?.trim() ?? "";
@@ -403,10 +401,17 @@ function cockpitScoreForDay(day: PlanDay, rule: CockpitRunReadiness): number {
   return 1.0 - ((dayIdx - readyIdx) / span) * 0.18;
 }
 
+/**
+ * Gibt zurück welcher Run an einem Tag eindeutig aktiv ist.
+ * Overlap-Tage (Mittwoch/Donnerstag sind in Run 1 + Run 2) → null, Fallback entscheidet.
+ */
 function cockpitRunForDay(day: PlanDay): 1 | 2 | null {
-  if (cockpitScoreForDay(day, { ...RUN_PLATING_WINDOWS[1], readyDay: RUN_PLATING_WINDOWS[1].dueDay, portions: 0, submealCount: 0 }) > 0) return 1;
-  if (cockpitScoreForDay(day, { ...RUN_PLATING_WINDOWS[2], readyDay: RUN_PLATING_WINDOWS[2].dueDay, portions: 0, submealCount: 0 }) > 0) return 2;
-  return null;
+  const idx = planDayIndex(day);
+  const in1 = idx >= planDayIndex(RUN_PLATING_WINDOWS[1].startDay) && idx <= planDayIndex(RUN_PLATING_WINDOWS[1].dueDay);
+  const in2 = idx >= planDayIndex(RUN_PLATING_WINDOWS[2].startDay) && idx <= planDayIndex(RUN_PLATING_WINDOWS[2].dueDay);
+  if (in1 && !in2) return 1;
+  if (in2 && !in1) return 2;
+  return null; // Mi/Do: in beiden Runs → nach Produktionsstand entscheiden
 }
 
 function emptyRunProduction(): Record<1 | 2, number> {
@@ -424,131 +429,27 @@ function runWindowDays(run: 1 | 2): PlanDay[] {
 function slotFitsRemaining(slotPortions: number, remaining: number): boolean {
   if (remaining <= 0) return false;
   if (slotPortions <= remaining) return true;
-  const toleratedOver = Math.max(150, slotPortions * 0.5);
+  const toleratedOver = Math.max(150, slotPortions * 2.0);
   return slotPortions - remaining <= toleratedOver;
 }
 
 function mhdRunWindow(recipe: LinePlanRecipe, run: 1 | 2): ReadonlyArray<PlanDay> {
   if (recipe.isSeafood) {
-    return run === 1 ? ["Dienstag", "Mittwoch"] : ["Donnerstag", "Freitag"];
+    return run === 1 ? ["Dienstag", "Mittwoch"] : ["Mittwoch", "Donnerstag", "Freitag"];
   }
-  return run === 1 ? ["Montag", "Dienstag", "Mittwoch"] : ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"];
+  return run === 1
+    ? ["Dienstag", "Mittwoch", "Donnerstag"]
+    : ["Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 }
 
 function recommendedRunDay(run: 1 | 2): PlanDay {
   return run === 1 ? "Mittwoch" : "Freitag";
 }
 
-function normalizedCookMethodText(wo: KetWO): string {
-  return wo.cookMethods.join(" /").toUpperCase();
-}
-
-function hasThawContent(wo: KetWO): boolean {
-  const text = [
-    normalizedCookMethodText(wo),
-    String(wo.subRecipeName ?? "").toUpperCase(),
-    String(wo.recipeName ?? "").toUpperCase(),
-    String(wo.comments ?? "").toUpperCase(),
-  ].join(" ");
-  return /\bTHAW\b/.test(text);
-}
-
-function hasMarinadeContent(wo: KetWO): boolean {
-  const text = [
-    normalizedCookMethodText(wo),
-    String(wo.subRecipeName ?? "").toUpperCase(),
-    String(wo.recipeName ?? "").toUpperCase(),
-    String(wo.comments ?? "").toUpperCase(),
-  ].join(" ");
-  return /\bMARINADE\b|\bMARINAD\w*\b/.test(text);
-}
-
-function prepPriorityTier(wo: KetWO): 0 | 1 | 2 {
-  if (hasThawContent(wo)) return 0;
-  if (hasMarinadeContent(wo)) return 1;
-  return 2;
-}
-
-function ketPrioritySort(left: KetWO, right: KetWO): number {
-  const tierDelta = prepPriorityTier(left) - prepPriorityTier(right);
-  if (tierDelta !== 0) return tierDelta;
-  const leftPriority = Number.isFinite(left.priority) ? left.priority : Number.MAX_SAFE_INTEGER;
-  const rightPriority = Number.isFinite(right.priority) ? right.priority : Number.MAX_SAFE_INTEGER;
-  if (leftPriority !== rightPriority) return leftPriority - rightPriority;
-  return String(left.woNumber ?? "").localeCompare(String(right.woNumber ?? ""), "de");
-}
-
-function longSubMethodScore(wo: KetWO): number {
-  const methods = normalizedCookMethodText(wo);
-  const longHits = [
-    /BRAISER/,
-    /BLAST CHILLER/,
-    /MARINADE/,
-    /THAW/,
-    /PATTY MAKER/,
-    /IMMERSION BLENDER/,
-    /PLANETARY MIXER/
-  ].reduce((sum, rx) => sum + (rx.test(methods) ? 1 : 0), 0);
-  return Math.min(1, longHits / 4);
-}
-
-function subMealBackwardDayScore(day: PlanDay, recipe: LinePlanRecipe, recipeWos: KetWO[]): number {
-  if (recipeWos.length === 0) return 0;
-
-  const dayOrder: PlanDay[] = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
-  const dayIdx = dayOrder.indexOf(day);
-  if (dayIdx < 0) return 0;
-
-  let totalWeight = 0;
-  let weightedScore = 0;
-
-  for (const wo of recipeWos) {
-    const needDay = normalizePlanDay(wo.hotKitchenDay) ?? normalizePlanDay(wo.deboxDay) ?? (recipe.isSeafood ? "Donnerstag" : "Freitag");
-    const needIdx = dayOrder.indexOf(needDay);
-    const thawFirst = hasThawContent(wo);
-    const marinadeEarly = !thawFirst && hasMarinadeContent(wo);
-    const complexity = longSubMethodScore(wo);
-    const weight = 0.4 + complexity + (thawFirst ? 0.45 : 0) + (marinadeEarly ? 0.35 : 0);
-
-    const leadDays = thawFirst
-      ? Math.max(2, complexity >= 0.6 ? 2 : complexity >= 0.25 ? 1 : 0) + 1
-      : marinadeEarly
-      ? Math.max(2, complexity >= 0.6 ? 2 : complexity >= 0.25 ? 1 : 0)
-      : (complexity >= 0.6 ? 2 : complexity >= 0.25 ? 1 : 0);
-    const preferredIdx = Math.max(0, needIdx - leadDays);
-    const distToPreferred = Math.abs(dayIdx - preferredIdx);
-    const tooLate = dayIdx > needIdx;
-
-    let score = Math.max(0, 1 - distToPreferred / 3);
-    if (tooLate) score *= 0.25;
-    if (thawFirst) {
-      // Thaw muss als erster Schritt laufen: spaete Tage werden hart entwertet.
-      if (dayIdx > preferredIdx) score *= 0.12;
-      if (day === "Montag" || day === "Dienstag") score = Math.min(1, score + 0.12);
-    } else if (marinadeEarly) {
-      // Marinade ist der naechste langlaufende Schritt und soll ebenfalls frueh starten.
-      if (dayIdx > preferredIdx) score *= 0.35;
-      if (day === "Montag" || day === "Dienstag") score = Math.min(1, score + 0.09);
-    }
-    if (day === "Mittwoch" || day === "Donnerstag") score = Math.min(1, score + 0.08);
-
-    weightedScore += score * weight;
-    totalWeight += weight;
-  }
-
-  return totalWeight > 0 ? weightedScore / totalWeight : 0;
-}
-
 function runWindowScore(day: PlanDay, window: ReadonlyArray<PlanDay>, preferred: PlanDay): number {
   if (day === preferred) return 1;
   if (window.includes(day)) return 0.72;
   return 0.06;
-}
-
-function extractRecipeCodeFromKet(wo: KetWO): string {
-  return wo.recipeId.match(/FV\d+[A-Z]/)?.[0]
-    ?? wo.recipeName.match(/FV\d+[A-Z]/)?.[0]
-    ?? "";
 }
 
 function planDayDistance(a: PlanDay, b: PlanDay): number {
@@ -559,27 +460,22 @@ function planDayDistance(a: PlanDay, b: PlanDay): number {
   return Math.abs(ai - bi);
 }
 
-function inferKetRunFromDay(dayRaw: string, isSeafood: boolean): 1 | 2 | null {
-  const day = normalizePlanDay(dayRaw);
-  if (!day) return null;
-  if (isSeafood) {
-    if (day === "Dienstag" || day === "Mittwoch" || day === "Montag") return 1;
-    return 2;
-  }
-  if (day === "Montag" || day === "Dienstag" || day === "Mittwoch") return 1;
-  return 2;
-}
-
-function statusColor(status: string): string {
-  if (/done|complete|fertig/i.test(status)) return "bg-emerald-100 text-emerald-800";
-  if (/progress|running|aktiv/i.test(status)) return "bg-amber-100 text-amber-800";
-  return "bg-slate-100 text-slate-600";
-}
-
 function runBadgeTone(run: 1 | 2): string {
   return run === 1
     ? "bg-indigo-50 text-indigo-700 border-indigo-200"
     : "bg-teal-50 text-teal-700 border-teal-200";
+}
+
+function collisionTone(severity: LineCollisionHint["severity"]): string {
+  return severity === "error"
+    ? "border-rose-300 bg-rose-50 text-rose-900"
+    : "border-amber-300 bg-amber-50 text-amber-900";
+}
+
+function collisionPillTone(severity: LineCollisionHint["severity"]): string {
+  return severity === "error"
+    ? "bg-rose-100 text-rose-800 ring-rose-300"
+    : "bg-amber-100 text-amber-800 ring-amber-300";
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -652,82 +548,6 @@ function parseLineplanning(rows: string[][]): {
   return { weekNum, totalVolume, recipes, initialSchedule };
 }
 
-/** Derive a minimal recipe pool from KET work-order rows when no dedicated
- *  Lineplanning sheet exists (e.g. KW20 "Verden-2026-W20" format). */
-function deriveRecipesFromKet(rows: string[][]): LinePlanRecipe[] {
-  const map = new Map<string, LinePlanRecipe>();
-  for (const row of rows.slice(2)) {
-    if (!row[1]?.match(/^\d+$/)) continue;
-    const name = (row[10] ?? "").trim();
-    const match = name.match(/^(FV\d{4}[A-Z])/);
-    if (!match) continue;
-    const code = match[1];
-    if (map.has(code)) continue;
-    const totalPlanned = parseNum(row[15]);
-    map.set(code, {
-      code,
-      name,
-      totalPlanned,
-      nordics: 0,
-      bnl: 0,
-      de: totalPlanned,
-      speedPerMin: 10,
-      isSeafood: detectSeafoodByName(name),
-    });
-  }
-  return Array.from(map.values());
-}
-
-function parseKet(rows: string[][]): KetWO[] {
-  if (rows.length < 2) return [];
-  // Detect schema version: W18 has "Weekday" at col 2; W19+ has "WOStaging by"
-  const header = rows[1] ?? [];
-  const isV18 = (header[2] ?? "").trim() === "Weekday";
-  const result: KetWO[] = [];
-  for (let i = 2; i < rows.length; i++) {
-    const r = rows[i];
-    if (!r[1]?.match(/^\d+$/)) continue;
-    if (isV18) {
-      result.push({
-        priority: parseInt(r[1]),
-        stagingBy: "",
-        deboxDay: "",
-        woReady: false,
-        hotKitchenDay: (r[2] ?? "").trim(),   // W18: Weekday at col 2
-        dateNeeded: (r[3] ?? "").trim(),
-        woNumber: (r[4] ?? "").trim(),
-        recipeId: (r[5] ?? "").trim(),
-        recipeName: (r[6] ?? "").trim(),
-        subRecipeName: (r[7] ?? "").trim(),
-        cookMethods: (r[9] ?? "").trim().split(", ").filter(Boolean),
-        targetPortions: parseNum(r[11]),
-        allergens: [],
-        status: "Not Started",
-        comments: "",
-      });
-    } else {
-      result.push({
-        priority: parseInt(r[1]),
-        stagingBy: (r[2] ?? "").trim(),
-        deboxDay: (r[4] ?? "").trim(),
-        woReady: r[5] === "TRUE",
-        hotKitchenDay: (r[6] ?? "").trim(),
-        dateNeeded: (r[7] ?? "").trim(),
-        woNumber: (r[8] ?? "").trim(),
-        recipeId: (r[9] ?? "").trim(),
-        recipeName: (r[10] ?? "").trim(),
-        subRecipeName: (r[11] ?? "").trim(),
-        cookMethods: (r[13] ?? "").trim().split(" / ").filter(Boolean),
-        targetPortions: parseNum(r[14]),
-        allergens: (r[24] ?? "").trim().split(",").map(a => a.trim()).filter(Boolean),
-        status: (r[19] ?? "").trim() || "Not Started",
-        comments: (r[23] ?? "").trim(),
-      });
-    }
-  }
-  return result.sort(ketPrioritySort);
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
 //  REDUCER
 // ══════════════════════════════════════════════════════════════════════════════
@@ -755,9 +575,8 @@ function scheduleReducer(state: ScheduleMap, action: ScheduleAction): ScheduleMa
   }
 }
 
-// Module-level drag payloads (avoids stale closures across handler callbacks)
+// Module-level drag payload (avoids stale closures across handler callbacks)
 let _drag: DragPayload | null = null;
-let _ketDrag: KetWO | null = null;
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  RECIPE PILL
@@ -809,6 +628,7 @@ function RecipePill({
   planningRole,
   multiDayCount,
   mhdViolation,
+  collisions = [],
   onDragStart,
   volumeHistory,
   volumeDelta,
@@ -822,6 +642,7 @@ function RecipePill({
   planningRole?: "factory" | "hybrid" | "supplied";
   multiDayCount?: number;
   mhdViolation?: boolean;
+  collisions?: LineCollisionHint[];
   onDragStart?: () => void;
   volumeHistory?: number[];
   volumeDelta?: number;
@@ -850,6 +671,7 @@ function RecipePill({
     : 0;
   const fullyPlanned = pct >= 1;
   const overPlanned = pct > 1.02;
+  const worstCollision = collisions.find((item) => item.severity === "error") ?? collisions[0];
   const [hovered, setHovered] = useState(false);
   return (
     <div className="relative" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
@@ -870,6 +692,14 @@ function RecipePill({
                 ? <span className="rounded-full px-1.5 py-0 text-[9px] font-bold bg-blue-100 text-blue-700 ring-1 ring-blue-200">🐟 9d</span>
                 : <span className="rounded-full px-1.5 py-0 text-[9px] font-bold bg-slate-100 text-slate-500 ring-1 ring-slate-200">13d</span>
               }
+              {worstCollision && (
+                <span
+                  className={`rounded-full px-1.5 py-0 text-[9px] font-black ring-1 ${collisionPillTone(worstCollision.severity)}`}
+                  title={worstCollision.message}
+                >
+                  !
+                </span>
+              )}
             </div>
             <span className="text-[11px] font-medium leading-tight line-clamp-2" style={tone.title}>{recipe.name.replace(/^FV\d+[A-Za-z]?\s*[-\u2013]\s*/i, "")}</span>
             <div className="flex items-center gap-1">
@@ -886,6 +716,14 @@ function RecipePill({
                   ? <span className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-blue-100 text-blue-700 ring-1 ring-blue-200">🐟 9d</span>
                   : <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-slate-100 text-slate-500 ring-1 ring-slate-200">13d</span>
                 }
+                {worstCollision && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${collisionPillTone(worstCollision.severity)}`}
+                    title={worstCollision.message}
+                  >
+                    Kollision
+                  </span>
+                )}
               </div>
               <span className="text-xs opacity-60 tabular-nums">{recipe.speedPerMin}/min</span>
             </div>
@@ -939,6 +777,11 @@ function RecipePill({
                   MHD
                 </span>
               )}
+              {worstCollision && (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${collisionPillTone(worstCollision.severity)}`}>
+                  Kollision
+                </span>
+              )}
               {multiDayCount && multiDayCount > 1 && (
                 <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-black text-indigo-700 ring-1 ring-indigo-200">
                   {multiDayCount} Tage
@@ -976,6 +819,15 @@ function RecipePill({
               </div>
             )}
           </div>
+          {collisions.length > 0 && (
+            <div className="mb-3 space-y-1 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-900">
+              {collisions.slice(0, 3).map((item) => (
+                <div key={item.key}>
+                  <span className="font-black">{item.location}:</span> {item.message}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex items-center justify-between text-xs mb-2 pb-2 border-b border-slate-100">
             <span className="text-slate-500">&#x2211; Geplant</span>
             <span className="font-bold tabular-nums text-slate-800">{fmtNum(targetTotal)} Port.</span>
@@ -1045,6 +897,7 @@ function DropCell({
   slotKey, recipe, isDragOver, isActiveDrag,
   onDrop, onDragEnter, onDragLeave,
   onDragStartCell, onRemove, multiDayCount, mhdViolation,
+  collisions = [],
   volumeHistory, volumeDelta, volumeSnapshots,
 }: {
   slotKey: string;
@@ -1059,10 +912,12 @@ function DropCell({
   multiDayCount?: number;
   /** true wenn das Rezept in diesem Slot zu früh geplattet wird (MHD-Verletzung) */
   mhdViolation?: boolean;
+  collisions?: LineCollisionHint[];
   volumeHistory?: number[];
   volumeDelta?: number;
   volumeSnapshots?: RampUpSnapshot[];
 }) {
+  const worstCollision = collisions.find((item) => item.severity === "error") ?? collisions[0];
   return (
     <div
       onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; onDragEnter(); }}
@@ -1074,6 +929,8 @@ function DropCell({
           ? "border-amber-200 bg-amber-50/60"
           : isDragOver
           ? "border-indigo-400 bg-indigo-50 ring-2 ring-indigo-300/50 scale-[1.03]"
+          : worstCollision
+          ? `${worstCollision.severity === "error" ? "border-rose-500 bg-rose-50/60 ring-1 ring-rose-300/70" : "border-amber-400 bg-amber-50/60 ring-1 ring-amber-300/70"}`
           : mhdViolation
           ? "border-orange-400 bg-orange-50/40 ring-1 ring-orange-300/50"
           : recipe
@@ -1093,11 +950,20 @@ function DropCell({
             compact
             multiDayCount={multiDayCount}
             mhdViolation={mhdViolation}
+            collisions={collisions}
             onDragStart={() => onDragStartCell(recipe, slotKey)}
             volumeHistory={volumeHistory}
             volumeDelta={volumeDelta}
             volumeSnapshots={volumeSnapshots}
           />
+          {worstCollision && (
+            <div
+              className={`mt-1 rounded-lg px-2 py-1 text-[10px] font-semibold ring-1 ${collisionPillTone(worstCollision.severity)}`}
+              title={worstCollision.action}
+            >
+              {worstCollision.message}
+            </div>
+          )}
           <button
             onClick={onRemove}
             className="absolute -top-1 -right-1 hidden group-hover:flex h-4 w-4 items-center justify-center rounded-full bg-slate-700 text-white text-[10px] font-bold leading-none hover:bg-red-500 transition-colors z-10"
@@ -1160,216 +1026,15 @@ function VolumeBar({ recipe, scheduledPortions }: { recipe: LinePlanRecipe; sche
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-function KetCard({
-  wo, effectiveStatus, scheduledDays, run, onDragStart, onDragEnd, onStatusCycle,
-}: {
-  wo: KetWO;
-  effectiveStatus: string;
-  scheduledDays: string[];
-  run: 1 | 2 | null;
-  onDragStart: () => void;
-  onDragEnd: () => void;
-  onStatusCycle: () => void;
-}) {
-  const code = extractRecipeCodeFromKet(wo);
-  const tone = code ? recipeTone(code) : { base: {} as React.CSSProperties, code: {} as React.CSSProperties, title: {} as React.CSSProperties };
-  const ketTooltip = [
-    code ? `${code} – ${wo.recipeName}` : wo.recipeName,
-    wo.subRecipeName ? `Sub-Rezept: ${wo.subRecipeName}` : "",
-    run ? `Run: R${run}` : "",
-    `WO: ${wo.woNumber}`,
-    wo.hotKitchenDay ? `Küchenstart: ${wo.hotKitchenDay}` : "",
-    wo.dateNeeded ? `Benötigt: ${wo.dateNeeded}` : "",
-    `Status: ${wo.status || "–"}`,
-    scheduledDays.length > 0 ? `Geplant an: ${scheduledDays.join(", ")}` : "",
-  ].filter(Boolean).join("\n");
-  return (
-    <div
-      draggable
-      title={ketTooltip}
-      onDragStart={e => { e.dataTransfer.effectAllowed = "move"; onDragStart(); }}
-      onDragEnd={onDragEnd}
-      style={tone.base}
-      className="rounded-xl p-2.5 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-all select-none"
-    >
-      {/* Header: priority + name + status badge */}
-      <div className="flex items-start justify-between gap-1.5 mb-1.5">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div
-            className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
-            style={{ ...tone.base, border: undefined, boxShadow: undefined }}
-          >
-            {wo.priority}
-          </div>
-          <span className="font-semibold text-xs text-slate-800 leading-tight line-clamp-2">
-            {wo.subRecipeName || wo.recipeName}
-          </span>
-        </div>
-        <button
-          onClick={e => { e.stopPropagation(); onStatusCycle(); }}
-          className={`shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-colors cursor-pointer ${statusColor(effectiveStatus)}`}
-          title="Klicken zum Weiterschalten"
-        >
-          {effectiveStatus.length > 13 ? effectiveStatus.substring(0, 11) + "…" : effectiveStatus}
-        </button>
-      </div>
-
-      {/* Recipe code + WO number */}
-      <div className="flex gap-2 items-center mb-1.5">
-        {code && <span className="text-[10px] font-bold" style={tone.code}>{code}</span>}
-        {run && (
-          <span
-            className={`text-[10px] font-black rounded-full px-1.5 py-0.5 border ${runBadgeTone(run)}`}
-            title={`Automatisch zugeordnet: Run ${run}`}
-          >
-            R{run}
-          </span>
-        )}
-        {wo.woNumber && <span className="text-[10px] font-mono text-slate-400">{wo.woNumber}</span>}
-        {wo.woReady && <span className="ml-auto text-[9px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-100 px-1 rounded">✓ WO ready</span>}
-      </div>
-
-      {/* Cook methods */}
-      {wo.cookMethods.length > 0 && (
-        <div className="flex flex-wrap gap-0.5 mb-1.5">
-          {hasThawContent(wo) && (
-            <span className="px-1 py-0.5 rounded text-[9px] font-black bg-cyan-100 text-cyan-800 border border-cyan-200">THAW FIRST</span>
-          )}
-          {!hasThawContent(wo) && hasMarinadeContent(wo) && (
-            <span className="px-1 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-200">MARINADE EARLY</span>
-          )}
-          {wo.cookMethods.slice(0, 3).map(m => (
-            <span key={m} className="px-1 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-600">{m}</span>
-          ))}
-          {wo.cookMethods.length > 3 && <span className="text-[9px] text-slate-400">+{wo.cookMethods.length - 3}</span>}
-        </div>
-      )}
-
-      {/* Footer: allergens + portions */}
-      <div className="flex items-center justify-between gap-1">
-        <div className="flex flex-wrap gap-0.5">
-          {wo.allergens.slice(0, 2).map(a => (
-            <span key={a} className="px-1 py-0.5 rounded-full text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
-              ⚠ {a.substring(0, 10)}
-            </span>
-          ))}
-          {wo.allergens.length > 2 && <span className="text-[9px] text-slate-400">+{wo.allergens.length - 2}</span>}
-        </div>
-        {wo.targetPortions > 0 && (
-          <span className="text-[10px] font-bold tabular-nums text-slate-500 shrink-0">{fmtNum(wo.targetPortions)}</span>
-        )}
-      </div>
-
-      {/* Comment */}
-      {wo.comments && (
-        <div className="mt-1.5 text-[10px] text-slate-400 italic border-t border-slate-50 pt-1.5 leading-tight">
-          {wo.comments}
-        </div>
-      )}
-      {/* Linienplan-Badge */}
-      {scheduledDays.length > 0 && (
-        <div className="mt-1.5 flex items-center gap-1 border-t border-slate-50 pt-1.5">
-          <span className="text-[9px] text-indigo-500 font-semibold">📋</span>
-          <span className="text-[9px] text-indigo-600 font-semibold">{scheduledDays.map(d => d.substring(0, 2)).join(", ")}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  KET DAY COLUMN  (drop target, groups KetCards)
-// ══════════════════════════════════════════════════════════════════════════════
-
-function KetDayColumn({
-  day: _day, label, wos, isDragOver,
-  onDragEnter, onDragLeave, onDrop,
-  ketOverrides, onDragStart, onDragEnd, onStatusCycle,
-  scheduledDaysByCode, recipeByCode,
-}: {
-  day: string; label: string; wos: KetWO[]; isDragOver: boolean;
-  onDragEnter: () => void; onDragLeave: () => void; onDrop: () => void;
-  ketOverrides: Record<string, { day?: string; status?: string }>;
-  onDragStart: (wo: KetWO) => void;
-  onDragEnd: () => void;
-  onStatusCycle: (wo: KetWO) => void;
-  scheduledDaysByCode: Map<string, Set<string>>;
-  recipeByCode: Map<string, LinePlanRecipe>;
-}) {
-  const totalPortions = wos.reduce((s, wo) => s + wo.targetPortions, 0);
-  return (
-    <div
-      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; onDragEnter(); }}
-      onDragEnter={e => { e.preventDefault(); onDragEnter(); }}
-      onDragLeave={onDragLeave}
-      onDrop={e => { e.preventDefault(); onDrop(); }}
-      className={`w-52 shrink-0 rounded-2xl border-2 transition-all duration-100 ${
-        isDragOver
-          ? "border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-300/40 scale-[1.01]"
-          : "border-slate-100 bg-slate-50/60"
-      }`}
-    >
-      {/* Column header */}
-      <div className={`px-3 py-2.5 border-b rounded-t-2xl flex items-center justify-between ${
-        isDragOver ? "border-indigo-100 bg-indigo-50/60" : "border-slate-100 bg-white/60"
-      }`}>
-        <div>
-          <div className="font-bold text-sm text-slate-700">{label}</div>
-          {totalPortions > 0 && (
-            <div className="text-[10px] text-slate-400 tabular-nums">∑ {fmtNum(totalPortions)}</div>
-          )}
-        </div>
-        <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${
-          wos.length > 0 ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-400"
-        }`}>
-          {wos.length}
-        </span>
-      </div>
-
-      {/* Cards */}
-      <div className="p-2 space-y-2 min-h-28">
-        {wos.map(wo => {
-          const code = extractRecipeCodeFromKet(wo);
-          const effectiveDayRaw = ketOverrides[wo.woNumber]?.day ?? wo.hotKitchenDay ?? wo.deboxDay;
-          const isSeafood = recipeByCode.get(code)?.isSeafood ?? detectSeafoodByName(wo.recipeName);
-          const run = inferKetRunFromDay(effectiveDayRaw, isSeafood);
-          return (
-            <KetCard
-              key={`${wo.woNumber}-${wo.subRecipeName}`}
-              wo={wo}
-              effectiveStatus={ketOverrides[wo.woNumber]?.status ?? wo.status}
-              scheduledDays={Array.from(scheduledDaysByCode.get(code) ?? [])}
-              run={run}
-              onDragStart={() => onDragStart(wo)}
-              onDragEnd={onDragEnd}
-              onStatusCycle={() => onStatusCycle(wo)}
-            />
-          );
-        })}
-        {wos.length === 0 && (
-          <div className={`flex items-center justify-center h-16 text-xs transition-colors ${
-            isDragOver ? "text-indigo-300" : "text-slate-200"
-          }`}>
-            {isDragOver ? "↓ Hierher" : "Leer"}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
 //  MAIN VIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
 export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, upliftPercent = 0 }: { week: string; locale: UiLocale; autoPlanTrigger?: number; upliftPercent?: number }) {
   const { data: planningOasis } = usePlanningOasisData();
-  const [subTab, setSubTab] = useState<"lineplanning" | "ket">("lineplanning");
   const [recipes, setRecipes] = useState<LinePlanRecipe[]>([]);
   const [appData, setAppData] = useState<DataBundle | null>(null);
   const [manufacturingSnapshot, setManufacturingSnapshot] = useState<ManufacturingPlanSnapshot | null>(() => loadManufacturingPlanSnapshot(week));
   const [schedule, dispatch] = useReducer(scheduleReducer, {});
-  const [ketWOs, setKetWOs] = useState<KetWO[]>([]);
   const [, setWeekNum] = useState(0);
   const [totalVolume, setTotalVolume] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -1382,10 +1047,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   const [showQrModal, setShowQrModal] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
-  const [ketSearch, setKetSearch] = useState("");
-  const [ketStatusFilter, setKetStatusFilter] = useState<"all" | "open" | "done">("all");
-  const [ketOverrides, setKetOverrides] = useState<Record<string, { day?: string; status?: string }>>({});
-  const [ketDragOverDay, setKetDragOverDay] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, string>>({});
   const [targetMealsBySlot, setTargetMealsBySlot] = useState<Record<string, number>>({});
   const [lineCapacityByLane, setLineCapacityByLane] = useState<Record<string, number>>(defaultLineCapacityMap);
@@ -1404,8 +1065,12 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);
   const [rampUpBannerDismissed, setRampUpBannerDismissed] = useState(false);
   const dragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ketDragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastAutoPlanTriggerRef = useRef<number | undefined>(undefined);
+  const lastAutoPlanTriggerRef = useRef<number | undefined>(autoPlanTrigger);
+  const lastLinePlanAutosaveSignatureRef = useRef<string>("");
+  const linePlanAutosaveInitializedRef = useRef(false);
+  const lastManufacturingReconcileRequestRef = useRef<string>("");
+  const lastManufacturingSnapshotSignatureRef = useRef<string>(manufacturingSnapshotSignature(manufacturingSnapshot));
+  const ignoreRemoteLinePlanUntilRef = useRef(0);
   const weekStr = week.split("-W")[1] ?? week;
   const hasSavedManufacturingPlan = !!manufacturingSnapshot && Object.keys(manufacturingSnapshot.assignments ?? {}).length > 0;
   const activeLineIdx = useMemo(() => Array.from({ length: platingLineCount }, (_, idx) => idx), [platingLineCount]);
@@ -1421,13 +1086,13 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   );
   const subMealRecipeCodes = useMemo(() => {
     const codes = new Set<string>();
-    for (const wo of ketWOs) {
-      if (!wo.subRecipeName.trim()) continue;
-      const code = extractRecipeCodeFromKet(wo);
-      if (code) codes.add(code);
+    if (!planningOasis) return codes;
+    for (const recipe of recipes) {
+      const wos = planningOasis.recipes[recipe.code]?.workOrders ?? [];
+      if (wos.some(wo => wo.subRecipeName?.trim())) codes.add(recipe.code);
     }
     return codes;
-  }, [ketWOs]);
+  }, [planningOasis, recipes]);
   const runTargetsByRecipe = useMemo(() => {
     const map = new Map<string, { firstRunTarget: number; secondRunTarget: number; totalTarget: number }>();
     for (const recipe of recipes) {
@@ -1479,6 +1144,14 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       forecastVarianceRows.map((row) => ({ code: row.code, forecast: row.forecastPortions, target: row.targetPortions }))
     );
   }, [forecastVarianceRows]);
+  const linePlanAutosaveSignature = useMemo(() => JSON.stringify({
+    schedule,
+    comments,
+    targetMealsBySlot,
+    lineCapacityByLane,
+    platingLineCount,
+    runSplitByRecipe,
+  }), [comments, lineCapacityByLane, platingLineCount, runSplitByRecipe, schedule, targetMealsBySlot]);
   const cockpitRunReadiness = useMemo(() => {
     const map = new Map<string, Partial<Record<1 | 2, CockpitRunReadiness>>>();
     if (!appData || !manufacturingSnapshot) return map;
@@ -1515,7 +1188,8 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
           if (!batch) return;
           const runIndex = run - 1;
           const { startDay, dueDay } = RUN_PLATING_WINDOWS[run];
-          let readyDay = dueDay;
+          // Default: Küche gilt als bereit ab dem ersten Plating-Tag (optimistisch, wenn keine Submeal-Daten).
+          let readyDay = startDay;
           let hasSubDay = false;
           recipeSummary.subRecipes.forEach((sub, subIndex) => {
             if (!sub.assigned) return;
@@ -1581,25 +1255,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
           }
         }
 
-        // Find week-specific KET sheet (exact match first, then partial)
-        const ketSheetExact =
-          sheetData.sheets.find(s => s.title.includes(`W${weekStr}`) && s.title.startsWith("KET")) ??
-          sheetData.sheets.find(s => s.title.includes(`W${weekStr}`));
-
-        if (ketSheetExact) {
-          const wos = parseKet(ketSheetExact.values);
-          setKetWOs(wos);
-          // KET dient nur noch als Fallback, falls keine Rezeptdaten für die KW vorliegen.
-          const derived = deriveRecipesFromKet(ketSheetExact.values);
-          if (!hasWeekSpecificRecipePool && derived.length > 0) {
-            setRecipes(derived);
-            hasWeekSpecificRecipePool = true;
-          }
-        } else {
-          setKetWOs([]);
-          setDataWarning(`KW ${weekStr}: Kein KET-Sheet im JSON gefunden. Bitte das JSON neu aus dem Google Sheet importieren (scripts/dump-gsheet.ts). KET-Kanban ist leer.`);
-        }
-
         // Also load Lineplanning sheet for slot schedule template (even if wrong week)
         const lpSheet = sheetData.sheets.find(s => s.title === "Lineplanning");
         if (lpSheet) {
@@ -1615,8 +1270,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
               hasWeekSpecificRecipePool = true;
             }
             dispatch({ type: "load", schedule: initialSchedule });
-          } else if (!ketSheetExact) {
-            // No KET data either – warn
+          } else {
             setDataWarning(prev => `KW ${weekStr}: Die JSON-Datei enthält nur KW ${wn}-Daten. Bitte JSON aktualisieren.${prev ? " " + prev : ""}`);
           }
         }
@@ -1666,10 +1320,47 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   }, [week]);
 
   useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { getFirebase } = await import("./firebase");
+        const { doc, onSnapshot } = await import("firebase/firestore");
+        const { db } = getFirebase();
+        unsubscribe = onSnapshot(
+          doc(db, "apps/rezeptlogik/manufacturingPlans", `de_W${weekStr}`),
+          (snap) => {
+            if (!snap.exists()) return;
+            const data = snap.data() as Partial<ManufacturingPlanSnapshot>;
+            if (data.week !== week || !data.assignments || typeof data.assignments !== "object") return;
+            const snapshot: ManufacturingPlanSnapshot = {
+              savedAtIso: String(data.savedAtIso ?? new Date().toISOString()),
+              savedAtLabel: data.savedAtLabel ? String(data.savedAtLabel) : undefined,
+              week,
+              scenarioId: String(data.scenarioId ?? "live"),
+              scenarioName: String(data.scenarioName ?? "Manufacturing Live"),
+              assignments: data.assignments as PlannerScenario["assignments"],
+              stats: data.stats,
+            };
+            setManufacturingSnapshot(snapshot);
+            window.localStorage.setItem(`rezeptlogik-plan-snapshot-${week}`, JSON.stringify(snapshot));
+            const signature = manufacturingSnapshotSignature(snapshot);
+            if (signature && signature !== lastManufacturingSnapshotSignatureRef.current) {
+              lastManufacturingSnapshotSignatureRef.current = signature;
+            }
+          },
+          () => { /* Firestore optional */ }
+        );
+      } catch {
+        // Firestore optional; local snapshot listener above remains active.
+      }
+    })();
+    return () => unsubscribe?.();
+  }, [week, weekStr]);
+
+  useEffect(() => {
     if (autoPlanTrigger === undefined) return;
     if (lastAutoPlanTriggerRef.current === autoPlanTrigger) return;
     lastAutoPlanTriggerRef.current = autoPlanTrigger;
-    setSubTab("lineplanning");
     setPendingSnapshotAutoplan((value) => value + 1);
   }, [autoPlanTrigger]);
 
@@ -1677,8 +1368,11 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     const onSnapshotSaved = (event: Event) => {
       const custom = event as CustomEvent<{ week?: string }>;
       if (custom.detail?.week !== week) return;
-      setSubTab("lineplanning");
-      setPendingSnapshotAutoplan((value) => value + 1);
+      const snapshot = loadManufacturingPlanSnapshot(week);
+      const signature = manufacturingSnapshotSignature(snapshot);
+      if (!signature || signature === lastManufacturingSnapshotSignatureRef.current) return;
+      lastManufacturingSnapshotSignatureRef.current = signature;
+      setManufacturingSnapshot(snapshot);
     };
     window.addEventListener("rezeptlogik:plan-snapshot-saved", onSnapshotSaved as EventListener);
     return () => window.removeEventListener("rezeptlogik:plan-snapshot-saved", onSnapshotSaved as EventListener);
@@ -1702,8 +1396,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     setForecastAlertStamp(new Date().toLocaleString("de-DE"));
 
     if (hasSavedManufacturingPlan) {
-      setPendingSnapshotAutoplan((value) => value + 1);
-      setAutoPlanNotice("Forecast-Fluktuation erkannt: Run-2-Ziele wurden aktualisiert und die Plating-Planung automatisch nachgezogen.");
+      setAutoPlanNotice("Forecast-Fluktuation erkannt: Run-2-Ziele wurden aktualisiert. Auto-Plan startet erst per Klick.");
       setTimeout(() => setAutoPlanNotice(""), 6000);
     }
   }, [forecastAutoThreshold, forecastVarianceRows, forecastVarianceSignature, hasSavedManufacturingPlan, week]);
@@ -1713,13 +1406,46 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     setPendingSnapshotAutoplan(0);
     const snapshot = loadManufacturingPlanSnapshot(week);
     setManufacturingSnapshot(snapshot);
+    const signature = manufacturingSnapshotSignature(snapshot);
+    if (signature) lastManufacturingSnapshotSignatureRef.current = signature;
     if (!snapshot || Object.keys(snapshot.assignments ?? {}).length === 0) {
-      setAutoPlanNotice("Kein gesicherter Kuechenplan gefunden. Bitte im Manufacturing Calendar zuerst auf 'Plan sichern' klicken.");
+      setAutoPlanNotice("Kein Manufacturing-Snapshot geladen: Plating verplant weiter und gibt Manufacturing den Nachzieh-Auftrag.");
       setTimeout(() => setAutoPlanNotice(""), 4200);
-      return;
     }
     autoPlanFromTargets();
   }, [pendingSnapshotAutoplan, loading, week]);
+
+  useEffect(() => {
+    if (loading || recipes.length === 0) return;
+    if (!linePlanAutosaveInitializedRef.current) {
+      linePlanAutosaveInitializedRef.current = true;
+      lastLinePlanAutosaveSignatureRef.current = linePlanAutosaveSignature;
+      return;
+    }
+    if (lastLinePlanAutosaveSignatureRef.current === linePlanAutosaveSignature) return;
+    const timer = window.setTimeout(async () => {
+      lastLinePlanAutosaveSignatureRef.current = linePlanAutosaveSignature;
+      try {
+        const { getFirebase } = await import("./firebase");
+        const { doc, setDoc } = await import("firebase/firestore");
+        const { db } = getFirebase();
+        await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
+          week,
+          savedAt: new Date().toISOString(),
+          autosavedAt: new Date().toISOString(),
+          schedule,
+          comments,
+          targetMealsBySlot,
+          lineCapacityByLane,
+          platingLineCount,
+          runSplitByRecipe,
+        }, { merge: true });
+      } catch {
+        // Manual save still exists; autosave must not block editing.
+      }
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [comments, lineCapacityByLane, linePlanAutosaveSignature, loading, platingLineCount, recipes.length, runSplitByRecipe, schedule, targetMealsBySlot, week, weekStr]);
 
   // ─── Echtzeit-Listener: alle Planer sehen denselben Stand ─────────────────
   useEffect(() => {
@@ -1741,9 +1467,11 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
               lineCapacityByLane?: Record<string, number>;
               platingLineCount?: number;
             };
+            const remoteSchedule = d.schedule ?? {};
+            const hasRemoteMeals = Object.values(remoteSchedule).some((recipe) => !!recipe);
+            if (Date.now() < ignoreRemoteLinePlanUntilRef.current && hasRemoteMeals) return;
             if (d.schedule) dispatch({ type: "load", schedule: d.schedule });
             if (d.comments) setComments(d.comments);
-            if (d.ketOverrides) setKetOverrides(d.ketOverrides);
             if (d.targetMealsBySlot) setTargetMealsBySlot(d.targetMealsBySlot);
             if (d.lineCapacityByLane) {
               setLineCapacityByLane({ ...defaultLineCapacityMap(), ...d.lineCapacityByLane });
@@ -1771,7 +1499,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
         savedAt: new Date().toISOString(),
         schedule,
         comments,
-        ketOverrides,
         targetMealsBySlot,
         lineCapacityByLane,
         platingLineCount,
@@ -1791,8 +1518,8 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     if (!confirmed) return;
 
     dispatch({ type: "load", schedule: {} });
+    ignoreRemoteLinePlanUntilRef.current = Date.now() + 2500;
     setComments({});
-    setKetOverrides({});
     setTargetMealsBySlot({});
     setAutoPlanNotice(`Planung für KW ${weekStr} wurde bereinigt.`);
 
@@ -1806,7 +1533,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
         clearedAt: new Date().toISOString(),
         schedule: {},
         comments: {},
-        ketOverrides: {},
         targetMealsBySlot: {},
         lineCapacityByLane,
         platingLineCount,
@@ -1865,15 +1591,72 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     setDragOverKey(null);
   }
 
-  function autoPlanFromTargets() {
+  async function requestManufacturingReconciliation(reason: string, hints: LineCollisionHint[] = []) {
+    if (typeof window === "undefined") return;
+    const signature = JSON.stringify({
+      week,
+      reason,
+      schedule,
+      collisions: hints.slice(0, 12).map((hint) => ({
+        key: hint.key,
+        severity: hint.severity,
+        domain: hint.domain,
+        recipeCode: hint.recipeCode,
+        cellKey: hint.cellKey,
+      })),
+    });
+    if (lastManufacturingReconcileRequestRef.current === signature) return;
+    lastManufacturingReconcileRequestRef.current = signature;
+    const payload = {
+      week,
+      requestedAt: new Date().toISOString(),
+      reason,
+      schedule,
+      lineCapacityByLane,
+      platingLineCount,
+      runSplitByRecipe,
+      collisions: hints.slice(0, 20).map((hint) => ({
+        key: hint.key,
+        severity: hint.severity,
+        domain: hint.domain,
+        location: hint.location,
+        message: hint.message,
+        action: hint.action,
+        cellKey: hint.cellKey ?? null,
+        recipeCode: hint.recipeCode ?? null,
+      })),
+    };
+    window.localStorage.setItem(`rezeptlogik-manufacturing-reconcile-${week}`, JSON.stringify(payload));
+    window.dispatchEvent(new CustomEvent("rezeptlogik:manufacturing-reconcile-request", { detail: payload }));
+    try {
+      const { getFirebase } = await import("./firebase");
+      const { doc, setDoc } = await import("firebase/firestore");
+      const { db } = getFirebase();
+      await setDoc(doc(db, "apps/rezeptlogik/planningRequests", `de_W${weekStr}`), payload, { merge: true });
+    } catch {
+      // Local event/localStorage are enough when Firestore is not available.
+    }
+  }
+
+  function autoPlanFromTargets(repairCollisions = false) {
     const snapshot = loadManufacturingPlanSnapshot(week);
     setManufacturingSnapshot(snapshot);
-    if (!snapshot || Object.keys(snapshot.assignments ?? {}).length === 0) {
-      setAutoPlanNotice("Erst Manufacturing Calendar fertigstellen und dort 'Plan sichern' klicken. Danach kann die Plating-Automatik starten.");
+    const hasManufacturingSnapshotForPlan = !!snapshot && Object.keys(snapshot.assignments ?? {}).length > 0;
+    if (!hasManufacturingSnapshotForPlan) {
+      setAutoPlanNotice("Kein Manufacturing-Snapshot geladen: Plating verplant trotzdem alles und gibt Manufacturing einen Nachzieh-Auftrag.");
       setTimeout(() => setAutoPlanNotice(""), 5000);
-      return;
     }
     const next: ScheduleMap = { ...schedule };
+    for (const [key, recipe] of Object.entries(next)) {
+      if (recipe?.isBreak) next[key] = null;
+    }
+    if (repairCollisions) {
+      for (const hint of collisionHints) {
+        if (!hint.cellKey) continue;
+        if (hint.domain !== "readiness" && hint.domain !== "mhd" && hint.domain !== "slot") continue;
+        next[hint.cellKey] = null;
+      }
+    }
     const producedByRecipe = new Map<string, number>();
     const producedByRecipeRun = new Map<string, Record<1 | 2, number>>();
     const producedByRecipeRunDay = new Map<string, Record<1 | 2, Map<PlanDay, number>>>();
@@ -1893,36 +1676,35 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
 
     const kitchenDemandByRecipeDay = new Map<string, Map<PlanDay, number>>();
     const kitchenDemandByRecipeRunDay = new Map<string, { 1: Map<PlanDay, number>; 2: Map<PlanDay, number> }>();
-    for (const wo of ketWOs) {
-      const code = extractRecipeCodeFromKet(wo);
-      if (!code) continue;
-      const overriddenDay = ketOverrides[wo.woNumber]?.day ?? wo.hotKitchenDay ?? wo.deboxDay;
-      const day = normalizePlanDay(overriddenDay);
-      if (!day) continue;
-      if (!kitchenDemandByRecipeDay.has(code)) kitchenDemandByRecipeDay.set(code, new Map<PlanDay, number>());
-      const dayMap = kitchenDemandByRecipeDay.get(code)!;
-      const weight = Math.max(1, Math.round(wo.targetPortions || 0));
-      dayMap.set(day, (dayMap.get(day) ?? 0) + weight);
+    for (const recipe of recipes) {
+      const oasisWos = planningOasis?.recipes[recipe.code]?.workOrders ?? [];
+      for (const wo of oasisWos) {
+        const day = normalizePlanDay(wo.hotKitchenDay ?? "");
+        if (!day) continue;
+        const code = recipe.code;
+        if (!kitchenDemandByRecipeDay.has(code)) kitchenDemandByRecipeDay.set(code, new Map<PlanDay, number>());
+        const dayMap = kitchenDemandByRecipeDay.get(code)!;
+        const weight = Math.max(1, Math.round(wo.targetPortions || 0));
+        dayMap.set(day, (dayMap.get(day) ?? 0) + weight);
 
-      if (!kitchenDemandByRecipeRunDay.has(code)) {
-        kitchenDemandByRecipeRunDay.set(code, { 1: new Map<PlanDay, number>(), 2: new Map<PlanDay, number>() });
+        if (!kitchenDemandByRecipeRunDay.has(code)) {
+          kitchenDemandByRecipeRunDay.set(code, { 1: new Map<PlanDay, number>(), 2: new Map<PlanDay, number>() });
+        }
+        const runMaps = kitchenDemandByRecipeRunDay.get(code)!;
+        const targets = runTargetsByRecipe.get(code);
+        const upliftTotal = Math.max(1, targets?.totalTarget ?? 1);
+        let run1Share = (targets?.firstRunTarget ?? 0) / upliftTotal;
+        let run2Share = (targets?.secondRunTarget ?? 0) / upliftTotal;
+        if (subMealRecipeCodes.has(code)) {
+          run1Share = Math.max(0.3, run1Share);
+          run2Share = Math.max(0.3, run2Share);
+        }
+        const shareSum = Math.max(0.0001, run1Share + run2Share);
+        run1Share /= shareSum;
+        run2Share /= shareSum;
+        runMaps[1].set(day, (runMaps[1].get(day) ?? 0) + weight * run1Share);
+        runMaps[2].set(day, (runMaps[2].get(day) ?? 0) + weight * run2Share);
       }
-      const runMaps = kitchenDemandByRecipeRunDay.get(code)!;
-      const targets = runTargetsByRecipe.get(code);
-      const upliftTotal = Math.max(1, targets?.totalTarget ?? 1);
-      let run1Share = (targets?.firstRunTarget ?? 0) / upliftTotal;
-      let run2Share = (targets?.secondRunTarget ?? 0) / upliftTotal;
-      if (subMealRecipeCodes.has(code)) {
-        run1Share = Math.max(0.3, run1Share);
-        run2Share = Math.max(0.3, run2Share);
-      }
-      const shareSum = Math.max(0.0001, run1Share + run2Share);
-      run1Share /= shareSum;
-      run2Share /= shareSum;
-
-      // Submeals müssen in beiden Runs vorhanden sein; Nachfrage wird daher auf Run1+Run2 verteilt.
-      runMaps[1].set(day, (runMaps[1].get(day) ?? 0) + weight * run1Share);
-      runMaps[2].set(day, (runMaps[2].get(day) ?? 0) + weight * run2Share);
     }
 
     // Nutzt exakt die aktivierten Plating-Linien und deren eingestellte Kapazitaet.
@@ -1935,15 +1717,16 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       }
     }
 
-    // KET-Prio-Map: bestes (niedrigstes) Priority-Nummer je Rezeptcode
+    // Oasis-Prio-Map: bestes (niedrigstes) Priority-Nummer je Rezeptcode aus Planning Oasis
     const prioByCode = new Map<string, number>();
-    for (const wo of ketWOs) {
-      const code = extractRecipeCodeFromKet(wo);
-      if (!code) continue;
-      const p = wo.priority;
-      if (!Number.isFinite(p) || p <= 0) continue;
-      const current = prioByCode.get(code) ?? Infinity;
-      if (p < current) prioByCode.set(code, p);
+    for (const recipe of recipes) {
+      const wos = planningOasis?.recipes[recipe.code]?.workOrders ?? [];
+      for (const wo of wos) {
+        const p = wo.priority;
+        if (!Number.isFinite(p) || p <= 0) continue;
+        const current = prioByCode.get(recipe.code) ?? Infinity;
+        if (p < current) prioByCode.set(recipe.code, p);
+      }
     }
 
     for (const [key, recipe] of Object.entries(next)) {
@@ -1985,20 +1768,46 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
           let best: LinePlanRecipe | null = null;
           let bestScore = -Infinity;
 
-          for (const recipe of recipes) {
+          // Sticky: laufendes Rezept des Vorgänger-Slots weiterführen wenn noch Volumen vorhanden
+          {
+            const slotIdxS = SLOTS.findIndex(s => s.key === slot.key);
+            const prevSlotKeyS = slotIdxS > 0 ? SLOTS[slotIdxS - 1]?.key : undefined;
+            const prevCellS = prevSlotKeyS ? next[`${day}|${prevSlotKeyS}|${li}`] : null;
+            if (prevCellS && !prevCellS.isBreak) {
+              const stickyR = recipes.find(r => r.code === prevCellS.code);
+              if (stickyR) {
+                const prod = producedByRecipe.get(stickyR.code) ?? 0;
+                const tgt = runTargetsByRecipe.get(stickyR.code) ?? lineRunTargetsForRecipe(stickyR);
+                const sRun: 1 | 2 = cockpitRunForDay(day) ?? (prod < tgt.firstRunTarget ? 1 : 2);
+                const sWin = RUN_PLATING_WINDOWS[sRun];
+                if (planDayIndex(day) >= planDayIndex(sWin.startDay) && planDayIndex(day) <= planDayIndex(sWin.dueDay)) {
+                  const sRunOpen = Math.max(0, (sRun === 1 ? tgt.firstRunTarget : tgt.secondRunTarget) - (producedByRecipeRun.get(stickyR.code)?.[sRun] ?? 0));
+                  const sTotalOpen = Math.max(0, tgt.totalTarget - prod);
+                  if (Math.min(sRunOpen, sTotalOpen) > 0) {
+                    best = stickyR;
+                    bestScore = Infinity;
+                  }
+                }
+              }
+            }
+          }
+
+          if (best === null) for (const recipe of recipes) {
             const produced = producedByRecipe.get(recipe.code) ?? 0;
             const targets = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
             const dayRun = cockpitRunForDay(day);
             const currentRun: 1 | 2 = dayRun ?? (produced < targets.firstRunTarget ? 1 : 2);
+
+            // Hard gate: Tag muss im Plating-Fenster dieses Runs liegen
+            const runWin = RUN_PLATING_WINDOWS[currentRun];
+            if (planDayIndex(day) < planDayIndex(runWin.startDay) || planDayIndex(day) > planDayIndex(runWin.dueDay)) continue;
+
             const runTarget = currentRun === 1 ? Math.max(1, targets.firstRunTarget) : Math.max(1, targets.secondRunTarget);
             const producedRun = producedByRecipeRun.get(recipe.code)?.[currentRun] ?? 0;
             const runOpen = Math.max(0, runTarget - producedRun);
             const totalOpen = Math.max(0, targets.totalTarget - produced);
-            const windowDays = runWindowDays(currentRun);
-            const dayTarget = Math.max(1, runTarget / Math.max(1, windowDays.length));
-            const producedRunDay = producedByRecipeRunDay.get(recipe.code)?.[currentRun].get(day) ?? 0;
-            const dayOpen = Math.max(0, dayTarget - producedRunDay);
-            const remaining = Math.min(runOpen, totalOpen, dayOpen);
+            // Kein Tages-Cap: Rezept darf so viele Stunden laufen wie nötig
+            const remaining = Math.min(runOpen, totalOpen);
             if (remaining <= 0) continue;
 
             const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
@@ -2011,14 +1820,15 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             const runAnchor = recommendedRunDay(currentRun);
             const runDayScore = runWindowScore(day, runWindow, runAnchor);
             const runPressure = Math.min(1, runOpen / runTarget);
+
+            // Küchen-Bereitschaft aus Manufacturing Calendar (soft gate: 0 = noch nicht fertig)
             const cockpitRule = cockpitRunReadiness.get(recipe.code)?.[currentRun];
-            if (cockpitRule) {
-              if (cockpitScoreForDay(day, cockpitRule) <= 0) continue;
-            }
+            if (cockpitRule && cockpitScoreForDay(day, cockpitRule) <= 0) continue;
+            const cockpitDayScore = cockpitRule ? cockpitScoreForDay(day, cockpitRule) : 0.6;
 
             const runDemand = kitchenDemandByRecipeRunDay.get(recipe.code)?.[currentRun];
             const dayDemand = runDemand && runDemand.size > 0 ? runDemand : kitchenDemandByRecipeDay.get(recipe.code);
-            let kitchenDayScore = 0.2;
+            let kitchenDayScore = 0.3;
             if (dayDemand && dayDemand.size > 0) {
               const totalDemand = Array.from(dayDemand.values()).reduce((sum, value) => sum + value, 0);
               const exactShare = totalDemand > 0 ? (dayDemand.get(day) ?? 0) / totalDemand : 0;
@@ -2029,29 +1839,19 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
               kitchenDayScore = Math.min(1, exactShare * 0.75 + nearScore * 0.55);
             }
 
-            const recipeWos = ketWOs.filter((wo) => extractRecipeCodeFromKet(wo) === recipe.code && wo.subRecipeName.trim().length > 0);
-            const backwardSubMealScore = subMealBackwardDayScore(day, recipe, recipeWos);
-            const subMealRunScore = recipeWos.length > 0
-              ? Math.min(1, backwardSubMealScore * 0.6 + runDayScore * 0.4)
-              : 0;
-            const cockpitDayScore = cockpitRule ? cockpitScoreForDay(day, cockpitRule) : 0;
-
-            // KET-Priorität: niedrigste bekannte Prio-Nummer = höchster Score
+            // Oasis-Priorität: niedrigste bekannte Prio-Nummer = höchster Score
             const bestPrio = prioByCode.get(recipe.code) ?? 999;
-            const ketPrioScore = bestPrio < 999 ? Math.max(0.05, 1 - (bestPrio - 1) / 25) : 0.05;
+            const prioScore = bestPrio < 999 ? Math.max(0.05, 1 - (bestPrio - 1) / 25) : 0.05;
 
-            const spreadScore = Math.min(1, dayOpen / Math.max(1, dayTarget));
-            // Kleiner Bonus für dasselbe Rezept im Vorgänger-Slot: verhindert ständige Wechsel,
-            // überschreibt aber nicht die Run-1/Run-2-Split-Logik (daher nur 0.35).
+            // Hoher Bonus wenn selbes Rezept im Vorgänger-Slot → mehrstündige Läufe bevorzugt
             const slotIdx = SLOTS.findIndex(s => s.key === slot.key);
             const prevSlotKey = slotIdx > 0 ? SLOTS[slotIdx - 1]?.key : undefined;
             const prevCode = prevSlotKey ? next[`${day}|${prevSlotKey}|${li}`]?.code : undefined;
-            const continuityBonus = (prevCode && prevCode === recipe.code && prevCode !== "__BREAK__") ? 0.35 : 0;
-            // Cockpit-Modus: Küchen-Bereitschaft + KET-Prio dominieren.
-            // Non-Cockpit: KET-Prio + KET-Tagesausrichtung als Proxy für Bereitschaft.
+            const continuityBonus = (prevCode && prevCode === recipe.code && prevCode !== "__BREAK__") ? 0.8 : 0;
+
             const baseScore = cockpitRule
-              ? cockpitDayScore * 0.32 + ketPrioScore * 0.28 + runPressure * 0.18 + kitchenDayScore * 0.10 + subMealRunScore * 0.07 + volumeScore * 0.03 + fitScore * 0.02
-              : ketPrioScore * 0.32 + kitchenDayScore * 0.26 + runDayScore * 0.18 + runPressure * 0.12 + subMealRunScore * 0.07 + volumeScore * 0.03 + fitScore * 0.02;
+              ? cockpitDayScore * 0.35 + prioScore * 0.28 + runPressure * 0.20 + kitchenDayScore * 0.12 + volumeScore * 0.03 + fitScore * 0.02
+              : prioScore * 0.40 + kitchenDayScore * 0.28 + runDayScore * 0.17 + runPressure * 0.12 + volumeScore * 0.02 + fitScore * 0.01;
             const score = baseScore + continuityBonus;
 
             if (score > bestScore) {
@@ -2061,29 +1861,26 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
           }
 
           if (!best) {
-            // Fallback: wenn Scoring kein Rezept liefert, nimm das Rezept mit der größten Restmenge
+            // Fallback: größte Restmenge im aktiven Run-Fenster
             let fallback: LinePlanRecipe | null = null;
             let maxRemaining = 0;
             for (const recipe of recipes) {
               const produced = producedByRecipe.get(recipe.code) ?? 0;
               const targets = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
               const fallbackRun: 1 | 2 = cockpitRunForDay(day) ?? (produced < targets.firstRunTarget ? 1 : 2);
+              const runWin2 = RUN_PLATING_WINDOWS[fallbackRun];
+              if (planDayIndex(day) < planDayIndex(runWin2.startDay) || planDayIndex(day) > planDayIndex(runWin2.dueDay)) continue;
               const runTarget = fallbackRun === 1 ? Math.max(1, targets.firstRunTarget) : Math.max(1, targets.secondRunTarget);
               const producedRun = producedByRecipeRun.get(recipe.code)?.[fallbackRun] ?? 0;
-              const dayTarget = Math.max(1, runTarget / Math.max(1, runWindowDays(fallbackRun).length));
-              const producedRunDay = producedByRecipeRunDay.get(recipe.code)?.[fallbackRun].get(day) ?? 0;
               const remaining = Math.min(
                 Math.max(0, runTarget - producedRun),
                 Math.max(0, targets.totalTarget - produced),
-                Math.max(0, dayTarget - producedRunDay),
               );
               if (remaining <= 0) continue;
               const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
               if (!slotFitsRemaining(slotPortions, remaining)) continue;
               const cockpitRule = cockpitRunReadiness.get(recipe.code)?.[fallbackRun];
-              if (cockpitRule) {
-                if (cockpitScoreForDay(day, cockpitRule) <= 0) continue;
-              }
+              if (cockpitRule && cockpitScoreForDay(day, cockpitRule) <= 0) continue;
               if (remaining > maxRemaining) {
                 maxRemaining = remaining;
                 fallback = recipe;
@@ -2107,79 +1904,168 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       }
     }
 
-    // Finaler Auffuell-Pass: kleine Restmengen je Run bis nahe 100% schliessen.
-    for (const recipe of recipes) {
-      const targets = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
-      for (const run of [1, 2] as const) {
-        const runTarget = run === 1 ? Math.max(0, targets.firstRunTarget) : Math.max(0, targets.secondRunTarget);
-        if (runTarget <= 0) continue;
-        let runOpen = Math.max(0, runTarget - (producedByRecipeRun.get(recipe.code)?.[run] ?? 0));
-        let totalOpen = Math.max(0, targets.totalTarget - (producedByRecipe.get(recipe.code) ?? 0));
-        while (runOpen > 0 && totalOpen > 0) {
-          let placed = false;
-          for (const day of runWindowDays(run)) {
-            const cockpitRule = cockpitRunReadiness.get(recipe.code)?.[run];
-            if (cockpitRule && cockpitScoreForDay(day, cockpitRule) <= 0) continue;
-            for (const slot of SLOTS) {
-              for (const li of forcedLineIdx) {
-                const key = `${day}|${slot.key}|${li}`;
-                if (next[key]) continue;
-                const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
-                const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
-                const remaining = Math.min(runOpen, totalOpen);
-                if (!slotFitsRemaining(slotPortions, remaining)) continue;
-                next[key] = recipe;
-                addProduced(recipe, run, Math.min(slotPortions, remaining), day);
-                assignments += 1;
-                placed = true;
-                break;
+    // Finaler Auffüll-Pass: iteriert Tag → Slot → Linie (wie Hauptpass) statt Rezept → Tag.
+    // Bevorzugt dasselbe Rezept wie der Vorgänger-Slot → keine Streuplatzierungen → weniger Pausen.
+    for (const day of DAYS) {
+      for (const slot of SLOTS) {
+        for (const li of forcedLineIdx) {
+          const key = `${day}|${slot.key}|${li}`;
+          if (next[key]) continue;
+
+          const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
+          const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
+
+          // Vorherigen Slot auf dieser Linie lesen → Kontinuitätspräferenz
+          const slotIdx = SLOTS.findIndex(s => s.key === slot.key);
+          const prevSlotKey = slotIdx > 0 ? SLOTS[slotIdx - 1]?.key : undefined;
+          const prevCell = prevSlotKey ? next[`${day}|${prevSlotKey}|${li}`] : null;
+          const prevCode = prevCell && !prevCell.isBreak ? prevCell.code : null;
+
+          let best: LinePlanRecipe | null = null;
+          let bestScore = -Infinity;
+
+          // Sticky: laufendes Rezept weiterführen wenn noch Volumen vorhanden
+          if (prevCode) {
+            const stickyR = recipes.find(r => r.code === prevCode);
+            if (stickyR) {
+              const prod = producedByRecipe.get(stickyR.code) ?? 0;
+              const tgt = runTargetsByRecipe.get(stickyR.code) ?? lineRunTargetsForRecipe(stickyR);
+              const sRun: 1 | 2 = cockpitRunForDay(day) ?? (prod < tgt.firstRunTarget ? 1 : 2);
+              const sWin = RUN_PLATING_WINDOWS[sRun];
+              if (planDayIndex(day) >= planDayIndex(sWin.startDay) && planDayIndex(day) <= planDayIndex(sWin.dueDay)) {
+                const sRunOpen = Math.max(0, (sRun === 1 ? tgt.firstRunTarget : tgt.secondRunTarget) - (producedByRecipeRun.get(stickyR.code)?.[sRun] ?? 0));
+                const sTotalOpen = Math.max(0, tgt.totalTarget - prod);
+                if (Math.min(sRunOpen, sTotalOpen) > 0) {
+                  best = stickyR;
+                  bestScore = Infinity;
+                }
               }
-              if (placed) break;
             }
-            if (placed) break;
           }
-          if (!placed) break;
-          runOpen = Math.max(0, runTarget - (producedByRecipeRun.get(recipe.code)?.[run] ?? 0));
-          totalOpen = Math.max(0, targets.totalTarget - (producedByRecipe.get(recipe.code) ?? 0));
+
+          if (best === null) for (const recipe of recipes) {
+            const produced = producedByRecipe.get(recipe.code) ?? 0;
+            const targets2 = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
+            const dayRun2 = cockpitRunForDay(day);
+            const fillRun: 1 | 2 = dayRun2 ?? (produced < targets2.firstRunTarget ? 1 : 2);
+            const runWin3 = RUN_PLATING_WINDOWS[fillRun];
+            if (planDayIndex(day) < planDayIndex(runWin3.startDay) || planDayIndex(day) > planDayIndex(runWin3.dueDay)) continue;
+            const runTarget2 = fillRun === 1 ? Math.max(1, targets2.firstRunTarget) : Math.max(1, targets2.secondRunTarget);
+            const producedRun2 = producedByRecipeRun.get(recipe.code)?.[fillRun] ?? 0;
+            const runOpen2 = Math.max(0, runTarget2 - producedRun2);
+            const totalOpen2 = Math.max(0, targets2.totalTarget - produced);
+            const remaining2 = Math.min(runOpen2, totalOpen2);
+            if (remaining2 <= 0) continue;
+            if (!slotFitsRemaining(slotPortions, remaining2)) continue;
+            // Kontinuität zählt am meisten, dann Restmenge
+            const contBonus = recipe.code === prevCode ? 2.0 : 0;
+            const fillScore = remaining2 / Math.max(1, targets2.totalTarget) + contBonus;
+            if (fillScore > bestScore) { bestScore = fillScore; best = recipe; }
+          }
+
+          if (best) {
+            next[key] = best;
+            const targets3 = runTargetsByRecipe.get(best.code) ?? lineRunTargetsForRecipe(best);
+            const prod3 = producedByRecipe.get(best.code) ?? 0;
+            const fillRun3: 1 | 2 = cockpitRunForDay(day) ?? (prod3 < targets3.firstRunTarget ? 1 : 2);
+            const runOpen3 = Math.max(0, (fillRun3 === 1 ? targets3.firstRunTarget : targets3.secondRunTarget) - (producedByRecipeRun.get(best.code)?.[fillRun3] ?? 0));
+            const totalOpen3 = Math.max(0, targets3.totalTarget - prod3);
+            addProduced(best, fillRun3, Math.min(slotPortions, runOpen3, totalOpen3), day);
+            assignments += 1;
+          }
         }
       }
     }
 
-    // Nach jedem Rezeptwechsel auf einer Linie 1h Pause für Zählung & Reinigung einfügen.
+    // Force-Fill: Alle Rezepte mit Restvolumen zwingend platzieren (ignoriert Score, respektiert Run-Fenster).
+    // Verhindert dass Rezepte mit großem Gesamtvolumen aber kleinem Rest-Anteil nie einen Slot bekommen.
+    {
+      const withRemaining = recipes
+        .map(r => {
+          const prod = producedByRecipe.get(r.code) ?? 0;
+          const tgt = runTargetsByRecipe.get(r.code) ?? lineRunTargetsForRecipe(r);
+          return { recipe: r, remaining: Math.max(0, tgt.totalTarget - prod) };
+        })
+        .filter(x => x.remaining > 0)
+        .sort((a, b) => b.remaining - a.remaining);
+
+      for (const { recipe } of withRemaining) {
+        for (const day of DAYS) {
+          const prod = producedByRecipe.get(recipe.code) ?? 0;
+          const tgt = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
+          const totalOpen = Math.max(0, tgt.totalTarget - prod);
+          if (totalOpen <= 0) break;
+          const fRun: 1 | 2 = cockpitRunForDay(day) ?? (prod < tgt.firstRunTarget ? 1 : 2);
+          const fWin = RUN_PLATING_WINDOWS[fRun];
+          if (planDayIndex(day) < planDayIndex(fWin.startDay) || planDayIndex(day) > planDayIndex(fWin.dueDay)) continue;
+          for (const slot of SLOTS) {
+            const prod2 = producedByRecipe.get(recipe.code) ?? 0;
+            const tgt2 = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
+            const fRun2: 1 | 2 = cockpitRunForDay(day) ?? (prod2 < tgt2.firstRunTarget ? 1 : 2);
+            const runOpen2 = Math.max(0, (fRun2 === 1 ? tgt2.firstRunTarget : tgt2.secondRunTarget) - (producedByRecipeRun.get(recipe.code)?.[fRun2] ?? 0));
+            const totalOpen2 = Math.max(0, tgt2.totalTarget - prod2);
+            if (Math.min(runOpen2, totalOpen2) <= 0) break;
+            for (const li of forcedLineIdx) {
+              const key = `${day}|${slot.key}|${li}`;
+              if (next[key]) continue;
+              const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
+              const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
+              const prod3 = producedByRecipe.get(recipe.code) ?? 0;
+              const tgt3 = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
+              const fRun3: 1 | 2 = cockpitRunForDay(day) ?? (prod3 < tgt3.firstRunTarget ? 1 : 2);
+              const runOpen3 = Math.max(0, (fRun3 === 1 ? tgt3.firstRunTarget : tgt3.secondRunTarget) - (producedByRecipeRun.get(recipe.code)?.[fRun3] ?? 0));
+              const totalOpen3 = Math.max(0, tgt3.totalTarget - prod3);
+              const remaining3 = Math.min(runOpen3, totalOpen3);
+              if (remaining3 <= 0) continue;
+              next[key] = recipe;
+              addProduced(recipe, fRun3, Math.min(slotPortions, remaining3), day);
+              assignments += 1;
+            }
+          }
+        }
+      }
+    }
+
+    // Nach jeder zusammenhängenden Meal-Plating-Session genau eine Break-Pille setzen.
+    // Breaks werden nur in freie Slots geschrieben, damit kein Meal-Volumen verdrängt wird.
     for (const day of DAYS) {
       for (const li of forcedLineIdx) {
-        let prevCode: string | null = null;
-        let breakRemaining = 0;
+        let activeSessionCode: string | null = null;
 
         for (const slot of SLOTS) {
           const key = `${day}|${slot.key}|${li}`;
-
-          if (breakRemaining > 0) {
-            next[key] = MEAL_CHANGE_BREAK;
-            breakRemaining = Math.max(0, breakRemaining - slot.duration);
-            continue;
-          }
-
           const cell = next[key];
-          if (!cell || cell.isBreak) continue;
-
-          if (prevCode !== null && cell.code !== prevCode) {
-            next[key] = MEAL_CHANGE_BREAK;
-            breakRemaining = Math.max(0, 60 - slot.duration);
-            prevCode = null;
+          if (cell && !cell.isBreak) {
+            activeSessionCode = cell.code;
             continue;
           }
-
-          prevCode = cell.code;
+          if (!cell && activeSessionCode) {
+            next[key] = MEAL_CHANGE_BREAK;
+            activeSessionCode = null;
+          }
         }
       }
     }
 
     dispatch({ type: "load", schedule: next });
+    if (!hasManufacturingSnapshotForPlan) {
+      void requestManufacturingReconciliation("Plating hat ohne Manufacturing-Snapshot vollständig vorgeplant");
+    }
     setAutoPlanNotice(assignments > 0
       ? `${assignments} Slots automatisch belegt (Cockpit-Calendar: Run erst nach Submeal-Fertigstellung, dann Run-Due-Day).`
       : "Keine neuen Slots belegt. Prüfe Ziel-Meals/h, Küchenzuordnung und Restvolumen.");
     setTimeout(() => setAutoPlanNotice(""), 3500);
+  }
+
+  function handleCorrectCollisions() {
+    const actionable = collisionHints.filter((hint) =>
+      hint.severity === "error"
+      && (hint.domain === "readiness" || hint.domain === "mhd" || hint.domain === "volume" || hint.domain === "run" || hint.domain === "slot")
+    );
+    if (actionable.some((hint) => hint.domain === "readiness" || hint.domain === "run" || hint.domain === "mhd")) {
+      void requestManufacturingReconciliation("Auto-Plan korrigieren: Plating-Kollisionen an Manufacturing übergeben", actionable);
+    }
+    autoPlanFromTargets(true);
   }
 
   function resetLineCapacityDefaults() {
@@ -2187,42 +2073,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     setPlatingLineCount(3);
     setAutoPlanNotice("Linienleistung auf Standardwerte gesetzt.");
     setTimeout(() => setAutoPlanNotice(""), 2200);
-  }
-
-  // ─── KET drag / status handlers ───────────────────────────────────────────
-  function onKetDragStart(wo: KetWO) {
-    _ketDrag = wo;
-  }
-  function onKetDragEnd() {
-    _ketDrag = null;
-    setKetDragOverDay(null);
-  }
-  function onKetDragEnterDay(day: string) {
-    if (ketDragLeaveTimerRef.current) clearTimeout(ketDragLeaveTimerRef.current);
-    setKetDragOverDay(day);
-  }
-  function onKetDragLeaveDay() {
-    ketDragLeaveTimerRef.current = setTimeout(() => setKetDragOverDay(null), 60);
-  }
-  function onKetDropDay(targetDay: string) {
-    const wo = _ketDrag;
-    if (!wo) return;
-    setKetOverrides(prev => ({
-      ...prev,
-      [wo.woNumber]: { ...prev[wo.woNumber], day: targetDay === "__unassigned__" ? "" : targetDay },
-    }));
-    _ketDrag = null;
-    setKetDragOverDay(null);
-  }
-  function onKetStatusCycle(wo: KetWO) {
-    const STATUS_CYCLE = ["Not Started", "In Progress", "Done"];
-    const current = ketOverrides[wo.woNumber]?.status ?? wo.status;
-    const idx = STATUS_CYCLE.findIndex(s => s.toLowerCase() === current.toLowerCase());
-    const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
-    setKetOverrides(prev => ({
-      ...prev,
-      [wo.woNumber]: { ...prev[wo.woNumber], status: next },
-    }));
   }
 
   // ─── Computations ──────────────────────────────────────────────────────────
@@ -2269,8 +2119,26 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     }
     return map;
   }, [allocatedPortionsByCell, schedule]);
+  const volumeCoverageRows = useMemo(() => {
+    return recipes.map((recipe) => {
+      const target = runTargetsByRecipe.get(recipe.code)?.totalTarget ?? lineRunTargetsForRecipe(recipe).totalTarget;
+      const planned = Math.round(scheduledPortions.get(recipe.code) ?? 0);
+      return {
+        code: recipe.code,
+        name: recipe.name,
+        target,
+        planned,
+        open: Math.max(0, target - planned),
+        over: Math.max(0, planned - target),
+      };
+    }).filter((row) => row.target > 0);
+  }, [recipes, runTargetsByRecipe, scheduledPortions]);
+  const openVolumeTotal = useMemo(
+    () => volumeCoverageRows.reduce((sum, row) => sum + row.open, 0),
+    [volumeCoverageRows]
+  );
 
-  // Days scheduled per recipe code (for KET cross-reference)
+  // Days scheduled per recipe code (for multi-day badge in recipe pills)
   const scheduledDaysByCode = useMemo(() => {
     const map = new Map<string, Set<string>>();
     for (const [key, recipe] of Object.entries(schedule)) {
@@ -2346,59 +2214,159 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     };
   }, [platingCalendarDays, recipePlanTotal]);
 
-  // KET filtering & grouping
-  const filteredKet = useMemo(() => {
-    let wos = ketWOs;
-    if (ketSearch) {
-      const q = ketSearch.toLowerCase();
-      wos = wos.filter(wo =>
-        wo.recipeName.toLowerCase().includes(q) ||
-        wo.subRecipeName.toLowerCase().includes(q) ||
-        wo.woNumber.toLowerCase().includes(q) ||
-        wo.hotKitchenDay.toLowerCase().includes(q)
-      );
-    }
-    if (ketStatusFilter === "open") wos = wos.filter(wo => !/done|done/i.test(wo.status));
-    if (ketStatusFilter === "done") wos = wos.filter(wo => /done|fertig/i.test(wo.status));
-    return [...wos].sort(ketPrioritySort);
-  }, [ketWOs, ketSearch, ketStatusFilter]);
+  const collisionHints = useMemo<LineCollisionHint[]>(() => {
+    const hints: LineCollisionHint[] = [];
 
-  // KET Kanban columns (group by effective day)
-  const wosByDay = useMemo(() => {
-    const map: Record<string, KetWO[]> = {};
-    for (const wo of filteredKet) {
-      const rawDay = ketOverrides[wo.woNumber]?.day ?? wo.hotKitchenDay;
-      const day = DAY_EN_TO_DE[rawDay] ?? rawDay; // Englisch → Deutsch normalisieren
-      const key = day || "__unassigned__";
-      if (!map[key]) map[key] = [];
-      map[key].push(wo);
+    for (const row of volumeCoverageRows) {
+      if (row.open > 0) {
+        hints.push({
+          key: `volume-open-${row.code}`,
+          severity: "error",
+          domain: "volume",
+          recipeCode: row.code,
+          location: row.code,
+          message: `${fmtNum(row.open)} Portionen offen`,
+          action: "Auto-Plan laufen lassen oder zusätzliche Slots/Kapazität zuweisen.",
+        });
+      }
+      if (row.over > 0) {
+        hints.push({
+          key: `volume-over-${row.code}`,
+          severity: "warn",
+          domain: "volume",
+          recipeCode: row.code,
+          location: row.code,
+          message: `${fmtNum(row.over)} Portionen über Ziel`,
+          action: "Überzählige Slots entfernen oder Zielvolumen prüfen.",
+        });
+      }
     }
-    for (const day of Object.keys(map)) {
-      map[day].sort(ketPrioritySort);
+
+    const producedByRecipe = new Map<string, number>();
+    const entries = Object.entries(schedule)
+      .filter(([, recipe]) => !!recipe)
+      .sort(([left], [right]) => {
+        const [leftDay, leftSlot, leftLine] = left.split("|");
+        const [rightDay, rightSlot, rightLine] = right.split("|");
+        const dayDelta = planDayIndex((normalizePlanDay(leftDay ?? "") ?? "Dienstag") as PlanDay)
+          - planDayIndex((normalizePlanDay(rightDay ?? "") ?? "Dienstag") as PlanDay);
+        if (dayDelta !== 0) return dayDelta;
+        const slotDelta = SLOTS.findIndex((slot) => slot.key === leftSlot) - SLOTS.findIndex((slot) => slot.key === rightSlot);
+        if (slotDelta !== 0) return slotDelta;
+        return Number(leftLine ?? 0) - Number(rightLine ?? 0);
+      });
+
+    for (const [cellKey, recipe] of entries) {
+      if (!recipe || recipe.isBreak) continue;
+      const [dayRaw, slotKey, liRaw] = cellKey.split("|");
+      const day = normalizePlanDay(dayRaw ?? "");
+      if (!day) continue;
+      const li = Number(liRaw ?? -1);
+      if (li < 0 || li >= platingLineCount) continue;
+
+      const location = `${DAY_SHORT[day] ?? day} ${SLOTS.find((slot) => slot.key === slotKey)?.label ?? slotKey} L${li + 1}`;
+      const dayIdx = DAYS.indexOf(day);
+      const mhdViolation = recipe.isSeafood ? dayIdx < 5 : dayIdx < 1;
+      if (mhdViolation) {
+        hints.push({
+          key: `mhd-${cellKey}`,
+          severity: "error",
+          domain: "mhd",
+          cellKey,
+          recipeCode: recipe.code,
+          location,
+          message: recipe.isSeafood ? "MHD-Risiko: Fisch zu früh geplattet" : "MHD-Risiko: zu früh geplattet",
+          action: "Slot näher an Versand legen oder Manufacturing-/Plating-Fenster neu abstimmen.",
+        });
+      }
+
+      const targets = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
+      const alreadyProduced = producedByRecipe.get(recipe.code) ?? 0;
+      const run = cockpitRunForDay(day) ?? (alreadyProduced < targets.firstRunTarget ? 1 : 2);
+      const cockpitRule = cockpitRunReadiness.get(recipe.code)?.[run];
+      if (cockpitRule && cockpitScoreForDay(day, cockpitRule) <= 0) {
+        const message = planDayIndex(day) < planDayIndex(cockpitRule.readyDay)
+          ? `R${run} vor Küchenfertigstellung (${cockpitRule.readyDay})`
+          : `R${run} nach Deadline (${cockpitRule.dueDay})`;
+        hints.push({
+          key: `readiness-${cellKey}-${run}`,
+          severity: "error",
+          domain: "readiness",
+          cellKey,
+          recipeCode: recipe.code,
+          location,
+          message,
+          action: "Slot verschieben oder Manufacturing-Submeals so planen, dass die Küche rechtzeitig fertig ist.",
+        });
+      }
+
+      const slotPortions = portionsInSlotByLineCapacity(Math.max(0, lineCapacityByLane[String(li)] ?? 0), slotKey ?? "");
+      const allocated = allocatedPortionsByCell.get(cellKey) ?? Math.max(0, Math.min(slotPortions, targets.totalTarget - alreadyProduced));
+      producedByRecipe.set(recipe.code, alreadyProduced + allocated);
+    }
+
+    for (const day of DAYS) {
+      for (const slot of SLOTS) {
+        const mh = mealsPerHour(day, slot.key);
+        const targetKey = `${day}|${slot.key}`;
+        const fallbackTarget = activeLineIdx.reduce((sum, li) => sum + Math.max(0, lineCapacityByLane[String(li)] ?? 0), 0);
+        const targetMh = Math.max(0, targetMealsBySlot[targetKey] ?? fallbackTarget);
+        const deltaMh = mh - targetMh;
+        if (targetMh > 0 && mh > 0 && Math.abs(deltaMh) > Math.max(60, targetMh * 0.08)) {
+          hints.push({
+            key: `slot-target-${targetKey}`,
+            severity: "warn",
+            domain: "slot",
+            location: `${DAY_SHORT[day] ?? day} ${slot.label}`,
+            message: deltaMh > 0 ? `${fmtNum(deltaMh)} Meals/h über Slot-Ziel` : `${fmtNum(Math.abs(deltaMh))} Meals/h unter Slot-Ziel`,
+            action: "Linienbelegung, Ziel-Meals/h oder Linienkapazität anpassen.",
+          });
+        }
+      }
+    }
+
+    for (const day of platingCalendarDays) {
+      for (const line of day.lineSummaries) {
+        if (line.utilization > 1.02) {
+          hints.push({
+            key: `line-util-${day.day}-${line.lineIdx}`,
+            severity: "error",
+            domain: "slot",
+            location: `${DAY_SHORT[day.day] ?? day.day} Linie ${line.lineIdx + 1}`,
+            message: `${fmtNum(Math.round(line.utilization * 100))}% Linienauslastung`,
+            action: "Volumen auf andere Slots oder Linien verteilen.",
+          });
+        }
+      }
+    }
+
+    return hints.sort((left, right) => {
+      if (left.severity !== right.severity) return left.severity === "error" ? -1 : 1;
+      return left.location.localeCompare(right.location, "de");
+    });
+  }, [
+    activeLineIdx,
+    allocatedPortionsByCell,
+    cockpitRunReadiness,
+    lineCapacityByLane,
+    platingCalendarDays,
+    platingLineCount,
+    runTargetsByRecipe,
+    schedule,
+    targetMealsBySlot,
+    volumeCoverageRows,
+  ]);
+
+  const collisionHintsByCell = useMemo(() => {
+    const map = new Map<string, LineCollisionHint[]>();
+    for (const hint of collisionHints) {
+      if (!hint.cellKey) continue;
+      const list = map.get(hint.cellKey) ?? [];
+      list.push(hint);
+      map.set(hint.cellKey, list);
     }
     return map;
-  }, [filteredKet, ketOverrides]);
-
-  const ketDayColumns = useMemo(() => {
-    const cols: Array<{ day: string; label: string; wos: KetWO[] }> = [];
-    const unassigned = wosByDay["__unassigned__"] ?? [];
-    if (unassigned.length > 0) cols.push({ day: "__unassigned__", label: "Nicht geplant", wos: unassigned });
-    for (const d of DAYS) {
-      cols.push({ day: d, label: d, wos: wosByDay[d] ?? [] });
-    }
-    return cols;
-  }, [wosByDay]);
-
-  const ketRecipeLegend = useMemo(() => {
-    const map = new Map<string, { code: string; name: string; count: number }>();
-    for (const wo of filteredKet) {
-      const code = wo.recipeId.match(/FV\d+[A-Z]/)?.[0] ?? "";
-      if (!code) continue;
-      if (!map.has(code)) map.set(code, { code, name: wo.recipeName, count: 0 });
-      map.get(code)!.count++;
-    }
-    return Array.from(map.values());
-  }, [filteredKet]);
+  }, [collisionHints]);
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -2431,6 +2399,9 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             </h2>
             <div className="flex flex-wrap gap-4 mt-1 text-sm text-slate-500">
               <span>∑ <strong>{fmtNum(recipePlanTotal || totalVolume)}</strong> Portionen</span>
+              <span className={openVolumeTotal > 0 ? "font-semibold text-rose-700" : "font-semibold text-emerald-700"}>
+                offen <strong>{fmtNum(Math.round(openVolumeTotal))}</strong>
+              </span>
               <span><strong>{recipes.length}</strong> Rezepte</span>
               <span><strong>{Object.values(schedule).filter(Boolean).length}</strong> Slots belegt</span>
             </div>
@@ -2446,15 +2417,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* Sub-tab switcher */}
-            <div className="flex rounded-lg bg-slate-100 ring-1 ring-slate-200 p-1 gap-0.5">
-              {([["lineplanning", "📋 Plating Linien Plannung"], ["ket", "🍳 KET"]] as const).map(([k, l]) => (
-                <button key={k} onClick={() => setSubTab(k)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-                    subTab === k ? "bg-white shadow ring-1 ring-slate-300 text-slate-800" : "text-slate-500 hover:text-slate-700"
-                  }`}>{l}</button>
-              ))}
-            </div>
             <button
               onClick={() => setShowQrModal(true)}
               className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
@@ -2470,10 +2432,9 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
               ? Hilfe
             </button>
             <button
-              onClick={autoPlanFromTargets}
-              disabled={!hasSavedManufacturingPlan}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
-              title={hasSavedManufacturingPlan ? "Füllt freie Slots anhand des gesicherten Manufacturing-Plans automatisch" : "Erst im Manufacturing Calendar den Küchenplan sichern"}
+              onClick={() => autoPlanFromTargets()}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+              title={hasSavedManufacturingPlan ? "Füllt freie Slots anhand des gesicherten Manufacturing-Plans automatisch" : "Füllt freie Slots und meldet Manufacturing, was nachgezogen werden muss"}
             >
               🤖 Auto-Plan
             </button>
@@ -2517,7 +2478,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
                     savedAt: new Date().toISOString(),
                     schedule,
                     comments,
-                    ketOverrides,
                     targetMealsBySlot,
                     lineCapacityByLane,
                     platingLineCount,
@@ -2567,7 +2527,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             {autoPlanNotice}
           </div>
         )}
-        {forecastVarianceRows.length > 0 && subTab === "lineplanning" && (
+        {forecastVarianceRows.length > 0 && (
           <div className="mt-2 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3">
             <div className="text-sm font-black tracking-wide text-rose-800">FORECAST-FLUKTUATION AKTIV - RUN 2 WIRD DYNAMISCH ANGEPASST</div>
             <div className="mt-1 text-xs font-semibold text-rose-700">
@@ -2600,7 +2560,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             </div>
           </div>
         )}
-        {rampUpChanges.length > 0 && !rampUpBannerDismissed && subTab === "lineplanning" && (
+        {rampUpChanges.length > 0 && !rampUpBannerDismissed && (
           <div className="mt-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
@@ -2625,14 +2585,46 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             </div>
           </div>
         )}
-        {!hasSavedManufacturingPlan && subTab === "lineplanning" && (
+        {!hasSavedManufacturingPlan && (
           <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900 ring-1 ring-amber-200">
             Reihenfolge: erst Manufacturing Calendar planen und dort "Plan sichern" klicken. Danach nutzt die Plating-Automatik den gesicherten Küchenplan fuer Run 1 und Run 2.
           </div>
         )}
-        {hasSavedManufacturingPlan && subTab === "lineplanning" && (
+        {hasSavedManufacturingPlan && (
           <div className="mt-2 rounded-lg bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800 ring-1 ring-sky-200">
-            Gesicherter Manufacturing-Plan geladen{manufacturingSnapshot?.savedAtLabel ? `: ${manufacturingSnapshot.savedAtLabel}` : ""}. Auto-Plan nutzt diese Run-/Submeal-Daten.
+            Manufacturing-Plan live geladen{manufacturingSnapshot?.savedAtLabel ? `: ${manufacturingSnapshot.savedAtLabel}` : ""}. Auto-Plan nutzt diese Run-/Submeal-Daten und zieht offene Plating-Mengen automatisch nach.
+          </div>
+        )}
+        {openVolumeTotal > 0 && (
+          <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">
+            Offenes Plating-Volumen: {fmtNum(Math.round(openVolumeTotal))} Portionen.
+            {hasSavedManufacturingPlan
+              ? " Wird gegen den Manufacturing Calendar automatisch nachverplant."
+              : " Wird automatisch vorgeplant; Manufacturing bekommt parallel den Nachzieh-Auftrag."}
+          </div>
+        )}
+        {collisionHints.length > 0 && (
+          <div className="mt-2 rounded-xl border-2 border-rose-300 bg-white px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-sm font-black tracking-wide text-rose-800">
+                Kollisionen direkt bearbeiten: {collisionHints.filter((item) => item.severity === "error").length} kritisch · {collisionHints.filter((item) => item.severity === "warn").length} Hinweise
+              </div>
+              <button
+                onClick={handleCorrectCollisions}
+                className="rounded-lg bg-rose-700 px-3 py-1.5 text-xs font-black text-white hover:bg-rose-800"
+              >
+                Auto-Plan korrigieren
+              </button>
+            </div>
+            <div className="mt-2 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              {collisionHints.slice(0, 8).map((item) => (
+                <div key={item.key} className={`rounded-lg border px-3 py-2 text-xs ${collisionTone(item.severity)}`}>
+                  <div className="font-black">{item.location}</div>
+                  <div className="mt-0.5 font-semibold">{item.message}</div>
+                  <div className="mt-1 opacity-75">{item.action}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {showHelp && (
@@ -2653,9 +2645,8 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
         )}
       </div>
 
-      {/* ─── LINIENPLANUNG TAB ────────────────────────────────────────────── */}
-      {subTab === "lineplanning" && (
-        <div className="grid gap-4 items-start xl:grid-cols-[minmax(0,1fr)_22rem]">
+      {/* ─── LINIENPLANUNG ────────────────────────────────────────────────── */}
+      <div className="grid gap-4 items-start xl:grid-cols-[minmax(0,1fr)_22rem]">
           <section className="card p-4 xl:col-span-2">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -2818,6 +2809,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
                           {LINES.map((_, li) => {
                             const cellKey = `${day}|${slot.key}|${li}`;
                             const r = schedule[cellKey] ?? null;
+                            const cellCollisions = collisionHintsByCell.get(cellKey) ?? [];
                             const disabledLine = li >= platingLineCount;
                             if (disabledLine) {
                               return (
@@ -2849,6 +2841,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
                                 onRemove={() => dispatch({ type: "remove", key: cellKey })}
                                 multiDayCount={r ? (scheduledDaysByCode.get(r.code)?.size ?? 1) : undefined}
                                 mhdViolation={mhdViolation}
+                                collisions={cellCollisions}
                                 volumeHistory={r ? (rampUpHistoryMap.get(r.code) ?? []).map(s => s.volumes[r.code] ?? 0) : undefined}
                                 volumeDelta={r ? rampUpChanges.find(c => c.code === r.code)?.delta : undefined}
                                 volumeSnapshots={r ? (rampUpHistoryMap.get(r.code) ?? []) : undefined}
@@ -3069,95 +3062,10 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             </div>
           </div>
         </div>
-      )}
-
-      {/* ─── KET KANBAN TAB ──────────────────────────────────────────────── */}
-      {subTab === "ket" && (
-        <div className="flex gap-4 items-start">
-
-          {/* ── Left panel: filter + recipe legend ────────────────────────── */}
-          <div className="w-48 shrink-0 sticky top-4 space-y-3">
-            <div className="card p-3 space-y-2">
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Suche</div>
-              <div className="rounded-lg bg-slate-50 px-2 py-1.5 text-[10px] text-slate-600 ring-1 ring-slate-200 space-y-1">
-                <div className="font-bold text-slate-700">Prioritaets-Legende</div>
-                <div className="flex flex-wrap gap-1">
-                  <span className="rounded border border-cyan-200 bg-cyan-100 px-1.5 py-0.5 font-black text-cyan-800">THAW FIRST</span>
-                  <span className="rounded border border-amber-200 bg-amber-100 px-1.5 py-0.5 font-black text-amber-800">MARINADE EARLY</span>
-                  <span className={`rounded border px-1.5 py-0.5 font-black ${runBadgeTone(1)}`}>R1</span>
-                  <span className={`rounded border px-1.5 py-0.5 font-black ${runBadgeTone(2)}`}>R2</span>
-                </div>
-              </div>
-              <input
-                type="text"
-                value={ketSearch}
-                onChange={e => setKetSearch(e.target.value)}
-                placeholder="Rezept, WO-Nr …"
-                className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-500 pt-1">Status</div>
-              <div className="flex flex-col gap-0.5">
-                {([["all", "Alle"], ["open", "Offen"], ["done", "Fertig"]] as const).map(([k, l]) => (
-                  <button key={k} onClick={() => setKetStatusFilter(k)}
-                    className={`px-2.5 py-1 text-xs font-semibold rounded-lg text-left transition-all ${
-                      ketStatusFilter === k ? "bg-indigo-100 text-indigo-800" : "text-slate-500 hover:bg-slate-50"
-                    }`}>{l}</button>
-                ))}
-              </div>
-              <div className="text-[10px] text-slate-400 pt-1">{filteredKet.length} Aufträge</div>
-            </div>
-
-            {/* Recipe color legend */}
-            {ketRecipeLegend.length > 0 && (
-              <div className="card p-3">
-                <div className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Rezepte</div>
-                <div className="space-y-1.5">
-                  {ketRecipeLegend.map(({ code, name, count }) => (
-                    <div key={code} style={pillStyle(code)} className="rounded-xl border px-2 py-1.5 text-xs">
-                      <div className="font-bold">{code}</div>
-                      <div className="opacity-70 truncate text-[10px]">{nameShort(name, 20)}</div>
-                      <div className="opacity-50 text-[9px] tabular-nums">{count} Sub-Rezepte</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── Kanban board ──────────────────────────────────────────────── */}
-          <div className="flex-1 min-w-0 overflow-x-auto">
-            <div className="flex gap-3 pb-2" style={{ minWidth: `${ketDayColumns.length * 220}px` }}>
-              {ketDayColumns.map(({ day, label, wos }) => (
-                <KetDayColumn
-                  key={day}
-                  day={day}
-                  label={label}
-                  wos={wos}
-                  isDragOver={ketDragOverDay === day}
-                  onDragEnter={() => onKetDragEnterDay(day)}
-                  onDragLeave={onKetDragLeaveDay}
-                  onDrop={() => onKetDropDay(day)}
-                  ketOverrides={ketOverrides}
-                  onDragStart={onKetDragStart}
-                  onDragEnd={onKetDragEnd}
-                  onStatusCycle={onKetStatusCycle}
-                  scheduledDaysByCode={scheduledDaysByCode}
-                  recipeByCode={recipeByCode}
-                />
-              ))}
-              {ketDayColumns.length === 0 && (
-                <div className="card p-8 text-center text-slate-400 w-full">
-                  {ketSearch ? "Keine Treffer für diese Suche." : "Keine KET-Daten geladen."}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── QR / URL Modal ───────────────────────────────────────────────── */}
       {showQrModal && (() => {
-        const shareUrl = `${window.location.origin}${window.location.pathname}?view=ket&week=${encodeURIComponent(week)}`;
+        const shareUrl = `${window.location.origin}${window.location.pathname}?week=${encodeURIComponent(week)}`;
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"

@@ -23,6 +23,7 @@ import {
   type PlannerShift,
   type PlannerPoolConflict,
   type PlannerStationConflict,
+  type PlannerScenario,
   type LinePlatingSummary,
   type LinePlatingEntry,
 } from "./planner";
@@ -199,6 +200,20 @@ type ManufacturingDaySummary = {
   mainPortions: number;
   subPortions: number;
   items: string[];
+};
+
+type ManufacturingSnapshotPayload = {
+  savedAtIso: string;
+  savedAtLabel: string;
+  week: string;
+  scenarioId: string;
+  scenarioName: string;
+  assignments: PlannerScenario["assignments"];
+  stats: {
+    plannedCount: number;
+    unplannedCount: number;
+  };
+  syncMode: "live" | "manual";
 };
 
 const MANUFACTURING_DAYS: readonly ManufacturingDayColumn[] = [
@@ -1155,6 +1170,8 @@ export function PlanningView(
   const [linePlanSchedule, setLinePlanSchedule] = useState<Record<string, { code: string; speedPerMin: number } | null>>({});
   const [linePlanCapacityByLane, setLinePlanCapacityByLane] = useState<Record<string, number>>({});
   const [linePlanRunSplitByRecipe, setLinePlanRunSplitByRecipe] = useState<Record<string, RunSplitPlan>>({});
+  const lastPublishedManufacturingSignatureRef = useRef<string>("");
+  const lastManufacturingReconcileRequestRef = useRef<string>("");
 
   useEffect(() => {
     savePlannerStorage(storage);
@@ -2134,6 +2151,55 @@ export function PlanningView(
     });
   }
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const weekStr = week.includes("-W") ? week.split("-W")[1] : week;
+
+    const handlePayload = (payload: unknown) => {
+      const row = payload as { week?: string; requestedAt?: string; reason?: string } | null;
+      if (!row || row.week !== week) return;
+      const signature = `${row.requestedAt ?? ""}|${row.reason ?? ""}`;
+      if (!signature.trim() || lastManufacturingReconcileRequestRef.current === signature) return;
+      lastManufacturingReconcileRequestRef.current = signature;
+      handleAutoPlanWeekBoard();
+    };
+
+    try {
+      const raw = window.localStorage.getItem(`rezeptlogik-manufacturing-reconcile-${week}`);
+      if (raw) handlePayload(JSON.parse(raw));
+    } catch {
+      // Ignore stale local reconcile requests.
+    }
+
+    const onRequest = (event: Event) => {
+      handlePayload((event as CustomEvent).detail);
+    };
+    window.addEventListener("rezeptlogik:manufacturing-reconcile-request", onRequest);
+
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    void (async () => {
+      try {
+        const { getFirebase } = await import("./firebase");
+        const { doc, onSnapshot } = await import("firebase/firestore");
+        const { db } = getFirebase();
+        if (cancelled) return;
+        unsubscribe = onSnapshot(doc(db, "apps/rezeptlogik/planningRequests", `de_W${weekStr}`), (snapshot) => {
+          if (!snapshot.exists()) return;
+          handlePayload(snapshot.data());
+        });
+      } catch {
+        // Local event/localStorage keep same-browser reconciliation working.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("rezeptlogik:manufacturing-reconcile-request", onRequest);
+      unsubscribe?.();
+    };
+  }, [week, activeShifts.length]);
+
   function openWeekBoardEditor(input: WeekBoardEditorState) {
     const key = assignmentKey(input.recipeCode, input.subRecipeId);
     const existing = scenario.assignments[key];
@@ -2177,11 +2243,10 @@ export function PlanningView(
     setBoardEditor(null);
   }
 
-  function handleSavePlanSnapshot() {
-    if (typeof window === "undefined") return;
+  function buildManufacturingSnapshot(syncMode: "live" | "manual"): ManufacturingSnapshotPayload {
     const now = new Date();
     const stamp = now.toLocaleString("de-DE");
-    const snapshot = {
+    return {
       savedAtIso: now.toISOString(),
       savedAtLabel: stamp,
       week,
@@ -2191,8 +2256,14 @@ export function PlanningView(
       stats: {
         plannedCount: analysis.plannedCount,
         unplannedCount: analysis.unplannedCount
-      }
+      },
+      syncMode,
     };
+  }
+
+  async function publishManufacturingSnapshot(syncMode: "live" | "manual") {
+    if (typeof window === "undefined") return;
+    const snapshot = buildManufacturingSnapshot(syncMode);
     window.localStorage.setItem(`rezeptlogik-plan-snapshot-${week}`, JSON.stringify(snapshot));
     window.dispatchEvent(new CustomEvent("rezeptlogik:plan-snapshot-saved", {
       detail: {
@@ -2201,9 +2272,41 @@ export function PlanningView(
         savedAtIso: snapshot.savedAtIso,
       }
     }));
-    setSavePlanStamp(stamp);
+    try {
+      const { getFirebase } = await import("./firebase");
+      const { doc, setDoc } = await import("firebase/firestore");
+      const { db } = getFirebase();
+      const weekStr = week.includes("-W") ? week.split("-W")[1] : week;
+      await setDoc(doc(db, "apps/rezeptlogik/manufacturingPlans", `de_W${weekStr}`), snapshot, { merge: true });
+    } catch {
+      // Local snapshot still keeps the same-tab feedback loop alive when Firestore is unavailable.
+    }
+    setSavePlanStamp(snapshot.savedAtLabel);
     onPlanSnapshotSaved?.();
   }
+
+  function handleSavePlanSnapshot() {
+    void publishManufacturingSnapshot("manual");
+  }
+
+  const manufacturingLiveSignature = useMemo(() => JSON.stringify({
+    week,
+    scenarioId: scenario.id,
+    scenarioName: scenario.name,
+    assignments: scenario.assignments,
+    plannedCount: analysis.plannedCount,
+    unplannedCount: analysis.unplannedCount,
+  }), [analysis.plannedCount, analysis.unplannedCount, scenario.assignments, scenario.id, scenario.name, week]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (lastPublishedManufacturingSignatureRef.current === manufacturingLiveSignature) return;
+    const timer = window.setTimeout(() => {
+      lastPublishedManufacturingSignatureRef.current = manufacturingLiveSignature;
+      void publishManufacturingSnapshot("live");
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [manufacturingLiveSignature]);
 
   return (
     <div className="space-y-3 w-full max-w-none">
@@ -2310,6 +2413,40 @@ export function PlanningView(
             </div>
           </div>
         </div>
+
+        {visibleConflictCount > 0 && (
+          <div className="border-b border-rose-200 bg-rose-50 px-4 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-black tracking-wide text-rose-800">
+                Kollisionen direkt bearbeiten: {fmtNum(visibleConflictCount)}
+              </div>
+              <button
+                className="rounded-md bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800"
+                onClick={handleAutoPlanWeekBoard}
+              >
+                Auto: neu abstimmen
+              </button>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {visibleStationConflicts.slice(0, 4).map((conflict) => (
+                <span
+                  key={`station-top-${conflict.day}-${conflict.shift}-${conflict.station}`}
+                  className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-900"
+                >
+                  {conflict.day} · {conflict.shift} · {conflict.station}: {topConflictLabel(conflict)}
+                </span>
+              ))}
+              {visiblePoolConflicts.slice(0, 4).map((conflict) => (
+                <span
+                  key={`pool-top-${conflict.day}-${conflict.shift}-${conflict.poolName}`}
+                  className="rounded-lg border border-rose-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-rose-900"
+                >
+                  {conflict.day} · {conflict.shift} · Pool {conflict.poolName}: {topPoolConflictLabel(conflict)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {rampUpChanges.length > 0 && !rampUpBannerDismissed && (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5">
