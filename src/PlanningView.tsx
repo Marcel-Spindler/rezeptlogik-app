@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { DataBundle, DetailedSubRecipe, ProcessSpec, Recipe, ShelfLifeInfo, WeekRecipe } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools } from "./equipment";
@@ -459,7 +459,7 @@ function runSubBatchesForAssignment(
   const subTotal = subAssignment.targetPortions ?? fallbackPortions;
   const batchDays = splitDuplicateSubBatchDays(mainBatches.map((_, bIdx) => distributedRunSubDay(bIdx, subIndex)));
   return mainBatches.map((batch, bIdx) => ({
-    label: `B${bIdx + 1}`,
+    label: `R${bIdx + 1}`,
     portions: Math.max(0, Math.round(subTotal * batch.portions / mainTotal)),
     day: batchDays[bIdx] ?? distributedRunSubDay(bIdx, subIndex),
   }));
@@ -476,9 +476,12 @@ function subLeadDaysBeforeNeed(category: string, spec?: ProcessSpec): number {
   const family = String(spec?.productFamily ?? "").toLowerCase();
   const maxHoldMin = Math.max(0, ...Object.values(spec?.holdTimeMin ?? {}).map((v) => Number(v) || 0));
 
-  if (/brine|cure|ferment|inbound|raw receive/.test(cat) || maxHoldMin >= 24 * 60) return 3;
+  // Thaw / Auftauen / lange Vorbereitung: mind. 3 Tage vor Plating
+  if (/thaw|thawed|defrost/.test(cat) || maxHoldMin >= 24 * 60) return 3;
+  if (/brine|cure|ferment|inbound|raw receive/.test(cat)) return 3;
   if (isSundayPrepSub(category, spec)) return 0;
-  if (/sauce|broth|stock|slow cook|braise/.test(cat) || maxHoldMin >= 12 * 60) return 2;
+  // Marinaden, Saucen, Patty Maker: 2 Tage vor Plating
+  if (/hand marinade|marinade|sauce|broth|stock|slow cook|braise|patty maker|patty/.test(cat) || family === "butter" || maxHoldMin >= 12 * 60) return 2;
   if (/blast chiller|chill|cold hold|portion/.test(cat) || maxHoldMin >= 4 * 60) return 1;
   if (/grill|fry|sear|wok|hot finish|plating|oven/.test(cat)) return 1;
   return 1;
@@ -579,6 +582,10 @@ function weekBoardRecipeTone(recipeCode: string): {
   slotIdle: CSSProperties;
   subPill: CSSProperties;
   mainPill: CSSProperties;
+  r1Pill: CSSProperties;
+  r1SubPill: CSSProperties;
+  r2Pill: CSSProperties;
+  r2SubPill: CSSProperties;
   infoButton: CSSProperties;
   code: CSSProperties;
   title: CSSProperties;
@@ -611,12 +618,40 @@ function weekBoardRecipeTone(recipeCode: string): {
     subPill: {
       backgroundColor: `hsl(${hue} 84% 92%)`,
       color: `hsl(${hue} 62% 26%)`,
-      boxShadow: `inset 0 0 0 1px hsl(${hue} 60% 66%)`
+      boxShadow: `inset 0 0 0 1px hsl(${hue} 60% 66%)`,
+      touchAction: "none" as const
     },
     mainPill: {
       backgroundColor: `hsl(${hue} 72% 38%)`,
       color: "#ffffff",
-      boxShadow: `inset 0 0 0 1px hsl(${hue} 78% 28%)`
+      boxShadow: `inset 0 0 0 1px hsl(${hue} 78% 28%)`,
+      touchAction: "none" as const
+    },
+    // R1: Rezept-Hue dunkel (blau-nah)
+    r1Pill: {
+      backgroundColor: `hsl(${hue} 72% 36%)`,
+      color: "#ffffff",
+      boxShadow: `inset 0 0 0 1.5px hsl(${hue} 82% 22%)`,
+      touchAction: "none" as const
+    },
+    r1SubPill: {
+      backgroundColor: `hsl(${hue} 68% 88%)`,
+      color: `hsl(${hue} 70% 22%)`,
+      boxShadow: `inset 0 0 0 1.5px hsl(${hue} 58% 58%)`,
+      touchAction: "none" as const
+    },
+    // R2: +150° verschoben → deutlich andere Farbe (lila/violett-Richtung)
+    r2Pill: {
+      backgroundColor: `hsl(${(hue + 150) % 360} 55% 36%)`,
+      color: "#ffffff",
+      boxShadow: `inset 0 0 0 1.5px hsl(${(hue + 150) % 360} 64% 22%)`,
+      touchAction: "none" as const
+    },
+    r2SubPill: {
+      backgroundColor: `hsl(${(hue + 150) % 360} 52% 88%)`,
+      color: `hsl(${(hue + 150) % 360} 60% 22%)`,
+      boxShadow: `inset 0 0 0 1.5px hsl(${(hue + 150) % 360} 50% 58%)`,
+      touchAction: "none" as const
     },
     infoButton: {
       backgroundColor: `hsl(${hue} 52% 98%)`,
@@ -1082,6 +1117,10 @@ export function PlanningView(
   const [draggingCode, setDraggingCode] = useState<string | null>(null);
   const [draggingSubId, setDraggingSubId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
+  // Refs für synchronen Zugriff in dragover-Handlern (State wäre stale wegen Closure)
+  const draggingCodeRef = useRef<string | null>(null);
+  const draggingSubIdRef = useRef<string | null>(null);
+  const draggingSuggestKeyRef = useRef<string | null>(null);
   const [dragOverUnplanned, setDragOverUnplanned] = useState(false);
   const [expandedRecipes, setExpandedRecipes] = useState<Set<string>>(new Set());
   const [expandedBoardRecipes, setExpandedBoardRecipes] = useState<Set<string>>(new Set());
@@ -1408,6 +1447,19 @@ export function PlanningView(
         const visibleBatches = batches.length > 0
           ? batches
           : [{ day: mainAssignment.day, portions: targetPortions > 0 ? targetPortions : Math.max(1, Math.round(recipe.activeMin)) }];
+        // For 2-batch splits: R2 pill should show Ziel-based value (upliftTotal - R1.total)
+        if (visibleBatches.length === 2) {
+          const wr = recipeLookup[recipe.recipeCode];
+          if (wr) {
+            const rawVol = wr.verdenVolume ?? { BENL: 0, DKSE: 0, DE: 0 };
+            const rs = calculateRunSplit({
+              bnl: Math.round((rawVol.BENL ?? 0) * portionMultiplier),
+              nordics: Math.round((rawVol.DKSE ?? 0) * portionMultiplier),
+              de: Math.round((rawVol.DE ?? 0) * portionMultiplier),
+            });
+            visibleBatches[1]!.portions = rs.secondRun;
+          }
+        }
         const totalBatchPortions = Math.max(1, visibleBatches.reduce((sum, batch) => sum + batch.portions, 0));
 
         visibleBatches.forEach((batch, index) => {
@@ -1423,7 +1475,7 @@ export function PlanningView(
             shift: mainAssignment.shift,
             kind: "main",
             subCount: remainingSubs,
-            batchLabel: visibleBatches.length > 1 ? `B${index + 1}` : undefined,
+            batchLabel: visibleBatches.length > 1 ? `R${index + 1}` : undefined,
             batchIndex: visibleBatches.length > 1 ? index : undefined,
             batchTotal: visibleBatches.length > 1 ? visibleBatches.length : undefined
           });
@@ -1473,7 +1525,7 @@ export function PlanningView(
           shift: defaultShift,
           kind: "main",
           subCount: recipe.subRecipes.filter(s => !s.assigned).length,
-          batchLabel: totalBatches > 1 ? `B${index + 1}` : undefined,
+          batchLabel: totalBatches > 1 ? `R${index + 1}` : undefined,
           batchIndex: totalBatches > 1 ? index : undefined,
           batchTotal: totalBatches > 1 ? totalBatches : undefined,
           suggested: true,
@@ -1494,7 +1546,7 @@ export function PlanningView(
       });
     }
     return buckets;
-  }, [analysis.recipes, batchSplitPlan, activeShifts, suggestOverrides]);
+  }, [analysis.recipes, batchSplitPlan, activeShifts, suggestOverrides, recipeLookup, portionMultiplier]);
 
   const stationsBySlot = useMemo(() => {
     return Object.fromEntries(
@@ -1628,11 +1680,16 @@ export function PlanningView(
     event.dataTransfer.setData("text/recipe-code", payload);
     event.dataTransfer.setData("text/plain", payload);
     event.dataTransfer.effectAllowed = "move";
+    draggingCodeRef.current = recipeCode;
+    draggingSubIdRef.current = subRecipeId ?? null;
     setDraggingCode(recipeCode);
     setDraggingSubId(subRecipeId ?? null);
   }
 
   function handleDragEnd() {
+    draggingCodeRef.current = null;
+    draggingSubIdRef.current = null;
+    draggingSuggestKeyRef.current = null;
     setDraggingCode(null);
     setDraggingSubId(null);
     setDraggingSuggestKey(null);
@@ -1643,14 +1700,16 @@ export function PlanningView(
   function handleSuggestDragStart(event: React.DragEvent, tileKey: string) {
     event.dataTransfer.setData('text/suggest-key', tileKey);
     event.dataTransfer.effectAllowed = 'move';
+    draggingSuggestKeyRef.current = tileKey;
     setDraggingSuggestKey(tileKey);
   }
 
   function handleDropSuggestOnSlot(event: React.DragEvent, day: PlannerDay) {
     if (day === "Sa") return;
-    const key = event.dataTransfer.getData('text/suggest-key') || draggingSuggestKey;
+    const key = event.dataTransfer.getData('text/suggest-key') || draggingSuggestKeyRef.current;
     if (!key) return;
     setSuggestOverrides(prev => ({ ...prev, [key]: day }));
+    draggingSuggestKeyRef.current = null;
     setDraggingSuggestKey(null);
     setDragOverSlot(null);
   }
@@ -1659,7 +1718,7 @@ export function PlanningView(
   function parseDropPayload(event: React.DragEvent): { recipe: WeekRecipe; subRecipeId?: string; subRecipeName?: string } | null {
     const raw = event.dataTransfer.getData("text/recipe-code")
       || event.dataTransfer.getData("text/plain")
-      || (draggingSubId ? `${draggingCode}::${draggingSubId}` : draggingCode ?? "");
+      || (draggingSubIdRef.current ? `${draggingCodeRef.current}::${draggingSubIdRef.current}` : draggingCodeRef.current ?? "");
     if (!raw) return null;
     const [code, subId] = raw.split("::");
     const recipe = recipeLookup[code];
@@ -1765,7 +1824,7 @@ export function PlanningView(
 
       const existingMain = nextAssignments[assignmentKey(targetCode)];
       const keepExistingMain = !!existingMain && existingMain.day !== "Sa" && isShiftActive(existingMain.shift);
-      const mainTarget = Math.max(0, Math.round(existingMain?.targetPortions ?? recipe.totalVerdenVolume ?? 0));
+      const mainTarget = Math.max(0, Math.round((recipe.totalVerdenVolume ?? 0) * portionMultiplier));
       const batches = resolveAutoBatches(targetCode, mainTarget, autoProfile, batchSplitByRecipe);
       const platingDay = avoidSaturday(batches[0]?.day ?? existingMain?.day ?? "Fr");
 
@@ -1901,7 +1960,7 @@ export function PlanningView(
         const mainKey = assignmentKey(recipeSummary.recipeCode);
         const existingMain = nextAssignments[mainKey] ?? recipeSummary.assigned;
         const keepExistingMain = !!existingMain && existingMain.day !== "Sa" && isShiftActive(existingMain.shift);
-        const mainTarget = Math.max(0, Math.round(existingMain?.targetPortions ?? weekRecipe.totalVerdenVolume ?? 0));
+        const mainTarget = Math.max(0, Math.round((weekRecipe.totalVerdenVolume ?? 0) * portionMultiplier));
         const batches = resolveAutoBatches(recipeSummary.recipeCode, mainTarget, autoProfile, batchSplitByRecipe);
         const platingDay = avoidSaturday(safePlannerDay(batches[0]?.day ?? existingMain?.day ?? "Fr"));
 
@@ -1956,9 +2015,11 @@ export function PlanningView(
           const spec = data.processSpecs?.[sub.subRecipeId];
           const leadDays = subLeadDaysBeforeNeed(sub.category, spec);
           const subIndex = subIndexById.get(sub.subRecipeId) ?? 0;
-          const preferredSubDay = batches.length > 1
-            ? distributedRunSubDay(0, subIndex)
-            : preferredSubProductionDay(sub.category, spec, needDay, leadDays);
+          const preferredSubDay = isSundayPrepSub(sub.category, spec)
+            ? "So"
+            : batches.length > 1
+              ? distributedRunSubDay(0, subIndex)
+              : preferredSubProductionDay(sub.category, spec, needDay, leadDays);
           const slot = pickLowestLoadSlotForDay(slotLoads, preferredSubDay, activeShifts)
             ?? (preferredSubDay === "So" ? null : pickLowestRegularSubSlot(slotLoads, activeShifts))
             ?? pickLowestLoadSlot(slotLoads, activeShifts);
@@ -1991,7 +2052,7 @@ export function PlanningView(
           && isShiftActive(currentMain.shift);
         if (hasValidMain) continue;
 
-        const fallbackTarget = Math.max(0, Math.round(currentMain?.targetPortions ?? weekRecipe.totalVerdenVolume ?? 0));
+        const fallbackTarget = Math.max(0, Math.round((weekRecipe.totalVerdenVolume ?? 0) * portionMultiplier));
         const fallbackBatches = resolveAutoBatches(recipeSummary.recipeCode, fallbackTarget, autoProfile, batchSplitByRecipe);
         const fallbackDay = avoidSaturday(safePlannerDay(fallbackBatches[0]?.day ?? currentMain?.day ?? "Fr"));
         const slot = pickLowestLoadSlotForDay(slotLoads, fallbackDay, activeShifts)
@@ -2077,7 +2138,7 @@ export function PlanningView(
     const key = assignmentKey(input.recipeCode, input.subRecipeId);
     const existing = scenario.assignments[key];
     const recipe = recipeLookup[input.recipeCode];
-    const fallbackTarget = Math.max(0, Math.round(recipe?.totalVerdenVolume ?? 0));
+    const fallbackTarget = Math.max(0, Math.round((recipe?.totalVerdenVolume ?? 0) * portionMultiplier));
     const parsedNote = parseBoardNote(existing?.note);
     const splitSpec = extractSplitSpecFromNotes(parsedNote.notes);
     setBoardDraft({
@@ -2279,14 +2340,56 @@ export function PlanningView(
           </div>
         )}
 
+        {/* ── Offene Rezepte: ziehen in Kalender-Zelle ── */}
+        {unplanned.some(r => !r.assigned) && (
+          <div
+            className={`border-b border-slate-200 px-3 py-2 transition-colors ${dragOverUnplanned ? "bg-amber-50" : "bg-white"}`}
+            onDragOver={(e) => {
+              if (draggingCodeRef.current) { e.preventDefault(); setDragOverUnplanned(true); }
+            }}
+            onDragLeave={() => setDragOverUnplanned(false)}
+            onDrop={(e) => { handleDropOnUnplanned(e); }}
+          >
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                {unplanned.filter(r => !r.assigned).length} offen – hier ablegen zum Entplanen
+              </span>
+              {dragOverUnplanned && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">⟵ Loslassen zum Entplanen</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {unplanned.filter(r => !r.assigned).map(recipe => {
+                const tone = weekBoardRecipeTone(recipe.recipeCode);
+                const wr = recipeLookup[recipe.recipeCode];
+                const forecast = wr?.totalVerdenVolume ?? 0;
+                const upliftedForecast = Math.round(forecast * portionMultiplier);
+                return (
+                  <div
+                    key={recipe.recipeCode}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, recipe.recipeCode)}
+                    onDragEnd={handleDragEnd}
+                    className="flex cursor-grab items-center gap-1 rounded-full px-2 py-1 text-[11px] font-bold select-none active:cursor-grabbing hover:opacity-80 transition-opacity"
+                    style={tone.mainPill}
+                    title={`${recipe.recipeName} · ${fmtNum(upliftedForecast)} Portionen – in Kalender-Zelle ziehen`}
+                  >
+                    <span>{recipe.recipeCode}</span>
+                    <span style={{ opacity: 0.7 }}>{fmtNum(upliftedForecast)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className={`w-full max-w-full overflow-x-auto overflow-y-visible pb-2 [scrollbar-gutter:stable] ${calendarFullView ? "flex-1" : ""}`}>
           <table className="w-max min-w-[1780px] border-collapse text-xs">
             <thead>
               <tr className="bg-white border-b border-slate-300">
                 <th className="sticky left-0 z-20 bg-white px-3 py-2 text-left font-semibold text-slate-700 min-w-[320px]" rowSpan={2}>Recipes</th>
                 <th className="sticky left-[320px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[110px]" rowSpan={2}>Forecast / Runs</th>
-                <th className="sticky left-[410px] z-20 bg-white px-2 py-2 text-center font-semibold text-slate-700 min-w-[70px]" rowSpan={2}>WIP</th>
-                <th className="sticky left-[480px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Mapped</th>
+                <th className="sticky left-[410px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Mapped</th>
                 {MANUFACTURING_DAYS.map((column) => (
                   <th key={column.id} colSpan={activeShifts.length} className="border-l border-slate-300 px-2 py-2 text-center font-semibold text-slate-700 min-w-[170px]">{column.label}</th>
                 ))}
@@ -2308,6 +2411,7 @@ export function PlanningView(
               {analysis.recipes.map((recipe) => {
                 const wr = recipeLookup[recipe.recipeCode];
                 const forecast = wr?.totalVerdenVolume ?? 0;
+                const upliftedForecast = Math.round(forecast * portionMultiplier);
                 const isExpanded = expandedBoardRecipes.has(recipe.recipeCode);
                 const mainMapped = recipe.assigned?.targetPortions ?? (recipe.assigned ? forecast : 0);
                 const tone = weekBoardRecipeTone(recipe.recipeCode);
@@ -2329,7 +2433,17 @@ export function PlanningView(
                           </button>
                           <div className="min-w-0">
                             <div className="flex items-center gap-1 flex-wrap">
-                              <div className="inline-flex rounded-full px-1.5 py-0.5 font-mono text-[10px]" style={tone.badge}>{recipe.recipeCode}</div>
+                              <div
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, recipe.recipeCode)}
+                                onDragEnd={handleDragEnd}
+                                className="inline-flex cursor-grab items-center gap-1 rounded-full px-1.5 py-0.5 font-mono text-[10px] select-none active:cursor-grabbing"
+                                style={tone.badge}
+                                title="Ziehen um Rezept zu verplanen"
+                              >
+                                ⠿ {recipe.recipeCode}
+                                <span style={{ opacity: 0.75, fontVariantNumeric: "tabular-nums" }}>· {fmtNum(upliftedForecast)}</span>
+                              </div>
                               <RampUpDeltaBadge delta={rampUpChanges.find(c => c.code === recipe.recipeCode)?.delta ?? 0} />
                             </div>
                             <button className="mt-1 block text-left text-sm font-semibold hover:text-verden-700" style={tone.title} onClick={() => onSelectRecipe?.(recipe.recipeCode)}>{recipe.recipeName}</button>
@@ -2342,7 +2456,13 @@ export function PlanningView(
                             {(() => {
                               const snaps = rampUpHistoryMap.get(recipe.recipeCode) ?? [];
                               const vals = snaps.map(s => s.volumes[recipe.recipeCode] ?? 0);
-                              if (vals.length < 2) return null;
+                              if (vals.length < 1) return null;
+                              if (vals.length === 1) return (
+                                <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+                                  <span style={{ fontSize: 9, color: "#94a3b8" }}>Basis</span>
+                                  <span style={{ fontSize: 9, color: "#94a3b8", fontVariantNumeric: "tabular-nums" }}>{fmtNum(vals[0])}</span>
+                                </div>
+                              );
                               return (
                                 <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
                                   <RampUpSparkline values={vals} width={48} height={14} />
@@ -2390,22 +2510,25 @@ export function PlanningView(
                                 </div>
                               </div>
                               {/* Ramp-up history */}
-                              {snaps.length >= 2 && snaps.slice(-4).reverse().map((snap, idx) => (
-                                <div key={snap.ts} style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
-                                  <span style={{ fontSize: 9, color: idx === 0 ? "#475569" : "#94a3b8", fontVariantNumeric: "tabular-nums", fontWeight: idx === 0 ? 600 : 400 }}>
-                                    {snap.label}
-                                  </span>
-                                  <span style={{ fontSize: 9, color: idx === 0 ? "#475569" : "#94a3b8", fontVariantNumeric: "tabular-nums" }}>
-                                    {fmtNum(snap.volumes[recipe.recipeCode] ?? 0)}
-                                  </span>
-                                </div>
-                              ))}
+                              {snaps.length >= 1 && snaps.slice(-4).reverse().map((snap, idx, arr) => {
+                                const isLatest = idx === 0;
+                                const isBasis = idx === arr.length - 1 && arr.length === 1;
+                                return (
+                                  <div key={snap.ts} style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                                    <span style={{ fontSize: 9, color: isLatest ? "#475569" : "#94a3b8", fontVariantNumeric: "tabular-nums", fontWeight: isLatest ? 600 : 400 }}>
+                                      {isBasis ? "Basis" : snap.label}
+                                    </span>
+                                    <span style={{ fontSize: 9, color: isLatest ? "#475569" : "#94a3b8", fontVariantNumeric: "tabular-nums" }}>
+                                      {fmtNum(snap.volumes[recipe.recipeCode] ?? 0)}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })()}
                       </td>
-                      <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-2 text-center text-slate-300" style={tone.sticky}></td>
-                      <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{mainMapped > 0 ? fmtNum(mainMapped) : ""}</td>
+                      <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{mainMapped > 0 ? fmtNum(mainMapped) : ""}</td>
 
                       {MANUFACTURING_DAYS.flatMap((column) => activeShifts.map((shift) => {
                         const day = column.day;
@@ -2418,14 +2541,15 @@ export function PlanningView(
                         const hasReal = mainTiles.some(t => !t.suggested);
                         const hasAny = mainTiles.length > 0;
                         const isDragOverThis = dragOverSlot === slot;
+                        const isValidDropTarget = !!draggingCode && !hasReal && day !== "Sa";
                         return (
                           <td
                             key={`${recipe.recipeCode}-${column.id}-${shift}`}
-                            className="border-l border-slate-200 p-1 align-top"
+                            className={`border-l border-slate-200 p-1 align-top transition-colors ${isValidDropTarget && !isDragOverThis ? "bg-emerald-50/40" : ""}`}
                             onDragOver={(e) => {
                               if (day === "Sa") return;
-                              const hasSuggest = !!(e.dataTransfer.getData("text/suggest-key") || draggingSuggestKey);
-                              const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCode);
+                              const hasSuggest = !!(e.dataTransfer.getData("text/suggest-key") || draggingSuggestKeyRef.current);
+                              const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCodeRef.current);
                               if (hasSuggest || hasRecipe) {
                                 e.preventDefault();
                                 setDragOverSlot(slot);
@@ -2433,8 +2557,8 @@ export function PlanningView(
                             }}
                             onDragLeave={() => { if (dragOverSlot === slot) setDragOverSlot(null); }}
                             onDrop={(e) => {
-                              const hasSuggest = !!(e.dataTransfer.getData("text/suggest-key") || draggingSuggestKey);
-                              const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCode);
+                              const hasSuggest = !!(e.dataTransfer.getData("text/suggest-key") || draggingSuggestKeyRef.current);
+                              const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCodeRef.current);
                               if (!hasSuggest && !hasRecipe) return;
                               e.preventDefault();
                               if (hasSuggest) {
@@ -2544,20 +2668,23 @@ export function PlanningView(
                                   const bTotal = mainTile.batchTotal ?? 1;
                                   const isFirst = bIdx === 0;
                                   const isLast = bIdx === bTotal - 1;
+                                  const pillStyle = isSplit ? (bIdx === 0 ? tone.r1Pill : tone.r2Pill) : tone.mainPill;
                                   // Richtungspfeil: zeigt woher/wohin der Batch geht
                                   const chevronLeft  = !isFirst ? "‹ " : "";
                                   const chevronRight = !isLast  ? " ›" : "";
                                   // Connector-Bar: horizontaler farbiger Streifen über dem Pill
+                                  const connBarHue = bIdx === 0 ? tone.hue : (tone.hue + 200) % 360;
                                   const connBar: CSSProperties | null = isSplit ? {
                                     background: isFirst
-                                      ? `linear-gradient(90deg, hsl(${tone.hue} 68% 52%) 55%, transparent 100%)`
+                                      ? `linear-gradient(90deg, hsl(${connBarHue} 68% 52%) 55%, transparent 100%)`
                                       : isLast
-                                        ? `linear-gradient(90deg, transparent 0%, hsl(${tone.hue} 68% 52%) 45%)`
-                                        : `hsl(${tone.hue} 68% 52%)`,
+                                        ? `linear-gradient(90deg, transparent 0%, hsl(${connBarHue} 68% 52%) 45%)`
+                                        : `hsl(${connBarHue} 68% 52%)`,
                                     opacity: 0.55,
                                   } : null;
+                                  const isBeingDragged = draggingCode === recipe.recipeCode;
                                   return (
-                                    <div key={mainTile.key} className="space-y-0.5">
+                                    <div key={mainTile.key} className={`space-y-0.5 transition-opacity ${isBeingDragged ? "opacity-40" : ""}`}>
                                       {connBar && <div className="-mx-1 h-0.5 rounded-full" style={connBar} />}
                                       <button
                                         draggable
@@ -2565,8 +2692,8 @@ export function PlanningView(
                                         onDragEnd={handleDragEnd}
                                         onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift }); }}
                                         className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold cursor-grab active:cursor-grabbing"
-                                        style={tone.mainPill}
-                                        title={isSplit ? `Batch ${bIdx + 1} von ${bTotal} · ${mainTile.batchLabel}` : undefined}
+                                        style={pillStyle}
+                                        title={isSplit ? `Batch ${bIdx + 1} von ${bTotal} · ${mainTile.batchLabel}` : "Ziehen um Tag zu ändern"}
                                       >
                                         <span className="opacity-60">{chevronLeft}</span>
                                         {mainTile.batchLabel ? `${mainTile.batchLabel} ` : ""}Plan:{fmtNum(mainTile.targetPortions ?? forecast)} | Min:{fmtMin(mainTile.activeMin)}
@@ -2583,7 +2710,14 @@ export function PlanningView(
                       }))}
                     </tr>
 
-                    {isExpanded && recipe.subRecipes.map((sub, subIndex) => {
+                    {isExpanded && [...recipe.subRecipes]
+                      .sort((a, b) => {
+                        const specA = data.processSpecs?.[a.subRecipeId];
+                        const specB = data.processSpecs?.[b.subRecipeId];
+                        return subLeadDaysBeforeNeed(b.category, specB) - subLeadDaysBeforeNeed(a.category, specA);
+                      })
+                      .map((sub) => {
+                      const subIndex = recipe.subRecipes.indexOf(sub);
                       const subMapped = sub.assigned?.targetPortions ?? (sub.assigned ? forecast : 0);
                       const subSpec = data.processSpecs?.[sub.subRecipeId];
                       const sundayPrep = isSundayPrepSub(sub.category, subSpec);
@@ -2608,8 +2742,7 @@ export function PlanningView(
                             </div>
                           </td>
                           <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{fmtNum(forecast)}</td>
-                          <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-1.5 text-center text-slate-300" style={tone.subSticky}></td>
-                          <td className="sticky left-[480px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{subMapped > 0 ? fmtNum(subMapped) : ""}</td>
+                          <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{subMapped > 0 ? fmtNum(subMapped) : ""}</td>
                           {MANUFACTURING_DAYS.flatMap((column) => activeShifts.map((shift) => {
                             const day = column.day;
                             const hasPrepBatch = hasBatchSplit && subBatches.some(batch => batch.day === "So");
@@ -2628,7 +2761,7 @@ export function PlanningView(
                                 className="border-l border-slate-200 p-1 align-top"
                                 onDragOver={(e) => {
                                   if (day === "Sa") return;
-                                  const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCode);
+                                  const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCodeRef.current);
                                   if (hasRecipe) {
                                     e.preventDefault();
                                     setDragOverSlot(slot);
@@ -2636,34 +2769,37 @@ export function PlanningView(
                                 }}
                                 onDragLeave={() => { if (dragOverSlot === slot) setDragOverSlot(null); }}
                                 onDrop={(e) => {
-                                  const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCode);
+                                  const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCodeRef.current);
                                   if (!hasRecipe) return;
                                   e.preventDefault();
                                   handleDropOnSlot(e, day, shift);
                                 }}
                               >
                                 <div
-                                  className="min-h-[50px] rounded border p-1 hover:border-slate-300"
+                                  className={`min-h-[50px] rounded border p-1 hover:border-slate-300 transition-opacity ${draggingCode === recipe.recipeCode && isActive ? "opacity-40" : ""}`}
                                   style={isDragOverThis ? { ...tone.slotActive, outline: "2px dashed currentColor" } : isActive ? tone.slotActive : tone.slotIdle}
                                   onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName })}
                                 >
                                   {hasBatchSplit && batchesHere.length > 0 ? (
                                     <div className="space-y-1">
-                                      {batchesHere.map((batch) => (
-                                        <button
-                                          key={batch.label}
-                                          draggable
-                                          onDragStart={(event) => handleDragStart(event, recipe.recipeCode, sub.subRecipeId)}
-                                          onDragEnd={handleDragEnd}
-                                          onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName }); }}
-                                          className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold cursor-grab active:cursor-grabbing"
-                                          style={tone.subPill}
-                                          title={leadTooltip}
-                                        >
-                                          <span className="opacity-60 mr-0.5">{batch.label}</span>{fmtNum(batch.portions)}
-                                          {leadLabel && <span className="ml-1 rounded-full bg-white/50 px-1 text-[9px] font-bold opacity-80">{leadLabel}</span>}
-                                        </button>
-                                      ))}
+                                      {batchesHere.map((batch) => {
+                                        const batchPillStyle = batch.label === "R1" ? tone.r1SubPill : batch.label === "R2" ? tone.r2SubPill : tone.subPill;
+                                        return (
+                                          <button
+                                            key={batch.label}
+                                            draggable
+                                            onDragStart={(event) => handleDragStart(event, recipe.recipeCode, sub.subRecipeId)}
+                                            onDragEnd={handleDragEnd}
+                                            onClick={(event) => { event.stopPropagation(); openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName }); }}
+                                            className="w-full rounded-full px-2 py-0.5 text-left text-[10px] font-bold cursor-grab active:cursor-grabbing"
+                                            style={batchPillStyle}
+                                            title={leadTooltip}
+                                          >
+                                            <span className="opacity-70 mr-0.5">{batch.label}</span>{fmtNum(batch.portions)}
+                                            {leadLabel && <span className="ml-1 rounded-full bg-white/40 px-1 text-[9px] font-bold opacity-80">{leadLabel}</span>}
+                                          </button>
+                                        );
+                                      })}
                                     </div>
                                   ) : !hasBatchSplit && isAssigned ? (
                                     <div className="flex items-center gap-1">
@@ -2724,7 +2860,7 @@ export function PlanningView(
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h3 className="text-base font-black text-slate-900">Tages-Zusammenrechnung Manufacturing</h3>
-              <p className="mt-0.5 text-xs text-slate-500">B1-Submeals: So (Prep) bis Mi · B2-Submeals: Mo bis Do · Freitag/Samstag bleiben frei für Submeal-Runs.</p>
+              <p className="mt-0.5 text-xs text-slate-500">R1-Submeals: So (Prep) bis Mi · R2-Submeals: Mo bis Do · Freitag/Samstag bleiben frei für Submeal-Runs.</p>
             </div>
             <div className="grid grid-cols-2 gap-2 text-right text-xs sm:grid-cols-3">
               <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2">
@@ -2751,7 +2887,7 @@ export function PlanningView(
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <div className="text-sm font-black text-slate-900">{row.column.label}</div>
-                      <div className="text-[10px] font-semibold uppercase text-slate-400">{row.column.lane === "prep" ? "Prep-Fenster B1" : row.column.day === "Sa" ? "frei halten" : "Reguläre Produktion"}</div>
+                      <div className="text-[10px] font-semibold uppercase text-slate-400">{row.column.lane === "prep" ? "Prep-Fenster R1" : row.column.day === "Sa" ? "frei halten" : "Reguläre Produktion"}</div>
                     </div>
                     <div className={`rounded-full px-2 py-1 text-xs font-black ${jobCount > 0 ? "bg-emerald-700 text-white" : "bg-slate-200 text-slate-500"}`}>{jobCount} Jobs</div>
                   </div>

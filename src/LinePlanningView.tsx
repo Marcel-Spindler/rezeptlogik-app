@@ -32,6 +32,8 @@ type LinePlanRecipe = {
   speedPerMin: number;   // portions/min on this line
   /** true wenn Rezept Fisch enthält (MHD 9 Tage) */
   isSeafood: boolean;
+  /** true = Reinigungspause nach Rezeptwechsel (kein echtes Rezept) */
+  isBreak?: boolean;
 };
 
 /** Heuristik: Rezeptname auf Fisch-Schlüsselwörter prüfen (kein Zugriff auf Zutaten nötig) */
@@ -137,6 +139,13 @@ const SLOTS: ReadonlyArray<{ key: string; label: string; duration: number }> = [
 ];
 
 const LINES = ["P-Linie 1", "P-Linie 2", "P-Linie 3"] as const;
+
+const MEAL_CHANGE_BREAK: LinePlanRecipe = {
+  code: "__BREAK__",
+  name: "Reinigung & Zählung (1h)",
+  totalPlanned: 0, nordics: 0, bnl: 0, de: 0, speedPerMin: 0,
+  isSeafood: false, isBreak: true,
+};
 
 function defaultLineCapacityMap(): Record<string, number> {
   return {
@@ -809,6 +818,20 @@ function RecipePill({
   volumeDelta?: number;
   volumeSnapshots?: RampUpSnapshot[];
 }) {
+  if (recipe.isBreak) {
+    return (
+      <div
+        className={`rounded-xl border border-amber-300 bg-amber-50 ring-1 ring-amber-200/60 select-none ${compact ? "px-2 py-1.5" : "px-3 py-2.5"}`}
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm">🧹</span>
+          <span className="font-bold text-xs text-amber-700">Pause – Reinigung & Zählung</span>
+        </div>
+        <div className="text-[10px] text-amber-500 mt-0.5">1 Stunde · Rezeptwechsel</div>
+      </div>
+    );
+  }
+
   const tone = recipeTone(recipe.code);
   const style = tone.base;
   const runTargets = lineRunTargetsForRecipe(recipe);
@@ -1038,7 +1061,9 @@ function DropCell({
       onDragLeave={onDragLeave}
       onDrop={e => { e.preventDefault(); onDrop(); }}
       className={`min-h-[5rem] rounded-xl border-2 transition-all duration-100 flex items-stretch ${
-        isDragOver
+        recipe?.isBreak
+          ? "border-amber-200 bg-amber-50/60"
+          : isDragOver
           ? "border-indigo-400 bg-indigo-50 ring-2 ring-indigo-300/50 scale-[1.03]"
           : mhdViolation
           ? "border-orange-400 bg-orange-50/40 ring-1 ring-orange-300/50"
@@ -1992,9 +2017,16 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             const cockpitDayScore = cockpitRule ? cockpitScoreForDay(day, cockpitRule) : 0;
 
             const spreadScore = Math.min(1, dayOpen / Math.max(1, dayTarget));
-            const score = cockpitRule
+            // Starkter Bonus wenn dieses Rezept im Vorgänger-Slot auf derselben Linie lief →
+            // Linie läuft ein Rezept durch bis es fertig ist, dann erst Wechsel + Pause.
+            const slotIdx = SLOTS.findIndex(s => s.key === slot.key);
+            const prevSlotKey = slotIdx > 0 ? SLOTS[slotIdx - 1]?.key : undefined;
+            const prevCode = prevSlotKey ? next[`${day}|${prevSlotKey}|${li}`]?.code : undefined;
+            const continuityBonus = (prevCode && prevCode === recipe.code && prevCode !== "__BREAK__") ? 1.5 : 0;
+            const baseScore = cockpitRule
               ? cockpitDayScore * 0.34 + spreadScore * 0.26 + runPressure * 0.2 + kitchenDayScore * 0.08 + subMealRunScore * 0.06 + volumeScore * 0.04 + fitScore * 0.02
               : kitchenDayScore * 0.34 + runDayScore * 0.22 + runPressure * 0.18 + subMealRunScore * 0.2 + volumeScore * 0.04 + fitScore * 0.02;
+            const score = baseScore + continuityBonus;
 
             if (score > bestScore) {
               bestScore = score;
@@ -2087,6 +2119,37 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       }
     }
 
+    // Nach jedem Rezeptwechsel auf einer Linie 1h Pause für Zählung & Reinigung einfügen.
+    for (const day of DAYS) {
+      for (const li of forcedLineIdx) {
+        let prevCode: string | null = null;
+        let breakRemaining = 0;
+
+        for (const slot of SLOTS) {
+          const key = `${day}|${slot.key}|${li}`;
+
+          if (breakRemaining > 0) {
+            next[key] = MEAL_CHANGE_BREAK;
+            breakRemaining = Math.max(0, breakRemaining - slot.duration);
+            continue;
+          }
+
+          const cell = next[key];
+          if (!cell || cell.isBreak) continue;
+
+          if (prevCode !== null && cell.code !== prevCode) {
+            // Rezeptwechsel: diesen Slot und ggf. folgende als Pause markieren
+            next[key] = MEAL_CHANGE_BREAK;
+            breakRemaining = Math.max(0, 60 - slot.duration);
+            prevCode = null;
+            continue;
+          }
+
+          prevCode = cell.code;
+        }
+      }
+    }
+
     dispatch({ type: "load", schedule: next });
     setAutoPlanNotice(assignments > 0
       ? `${assignments} Slots automatisch belegt (Cockpit-Calendar: Run erst nach Submeal-Fertigstellung, dann Run-Due-Day).`
@@ -2155,7 +2218,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       });
 
     for (const [key, recipe] of entries) {
-      if (!recipe) continue;
+      if (!recipe || recipe.isBreak) continue;
       const [, slotKey, liRaw] = key.split("|");
       const li = Number(liRaw ?? -1);
       if (li < 0 || li >= platingLineCount) continue;
@@ -2218,7 +2281,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
         let slotCount = 0;
         for (const slot of SLOTS) {
           const recipe = schedule[`${day}|${slot.key}|${li}`];
-          if (!recipe) continue;
+          if (!recipe || recipe.isBreak) continue;
           planned += allocatedPortionsByCell.get(`${day}|${slot.key}|${li}`) ?? 0;
           recipesOnLine.set(recipe.code, recipe);
           slotCount += 1;

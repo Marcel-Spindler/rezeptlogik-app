@@ -26,6 +26,13 @@ const RACK_WRITES = APP_ROOT.collection("rackWrites");
 const AGENT_ARTIFACTS = APP_ROOT.collection("agentRunArtifacts");
 const DEFAULT_GSHEET_ID = "1IEi_CB9KylW2MgjNiGax5EIvhhAtkIzm57uO1sSESj8";
 const SHEET_RANGE = "Meal Selection!A3:X1000";
+
+function getSheetIds() {
+  return [
+    process.env.GSHEET_ID || DEFAULT_GSHEET_ID,
+    ...(process.env.GSHEET_IDS || "").split(",")
+  ].map(v => v.trim()).filter(Boolean);
+}
 const CHECK_COOLDOWN_MS = 60 * 1000;
 
 const DEFAULT_GITHUB_MODELS_ENDPOINT = "https://models.inference.ai.azure.com/chat/completions";

@@ -174,6 +174,7 @@ type PlatingLocationRow = {
   statuses: Set<string>;
   recipes: Set<string>;
   lastChange: string | null;
+  kw: number | null;
 };
 
 type SleevingSignal = "Eingang" | "Ausgang" | "Lost" | "Cycle Count" | "Hold" | "Intern";
@@ -884,6 +885,7 @@ function buildPlatingLocationRows(
       statuses: new Set<string>(),
       recipes: new Set<string>(),
       lastChange: null,
+      kw: row.kw ?? null,
     };
     current.rawQty += rawQty;
     current.pieces += converted.pieces;
@@ -901,6 +903,51 @@ function buildPlatingLocationRows(
     const areaOrder = { Line: 0, Holding: 1, Staging: 2 } satisfies Record<PlatingLocationRow["area"], number>;
     return areaOrder[a.area] - areaOrder[b.area] || a.location.localeCompare(b.location, "de") || b.pieces - a.pieces;
   });
+}
+
+type PlatingHistorySummaryRow = {
+  sku: string;
+  name: string;
+  recipes: Set<string>;
+  pieces: number;
+  plannedQty: number;
+  lastDate: string | null;
+  inWeek: boolean;
+};
+
+function buildPlatingHistorySummary(rows: WmsSleevingTranRow[], index: Map<string, PlannedSkuInfo>): PlatingHistorySummaryRow[] {
+  const map = new Map<string, PlatingHistorySummaryRow>();
+  for (const row of rows) {
+    const from = String(row.von ?? "").toUpperCase();
+    const to = String(row.nach ?? "").toUpperCase();
+    const type = String(row.tranType ?? "").trim();
+    const description = String(row.description ?? "").toUpperCase();
+    const touchesPlatingLine = from.includes("PLATING-LINE") || to.includes("PLATING-LINE");
+    const internalLineMove = from.includes("PLATING-LINE") && to.includes("PLATING-LINE");
+    const correctionMove = type === "800" || type === "721" || description.includes("CYCLE COUNT") || description.includes("HOLD") || description.includes("LOST");
+    if (!touchesPlatingLine || internalLineMove || correctionMove) continue;
+    const qty = Math.abs(Number(row.tranQty ?? 0));
+    if (qty <= 0) continue;
+    const key = skuKey(row.itemNumber);
+    const info = index.get(key);
+    const date = row.endTranDate || row.startTranDate || null;
+    const current = map.get(key);
+    if (!current) {
+      map.set(key, {
+        sku: row.itemNumber || key,
+        name: info?.name || row.itemNumber || "-",
+        recipes: new Set(info?.recipes ?? []),
+        pieces: qty,
+        plannedQty: info?.plannedQty ?? 0,
+        lastDate: date,
+        inWeek: (info?.source === "week-plan"),
+      });
+    } else {
+      current.pieces += qty;
+      if (date && (!current.lastDate || date > current.lastDate)) current.lastDate = date;
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => b.pieces - a.pieces);
 }
 
 function sleevingSignalForRow(row: WmsSleevingTranRow): SleevingSignal {
@@ -1149,7 +1196,10 @@ function recipeSubDemandQty(data: DataBundle, week: string, recipeCode: string, 
     if (gramsPerPiece && gramsPerPiece > 0) {
       total += portions * gramsPerPiece;
     } else {
-      total += portions * Math.max(0, Number(subRecipe.yield ?? 1));
+      const yieldRaw = Math.max(0, Number(subRecipe.yield ?? 1));
+      const yieldUom = String(subRecipe.yieldUom ?? "g").toLowerCase().trim();
+      const yieldGrams = /^kg/i.test(yieldUom) ? yieldRaw * 1000 : yieldRaw;
+      total += portions * yieldGrams;
     }
   }
   return total;
@@ -1737,6 +1787,11 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
       [...row.statuses].join(" "),
     ].some((value) => String(value ?? "").toUpperCase().includes(needle)));
   }, [platingRows, search]);
+
+  const platingHistorySummary = useMemo(
+    () => buildPlatingHistorySummary(platingHistoryRawRows, plannedSkuIndex),
+    [platingHistoryRawRows, plannedSkuIndex],
+  );
 
   const sleevingSummaryRows = useMemo(
     () => buildSleevingSummaryRows(sleevingRawRows, plannedSkuIndex),
@@ -3274,50 +3329,139 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           </div>
         </div>
 
-        <div className="max-h-[620px] overflow-auto">
-          <table className="min-w-full border-collapse text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-950 text-[11px] uppercase text-slate-200">
-              <tr>
-                <th className="px-3 py-2">Bereich</th>
-                <th className="px-3 py-2">Location</th>
-                <th className="px-3 py-2">Artikel</th>
-                <th className="px-3 py-2 text-right">Rohmenge</th>
-                <th className="px-3 py-2 text-right">Stueck</th>
-                <th className="px-3 py-2">Regel</th>
-                <th className="px-3 py-2">Lot / HU / Status</th>
-                <th className="px-3 py-2">Rezept / Zeit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row) => (
-                <tr key={row.key} className="odd:bg-white even:bg-slate-50/70 hover:bg-violet-50">
-                  <td className="border-b border-slate-100 px-3 py-2">
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-bold ring-1 ${row.area === "Line" ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : row.area === "Holding" ? "bg-violet-50 text-violet-800 ring-violet-200" : "bg-amber-50 text-amber-800 ring-amber-200"}`}>{row.area}</span>
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-2 font-mono font-black text-slate-800">{row.location}</td>
-                  <td className="max-w-[340px] border-b border-slate-100 px-3 py-2">
-                    <div className="font-mono font-black text-slate-900">{row.sku || "-"}</div>
-                    <div className="truncate text-[11px] text-slate-500">{row.name}</div>
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-2 text-right font-mono text-slate-700">
-                    {row.area === "Line" ? fmtQty(row.rawQty, "Stk") : fmtQty(row.rawQty / 1000, "kg")}
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-2 text-right font-mono font-black text-slate-900">{fmtQty(row.pieces, "Stk")}</td>
-                  <td className="border-b border-slate-100 px-3 py-2 text-slate-600">{row.unitNote}</td>
-                  <td className="border-b border-slate-100 px-3 py-2 text-slate-600">
-                    <div>{fmtNum(row.lots.size)} Lots · {fmtNum(row.hus.size)} HUs</div>
-                    <div className="text-[11px] text-slate-400">{[...row.statuses].slice(0, 2).join(", ") || "-"}</div>
-                  </td>
-                  <td className="border-b border-slate-100 px-3 py-2 text-slate-600">
-                    <div className="font-mono text-[11px]">{[...row.recipes].slice(0, 3).join(", ") || "nicht in ausgewaehlter KW"}</div>
-                    <div className="text-[11px] text-slate-400">{fmtDateTime(row.lastChange)}</div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filteredRows.length === 0 && <div className="p-8 text-center text-sm text-slate-500">Keine Plating-/PLH-Zeilen geladen.</div>}
+        {/* Plating Historie — was wurde tatsaechlich geplaitet */}
+        <div className="border-t border-slate-200 bg-slate-50 px-4 py-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-black text-slate-900">Geplaitet — letzte 28 Tage</h4>
+              <div className="text-xs text-slate-500">
+                Aus T_TRAN_LOG · {historyRangeStart} – {historyRangeEnd} · nur PLATING-LINE-Transaktionen, keine Korrekturen
+              </div>
+            </div>
+            <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">
+              {fmtQty(platingHistorySummary.reduce((s, r) => s + r.pieces, 0), "Stk gesamt")}
+            </span>
+          </div>
+          {platingHistorySummary.length === 0 && (
+            <div className="rounded-lg bg-white p-4 text-center text-sm text-slate-400 ring-1 ring-slate-200">Keine Plating-Transaktionen in den letzten 28 Tagen.</div>
+          )}
+          {platingHistorySummary.length > 0 && (
+            <div className="overflow-auto rounded-lg bg-white ring-1 ring-slate-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-2">SKU</th>
+                    <th className="px-3 py-2">Name</th>
+                    <th className="px-3 py-2">Rezepte</th>
+                    <th className="px-3 py-2 text-right">Geplaitet</th>
+                    <th className="px-3 py-2 text-right">Geplant</th>
+                    <th className="px-3 py-2 w-36">Abdeckung</th>
+                    <th className="px-3 py-2 text-right">Letzte Aktivität</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {platingHistorySummary.map((row) => {
+                    const pct = row.plannedQty > 0 ? Math.min(100, Math.round((row.pieces / row.plannedQty) * 100)) : null;
+                    const barColor = pct == null ? "bg-slate-300" : pct >= 100 ? "bg-emerald-500" : pct >= 60 ? "bg-amber-400" : "bg-rose-400";
+                    return (
+                      <tr key={row.sku} className={`border-b border-slate-100 last:border-0 hover:bg-violet-50 ${row.inWeek ? "" : "opacity-60"}`}>
+                        <td className="px-3 py-2 font-mono text-[11px] font-black text-slate-700">{row.sku}</td>
+                        <td className="max-w-[260px] truncate px-3 py-2 text-[12px] text-slate-800">{row.name}</td>
+                        <td className="px-3 py-2 text-[11px] text-slate-500">
+                          {row.recipes.size > 0 ? [...row.recipes].slice(0, 3).join(", ") : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-black text-slate-900">{fmtNum(row.pieces)} Stk</td>
+                        <td className="px-3 py-2 text-right font-mono text-slate-500">{row.plannedQty > 0 ? `${fmtNum(row.plannedQty)} Stk` : <span className="text-slate-300">—</span>}</td>
+                        <td className="px-3 py-2">
+                          {pct != null ? (
+                            <div className="flex items-center gap-2">
+                              <div className="h-2 flex-1 rounded-full bg-slate-100">
+                                <div className={`h-2 rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                              </div>
+                              <span className="w-8 text-right text-[11px] font-bold text-slate-600">{pct}%</span>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-300">kein Plan</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right text-[11px] text-slate-400">{fmtDateTime(row.lastDate)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
+
+        {(() => {
+          const matchedRows = filteredRows.filter((r) => r.recipes.size > 0);
+          const unmatchedRows = filteredRows.filter((r) => r.recipes.size === 0);
+          const platingTableRow = (row: PlatingLocationRow, muted = false) => (
+            <tr key={row.key} className={`hover:bg-violet-50 ${muted ? "opacity-60" : "odd:bg-white even:bg-slate-50/70"}`}>
+              <td className="border-b border-slate-100 px-3 py-2">
+                <span className={`rounded-full px-2 py-1 text-[10px] font-bold ring-1 ${row.area === "Line" ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : row.area === "Holding" ? "bg-violet-50 text-violet-800 ring-violet-200" : "bg-amber-50 text-amber-800 ring-amber-200"}`}>{row.area}</span>
+              </td>
+              <td className="border-b border-slate-100 px-3 py-2 font-mono font-black text-slate-800">{row.location}</td>
+              <td className="max-w-[340px] border-b border-slate-100 px-3 py-2">
+                <div className="font-mono font-black text-slate-900">{row.sku || "-"}</div>
+                <div className="truncate text-[11px] text-slate-500">{row.name}</div>
+              </td>
+              <td className="border-b border-slate-100 px-3 py-2 text-right font-mono text-slate-700">
+                {row.area === "Line" ? fmtQty(row.rawQty, "Stk") : fmtQty(row.rawQty / 1000, "kg")}
+              </td>
+              <td className="border-b border-slate-100 px-3 py-2 text-right font-mono font-black text-slate-900">{fmtQty(row.pieces, "Stk")}</td>
+              <td className="border-b border-slate-100 px-3 py-2 text-slate-600">{row.unitNote}</td>
+              <td className="border-b border-slate-100 px-3 py-2 text-slate-600">
+                <div>{fmtNum(row.lots.size)} Lots · {fmtNum(row.hus.size)} HUs</div>
+                <div className="text-[11px] text-slate-400">{[...row.statuses].slice(0, 2).join(", ") || "-"}</div>
+              </td>
+              <td className="border-b border-slate-100 px-3 py-2 text-slate-600">
+                {row.recipes.size > 0 ? (
+                  <div className="font-mono text-[11px] text-slate-700">{[...row.recipes].slice(0, 3).join(", ")}</div>
+                ) : (
+                  <div className="text-[11px] font-bold text-slate-400">
+                    {row.kw != null ? `Andere KW · W${row.kw}` : "Altbestand"}
+                  </div>
+                )}
+                <div className="text-[11px] text-slate-400">{fmtDateTime(row.lastChange)}</div>
+              </td>
+            </tr>
+          );
+          return (
+            <div className="max-h-[620px] overflow-auto">
+              <table className="min-w-full border-collapse text-left text-xs">
+                <thead className="sticky top-0 z-10 bg-slate-950 text-[11px] uppercase text-slate-200">
+                  <tr>
+                    <th className="px-3 py-2">Bereich</th>
+                    <th className="px-3 py-2">Location</th>
+                    <th className="px-3 py-2">Artikel</th>
+                    <th className="px-3 py-2 text-right">Rohmenge</th>
+                    <th className="px-3 py-2 text-right">Stueck</th>
+                    <th className="px-3 py-2">Regel</th>
+                    <th className="px-3 py-2">Lot / HU / Status</th>
+                    <th className="px-3 py-2">Rezept / KW</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matchedRows.map((row) => platingTableRow(row, false))}
+                  {matchedRows.length === 0 && filteredRows.length > 0 && (
+                    <tr><td colSpan={8} className="px-4 py-3 text-center text-sm text-slate-400">Keine KW-zugeordneten Artikel im Filter.</td></tr>
+                  )}
+                  {unmatchedRows.length > 0 && (
+                    <tr className="bg-slate-100">
+                      <td colSpan={8} className="px-4 py-2 text-[11px] font-black uppercase tracking-widest text-slate-500">
+                        Altbestand / Andere KW — {fmtNum(unmatchedRows.length)} Positionen, nicht in KW {week} geplant
+                      </td>
+                    </tr>
+                  )}
+                  {unmatchedRows.map((row) => platingTableRow(row, true))}
+                </tbody>
+              </table>
+              {filteredRows.length === 0 && <div className="p-8 text-center text-sm text-slate-500">Keine Plating-/PLH-Zeilen geladen.</div>}
+            </div>
+          );
+        })()}
       </section>
       </>)}
 
@@ -3433,114 +3577,163 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
 
       {activeTab === "prozess" && (<>
       <section className="card overflow-hidden">
-        <div className="border-b border-slate-200 bg-white p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* ── Header ── */}
+        <div className="border-b border-slate-200 bg-slate-950 px-5 py-4 text-white">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h3 className="text-xl font-black text-slate-950">Debox rein - Postblast raus</h3>
-              <div className="mt-1 text-sm text-slate-500">
-                Zwei getrennte T_STORED_ITEM-Queries: Debox zeigt Input-Locations, PostB-01 zeigt Output nach Blast. Matching laeuft ueber Tool-SKUs und Rezeptbezug.
+              <div className="text-[10px] font-black uppercase tracking-widest text-violet-200">Sub-Meal Prozess · KW {week}</div>
+              <h3 className="text-xl font-black">Debox → Postblast · Sub-Rezept Pipeline</h3>
+              <div className="mt-1 text-sm text-slate-300">
+                Rohwaren gehen über <span className="font-bold text-emerald-300">Debox</span> (Auspacken &amp; Portionieren) rein und kommen als fertige Sub-Portionen aus <span className="font-bold text-sky-300">Postblast (PostB-01)</span> heraus. Holding (PLH) zeigt fertige Stücke auf Lager.
               </div>
             </div>
             <input
               value={deboxSearch}
               onChange={(event) => setDeboxSearch(event.target.value)}
-              placeholder="SKU, Name, Rezept, Debox, PostB..."
-              className="w-80 max-w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="SKU, Name, Rezept..."
+              className="w-72 max-w-full rounded-lg border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-400"
             />
           </div>
         </div>
 
+        {/* ── KPIs ── */}
         <div className="grid gap-3 border-b border-slate-100 bg-slate-50 p-4 md:grid-cols-3 xl:grid-cols-6">
-          <WmsStat label="Debox Input" value={fmtQty(deboxKpis.deboxQty, "Qty")} tone="emerald" />
-          <WmsStat label="Postblast Out" value={fmtQty(deboxKpis.postblastQty, "Qty")} tone="sky" />
-          <WmsStat label="Delta" value={fmtQty(deboxKpis.deltaQty, "Qty")} tone={deboxKpis.deltaQty < 0 ? "rose" : "slate"} />
-          <WmsStat label="Input SKUs" value={fmtNum(deboxKpis.deboxSkus)} tone="violet" />
-          <WmsStat label="Output SKUs" value={fmtNum(deboxKpis.postblastSkus)} tone="amber" />
-          <WmsStat label="Rezepte" value={fmtNum(deboxKpis.recipes)} tone="slate" />
+          <WmsStat label="Debox rein (g)" value={fmtQty(deboxKpis.deboxQty / 1000, "kg")} tone="emerald" />
+          <WmsStat label="Postblast raus (g)" value={fmtQty(deboxKpis.postblastQty / 1000, "kg")} tone="sky" />
+          <WmsStat label="Ausbeute" value={deboxKpis.deboxQty > 0 ? `${fmtNum((deboxKpis.postblastQty / deboxKpis.deboxQty) * 100, 1)}%` : "–"} tone={deboxKpis.postblastQty < deboxKpis.deboxQty * 0.9 ? "rose" : "slate"} />
+          <WmsStat label="Sub-Rezepte aktiv" value={fmtNum(deboxKpis.recipes)} tone="violet" />
+          <WmsStat label="Kein Match Eingang" value={fmtNum(deboxKpis.unmatchedInput)} tone={deboxKpis.unmatchedInput > 0 ? "amber" : "slate"} />
+          <WmsStat label="Kein Match Ausgang" value={fmtNum(deboxKpis.unmatchedOutput)} tone={deboxKpis.unmatchedOutput > 0 ? "amber" : "slate"} />
         </div>
 
-        <div className="grid gap-4 bg-slate-50 p-4 xl:grid-cols-2">
-          <div className="rounded-lg bg-white p-3 ring-1 ring-slate-200">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-black text-slate-900">Debox Input</h4>
-                <div className="text-xs text-slate-500">Was in Debox liegt oder gebucht wurde</div>
-              </div>
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 ring-1 ring-emerald-200">
-                No Match {fmtNum(deboxKpis.unmatchedInput)}
-              </span>
-            </div>
-            <div className="mt-3 space-y-2">
-              {filteredDeboxRows.slice(0, 12).map((row) => (
-                <StagingSummaryCard
-                  key={`debox-${row.key}`}
-                  row={row}
-                  maxValue={Math.max(1, ...filteredDeboxRows.map((item) => item.rawQty))}
-                />
-              ))}
-              {filteredDeboxRows.length === 0 && <EmptyBox text="Keine Debox-Zeilen fuer diese WMS-KW." />}
-            </div>
-          </div>
+        {/* ── Sub-Meal Funnel: pro SKU ── */}
+        {(() => {
+          const subRows = commandSkuRows
+            .filter((r) => r.sku.startsWith("SUB") || r.category === "SUB")
+            .filter((r) => r.plannedQty > 0 || r.deboxQty > 0 || r.postblastQty > 0)
+            .filter((r) => {
+              if (!deboxSearch.trim()) return true;
+              const needle = deboxSearch.trim().toUpperCase();
+              return [r.sku, r.name, ...[...r.recipes]].some((v) => String(v ?? "").toUpperCase().includes(needle));
+            })
+            .sort((a, b) => b.deboxQty + b.postblastQty - (a.deboxQty + a.postblastQty));
 
-          <div className="rounded-lg bg-white p-3 ring-1 ring-slate-200">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-black text-slate-900">Postblast Output</h4>
-                <div className="text-xs text-slate-500">Was in PostB-01 als Output steht</div>
+          if (subRows.length === 0 && deboxKpis.deboxRows === 0 && deboxKpis.postblastRows === 0) {
+            return (
+              <div className="p-10 text-center text-slate-400">
+                <div className="text-4xl">📦</div>
+                <div className="mt-2 text-sm font-semibold">Noch keine Debox- oder Postblast-Daten für KW {week}.</div>
+                <div className="text-xs mt-1">Sobald Sub-Rezepte ausgepackt und geblasen werden, erscheinen sie hier.</div>
               </div>
-              <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-bold text-sky-800 ring-1 ring-sky-200">
-                No Match {fmtNum(deboxKpis.unmatchedOutput)}
-              </span>
-            </div>
-            <div className="mt-3 space-y-2">
-              {filteredPostblastRows.slice(0, 12).map((row) => (
-                <StagingSummaryCard
-                  key={`postblast-${row.key}`}
-                  row={row}
-                  maxValue={Math.max(1, ...filteredPostblastRows.map((item) => item.rawQty))}
-                />
-              ))}
-              {filteredPostblastRows.length === 0 && <EmptyBox text="Keine Postblast-Zeilen fuer diese WMS-KW." />}
-            </div>
-          </div>
-        </div>
+            );
+          }
 
-        <div className="max-h-[520px] overflow-auto">
-          <table className="min-w-full border-collapse text-left text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-950 text-[11px] uppercase text-slate-200">
-              <tr>
-                <th className="px-3 py-2">Rezeptmatch</th>
-                <th className="px-3 py-2 text-right">Debox Input</th>
-                <th className="px-3 py-2 text-right">Postblast Output</th>
-                <th className="px-3 py-2 text-right">Delta</th>
-                <th className="px-3 py-2">Input Artikel</th>
-                <th className="px-3 py-2">Output Artikel</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredProcessRecipeRows.map((row) => {
-                const delta = row.postblastQty - row.deboxQty;
+          return (
+            <div className="divide-y divide-slate-100">
+              {subRows.map((row) => {
+                const planned = row.plannedQty;
+                const debox = row.deboxQty;
+                const postblast = row.postblastQty;
+                const holding = row.platingHoldingPieces;
+                const postblastPct = planned > 0 ? Math.min(100, (postblast / planned) * 100) : 0;
+                const deboxPct = planned > 0 ? Math.min(100, (debox / planned) * 100) : 0;
+                const isBottleneck = postblastPct < 60 && planned > 0;
+                const isDone = postblastPct >= 98;
                 return (
-                  <tr key={row.key} className="odd:bg-white even:bg-slate-50/70 hover:bg-sky-50">
-                    <td className="border-b border-slate-100 px-3 py-2 font-mono font-black text-slate-900">{row.recipe}</td>
-                    <td className="border-b border-slate-100 px-3 py-2 text-right font-mono font-black text-emerald-800">{fmtQty(row.deboxQty, "Qty")}</td>
-                    <td className="border-b border-slate-100 px-3 py-2 text-right font-mono font-black text-sky-800">{fmtQty(row.postblastQty, "Qty")}</td>
-                    <td className={`border-b border-slate-100 px-3 py-2 text-right font-mono font-black ${delta < 0 ? "text-rose-700" : "text-slate-800"}`}>{fmtQty(delta, "Qty")}</td>
-                    <td className="max-w-[360px] border-b border-slate-100 px-3 py-2">
-                      <div className="font-mono text-[11px] text-slate-700">{[...row.deboxSkus].slice(0, 4).join(", ") || "-"}</div>
-                      <div className="truncate text-[11px] text-slate-400">{[...row.deboxNames].slice(0, 2).join(", ") || "-"}</div>
-                    </td>
-                    <td className="max-w-[360px] border-b border-slate-100 px-3 py-2">
-                      <div className="font-mono text-[11px] text-slate-700">{[...row.postblastSkus].slice(0, 4).join(", ") || "-"}</div>
-                      <div className="truncate text-[11px] text-slate-400">{[...row.postblastNames].slice(0, 2).join(", ") || "-"}</div>
-                    </td>
-                  </tr>
+                  <div key={row.sku} className={`px-5 py-4 ${isDone ? "bg-emerald-50/30" : isBottleneck ? "bg-amber-50/30" : "bg-white"}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] font-bold text-slate-400">{row.sku}</span>
+                          {isDone && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800">✓ Fertig</span>}
+                          {!isDone && isBottleneck && postblast > 0 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800">⚠ Teilweise</span>}
+                          {!isDone && isBottleneck && postblast === 0 && debox > 0 && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-black text-sky-800">↻ Im Prozess</span>}
+                          {!isDone && debox === 0 && postblast === 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">○ Noch offen</span>}
+                          {row.recipes.size > 0 && (
+                            <span className="text-[10px] text-slate-400">{[...row.recipes].slice(0, 2).join(", ")}</span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 text-sm font-black text-slate-900">{row.name}</div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-4 text-right text-xs">
+                        <div>
+                          <div className="text-[9px] uppercase tracking-widest text-slate-400">Geplant</div>
+                          <div className="font-mono font-black text-slate-700">{fmtQty(planned / 1000, "kg")}</div>
+                        </div>
+                        <div>
+                          <div className="text-[9px] uppercase tracking-widest text-emerald-600">Debox rein</div>
+                          <div className={`font-mono font-black ${debox > 0 ? "text-emerald-700" : "text-slate-300"}`}>{fmtQty(debox / 1000, "kg")}</div>
+                        </div>
+                        <div>
+                          <div className="text-[9px] uppercase tracking-widest text-sky-600">Postblast</div>
+                          <div className={`font-mono font-black ${postblast > 0 ? "text-sky-700" : "text-slate-300"}`}>{fmtQty(postblast / 1000, "kg")}</div>
+                        </div>
+                        {holding > 0 && (
+                          <div>
+                            <div className="text-[9px] uppercase tracking-widest text-violet-600">PLH Stk</div>
+                            <div className="font-mono font-black text-violet-700">{fmtNum(holding)}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Pipeline bar */}
+                    <div className="mt-2">
+                      <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-0.5">
+                        <span>Debox → Postblast</span>
+                        <span className={postblastPct >= 98 ? "text-emerald-700" : postblastPct >= 60 ? "text-sky-600" : "text-amber-600"}>{fmtNum(postblastPct, 0)}% fertig</span>
+                      </div>
+                      <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100 relative">
+                        {/* Debox bar (light, behind) */}
+                        <div className="absolute inset-0 h-full rounded-full bg-emerald-200" style={{ width: `${Math.max(2, deboxPct)}%` }} title={`Debox: ${fmtQty(debox / 1000, "kg")}`} />
+                        {/* Postblast bar (dark, on top) */}
+                        <div className={`absolute inset-0 h-full rounded-full transition-all ${postblastPct >= 98 ? "bg-emerald-500" : postblastPct >= 60 ? "bg-sky-400" : "bg-amber-400"}`} style={{ width: `${Math.max(postblast > 0 ? 2 : 0, postblastPct)}%` }} title={`Postblast: ${fmtQty(postblast / 1000, "kg")}`} />
+                      </div>
+                      <div className="mt-0.5 flex gap-3 text-[9px] text-slate-400">
+                        <span><span className="inline-block h-2 w-2 rounded-full bg-emerald-200 mr-0.5" />Debox: {fmtQty(debox / 1000, "kg")}</span>
+                        <span><span className="inline-block h-2 w-2 rounded-full bg-sky-400 mr-0.5" />Postblast: {fmtQty(postblast / 1000, "kg")}</span>
+                        {planned > 0 && postblast < planned && <span className="text-amber-600">Lücke: {fmtQty((planned - postblast) / 1000, "kg")}</span>}
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-          {filteredProcessRecipeRows.length === 0 && <div className="p-8 text-center text-sm text-slate-500">Keine Debox/Postblast-Matches geladen.</div>}
-        </div>
+              {/* Unmatched Debox / Postblast items not connected to any planned sub recipe */}
+              {(deboxKpis.unmatchedInput > 0 || deboxKpis.unmatchedOutput > 0) && (
+                <div className="bg-slate-50 px-5 py-3">
+                  <div className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Nicht zugeordnet (kein Rezept-Match in KW {week})</div>
+                  <div className="grid gap-2 xl:grid-cols-2">
+                    {filteredDeboxRows.filter((r) => r.recipes.size === 0).slice(0, 6).map((row) => (
+                      <div key={`unm-debox-${row.key}`} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200 text-xs">
+                        <div>
+                          <div className="font-mono font-black text-slate-600">{row.sku}</div>
+                          <div className="text-slate-500 truncate max-w-[200px]">{row.name || "–"}</div>
+                          <div className="text-[10px] text-slate-400">{row.location}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-emerald-700">{fmtQty(row.rawQty / 1000, "kg")}</div>
+                          <div className="text-[10px] text-slate-400">Debox</div>
+                        </div>
+                      </div>
+                    ))}
+                    {filteredPostblastRows.filter((r) => r.recipes.size === 0).slice(0, 6).map((row) => (
+                      <div key={`unm-pb-${row.key}`} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200 text-xs">
+                        <div>
+                          <div className="font-mono font-black text-slate-600">{row.sku}</div>
+                          <div className="text-slate-500 truncate max-w-[200px]">{row.name || "–"}</div>
+                          <div className="text-[10px] text-slate-400">{row.location}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-sky-700">{fmtQty(row.rawQty / 1000, "kg")}</div>
+                          <div className="text-[10px] text-slate-400">Postblast</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </section>
       </>)}
 

@@ -22,7 +22,9 @@
     "deploy:functions": "firebase deploy --only functions",
     "wms:sync": "tsx scripts/sync-wms-cache.ts",
     "wms:push": "tsx scripts/push-wms-firestore.ts",
-    "wms:server": "tsx scripts/wms-local-server.ts"
+    "wms:server": "tsx scripts/wms-local-server.ts",
+    "sync:all": "npm run sync:factor:forecast && npx tsx scripts/dump-gsheet.ts 13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U",
+    "sync:all:deploy": "npm run sync:all && npm run build && firebase deploy --only hosting"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

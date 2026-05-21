@@ -546,7 +546,7 @@ export function PlanningEmailView({
       });
 
     for (const [key, recipe] of entries) {
-      if (!recipe) continue;
+      if (!recipe || recipe.code === "__BREAK__") continue;
       const [, slotKey, lineIdxStr] = key.split("|");
       const lineIdx = parseInt(lineIdxStr ?? "0");
       if (!Number.isFinite(lineIdx) || lineIdx < 0 || lineIdx >= platingLineCount) continue;
@@ -570,7 +570,7 @@ export function PlanningEmailView({
   const linePlatingSummary = useMemo((): LinePlatingSummary => {
     const byRecipe: Record<string, LinePlatingEntry[]> = {};
     for (const [key, recipe] of Object.entries(linePlanRaw)) {
-      if (!recipe) continue;
+      if (!recipe || recipe.code === "__BREAK__") continue;
       const parts = key.split("|");
       if (parts.length !== 3) continue;
       const [dayDE, slotKey, lineIdxStr] = parts;
@@ -597,7 +597,7 @@ export function PlanningEmailView({
   const dayPlatingSummaries = useMemo((): DayPlatingSummary[] => {
     const byDay = new Map<PlannerDay, SlotBlock[]>();
     for (const [key, recipe] of Object.entries(linePlanRaw)) {
-      if (!recipe) continue;
+      if (!recipe || recipe.code === "__BREAK__") continue;
       const parts = key.split("|");
       if (parts.length !== 3) continue;
       const [dayDE, slotKey, lineIdxStr] = parts;
@@ -686,6 +686,75 @@ export function PlanningEmailView({
     }
     return result;
   }, [batchSplitPlan, oasis]);
+
+  // ── Plating-Prio-Reihenfolge: alle belegten Slots nach Prio sortiert ────────
+  type PrioPlatingRow =
+    | { kind: "recipe"; priority: number; code: string; name: string; dayLong: string; lineLabel: string; slotKey: string; portions: number }
+    | { kind: "break"; dayLong: string; lineLabel: string; slotKey: string };
+
+  const prioPlatingRows = useMemo((): PrioPlatingRow[] => {
+    const rows: PrioPlatingRow[] = [];
+    const DAY_ORDER: PlannerDay[] = ["Di", "Mi", "Do", "Fr", "Sa", "So", "Mo"];
+
+    // Priority for each recipe from oasis work orders (lowest number = highest prio)
+    const prioByCode = new Map<string, number>();
+    if (oasis) {
+      for (const [code, intel] of Object.entries(oasis.recipes)) {
+        const wos = intel.workOrders;
+        if (wos.length > 0) {
+          const minPrio = Math.min(...wos.map(wo => wo.priority).filter(p => p > 0));
+          if (isFinite(minPrio)) prioByCode.set(code, minPrio);
+        }
+      }
+    }
+
+    const allEntries = Object.entries(linePlanRaw)
+      .filter(([, r]) => !!r)
+      .sort(([a], [b]) => {
+        const [aDay, aSlot, aLine] = a.split("|");
+        const [bDay, bSlot, bLine] = b.split("|");
+        const aDayIdx = DAY_ORDER.indexOf(DAY_MAP[aDay ?? ""] ?? "Di");
+        const bDayIdx = DAY_ORDER.indexOf(DAY_MAP[bDay ?? ""] ?? "Di");
+        if (aDayIdx !== bDayIdx) return aDayIdx - bDayIdx;
+        const slotOrder = Object.keys(SLOT_DURATIONS);
+        const aSlotIdx = slotOrder.indexOf(aSlot ?? "");
+        const bSlotIdx = slotOrder.indexOf(bSlot ?? "");
+        if (aSlotIdx !== bSlotIdx) return aSlotIdx - bSlotIdx;
+        return Number(aLine ?? 0) - Number(bLine ?? 0);
+      });
+
+    for (const [key, recipe] of allEntries) {
+      if (!recipe) continue;
+      const [dayDE, slotKey, lineIdxStr] = key.split("|");
+      const dayLong = dayDE ?? "";
+      const lineIdx = parseInt(lineIdxStr ?? "0");
+      const lineLabel = `P-Linie ${lineIdx + 1}`;
+      if (recipe.code === "__BREAK__") {
+        rows.push({ kind: "break", dayLong, lineLabel, slotKey: slotKey ?? "" });
+      } else {
+        const portions = allocatedLinePortionsByCell.get(key) ?? 0;
+        rows.push({
+          kind: "recipe",
+          priority: prioByCode.get(recipe.code) ?? 999,
+          code: recipe.code,
+          name: recipe.name,
+          dayLong,
+          lineLabel,
+          slotKey: slotKey ?? "",
+          portions,
+        });
+      }
+    }
+
+    // Sort recipe rows by priority, keeping breaks attached to their day/line/slot position
+    // Strategy: group by (day+line), sort recipes within the full list by prio, preserve breaks in place
+    rows.sort((a, b) => {
+      if (a.kind === "recipe" && b.kind === "recipe") return a.priority - b.priority;
+      return 0;
+    });
+
+    return rows;
+  }, [allocatedLinePortionsByCell, linePlanRaw, oasis]);
 
   // ── Kommentare (nur gefüllte) ─────────────────────────────────────────────
   const filledComments = useMemo(() =>
@@ -851,6 +920,22 @@ export function PlanningEmailView({
     if (hasSeafood) h("HINWEIS: Enthält Fisch-Rezepte (MHD 9 Tage - Küchen-Deadline beachten!)");
     sep();
 
+    if (!managementMode && prioPlatingRows.length > 0) {
+      h("PLATING-REIHENFOLGE NACH PRIO");
+      h("(Alle belegten Slots nach Rezept-Priorität – Zeilen mit [PAUSE] = 1h Reinigung nach Rezeptwechsel)");
+      h(`${"Prio".padEnd(6)} ${"Rezept".padEnd(12)} ${"Name".padEnd(35)} ${"Tag".padEnd(12)} ${"Linie".padEnd(12)} ${"Zeitslot".padEnd(16)} ${"Portionen".padStart(10)}`);
+      h("-".repeat(103));
+      for (const row of prioPlatingRows) {
+        if (row.kind === "break") {
+          h(`${"[PAUSE]".padEnd(6)} ${"--".padEnd(12)} ${"Reinigung & Zählung (1h)".padEnd(35)} ${row.dayLong.padEnd(12)} ${row.lineLabel.padEnd(12)} ${row.slotKey.padEnd(16)} ${"–".padStart(10)}`);
+        } else {
+          const prioLabel = row.priority < 900 ? `#${row.priority}` : "–";
+          h(`${prioLabel.padEnd(6)} ${row.code.padEnd(12)} ${row.name.replace(/\[.*?\]/g, "").trim().slice(0, 33).padEnd(35)} ${row.dayLong.padEnd(12)} ${row.lineLabel.padEnd(12)} ${row.slotKey.padEnd(16)} ${fmtNum(row.portions).padStart(10)}`);
+        }
+      }
+      sep();
+    }
+
     if (!managementMode && dayPlatingSummaries.length > 0) {
       h("PLATING-AUSHANG: WAS IST ZU TUN?");
       for (const ops of operationsDaySummaries) {
@@ -861,8 +946,16 @@ export function PlanningEmailView({
         for (const line of ops.lineSummaries) {
           if (line.blocks.length === 0) continue;
           h(`  P-Linie ${line.lineIdx + 1}: ${fmtNum(line.planned)}/${fmtNum(line.capacity)} Port. (${pct(line.utilization)})`);
-          for (const block of line.blocks) {
-            h(`    ${block.slotKey}  ${block.recipe.code} "${cleanName(block.recipe.name, 40)}"  ->  ${fmtNum(block.portions)} Port.`);
+          const dayDE = Object.entries(DAY_MAP).find(([, v]) => v === ops.day)?.[0] ?? ops.dayLong;
+          for (const slotKey of Object.keys(SLOT_DURATIONS)) {
+            const cellKey = `${dayDE}|${slotKey}|${line.lineIdx}`;
+            const rawCell = linePlanRaw[cellKey];
+            if (rawCell?.code === "__BREAK__") {
+              h(`    ${slotKey}  [PAUSE] Reinigung & Zählung (1h)`);
+              continue;
+            }
+            const block = line.blocks.find(b => b.slotKey === slotKey);
+            if (block) h(`    ${block.slotKey}  ${block.recipe.code} "${cleanName(block.recipe.name, 40)}"  ->  ${fmtNum(block.portions)} Port.`);
           }
         }
       }
@@ -1073,17 +1166,30 @@ export function PlanningEmailView({
           </div>`;
         }
         const lineBarClass = line.utilization > 1 ? "danger" : line.utilization >= 0.85 ? "warn" : "";
-        const slotsHtml = blocks.map(block =>
-          `<div class="slot-row">
-            <span class="slot-time">${block.slotKey}</span>
+        // Build slot rows including break markers from linePlanRaw
+        const dayDE = Object.entries(DAY_MAP).find(([, v]) => v === ds.day)?.[0] ?? ds.dayLong;
+        const allSlotsHtml = Object.keys(SLOT_DURATIONS).map(slotKey => {
+          const cellKey = `${dayDE}|${slotKey}|${line.lineIdx}`;
+          const rawCell = linePlanRaw[cellKey];
+          if (rawCell?.code === "__BREAK__") {
+            return `<div class="slot-row" style="background:#fef3c7;border-radius:4px;margin:2px 0">
+              <span class="slot-time" style="color:#92400e">${escapeHtml(slotKey)}</span>
+              <span class="slot-recipe" style="color:#92400e">🧹 Reinigungspause &nbsp;·&nbsp; 1h Zählung + Sauber-machen</span>
+              <span class="slot-portions" style="color:#b45309">–</span>
+            </div>`;
+          }
+          const block = blocks.find(b => b.slotKey === slotKey);
+          if (!block) return "";
+          return `<div class="slot-row">
+            <span class="slot-time">${escapeHtml(slotKey)}</span>
             <span class="slot-recipe">${escapeHtml(block.recipe.code)} &nbsp;${escapeHtml(cleanName(block.recipe.name, 40))}</span>
             <span class="slot-portions">${fmtNum(block.portions)} Port.</span>
-          </div>`
-        ).join("");
+          </div>`;
+        }).join("");
         return `<div class="line-block">
           <div class="line-label">P-Linie ${line.lineIdx + 1} &nbsp;·&nbsp; ${fmtNum(line.planned)}/${fmtNum(line.capacity)} Port. &nbsp;·&nbsp; ${pct(line.utilization)}</div>
           <div class="bar"><div class="bar-fill ${lineBarClass}" style="width:${Math.min(100, Math.round(line.utilization * 100))}%"></div></div>
-          ${slotsHtml}
+          ${allSlotsHtml}
         </div>`;
       }).join("");
       const chips = ds.recipeCodes.map(code => `<span class="recipe-chip">${escapeHtml(code)}</span>`).join("");
@@ -1206,6 +1312,34 @@ export function PlanningEmailView({
   </table>
 
   ${managementMode ? "" : `
+  <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #0f766e;background:#f0fdfa">Plating-Reihenfolge nach Prio</h2>
+  <div class="info" style="font-size:12px">Alle belegten Plating-Slots nach Rezept-Priorität sortiert. 🧹-Zeilen = 1h Reinigungspause nach Rezeptwechsel (Zählung + Sauber-machen).</div>
+  ${prioPlatingRows.length > 0 ? `<table>
+    <thead><tr>
+      <th>Prio</th><th>Rezept</th><th>Name</th><th>Tag</th><th>P-Linie</th><th>Zeitslot</th><th style="text-align:right">Portionen</th>
+    </tr></thead>
+    <tbody>
+      ${prioPlatingRows.map(row => {
+        if (row.kind === "break") {
+          return `<tr style="background:#fef3c7">
+            <td colspan="7" style="color:#92400e;font-size:12px;padding:6px 10px">🧹 &nbsp;<strong>Reinigungspause 1h</strong> &nbsp;·&nbsp; ${escapeHtml(row.dayLong)} &nbsp;·&nbsp; ${escapeHtml(row.lineLabel)} &nbsp;·&nbsp; ab ${escapeHtml(row.slotKey)}</td>
+          </tr>`;
+        }
+        const prioLabel = row.priority < 900 ? `#${row.priority}` : "–";
+        const prioColor = row.priority <= 3 ? "badge-red" : row.priority <= 6 ? "badge-amber" : "badge-blue";
+        return `<tr>
+          <td><span class="badge ${prioColor}">${escapeHtml(prioLabel)}</span></td>
+          <td><strong>${escapeHtml(row.code)}</strong></td>
+          <td>${escapeHtml(cleanName(row.name, 40))}</td>
+          <td>${escapeHtml(row.dayLong)}</td>
+          <td>${escapeHtml(row.lineLabel)}</td>
+          <td style="font-size:11px;color:#475569">${escapeHtml(row.slotKey)}</td>
+          <td style="text-align:right">${fmtNum(row.portions)}</td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  </table>` : `<p style="color:#94a3b8;font-size:13px">Kein Linienplan vorhanden.</p>`}
+
   <h2 style="font-size:15px;font-weight:700;color:#1e293b;margin:20px 0 8px 0;padding:6px 10px;border-left:4px solid #0f766e;background:#f0fdfa">Plating-Aushang: Was ist zu tun?</h2>
   ${dayPlatingSummaries.length > 0 ? daysHtml : `<p style="color:#94a3b8;font-size:13px">Kein Linienplan für diese Woche hinterlegt (Linienplanung öffnen und befüllen).</p>`}
 

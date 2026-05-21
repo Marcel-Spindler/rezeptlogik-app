@@ -561,7 +561,7 @@ function subRecipeLeadClass(sub: SubRecipe, spec?: ProcessSpec): number {
   if (/blast chiller|chill hold|cold hold|portion .*(chill)/i.test(cat)) return 2;
   if (maxHold >= 4 * 60) return 2;
 
-  if (/patty maker|burger patty|patty/i.test(cat)) return 1;
+  if (/patty maker|burger patty|patty/i.test(cat)) return 2;
 
   // Hot Cook / Finishing
   if (/grill|fry|sear|roast|pan cook|wok|hot finish|griddle/i.test(cat)) return 0;

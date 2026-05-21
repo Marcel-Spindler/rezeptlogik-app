@@ -101,6 +101,31 @@ function recipeDigitKey(raw: string): string {
   return match?.[1] ?? normalizeCell(raw).toUpperCase();
 }
 
+// Shift an ISO-week string by +deltaDays (in 7-day increments).
+// "2026-W21" + 7 days → "2026-W22", handles year boundaries.
+function shiftIsoWeek(weekStr: string, deltaDays: number): string {
+  const m = weekStr.match(/^(\d{4})-W(\d{1,2})$/);
+  if (!m) return weekStr;
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  // Find the Thursday of the given ISO week (ISO weeks are identified by their Thursday)
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const w1Thu = new Date(jan4);
+  w1Thu.setUTCDate(jan4.getUTCDate() + (4 - ((jan4.getUTCDay() || 7) - 1) - 1) % 7 - ((jan4.getUTCDay() || 7) >= 5 ? 0 : 0));
+  // Simpler: Mon of W1 = Jan 4 minus its weekday offset (Mon=1)
+  const w1Mon = new Date(Date.UTC(year, 0, 4));
+  w1Mon.setUTCDate(w1Mon.getUTCDate() - ((w1Mon.getUTCDay() + 6) % 7));
+  const targetMon = new Date(w1Mon);
+  targetMon.setUTCDate(w1Mon.getUTCDate() + (week - 1) * 7 + deltaDays);
+  // Convert target date back to ISO week
+  const d = new Date(targetMon);
+  const dayOfWeek = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayOfWeek);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
 function preferredRecipeCode(current: string, candidate: string): string {
   if (!current) return candidate;
   if (current.startsWith("FV")) return current;
@@ -226,9 +251,12 @@ function parseForecastRows(rows: string[][], recipes: Map<string, TruthRecipeAcc
 
 function parsePdlRows(rows: Array<Record<string, string>>, source: "de" | "nor" | "daily", recipes: Map<string, TruthRecipeAccumulator>, weeks: Map<string, TruthWeekAccumulator>) {
   for (const row of rows) {
-    const week = normalizeCell(row.hf_week || row.hellofresh_week);
+    const rawWeek = normalizeCell(row.hf_week || row.hellofresh_week);
     const mealSwap = normalizeCell(row.meal_swap);
-    if (!week || !mealSwap) continue;
+    if (!rawWeek || !mealSwap) continue;
+    // Daily Export uses production/ISO weeks; Factor_DE/Nor use HF delivery weeks (= planning week).
+    // Shift daily by +7 days (1 week) so it aligns with the planning week used everywhere else.
+    const week = source === "daily" ? shiftIsoWeek(rawWeek, 7) : rawWeek;
     const weekInfo = ensureWeek(weeks, week);
     const productionDate = normalizeCell(row.production_date);
     const lane = normalizeCell(row.lane_by_delivery_time);
