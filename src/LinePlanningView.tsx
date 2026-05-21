@@ -128,14 +128,16 @@ const RUN_PLATING_WINDOWS: Record<1 | 2, { startDay: PlanDay; dueDay: PlanDay }>
 };
 
 const SLOTS: ReadonlyArray<{ key: string; label: string; duration: number }> = [
-  { key: "07:00-08:00",   label: "07 – 08",    duration: 60 },
-  { key: "08:00-08:30",   label: "08 – 08:30", duration: 30 },
-  { key: "09:00-10:00",   label: "09 – 10",    duration: 60 },
-  { key: "10:00-11:00",   label: "10 – 11",    duration: 60 },
-  { key: "11:30-12:00",   label: "11:30 – 12", duration: 30 },
-  { key: "12:00-13:00",   label: "12 – 13",    duration: 60 },
-  { key: "13:00-14:00",   label: "13 – 14",    duration: 60 },
-  { key: "14:00-15:00",   label: "14 – 15",    duration: 60 },
+  { key: "07:00-08:00", label: "07 – 08", duration: 60 },
+  { key: "08:00-09:00", label: "08 – 09", duration: 60 },
+  { key: "09:00-10:00", label: "09 – 10", duration: 60 },
+  { key: "10:00-11:00", label: "10 – 11", duration: 60 },
+  { key: "11:00-12:00", label: "11 – 12", duration: 60 },
+  { key: "12:00-13:00", label: "12 – 13", duration: 60 },
+  { key: "13:00-14:00", label: "13 – 14", duration: 60 },
+  { key: "14:00-15:00", label: "14 – 15", duration: 60 },
+  { key: "15:00-16:00", label: "15 – 16", duration: 60 },
+  { key: "16:00-17:00", label: "16 – 17", duration: 60 },
 ];
 
 const LINES = ["P-Linie 1", "P-Linie 2", "P-Linie 3"] as const;
@@ -146,6 +148,7 @@ const MEAL_CHANGE_BREAK: LinePlanRecipe = {
   totalPlanned: 0, nordics: 0, bnl: 0, de: 0, speedPerMin: 0,
   isSeafood: false, isBreak: true,
 };
+
 
 function defaultLineCapacityMap(): Record<string, number> {
   return {
@@ -384,14 +387,20 @@ function distributedRunSubDay(runIndex: number, subIndex: number): PlannerDay {
   return window[(subIndex + offset) % window.length] ?? window[0];
 }
 
+/**
+ * Bewertet Tag `day` für einen Run anhand tatsächlicher Küchen-Bereitschaft.
+ * Gate: 0 wenn Küche noch nicht fertig (day < readyDay) oder Deadline überschritten.
+ * Höchste Bewertung genau am readyDay (sofort starten sobald Küche fertig).
+ */
 function cockpitScoreForDay(day: PlanDay, rule: CockpitRunReadiness): number {
   const dayIdx = planDayIndex(day);
-  const startIdx = planDayIndex(rule.startDay);
+  const readyIdx = planDayIndex(rule.readyDay);  // erster gültiger Plating-Tag lt. Küchen-Plan
   const dueIdx = planDayIndex(rule.dueDay);
-  if (dayIdx < startIdx || dayIdx > dueIdx) return 0;
-  if (dayIdx === startIdx) return 1;
-  if (dayIdx === dueIdx) return 0.86;
-  return 0.92;
+  if (dayIdx < readyIdx || dayIdx > dueIdx) return 0;
+  if (dayIdx === readyIdx) return 1.0;
+  if (dayIdx === dueIdx) return 0.82;
+  const span = Math.max(1, dueIdx - readyIdx);
+  return 1.0 - ((dayIdx - readyIdx) / span) * 0.18;
 }
 
 function cockpitRunForDay(day: PlanDay): 1 | 2 | null {
@@ -1926,8 +1935,19 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       }
     }
 
+    // KET-Prio-Map: bestes (niedrigstes) Priority-Nummer je Rezeptcode
+    const prioByCode = new Map<string, number>();
+    for (const wo of ketWOs) {
+      const code = extractRecipeCodeFromKet(wo);
+      if (!code) continue;
+      const p = wo.priority;
+      if (!Number.isFinite(p) || p <= 0) continue;
+      const current = prioByCode.get(code) ?? Infinity;
+      if (p < current) prioByCode.set(code, p);
+    }
+
     for (const [key, recipe] of Object.entries(next)) {
-      if (!recipe) continue;
+      if (!recipe || recipe.isBreak) continue;
       const [dayRaw, slotKey, liRaw] = key.split("|");
       const li = Number(liRaw ?? -1);
       const lineTarget = li >= 0 ? Math.max(0, lineCapacityByLane[String(li)] ?? 0) : 0;
@@ -2016,16 +2036,22 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
               : 0;
             const cockpitDayScore = cockpitRule ? cockpitScoreForDay(day, cockpitRule) : 0;
 
+            // KET-Priorität: niedrigste bekannte Prio-Nummer = höchster Score
+            const bestPrio = prioByCode.get(recipe.code) ?? 999;
+            const ketPrioScore = bestPrio < 999 ? Math.max(0.05, 1 - (bestPrio - 1) / 25) : 0.05;
+
             const spreadScore = Math.min(1, dayOpen / Math.max(1, dayTarget));
-            // Starkter Bonus wenn dieses Rezept im Vorgänger-Slot auf derselben Linie lief →
-            // Linie läuft ein Rezept durch bis es fertig ist, dann erst Wechsel + Pause.
+            // Kleiner Bonus für dasselbe Rezept im Vorgänger-Slot: verhindert ständige Wechsel,
+            // überschreibt aber nicht die Run-1/Run-2-Split-Logik (daher nur 0.35).
             const slotIdx = SLOTS.findIndex(s => s.key === slot.key);
             const prevSlotKey = slotIdx > 0 ? SLOTS[slotIdx - 1]?.key : undefined;
             const prevCode = prevSlotKey ? next[`${day}|${prevSlotKey}|${li}`]?.code : undefined;
-            const continuityBonus = (prevCode && prevCode === recipe.code && prevCode !== "__BREAK__") ? 1.5 : 0;
+            const continuityBonus = (prevCode && prevCode === recipe.code && prevCode !== "__BREAK__") ? 0.35 : 0;
+            // Cockpit-Modus: Küchen-Bereitschaft + KET-Prio dominieren.
+            // Non-Cockpit: KET-Prio + KET-Tagesausrichtung als Proxy für Bereitschaft.
             const baseScore = cockpitRule
-              ? cockpitDayScore * 0.34 + spreadScore * 0.26 + runPressure * 0.2 + kitchenDayScore * 0.08 + subMealRunScore * 0.06 + volumeScore * 0.04 + fitScore * 0.02
-              : kitchenDayScore * 0.34 + runDayScore * 0.22 + runPressure * 0.18 + subMealRunScore * 0.2 + volumeScore * 0.04 + fitScore * 0.02;
+              ? cockpitDayScore * 0.32 + ketPrioScore * 0.28 + runPressure * 0.18 + kitchenDayScore * 0.10 + subMealRunScore * 0.07 + volumeScore * 0.03 + fitScore * 0.02
+              : ketPrioScore * 0.32 + kitchenDayScore * 0.26 + runDayScore * 0.18 + runPressure * 0.12 + subMealRunScore * 0.07 + volumeScore * 0.03 + fitScore * 0.02;
             const score = baseScore + continuityBonus;
 
             if (score > bestScore) {
@@ -2138,7 +2164,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
           if (!cell || cell.isBreak) continue;
 
           if (prevCode !== null && cell.code !== prevCode) {
-            // Rezeptwechsel: diesen Slot und ggf. folgende als Pause markieren
             next[key] = MEAL_CHANGE_BREAK;
             breakRemaining = Math.max(0, 60 - slot.duration);
             prevCode = null;
