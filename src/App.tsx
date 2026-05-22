@@ -9,6 +9,7 @@ import { WhatIfView } from "./WhatIfView";
 import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
 import { formatDateTime, marketToLocale, marketVariantLabel, MARKET_LANGUAGE_LABEL, tl, type UiLocale } from "./i18n";
 import { useRecipePlanningIntel } from "./planningOasisData";
+import { getRampUpHistory } from "./rampUpHistory";
 
 const PlanningEmailView = lazy(() => import("./PlanningEmailView").then((module) => ({ default: module.PlanningEmailView })));
 
@@ -1099,6 +1100,39 @@ function DeltaPill({ value }: { value: number }) {
   );
 }
 
+function RampHistorySparkline({ values, width = 96, height = 24 }: { values: number[]; width?: number; height?: number }) {
+  if (values.length < 2) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pad = 2;
+  const points = values.map((value, index) => {
+    const x = pad + (index / (values.length - 1)) * (width - pad * 2);
+    const y = pad + ((max - value) / range) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const first = values[0];
+  const last = values[values.length - 1];
+  const stroke = last > first ? "#059669" : last < first ? "#e11d48" : "#64748b";
+  const lastPoint = points.split(" ").pop()?.split(",") ?? ["0", "0"];
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: "block" }}>
+      <polyline points={points} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
+      <circle cx={lastPoint[0]} cy={lastPoint[1]} r="2" fill={stroke} />
+    </svg>
+  );
+}
+
+function RampHistoryDeltaPill({ delta }: { delta: number }) {
+  if (delta === 0) return <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">0</span>;
+  const up = delta > 0;
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${up ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+      {up ? "+" : ""}{fmtNum(delta)}
+    </span>
+  );
+}
+
 function WeekDeltaCard({
   locale,
   delta,
@@ -1320,6 +1354,35 @@ function OverviewTab({ wr, recipe, market, md, portionsTotal, upliftPercent, loc
   { wr: WeekRecipe; recipe: Recipe; market: Market; md?: Recipe["markets"][Market]; portionsTotal: number; upliftPercent: number; locale: UiLocale }) {
   const baseTotal = getBaseVerdenVolume(wr);
   const planningIntel = useRecipePlanningIntel(wr.code);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  useEffect(() => {
+    const refresh = () => setHistoryVersion((value) => value + 1);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [wr.hfWeek]);
+  const rampSnapshots = useMemo(
+    () => getRampUpHistory(wr.hfWeek).filter((snapshot) => Object.prototype.hasOwnProperty.call(snapshot.volumes, wr.code)),
+    [historyVersion, wr.code, wr.hfWeek]
+  );
+  const latestRampSnapshot = rampSnapshots[rampSnapshots.length - 1] ?? null;
+  const rampEntries = useMemo(() => {
+    return rampSnapshots
+      .map((snapshot, index) => {
+        const current = snapshot.volumes[wr.code] ?? 0;
+        const previous = index > 0 ? (rampSnapshots[index - 1]?.volumes[wr.code] ?? 0) : null;
+        return {
+          snapshot,
+          current,
+          previous,
+          delta: previous === null ? null : current - previous,
+        };
+      })
+      .reverse();
+  }, [rampSnapshots, wr.code]);
   return (
     <div className="grid md:grid-cols-2 gap-3">
       <div className="card p-4">
@@ -1434,6 +1497,78 @@ function OverviewTab({ wr, recipe, market, md, portionsTotal, upliftPercent, loc
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card p-4 md:col-span-2 border border-violet-200 bg-gradient-to-r from-violet-50 via-white to-cyan-50">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700">Ramp-up / Forecast Historie</h3>
+            <div className="text-xs text-slate-500">
+              Zeigt direkt im Rezept, wie sich die Meal-Zahl im Wochenverlauf geaendert hat.
+            </div>
+          </div>
+          {latestRampSnapshot && (
+            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-300">
+              Letztes Update {latestRampSnapshot.label}
+            </span>
+          )}
+        </div>
+
+        {rampEntries.length === 0 && (
+          <div className="mt-3 rounded-xl bg-white px-3 py-3 text-sm text-slate-500 ring-1 ring-slate-200">
+            Noch keine Ramp-up-Historie fuer dieses Meal in dieser Woche vorhanden.
+          </div>
+        )}
+
+        {rampEntries.length > 0 && (
+          <div className="mt-3 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200">
+              <div className="grid grid-cols-2 gap-2">
+                <IntelMiniStat label="Aktuell" value={fmtNum(latestRampSnapshot?.volumes[wr.code] ?? wr.totalVerdenVolume)} />
+                <IntelMiniStat
+                  label="Aenderung zuletzt"
+                  value={(() => {
+                    const latestDelta = rampEntries[0]?.delta ?? null;
+                    if (latestDelta === null) return "Basis";
+                    return `${latestDelta > 0 ? "+" : ""}${fmtNum(latestDelta)}`;
+                  })()}
+                />
+                <IntelMiniStat label="Snapshots" value={fmtNum(rampEntries.length)} />
+                <IntelMiniStat
+                  label="Von -> Bis"
+                  value={`${fmtNum(rampEntries[rampEntries.length - 1]?.current ?? 0)} -> ${fmtNum(rampEntries[0]?.current ?? 0)}`}
+                />
+              </div>
+              {rampSnapshots.length >= 2 && (
+                <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Trend</div>
+                  <div className="mt-2">
+                    <RampHistorySparkline values={rampSnapshots.map((snapshot) => snapshot.volumes[wr.code] ?? 0)} />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Letzte Aenderungen</div>
+              <div className="mt-2 space-y-2">
+                {rampEntries.slice(0, 6).map(({ snapshot, current, previous, delta }) => (
+                  <div key={snapshot.ts} className="rounded-lg border border-slate-200 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-semibold text-slate-700">
+                        {previous === null ? "Basiswert gespeichert" : `Geaendert am ${snapshot.label}`}
+                      </div>
+                      <RampHistoryDeltaPill delta={delta ?? 0} />
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {previous === null ? `Basis ${fmtNum(current)}` : `${fmtNum(previous)} -> ${fmtNum(current)}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
