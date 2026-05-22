@@ -5,23 +5,25 @@ test.setTimeout(90000);
 test("Planning OASE owns rack and line planning navigation", async ({ page }) => {
   await page.goto("http://127.0.0.1:5173?view=planning");
   await expect(page.getByText("Planning OASE").first()).toBeVisible({ timeout: 30000 });
+  const oasisHeader = page.getByRole("heading", { name: "Planning OASE" }).first();
+  const oasisCard = page.locator("div.card").filter({ has: oasisHeader }).first();
 
   const nav = page.locator("aside").first();
   await expect(nav.getByRole("button", { name: "Breakdown+" })).toHaveCount(0);
   await expect(nav.getByRole("button", { name: "Rack" })).toHaveCount(0);
   await expect(nav.getByRole("button", { name: "Linien-Fokus" })).toHaveCount(0);
 
-  await expect(page.getByRole("button", { name: "Rack" })).toBeVisible();
-  await page.getByRole("button", { name: "Rack" }).click();
+  await expect(oasisCard.getByRole("button", { name: "Rack" })).toBeVisible();
+  await oasisCard.getByRole("button", { name: "Rack" }).evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.getByText("Rack v2")).toBeVisible();
 
-  await page.getByRole("button", { name: "Linienplanung" }).click();
+  await oasisCard.getByRole("button", { name: "Linienplanung" }).evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.getByText("Plating Linien Plannung").first()).toBeVisible();
 
-  await page.getByRole("button", { name: "Breakdown+" }).click();
+  await oasisCard.getByRole("button", { name: "Breakdown+" }).evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.getByText("Meal-Auswahl")).toBeVisible();
 
-  await page.getByRole("button", { name: "Cockpit" }).click();
+  await oasisCard.getByRole("button", { name: "Cockpit" }).evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
 });
 
@@ -58,6 +60,7 @@ test("Planning OASE cockpit renders on mobile", async ({ page }) => {
   await expect(page.getByText("Planning OASE").first()).toBeVisible({ timeout: 30000 });
   await expect(page.getByText("App Data: ok")).toBeVisible({ timeout: 30000 });
   await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
+  await expect(page.getByText("GSheet Register")).toBeVisible();
 });
 
 test("Breakdown raw calculator screen renders", async ({ page }) => {

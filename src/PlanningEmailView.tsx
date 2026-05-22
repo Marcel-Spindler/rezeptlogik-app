@@ -591,7 +591,7 @@ export function PlanningEmailView({
   }, [allocatedLinePortionsByCell, lineCapacityByLane, linePlanRaw, platingLineCount]);
 
   const batchSplitPlan = useMemo(
-    () => computeBatchSplitPlan(data, week, linePlatingSummary),
+    () => computeBatchSplitPlan(data, week, { lineSummary: linePlatingSummary }),
     [data, week, linePlatingSummary]
   );
 

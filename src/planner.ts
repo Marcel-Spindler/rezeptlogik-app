@@ -654,6 +654,21 @@ export interface LinePlatingSummary {
   byRecipe: Record<string, LinePlatingEntry[]>;
 }
 
+export interface SpecialDeliveryOrder {
+  id: string;
+  recipeCode: string;
+  fulfillmentDay: PlannerDay;
+  portions: number;
+  market?: string;
+  note?: string;
+  manualStatus?: "open" | "done";
+}
+
+type ComputeBatchSplitPlanOptions = {
+  lineSummary?: LinePlatingSummary;
+  specialDeliveries?: SpecialDeliveryOrder[];
+};
+
 const CUSTOMER_TARGET_DAYS = 7;
 
 function plannerRecipeDigitKey(code: string): string {
@@ -761,7 +776,7 @@ function computeProductionWindowForPlatDay(
 export function computeBatchSplitPlan(
   data: DataBundle,
   week: string,
-  lineSummary?: LinePlatingSummary
+  options?: ComputeBatchSplitPlanOptions
 ): BatchSplitPlan[] {
   const rows = data.weekRecipes.filter(r => {
     if (r.hfWeek !== week) return false;
@@ -782,9 +797,21 @@ export function computeBatchSplitPlan(
     const shelfLifeDays = isSeafood ? 9 : 13;
     const maxGapDays = Math.max(1, shelfLifeDays - CUSTOMER_TARGET_DAYS);
 
+    const specialDeliveries = (options?.specialDeliveries ?? [])
+      .filter((entry) => entry.recipeCode === wr.code && entry.portions > 0);
+    const forcedByDay = new Map<PlannerDay, { portions: number; labels: string[] }>();
+    for (const delivery of specialDeliveries) {
+      const current = forcedByDay.get(delivery.fulfillmentDay) ?? { portions: 0, labels: [] };
+      current.portions += Math.max(0, Math.round(delivery.portions));
+      const extra = [delivery.market?.trim(), delivery.note?.trim()].filter(Boolean).join(" · ");
+      current.labels.push(extra ? extra : "Sonderlieferung");
+      forcedByDay.set(delivery.fulfillmentDay, current);
+    }
+    const forcedTotal = [...forcedByDay.values()].reduce((sum, row) => sum + row.portions, 0);
+
     // ── Liniengetriebener Pfad ──────────────────────────────────────────────
-    const lineEntries = lineSummary?.byRecipe[wr.code];
-    if (lineEntries && lineEntries.length > 0) {
+    const lineEntries = options?.lineSummary?.byRecipe[wr.code];
+    if (lineEntries && lineEntries.length > 0 && forcedByDay.size === 0) {
       // Einträge chronologisch sortieren (Mo < Di < ... < So)
       const sorted = [...lineEntries].sort(
         (a, b) => PLANNER_DAYS.indexOf(a.platDay) - PLANNER_DAYS.indexOf(b.platDay)
@@ -836,41 +863,63 @@ export function computeBatchSplitPlan(
     // Run 2 = Restmenge des echten Verden-Plans, ohne automatischen 10%-Puffer.
     const batches: BatchSplit[] = [];
 
-    if (runOnePortions > 0) {
-      // Plating muss 1 Tag VOR dem Versand (Fr) fertig sein, damit Sleeving noch stattfinden kann.
-      const platDay = PLANNER_DAYS[Math.max(0, PLANNER_DAYS.indexOf("Fr") - 1)] as PlannerDay; // "Do"
+    const pushBatchForDay = (
+      fulfillmentDay: PlannerDay,
+      portions: number,
+      fulfillmentLabel: string,
+      reason: string,
+      lineCapacityPortions?: number,
+    ) => {
+      if (portions <= 0) return;
+      const platDay = fulfillmentDay;
       const { earliest, latest, recommended } = computeProductionWindowForPlatDay(platDay, maxGapDays);
       batches.push({
-        fulfillmentDay: "Fr",
+        fulfillmentDay,
         platDay,
-        fulfillmentLabel: `Run 1 (BNL ${Math.round((wr.verdenVolume.BENL ?? 0) * 0.5).toLocaleString("de-DE")} + Nordics ${(wr.verdenVolume.DKSE ?? 0).toLocaleString("de-DE")} + DE ${Math.round((wr.verdenVolume.DE ?? 0) * 0.7).toLocaleString("de-DE")})`,
-        portions: runOnePortions,
+        fulfillmentLabel,
+        portions,
         earliestProductionDay: earliest,
         latestProductionDay: latest,
         recommendedProductionDay: recommended,
-        reason: isSeafood
-          ? `Run 1 nach Template: BENL 50%, Nordics 100%, DE 70% → Fisch MHD 9d, Küche ${earliest}–${latest}`
-          : `Run 1 nach Template: BENL 50%, Nordics 100%, DE 70% → MHD 13d, Küche ${earliest}–${latest}`
+        reason,
+        lineCapacityPortions,
       });
+    };
+
+    for (const [day, row] of [...forcedByDay.entries()].sort((a, b) => PLANNER_DAYS.indexOf(a[0]) - PLANNER_DAYS.indexOf(b[0]))) {
+      pushBatchForDay(
+        day,
+        row.portions,
+        `Sonderlieferung ${day}`,
+        `Sonderlieferung fix auf ${day}: ${row.labels.join(" / ")}${isSeafood ? " · Fisch MHD 9d" : ""}`,
+      );
     }
 
-    if (runTwoPortions > 0) {
-      // Plating muss 1 Tag VOR dem Versand (So) fertig sein → Plating-Tag = Sa.
-      // Kueche ist Sa/So zu, daher verschiebt computeProductionWindowForPlatDay den Horizont automatisch.
-      const platDay = PLANNER_DAYS[Math.max(0, PLANNER_DAYS.indexOf("So") - 1)] as PlannerDay; // "Sa"
-      const { earliest, latest, recommended } = computeProductionWindowForPlatDay(platDay, maxGapDays);
-      batches.push({
-        fulfillmentDay: "So",
-        platDay,
-        fulfillmentLabel: "Run 2 (Restmenge Verden Plan)",
-        portions: runTwoPortions,
-        earliestProductionDay: earliest,
-        latestProductionDay: latest,
-        recommendedProductionDay: recommended,
-        reason: isSeafood
-          ? `Run 2 = Verden Plan minus Run 1 (${runSplit.baseRemainder.toLocaleString("de-DE")} Rest) → Fisch MHD 9d`
-          : `Run 2 = Verden Plan minus Run 1 (${runSplit.baseRemainder.toLocaleString("de-DE")} Rest)`
-      });
+    const remainingPortions = Math.max(0, totalPortions - forcedTotal);
+    const remainingRunOnePortions = Math.min(runOnePortions, remainingPortions);
+    const remainingRunTwoPortions = Math.max(0, remainingPortions - remainingRunOnePortions);
+
+    if (remainingRunOnePortions > 0) {
+      // Plating muss 1 Tag VOR dem Versand (Fr) fertig sein, damit Sleeving noch stattfinden kann.
+      pushBatchForDay(
+        "Fr",
+        remainingRunOnePortions,
+        `Run 1 (BNL ${Math.round((wr.verdenVolume.BENL ?? 0) * 0.5).toLocaleString("de-DE")} + Nordics ${(wr.verdenVolume.DKSE ?? 0).toLocaleString("de-DE")} + DE ${Math.round((wr.verdenVolume.DE ?? 0) * 0.7).toLocaleString("de-DE")})`,
+        isSeafood
+          ? `Run 1 nach Template: BENL 50%, Nordics 100%, DE 70% → Fisch MHD 9d`
+          : `Run 1 nach Template: BENL 50%, Nordics 100%, DE 70% → MHD 13d`,
+      );
+    }
+
+    if (remainingRunTwoPortions > 0) {
+      pushBatchForDay(
+        "So",
+        remainingRunTwoPortions,
+        "Run 2 (Restmenge Verden Plan)",
+        isSeafood
+          ? `Run 2 = Verden Plan minus Sonderlieferungen/Run 1 → Fisch MHD 9d`
+          : "Run 2 = Verden Plan minus Sonderlieferungen/Run 1",
+      );
     }
 
     plans.push({
@@ -880,7 +929,7 @@ export function computeBatchSplitPlan(
       shelfLifeDays,
       customerTargetDays: CUSTOMER_TARGET_DAYS,
       totalPortions,
-      batches
+      batches: batches.sort((a, b) => PLANNER_DAYS.indexOf(a.fulfillmentDay) - PLANNER_DAYS.indexOf(b.fulfillmentDay))
     });
   }
 

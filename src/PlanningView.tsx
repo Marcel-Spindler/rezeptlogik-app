@@ -26,6 +26,7 @@ import {
   type PlannerScenario,
   type LinePlatingSummary,
   type LinePlatingEntry,
+  type SpecialDeliveryOrder,
 } from "./planner";
 import { tl, type UiLocale } from "./i18n";
 import { usePlanningOasisData } from "./planningOasisData";
@@ -35,6 +36,7 @@ import { calculateRunSplit } from "./runPlanning";
 import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
 
 const PLANNER_UI_SETTINGS_STORAGE_KEY = "rezeptlogik-planner-ui-settings-v1";
+const SPECIAL_DELIVERY_STORAGE_KEY = "rezeptlogik-special-deliveries-v1";
 
 type PlannerUiSettings = {
   shiftPresetId: string;
@@ -142,6 +144,30 @@ function fmtNum(n: number, digits = 0): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
 }
 
+function loadSpecialDeliveries(week: string): SpecialDeliveryOrder[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(SPECIAL_DELIVERY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Record<string, SpecialDeliveryOrder[]>;
+    return Array.isArray(parsed?.[week]) ? parsed[week] : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSpecialDeliveries(week: string, rows: SpecialDeliveryOrder[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem(SPECIAL_DELIVERY_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) as Record<string, SpecialDeliveryOrder[]> : {};
+    parsed[week] = rows;
+    window.localStorage.setItem(SPECIAL_DELIVERY_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    window.localStorage.setItem(SPECIAL_DELIVERY_STORAGE_KEY, JSON.stringify({ [week]: rows }));
+  }
+}
+
 function RampUpSparkline({ values, width = 50, height = 14 }: { values: number[]; width?: number; height?: number }) {
   if (values.length < 2) return null;
   const min = Math.min(...values);
@@ -202,6 +228,14 @@ type ManufacturingDaySummary = {
   items: string[];
 };
 
+type SpecialDeliveryDraft = {
+  recipeCode: string;
+  fulfillmentDay: PlannerDay;
+  portions: number;
+  market: string;
+  note: string;
+};
+
 type ManufacturingSnapshotPayload = {
   savedAtIso: string;
   savedAtLabel: string;
@@ -256,6 +290,8 @@ function pickLowestLoadSlot(
 const REGULAR_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
 const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi"];
 const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
+const SUNDAY_LIGHT_PREP_MAX_JOBS = 4;
+const SUNDAY_LIGHT_PREP_MAX_TOTAL_MIN = 240;
 
 function pickLowestRegularSubSlot(
   slotLoads: Map<string, number>,
@@ -275,17 +311,29 @@ function pickLowestRegularSubSlot(
 }
 
 function topConflictLabel(conflict: PlannerStationConflict): string {
+  const missingDevices = Math.max(0, conflict.requiredDevices - conflict.deviceCount);
   if (conflict.totalMin > conflict.capacityMin) {
-    return `Überlast ${fmtMin(conflict.totalMin)} / ${fmtMin(conflict.capacityMin)}`;
+    return missingDevices > 0
+      ? `+${fmtNum(missingDevices)} Gerät(e) nötig · Überlast ${fmtMin(conflict.totalMin)} / ${fmtMin(conflict.capacityMin)}`
+      : `Überlast ${fmtMin(conflict.totalMin)} / ${fmtMin(conflict.capacityMin)}`;
   }
   return `teilt ${fmtNum(conflict.deviceCount)} Gerät(e) · ${fmtNum(conflict.requiredDevices)} gebraucht`;
 }
 
 function topPoolConflictLabel(conflict: PlannerPoolConflict): string {
+  const missingDevices = Math.max(0, conflict.requiredDevices - conflict.deviceCount);
   if (conflict.totalMin > conflict.capacityMin) {
-    return `Pool überlast ${fmtMin(conflict.totalMin)} / ${fmtMin(conflict.capacityMin)}`;
+    return missingDevices > 0
+      ? `+${fmtNum(missingDevices)} Gerät(e) nötig · Pool überlast ${fmtMin(conflict.totalMin)} / ${fmtMin(conflict.capacityMin)}`
+      : `Pool überlast ${fmtMin(conflict.totalMin)} / ${fmtMin(conflict.capacityMin)}`;
   }
   return `${fmtNum(conflict.requiredDevices)} Geräte im Pool nötig`;
+}
+
+function extraDevicesLabel(deviceCount: number, requiredDevices: number): string {
+  const missingDevices = Math.max(0, requiredDevices - deviceCount);
+  if (missingDevices <= 0) return "aktuelles Equipment reicht";
+  return `es fehlen ${fmtNum(missingDevices)} Gerät(e)`;
 }
 
 function loadPlannerUiSettings(): PlannerUiSettings {
@@ -480,10 +528,15 @@ function runSubBatchesForAssignment(
   }));
 }
 
-function isSundayPrepSub(category: string, spec?: ProcessSpec): boolean {
+function isSundayLightPrepSub(category: string, spec?: ProcessSpec): boolean {
   const cat = String(category ?? "").toLowerCase();
   const family = String(spec?.productFamily ?? "").toLowerCase();
-  return /thaw|marinade|marinated|mariniert|hand marinade|patty maker|spice|gewürz|gewuerz|butter/.test(cat) || family === "butter";
+  return /thaw|defrost|marinade|marinated|mariniert|hand marinade|patty maker|patty|spice|gewürz|gewuerz/.test(cat)
+    || /thaw|marinade|patty|spice/.test(family);
+}
+
+function isSundayPrepSub(category: string, spec?: ProcessSpec): boolean {
+  return isSundayLightPrepSub(category, spec);
 }
 
 function subLeadDaysBeforeNeed(category: string, spec?: ProcessSpec): number {
@@ -1165,6 +1218,14 @@ export function PlanningView(
   const [rampUpHistoryMap, setRampUpHistoryMap] = useState<Map<string, RampUpSnapshot[]>>(new Map());
   const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);
   const [rampUpBannerDismissed, setRampUpBannerDismissed] = useState(false);
+  const [specialDeliveries, setSpecialDeliveries] = useState<SpecialDeliveryOrder[]>(() => loadSpecialDeliveries(week));
+  const [specialDeliveryDraft, setSpecialDeliveryDraft] = useState<SpecialDeliveryDraft>({
+    recipeCode: "",
+    fulfillmentDay: "Do",
+    portions: 0,
+    market: "",
+    note: "",
+  });
 
   /** Raw schedule aus dem Linienplan (Firestore), keyed als "{PlanDay}|{slotKey}|{lineIdx}" */
   const [linePlanSchedule, setLinePlanSchedule] = useState<Record<string, { code: string; speedPerMin: number } | null>>({});
@@ -1172,6 +1233,14 @@ export function PlanningView(
   const [linePlanRunSplitByRecipe, setLinePlanRunSplitByRecipe] = useState<Record<string, RunSplitPlan>>({});
   const lastPublishedManufacturingSignatureRef = useRef<string>("");
   const lastManufacturingReconcileRequestRef = useRef<string>("");
+
+  useEffect(() => {
+    setSpecialDeliveries(loadSpecialDeliveries(week));
+  }, [week]);
+
+  useEffect(() => {
+    saveSpecialDeliveries(week, specialDeliveries);
+  }, [specialDeliveries, week]);
 
   useEffect(() => {
     savePlannerStorage(storage);
@@ -1359,8 +1428,8 @@ export function PlanningView(
   }, [uiSettings.autoSplitProfileId]);
 
   const batchSplitPlan = useMemo(
-    () => computeBatchSplitPlan(data, week, linePlatingSummary),
-    [data, week, linePlatingSummary]
+    () => computeBatchSplitPlan(data, week, { lineSummary: linePlatingSummary, specialDeliveries }),
+    [data, week, linePlatingSummary, specialDeliveries]
   );
   const batchSplitByRecipe = useMemo(() => {
     const map = new Map<string, AutoFulfillmentBatch[]>();
@@ -1394,6 +1463,70 @@ export function PlanningView(
   const recipeLookup = useMemo(() => Object.fromEntries(
     data.weekRecipes.filter(r => r.hfWeek === week).map(r => [r.code, r])
   ) as Record<string, WeekRecipe>, [data.weekRecipes, week]);
+  const specialDeliveryTotalsByCode = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const row of specialDeliveries) {
+      totals.set(row.recipeCode, (totals.get(row.recipeCode) ?? 0) + row.portions);
+    }
+    return totals;
+  }, [specialDeliveries]);
+  const specialDeliveryTotalsByRecipeDay = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const row of specialDeliveries) {
+      const key = `${row.recipeCode}__${row.fulfillmentDay}`;
+      totals.set(key, (totals.get(key) ?? 0) + row.portions);
+    }
+    return totals;
+  }, [specialDeliveries]);
+  const plannedBatchTotalsByRecipeDay = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const plan of batchSplitPlan) {
+      for (const batch of plan.batches) {
+        const key = `${plan.recipeCode}__${batch.fulfillmentDay}`;
+        totals.set(key, (totals.get(key) ?? 0) + batch.portions);
+      }
+    }
+    return totals;
+  }, [batchSplitPlan]);
+  const invalidSpecialDeliveries = useMemo(() => {
+    return specialDeliveries.filter((row) => {
+      const forecast = Math.max(0, Math.round((recipeLookup[row.recipeCode]?.totalVerdenVolume ?? 0) * portionMultiplier));
+      const requested = specialDeliveryTotalsByCode.get(row.recipeCode) ?? 0;
+      return !recipeLookup[row.recipeCode] || requested > forecast;
+    });
+  }, [portionMultiplier, recipeLookup, specialDeliveries, specialDeliveryTotalsByCode]);
+  const specialDeliveryStatusById = useMemo(() => {
+    const out = new Map<string, { state: "offen" | "eingeplant" | "erledigt"; detail: string }>();
+    for (const row of specialDeliveries) {
+      if (row.manualStatus === "done") {
+        out.set(row.id, { state: "erledigt", detail: "Manuell als erledigt markiert" });
+        continue;
+      }
+      const recipeSummary = analysis.recipes.find((item) => item.recipeCode === row.recipeCode);
+      const key = `${row.recipeCode}__${row.fulfillmentDay}`;
+      const requestedForDay = specialDeliveryTotalsByRecipeDay.get(key) ?? 0;
+      const plannedForDay = plannedBatchTotalsByRecipeDay.get(key) ?? 0;
+      const hasMain = !!recipeSummary?.assigned;
+      const allSubsPlanned = !!recipeSummary && recipeSummary.subRecipes.every((sub) => !!sub.assigned);
+      const batchCovered = plannedForDay >= requestedForDay && requestedForDay > 0;
+      if (hasMain && allSubsPlanned && batchCovered) {
+        out.set(row.id, {
+          state: "eingeplant",
+          detail: `Komplett im Wochenplan abgedeckt (${fmtNum(plannedForDay)} / ${fmtNum(requestedForDay)})`,
+        });
+      } else {
+        out.set(row.id, {
+          state: "offen",
+          detail: !hasMain
+            ? "Hauptrezept noch nicht im Plan"
+            : !allSubsPlanned
+              ? "Sub-Rezepte noch nicht vollstaendig verplant"
+              : "Versandmenge fuer diesen Tag noch nicht komplett abgesichert",
+        });
+      }
+    }
+    return out;
+  }, [analysis.recipes, plannedBatchTotalsByRecipeDay, specialDeliveries, specialDeliveryTotalsByRecipeDay]);
   const subRecipeInfo = useMemo(() => {
     if (!subRecipeInfoRequest) return null;
     return getSubRecipeInfo(
@@ -1817,6 +1950,9 @@ export function PlanningView(
         const key = slotValue(day, shift);
         slotLoads.set(key, (slotLoads.get(key) ?? 0) + 1);
       };
+
+      let sundayPrepJobsScheduled = 0;
+      let sundayPrepMinScheduled = 0;
       // Seed loads with all currently planned items
       for (const recipe of analysisNow.recipes) {
         if (recipe.assigned && isShiftActive(recipe.assigned.shift)) {
@@ -1827,6 +1963,15 @@ export function PlanningView(
           if (sub.assigned && isShiftActive(sub.assigned.shift)) {
             addLoad(sub.assigned.day, sub.assigned.shift);
             registerOrder(sub.assigned.day, sub.assigned.shift, sub.assigned.order);
+            if (
+              sub.assigned.day === "So"
+              && isSundayLightPrepSub(sub.category, data.processSpecs?.[sub.subRecipeId])
+              && sundayPrepJobsScheduled < SUNDAY_LIGHT_PREP_MAX_JOBS
+              && sundayPrepMinScheduled + sub.activeMin <= SUNDAY_LIGHT_PREP_MAX_TOTAL_MIN
+            ) {
+              sundayPrepJobsScheduled += 1;
+              sundayPrepMinScheduled += sub.activeMin;
+            }
           }
         }
       }
@@ -1868,13 +2013,22 @@ export function PlanningView(
       }
 
       const openSubs = targetRecipe.subRecipes
-        .filter(s => !s.assigned || s.assigned.day === "Sa" || !isShiftActive(s.assigned.shift))
+        .filter((s) => {
+          if (!s.assigned || s.assigned.day === "Sa" || !isShiftActive(s.assigned.shift)) return true;
+          if (s.assigned.day !== "So") return false;
+          return !isSundayLightPrepSub(s.category, data.processSpecs?.[s.subRecipeId]);
+        })
         .sort((a, b) => b.activeMin - a.activeMin);
 
       for (const sub of openSubs) {
         const spec = data.processSpecs?.[sub.subRecipeId];
         const leadDays = subLeadDaysBeforeNeed(sub.category, spec);
-        const preferredSubDay = preferredSubProductionDay(sub.category, spec, platingDay, leadDays);
+        const allowSundayPrep = isSundayLightPrepSub(sub.category, spec)
+          && sundayPrepJobsScheduled < SUNDAY_LIGHT_PREP_MAX_JOBS
+          && sundayPrepMinScheduled + sub.activeMin <= SUNDAY_LIGHT_PREP_MAX_TOTAL_MIN;
+        const preferredSubDay = allowSundayPrep
+          ? "So"
+          : preferredSubProductionDay(sub.category, spec, platingDay, leadDays);
         const slot = pickLowestLoadSlotForDay(slotLoads, preferredSubDay, activeShifts)
           ?? (preferredSubDay === "So" ? null : pickLowestRegularSubSlot(slotLoads, activeShifts))
           ?? pickLowestLoadSlot(slotLoads, activeShifts);
@@ -1890,6 +2044,10 @@ export function PlanningView(
           note: buildBoardNote("Auto/SubFromMain", `main=${mainTarget}||split=${serializeBatchesForNote(batches)}`)
         };
         addLoad(slot.day, slot.shift);
+        if (slot.day === "So") {
+          sundayPrepJobsScheduled += 1;
+          sundayPrepMinScheduled += sub.activeMin;
+        }
       }
 
       return {
@@ -1955,17 +2113,17 @@ export function PlanningView(
         slotLoads.set(key, (slotLoads.get(key) ?? 0) + 1);
       };
 
-      for (const recipe of analysisNow.recipes) {
-        if (recipe.assigned && isShiftActive(recipe.assigned.shift)) {
-          addLoad(recipe.assigned.day, recipe.assigned.shift);
-          registerOrder(recipe.assigned.day, recipe.assigned.shift, recipe.assigned.order);
+      const rebuildSlotState = (assignments: Record<string, typeof nextAssignments[string]>) => {
+        slotLoads.clear();
+        slotOrders.clear();
+        for (const row of Object.values(assignments)) {
+          if (!row || !isShiftActive(row.shift)) continue;
+          addLoad(row.day, row.shift);
+          registerOrder(row.day, row.shift, row.order);
         }
-        for (const sub of recipe.subRecipes) {
-          if (!sub.assigned || !isShiftActive(sub.assigned.shift)) continue;
-          addLoad(sub.assigned.day, sub.assigned.shift);
-          registerOrder(sub.assigned.day, sub.assigned.shift, sub.assigned.order);
-        }
-      }
+      };
+
+      rebuildSlotState(nextAssignments);
 
       const recipesByLoad = [...analysisNow.recipes]
         .sort((a, b) => b.totalActiveMin - a.totalActiveMin || a.recipeCode.localeCompare(b.recipeCode));
@@ -2006,7 +2164,7 @@ export function PlanningView(
         }
       }
 
-      const refreshedAnalysis = analyzePlan(data, week, {
+      let refreshedAnalysis = analyzePlan(data, week, {
         ...currentScenario,
         assignments: nextAssignments
       }, {
@@ -2015,6 +2173,50 @@ export function PlanningView(
         stationDeviceCounts,
         stationPools
       });
+
+      const sundayPrepCandidates = refreshedAnalysis.recipes
+        .flatMap((recipeSummary) => recipeSummary.subRecipes.map((sub) => {
+          const subKey = assignmentKey(recipeSummary.recipeCode, sub.subRecipeId);
+          const assigned = nextAssignments[subKey];
+          const spec = data.processSpecs?.[sub.subRecipeId];
+          return {
+            subKey,
+            assigned,
+            activeMin: sub.activeMin,
+            sundayEligible: isSundayLightPrepSub(sub.category, spec),
+          };
+        }))
+        .filter((row) => row.assigned?.day === "So" && row.assigned?.shift && isShiftActive(row.assigned.shift))
+        .sort((a, b) => a.activeMin - b.activeMin || a.subKey.localeCompare(b.subKey));
+
+      let keptSundayPrepJobs = 0;
+      let keptSundayPrepMin = 0;
+      for (const candidate of sundayPrepCandidates) {
+        const keepSunday = candidate.sundayEligible
+          && keptSundayPrepJobs < SUNDAY_LIGHT_PREP_MAX_JOBS
+          && keptSundayPrepMin + candidate.activeMin <= SUNDAY_LIGHT_PREP_MAX_TOTAL_MIN;
+        if (keepSunday) {
+          keptSundayPrepJobs += 1;
+          keptSundayPrepMin += candidate.activeMin;
+          continue;
+        }
+        delete nextAssignments[candidate.subKey];
+        autoTouchedKeys.add(candidate.subKey);
+      }
+
+      rebuildSlotState(nextAssignments);
+      refreshedAnalysis = analyzePlan(data, week, {
+        ...currentScenario,
+        assignments: nextAssignments
+      }, {
+        portionMultiplier,
+        shiftCapacityMin: DEFAULT_SHIFT_MIN,
+        stationDeviceCounts,
+        stationPools
+      });
+
+      let sundayPrepJobsScheduled = keptSundayPrepJobs;
+      let sundayPrepMinScheduled = keptSundayPrepMin;
 
       for (const recipeSummary of refreshedAnalysis.recipes) {
         const mainAssigned = nextAssignments[assignmentKey(recipeSummary.recipeCode)];
@@ -2032,7 +2234,10 @@ export function PlanningView(
           const spec = data.processSpecs?.[sub.subRecipeId];
           const leadDays = subLeadDaysBeforeNeed(sub.category, spec);
           const subIndex = subIndexById.get(sub.subRecipeId) ?? 0;
-          const preferredSubDay = isSundayPrepSub(sub.category, spec)
+          const allowSundayPrep = isSundayLightPrepSub(sub.category, spec)
+            && sundayPrepJobsScheduled < SUNDAY_LIGHT_PREP_MAX_JOBS
+            && sundayPrepMinScheduled + sub.activeMin <= SUNDAY_LIGHT_PREP_MAX_TOTAL_MIN;
+          const preferredSubDay = allowSundayPrep
             ? "So"
             : batches.length > 1
               ? distributedRunSubDay(0, subIndex)
@@ -2054,6 +2259,10 @@ export function PlanningView(
           };
           autoTouchedKeys.add(subKey);
           addLoad(slot.day, slot.shift);
+          if (slot.day === "So") {
+            sundayPrepJobsScheduled += 1;
+            sundayPrepMinScheduled += sub.activeMin;
+          }
         }
       }
 
@@ -2241,6 +2450,32 @@ export function PlanningView(
     if (!boardEditor) return;
     setStorage((prev) => removeAssignment(prev, week, scenario.id, boardEditor.recipeCode, boardEditor.subRecipeId));
     setBoardEditor(null);
+  }
+
+  function addSpecialDelivery() {
+    const recipeCode = specialDeliveryDraft.recipeCode.trim().toUpperCase();
+    const portions = Math.max(0, Math.round(Number(specialDeliveryDraft.portions) || 0));
+    if (!recipeCode || portions <= 0) return;
+    setSpecialDeliveries((prev) => ([
+      ...prev,
+      {
+        id: `sd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+        recipeCode,
+        fulfillmentDay: specialDeliveryDraft.fulfillmentDay,
+        portions,
+        market: specialDeliveryDraft.market.trim() || undefined,
+        note: specialDeliveryDraft.note.trim() || undefined,
+      }
+    ]));
+    setSpecialDeliveryDraft((prev) => ({ ...prev, recipeCode: "", portions: 0, market: "", note: "" }));
+  }
+
+  function removeSpecialDelivery(id: string) {
+    setSpecialDeliveries((prev) => prev.filter((row) => row.id !== id));
+  }
+
+  function setSpecialDeliveryManualStatus(id: string, manualStatus: "open" | "done") {
+    setSpecialDeliveries((prev) => prev.map((row) => row.id === id ? { ...row, manualStatus } : row));
   }
 
   function buildManufacturingSnapshot(syncMode: "live" | "manual"): ManufacturingSnapshotPayload {
@@ -2432,6 +2667,7 @@ export function PlanningView(
                 <span
                   key={`station-top-${conflict.day}-${conflict.shift}-${conflict.station}`}
                   className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-900"
+                  title={`${conflict.station}: ${extraDevicesLabel(conflict.deviceCount, conflict.requiredDevices)}`}
                 >
                   {conflict.day} · {conflict.shift} · {conflict.station}: {topConflictLabel(conflict)}
                 </span>
@@ -2440,6 +2676,7 @@ export function PlanningView(
                 <span
                   key={`pool-top-${conflict.day}-${conflict.shift}-${conflict.poolName}`}
                   className="rounded-lg border border-rose-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-rose-900"
+                  title={`Pool ${conflict.poolName}: ${extraDevicesLabel(conflict.deviceCount, conflict.requiredDevices)}`}
                 >
                   {conflict.day} · {conflict.shift} · Pool {conflict.poolName}: {topPoolConflictLabel(conflict)}
                 </span>
@@ -2476,6 +2713,120 @@ export function PlanningView(
             </div>
           </div>
         )}
+
+        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-black uppercase tracking-wide text-slate-700">Sonderlieferungen / Bestellschein</div>
+              <div className="mt-0.5 text-[11px] text-slate-500">Ist bereits im Forecast enthalten, wird hier aber auf einen festen Versandtag gezogen und von der Automatik bevorzugt eingeplant.</div>
+            </div>
+            <div className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-300">
+              {specialDeliveries.length} Auftrag{specialDeliveries.length !== 1 ? "e" : ""}
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 md:grid-cols-[120px_90px_110px_120px_minmax(180px,1fr)_auto]">
+            <input
+              className="rounded-md border border-slate-300 bg-white px-2 py-2 text-xs font-semibold uppercase text-slate-700"
+              placeholder="FV4048A"
+              value={specialDeliveryDraft.recipeCode}
+              onChange={(event) => setSpecialDeliveryDraft((prev) => ({ ...prev, recipeCode: event.target.value.toUpperCase() }))}
+            />
+            <select
+              className="rounded-md border border-slate-300 bg-white px-2 py-2 text-xs font-semibold text-slate-700"
+              value={specialDeliveryDraft.fulfillmentDay}
+              onChange={(event) => setSpecialDeliveryDraft((prev) => ({ ...prev, fulfillmentDay: event.target.value as PlannerDay }))}
+            >
+              {PLANNER_DAYS.map((day) => <option key={`special-day-${day}`} value={day}>{day}</option>)}
+            </select>
+            <input
+              type="number"
+              min={0}
+              className="rounded-md border border-slate-300 bg-white px-2 py-2 text-xs font-semibold text-slate-700"
+              placeholder="Portionen"
+              value={specialDeliveryDraft.portions || ""}
+              onChange={(event) => setSpecialDeliveryDraft((prev) => ({ ...prev, portions: Math.max(0, Number(event.target.value) || 0) }))}
+            />
+            <input
+              className="rounded-md border border-slate-300 bg-white px-2 py-2 text-xs text-slate-700"
+              placeholder="Markt z.B. BENL"
+              value={specialDeliveryDraft.market}
+              onChange={(event) => setSpecialDeliveryDraft((prev) => ({ ...prev, market: event.target.value }))}
+            />
+            <input
+              className="rounded-md border border-slate-300 bg-white px-2 py-2 text-xs text-slate-700"
+              placeholder="Notiz / Empfänger / egal"
+              value={specialDeliveryDraft.note}
+              onChange={(event) => setSpecialDeliveryDraft((prev) => ({ ...prev, note: event.target.value }))}
+            />
+            <button
+              className="rounded-md bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+              onClick={addSpecialDelivery}
+            >
+              Auftrag anlegen
+            </button>
+          </div>
+          {invalidSpecialDeliveries.length > 0 && (
+            <div className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-800">
+              Achtung: Mindestens ein Sonderauftrag passt noch nicht sauber zum Forecast dieser KW. Bitte Portionszahl oder Rezeptcode prüfen.
+            </div>
+          )}
+          {specialDeliveries.length > 0 && (
+            <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Rezept</th>
+                    <th className="px-3 py-2 text-left">Status</th>
+                    <th className="px-3 py-2 text-left">Versandtag</th>
+                    <th className="px-3 py-2 text-right">Portionen</th>
+                    <th className="px-3 py-2 text-left">Markt / Notiz</th>
+                    <th className="px-3 py-2 text-right">Forecast</th>
+                    <th className="px-3 py-2 text-right"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {specialDeliveries.map((row) => {
+                    const forecast = Math.max(0, Math.round((recipeLookup[row.recipeCode]?.totalVerdenVolume ?? 0) * portionMultiplier));
+                    const requested = specialDeliveryTotalsByCode.get(row.recipeCode) ?? 0;
+                    const invalid = !recipeLookup[row.recipeCode] || requested > forecast;
+                    const status = specialDeliveryStatusById.get(row.id) ?? { state: "offen" as const, detail: "Noch nicht eingeplant" };
+                    const statusTone = status.state === "erledigt"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : status.state === "eingeplant"
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-amber-100 text-amber-800";
+                    return (
+                      <tr key={row.id} className="border-t border-slate-100">
+                        <td className="px-3 py-2">
+                          <div className="font-mono font-semibold text-slate-800">{row.recipeCode}</div>
+                          <div className="text-[10px] text-slate-500">{recipeLookup[row.recipeCode]?.recipeName ?? "Rezept nicht gefunden"}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${statusTone}`}>{status.state}</div>
+                          <div className="mt-1 text-[10px] text-slate-500">{status.detail}</div>
+                        </td>
+                        <td className="px-3 py-2 font-semibold text-slate-700">{row.fulfillmentDay}</td>
+                        <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800">{fmtNum(row.portions)}</td>
+                        <td className="px-3 py-2 text-slate-600">{[row.market, row.note].filter(Boolean).join(" · ") || "—"}</td>
+                        <td className={`px-3 py-2 text-right tabular-nums ${invalid ? "font-bold text-rose-700" : "text-slate-600"}`}>{fmtNum(forecast)}</td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex justify-end gap-2">
+                            {status.state === "erledigt" ? (
+                              <button className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100" onClick={() => setSpecialDeliveryManualStatus(row.id, "open")}>Wieder offen</button>
+                            ) : (
+                              <button className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100" onClick={() => setSpecialDeliveryManualStatus(row.id, "done")}>Erledigt</button>
+                            )}
+                            <button className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-100" onClick={() => removeSpecialDelivery(row.id)}>Entfernen</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
 
         {/* ── Offene Rezepte: ziehen in Kalender-Zelle ── */}
         {unplanned.some(r => !r.assigned) && (
@@ -2520,15 +2871,15 @@ export function PlanningView(
           </div>
         )}
 
-        <div className={`w-full max-w-full overflow-x-auto overflow-y-visible pb-2 [scrollbar-gutter:stable] ${calendarFullView ? "flex-1" : ""}`}>
-          <table className="w-max min-w-[1780px] border-collapse text-xs">
+        <div className={`w-full min-w-0 max-w-full overflow-auto pb-3 pr-2 [scrollbar-gutter:stable] ${calendarFullView ? "flex-1" : ""}`}>
+          <table className="w-max min-w-[1540px] border-collapse text-xs">
             <thead>
               <tr className="bg-white border-b border-slate-300">
-                <th className="sticky left-0 z-20 bg-white px-3 py-2 text-left font-semibold text-slate-700 min-w-[320px]" rowSpan={2}>Recipes</th>
-                <th className="sticky left-[320px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[110px]" rowSpan={2}>Forecast / Runs</th>
-                <th className="sticky left-[410px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Mapped</th>
+                <th className="sticky left-0 z-20 bg-white px-3 py-2 text-left font-semibold text-slate-700 min-w-[260px]" rowSpan={2}>Recipes</th>
+                <th className="sticky left-[260px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Forecast / Runs</th>
+                <th className="sticky left-[350px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[76px]" rowSpan={2}>Mapped</th>
                 {MANUFACTURING_DAYS.map((column) => (
-                  <th key={column.id} colSpan={activeShifts.length} className="border-l border-slate-300 px-2 py-2 text-center font-semibold text-slate-700 min-w-[170px]">{column.label}</th>
+                  <th key={column.id} colSpan={activeShifts.length} className="border-l border-slate-300 px-2 py-2 text-center font-semibold text-slate-700 min-w-[136px]">{column.label}</th>
                 ))}
               </tr>
               <tr className="bg-white border-b border-slate-300">
@@ -2612,7 +2963,7 @@ export function PlanningView(
                           </div>
                         </div>
                       </td>
-                      <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-2 align-top" style={tone.sticky}>
+                      <td className="sticky left-[260px] z-10 border-r border-slate-200 px-2 py-2 align-top" style={tone.sticky}>
                         {(() => {
                           const rawVol = wr?.verdenVolume ?? { BENL: 0, DKSE: 0, DE: 0 };
                           const upliftedBnl     = Math.round((rawVol.BENL ?? 0) * portionMultiplier);
@@ -2665,7 +3016,7 @@ export function PlanningView(
                           );
                         })()}
                       </td>
-                      <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{mainMapped > 0 ? fmtNum(mainMapped) : ""}</td>
+                      <td className="sticky left-[350px] z-10 border-r border-slate-200 px-2 py-2 text-right font-semibold tabular-nums" style={tone.sticky}>{mainMapped > 0 ? fmtNum(mainMapped) : ""}</td>
 
                       {MANUFACTURING_DAYS.flatMap((column) => activeShifts.map((shift) => {
                         const day = column.day;
@@ -2683,6 +3034,7 @@ export function PlanningView(
                           <td
                             key={`${recipe.recipeCode}-${column.id}-${shift}`}
                             className={`border-l border-slate-200 p-1 align-top transition-colors ${isValidDropTarget && !isDragOverThis ? "bg-emerald-50/40" : ""}`}
+                            onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift })}
                             onDragOver={(e) => {
                               if (day === "Sa") return;
                               const hasSuggest = !!(e.dataTransfer.getData("text/suggest-key") || draggingSuggestKeyRef.current);
@@ -2705,7 +3057,7 @@ export function PlanningView(
                               handleDropOnSlot(e, day, shift);
                             }}
                           >
-                            <div className="min-h-[66px] rounded border p-1 hover:border-slate-300" style={isDragOverThis ? { ...tone.slotActive, outline: '2px dashed currentColor' } : hasReal ? tone.slotActive : tone.slotIdle} onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift })}>
+                            <div className="min-h-[66px] cursor-pointer rounded border p-1 hover:border-slate-300" style={isDragOverThis ? { ...tone.slotActive, outline: '2px dashed currentColor' } : hasReal ? tone.slotActive : tone.slotIdle} onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift })}>
                               <div className="space-y-1">
                                 {mainTiles.map((mainTile) => {
                                   // Ghost-Pill / Plating-Pill: aus BatchSplitPlan
@@ -2878,8 +3230,8 @@ export function PlanningView(
                               <div className="text-[10px] text-slate-500">{sub.category}</div>
                             </div>
                           </td>
-                          <td className="sticky left-[320px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{fmtNum(forecast)}</td>
-                          <td className="sticky left-[410px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{subMapped > 0 ? fmtNum(subMapped) : ""}</td>
+                          <td className="sticky left-[260px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{fmtNum(forecast)}</td>
+                          <td className="sticky left-[350px] z-10 border-r border-slate-200 px-2 py-1.5 text-right tabular-nums" style={tone.subSticky}>{subMapped > 0 ? fmtNum(subMapped) : ""}</td>
                           {MANUFACTURING_DAYS.flatMap((column) => activeShifts.map((shift) => {
                             const day = column.day;
                             const hasPrepBatch = hasBatchSplit && subBatches.some(batch => batch.day === "So");
@@ -2896,6 +3248,7 @@ export function PlanningView(
                               <td
                                 key={`${sub.subRecipeId}-${column.id}-${shift}`}
                                 className="border-l border-slate-200 p-1 align-top"
+                                onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName })}
                                 onDragOver={(e) => {
                                   if (day === "Sa") return;
                                   const hasRecipe = !!(e.dataTransfer.getData("text/recipe-code") || e.dataTransfer.getData("text/plain") || draggingCodeRef.current);
@@ -2913,7 +3266,7 @@ export function PlanningView(
                                 }}
                               >
                                 <div
-                                  className={`min-h-[50px] rounded border p-1 hover:border-slate-300 transition-opacity ${draggingCode === recipe.recipeCode && isActive ? "opacity-40" : ""}`}
+                                  className={`min-h-[50px] cursor-pointer rounded border p-1 hover:border-slate-300 transition-opacity ${draggingCode === recipe.recipeCode && isActive ? "opacity-40" : ""}`}
                                   style={isDragOverThis ? { ...tone.slotActive, outline: "2px dashed currentColor" } : isActive ? tone.slotActive : tone.slotIdle}
                                   onClick={() => openWeekBoardEditor({ recipeCode: recipe.recipeCode, day, shift, subRecipeId: sub.subRecipeId, subRecipeName: sub.subRecipeName })}
                                 >
@@ -3545,7 +3898,7 @@ export function PlanningView(
                   const tone = weekBoardRecipeTone(plan.recipeCode);
                   return plan.batches.map((batch, idx) => (
                   <tr
-                    key={`${plan.recipeCode}-${batch.fulfillmentDay}`}
+                    key={`${plan.recipeCode}-${batch.fulfillmentDay}-${idx}`}
                     className="border-b border-slate-100"
                     style={plan.batches.length > 1 ? tone.subRow : tone.row}
                   >
@@ -3607,6 +3960,9 @@ export function PlanningView(
               <div className="mt-1 text-[11px] text-amber-800">
                 Geräte: {fmtNum(conflict.deviceCount)} · Kapazität: {fmtMin(conflict.capacityMin)} · Auslastung: {fmtNum(conflict.utilizationPct, 0)}%
               </div>
+              <div className="mt-1 text-[11px] font-semibold text-amber-900">
+                Bedarf: {fmtNum(conflict.requiredDevices)} Gerät(e) · Zusatzbedarf: {Math.max(0, conflict.requiredDevices - conflict.deviceCount)}
+              </div>
               <div className="mt-1 space-y-1 text-xs text-amber-900">
                 {conflict.assignments.map((row, index) => {
                   const tone = weekBoardRecipeTone(row.recipeCode);
@@ -3632,6 +3988,9 @@ export function PlanningView(
               </div>
               <div className="mt-1 text-[11px] text-rose-800">
                 Geräte im Pool: {fmtNum(conflict.deviceCount)} · Kapazität: {fmtMin(conflict.capacityMin)} · Auslastung: {fmtNum(conflict.utilizationPct, 0)}%
+              </div>
+              <div className="mt-1 text-[11px] font-semibold text-rose-900">
+                Bedarf: {fmtNum(conflict.requiredDevices)} Gerät(e) · Zusatzbedarf: {Math.max(0, conflict.requiredDevices - conflict.deviceCount)}
               </div>
               <div className="mt-1 space-y-1 text-xs text-rose-900">
                 {conflict.assignments.slice(0, 6).map((row, index) => (

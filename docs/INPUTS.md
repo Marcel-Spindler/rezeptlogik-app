@@ -16,19 +16,36 @@
 
 ## 2. Google Sheets (live)
 
-Konfiguriert über `.env.local` → `GSHEET_ID` (primär) und `GSHEET_IDS` (zusätzlich, kommagetrennt).
+Konfiguriert über `.env.local` und den Dump-/Registry-Sync.
 Der Service-Account muss bei jedem Sheet als **Viewer** geteilt sein.
 
-| # | Name | Spreadsheet-ID | Zweck |
-|---|---|---|---|
-| 1 | F_EU – 2026 Ramp Up Planning V2.0 | `1IEi_CB9KylW2MgjNiGax5EIvhhAtkIzm57uO1sSESj8` | Meal Selection live (Tab gid=1436441958) |
-| 2 | [EU] F_ Recipe PFEI | `1cQtoL4aYHfc_44mfQQty8-EFKPZoYPLBQ2ojmO8hgzg` | Equipment-Zeiten & Batch-Größen pro Sub-Rezept (Tab `MAIN`) — Env-Var `PFEI_GSHEET_ID` |
+| # | Name | Spreadsheet-ID | Zweck | Env / Sync |
+|---|---|---|---|---|
+| 1 | Factor_ Rolling Forecast Tracker | `1NX4ccmp9EHgjcQcZPt2RVC4dGZm-Lhq_XEIxgs3iBP4` | Haupt-Truth-Source fuer Wochen-Rezepte, W-Tabs, Ramp-up und Forecast-Import | `GSHEET_ID` |
+| 2 | F_EU - 2026 Ramp Up Planning V2.0 | `1IEi_CB9KylW2MgjNiGax5EIvhhAtkIzm57uO1sSESj8` | Zusatzquelle fuer Meal-/Ramp-up Daten | `GSHEET_IDS` |
+| 3 | [EU] F_ Recipe PFEI | `1cQtoL4aYHfc_44mfQQty8-EFKPZoYPLBQ2ojmO8hgzg` | Equipment-Zeiten & Batch-Groessen pro Sub-Rezept | `PFEI_GSHEET_ID`, Tab `MAIN` |
+| 4 | Open Shelf Life / MLOR | `1dET5WmRKYRhmzEmhlBv1ZpRo5huWgNLfIY6uaLpCrcc` | MLOR- und Open-Shelf-Life Daten fuer SKU-Risiken | `OPEN_SHELF_GSHEET_ID`, Default-Tab `ALL in 1` |
+| 5 | Kitchen Priority List-Verden-2026 | `13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U` | KPL-Dump fuer Planning OASE, Rack und Linienplanung | `npm run sync:gsheet:registry` |
+| 6 | [NEW] MASTER+SUPERVISORS WORKLOAD PLANNING | `1vwTeKDkQcSrWtFLioOBlkcQrbbDzMxbra-f-AbXgO1Q` | Supervisor-/Workload-Dump fuer Breakdown und Manufacturing-Hinweise | Registry / Dump |
+| 7 | Bibles_K_Operations_Manager_Supervisors | `1jZXgFcnDhmALSbIlyDbzL-uKpDyLycwdxcVnFNPn32c` | Bible-/Supervisor-Hinweise fuer Breakdown und Manufacturing | Registry / Dump |
+| 8 | OUTPUT - [F_ x HF] Weekly Fulfillment Report | `1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE` | Fulfillment-Referenzdump | Registry / Dump |
+
+> Live-Inventar fuer die UI: `public/data/gsheet-sources.json`
+> Vollstaendige Dumps: `public/data/gsheet-dump-*.json`
 
 > **So fügst du ein neues Sheet hinzu:**
 > 1. Sheet öffnen → **Teilen** → `planningmsku@hellofresh-de-problem-solve.iam.gserviceaccount.com` als Betrachter hinzufügen.
 > 2. Spreadsheet-ID aus URL nehmen (`docs.google.com/spreadsheets/d/`**`<ID>`**`/edit`).
 > 3. In `.env.local` an `GSHEET_IDS=` anhängen (kommagetrennt).
-> 4. `npm run import:gsheet` (+ optional `npm run push:firestore`).
+> 4. `npm run import:gsheet`
+> 5. `npm run sync:gsheet:registry`
+> 6. Optional `npm run push:firestore`
+
+## 2b. Weitere Google-Quelle
+
+| Quelle | ID | Zweck |
+|---|---|---|
+| Factor Daily Forecast Folder (Google Drive) | `1Q2OTboR_X4tCGjsaag55C2WFURRpi-i2` | CSV-Quelle fuer `npm run sync:factor:forecast` |
 
 ## 3. CSV-Exporte (lokal, aus C:\Rezeptlogik)
 
