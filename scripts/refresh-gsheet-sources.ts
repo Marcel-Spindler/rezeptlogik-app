@@ -152,6 +152,13 @@ function collectSourceSeeds(): Map<string, SpreadsheetSource> {
     tags: ["planning-oase", "kpl", "ops"],
   });
 
+  addSeed(sources, {
+    spreadsheetId: "1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE",
+    label: "OUTPUT - Fulfillment Report",
+    purpose: "Wöchentlicher Fulfillment-Report: Maitre-Inputs (Ramp-up je Markt), Produktionsvorbereitung DE/Nordics, FCMS-Inbound, Logistik, Produktionsdaten. Wird von sync-fulfillment-report nach Firestore gepusht.",
+    tags: ["fulfillment-report", "maitre-inputs", "ramp-up", "logistics", "fcms", "ops"],
+  });
+
   for (const fileName of readdirSync(OUT_DIR)) {
     if (!fileName.startsWith("gsheet-dump-") || !fileName.endsWith(".json")) continue;
     const dumpPath = join(OUT_DIR, fileName);

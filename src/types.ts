@@ -184,3 +184,68 @@ export interface DataBundle {
   shelfLifeBySku?: Record<string, ShelfLifeInfo>; // key = ingredient / SKU code
   structures?: Record<string, RecipeStructure>;   // key = recipe code
 }
+
+// === Fulfillment Report: Maitre-Ramp-up ======================================
+// Aus "Maitre Inputs DE/NO_Stamm" Tab des OUTPUT Fulfillment Report Sheets.
+// Volumen-Snapshots je Rezept, Markt und Woche – von 4 Wochen vor Lieferung bis Bestellung.
+
+export type MaitreSnapshotLabel = "wed-4wk" | "wed-3wk" | "wed-2wk" | "wed-1wk" | "fri-1wk" | "mon" | "tue" | "wed" | "thu";
+
+export interface MaitreRampupEntry {
+  week: string;        // "W22" (Lieferwoche, kurz)
+  market: string;      // "DE" | "NORDICS"
+  slot: number;        // Slot-Nummer (301, 601, ...)
+  recipeCode: string;  // "FE4014C"
+  maitreCode: string;  // "565303" (Maitre WMS-Code)
+  skuCode: string;     // "CON-00-136675-3"
+  recipeName: string;  // Lokaler Rezeptname
+  snapshots: Partial<Record<MaitreSnapshotLabel, number>>; // Volumen je Snapshot-Zeitpunkt
+  orderVolume: number; // Finale Bestellmenge
+}
+
+// === Fulfillment Report: Produktionsplanung DE / Nordics =====================
+// Aus "Produktionsvorbereitung_DE" / "_Nordics" Tabs – geplante Mengen je Liefertag.
+
+export interface ProduktionsplanungSlot {
+  slot: number;
+  maitreCode: string;
+  recipeCode: string;
+  skuCode: string;
+  recipeName: string;
+  volRun1: number;    // Freitag-Lieferung (DE) / TK (Nordics)
+  volRun2: number;    // Montag-Lieferung (DE) / TV (Nordics)
+  totalVol: number;
+  paletten?: string;  // z. B. "5P, 2K"
+}
+
+export interface ProduktionsplanungEntry {
+  week: string;          // "2026-W22"
+  market: string;        // "DE" | "NORDICS"
+  boxVolRun1: number;
+  boxVolRun2: number;
+  maxKapaPerDay: number;
+  startTime: string;
+  endTime: string;
+  slots: ProduktionsplanungSlot[];
+  generatedAt: string;
+}
+
+// === Fulfillment Report: FCMS Inbound-Lieferungen ============================
+// Aus "Logistik - FCMS Meals" Tab – tatsächlich eingegangene PO-Positionen.
+
+export interface FcmsInboundRow {
+  poNumber: string;
+  unloadDateLocal: string;
+  itemNumber: string;
+  description: string;
+  uom: string;
+  poExpected: number;
+  totalReceived: number;
+  variancePct: string;
+}
+
+export interface FcmsInboundData {
+  week: string;
+  generatedAt: string;
+  rows: FcmsInboundRow[];
+}

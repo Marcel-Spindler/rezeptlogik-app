@@ -24,7 +24,8 @@
     "wms:sync": "tsx scripts/sync-wms-cache.ts",
     "wms:push": "tsx scripts/push-wms-firestore.ts",
     "wms:server": "tsx scripts/wms-local-server.ts",
-    "sync:all": "npm run sync:factor:forecast && npm run import:gsheet && npm run sync:gsheet:registry",
+    "sync:fulfillment:report": "tsx scripts/sync-fulfillment-report.ts",
+    "sync:all": "npm run sync:factor:forecast && npm run import:gsheet && npm run sync:gsheet:registry && npm run sync:fulfillment:report",
     "sync:all:deploy": "npm run sync:all && npm run build && firebase deploy --only hosting"
   },
   "dependencies": {

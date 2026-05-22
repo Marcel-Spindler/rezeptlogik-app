@@ -28,7 +28,7 @@ Der Service-Account muss bei jedem Sheet als **Viewer** geteilt sein.
 | 5 | Kitchen Priority List-Verden-2026 | `13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U` | KPL-Dump fuer Planning OASE, Rack und Linienplanung | `npm run sync:gsheet:registry` |
 | 6 | [NEW] MASTER+SUPERVISORS WORKLOAD PLANNING | `1vwTeKDkQcSrWtFLioOBlkcQrbbDzMxbra-f-AbXgO1Q` | Supervisor-/Workload-Dump fuer Breakdown und Manufacturing-Hinweise | Registry / Dump |
 | 7 | Bibles_K_Operations_Manager_Supervisors | `1jZXgFcnDhmALSbIlyDbzL-uKpDyLycwdxcVnFNPn32c` | Bible-/Supervisor-Hinweise fuer Breakdown und Manufacturing | Registry / Dump |
-| 8 | OUTPUT - [F_ x HF] Weekly Fulfillment Report | `1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE` | Fulfillment-Referenzdump | Registry / Dump |
+| 8 | OUTPUT - [F_ x HF] Weekly Fulfillment Report | `1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE` | Maitre-Ramp-up (DE/Nordics je KW), Produktionsvorbereitung DE+Nordics, FCMS-Inbound, Logistik | `npm run sync:fulfillment:report` → Firestore: `maitreRampup`, `produktionsplanung`, `fcmsInbound` |
 
 > Live-Inventar fuer die UI: `public/data/gsheet-sources.json`
 > Vollstaendige Dumps: `public/data/gsheet-dump-*.json`
