@@ -8,6 +8,8 @@ import { usePlanningOasisData } from "./planningOasisData";
 import { loadFactorDailyMeta, type FactorDailyMeta } from "./planningTruthData";
 import { PlanningOasisAgentForm } from "./PlanningOasisAgentForm";
 import { runSplitForRecipeLike } from "./runPlanning";
+import { refreshRampUpDataOnStart } from "./dataSource";
+import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
 
 const LinePlanningSection = lazy(() => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView })));
 const RackSection = lazy(() => import("./RackV2View").then((module) => ({ default: module.RackV2View })));
@@ -258,6 +260,23 @@ export function PlanningOasisView({
       split: getFulfillmentSplit(meal),
     }));
   }, [weekMeals]);
+  const [rampUpHistoryMap, setRampUpHistoryMap] = useState<Map<string, RampUpSnapshot[]>>(new Map());
+  const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);
+  const [rampUpBannerDismissed, setRampUpBannerDismissed] = useState(false);
+
+  useEffect(() => {
+    if (!data.weekRecipes?.length) return;
+    const { changes, history } = recordRampUpSnapshot(week, data.weekRecipes);
+    const allCodes = new Set(data.weekRecipes.filter(r => r.hfWeek === week).map(r => r.code));
+    const histMap = new Map<string, RampUpSnapshot[]>();
+    for (const code of allCodes) histMap.set(code, history.filter(s => code in s.volumes));
+    setRampUpHistoryMap(histMap);
+    if (changes.length > 0) {
+      setRampUpChanges(changes);
+      setRampUpBannerDismissed(false);
+    }
+  }, [data.weekRecipes, week]);
+
   const recipeIntelByDigit = useMemo(() => {
     const map = new Map<string, NonNullable<(typeof oasisData)>["recipes"][string]>();
     for (const intel of Object.values(oasisData?.recipes ?? {})) {
@@ -357,25 +376,64 @@ export function PlanningOasisView({
           <OasisStat label="Zulieferung" value={fmtNum(weekIntel?.suppliedPdlPortions ?? 0)} tone="amber" />
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {([
-            ["cockpit", "Cockpit"],
-            ["lines", "Linienplanung"],
-            ["rack", "Rack"],
-            ["breakdown", "Breakdown+"],
-            ["wms", "WMS Live"],
-            ["recipes", "Rezept-Fokus"],
-            ["agent", "Agent Setup"]
-          ] as [OasisSection, string][]).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setSection(key)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-semibold ring-1 ${section === key ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-50"}`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="mt-4 flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex flex-wrap gap-2">
+            {([
+              ["cockpit", "Cockpit"],
+              ["lines", "Linienplanung"],
+              ["rack", "Rack"],
+              ["breakdown", "Breakdown+"],
+              ["wms", "WMS Live"],
+              ["recipes", "Rezept-Fokus"],
+              ["agent", "Agent Setup"]
+            ] as [OasisSection, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setSection(key)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold ring-1 ${section === key ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-50"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={async () => {
+              await refreshRampUpDataOnStart();
+              window.location.reload();
+            }}
+            className="px-3 py-1.5 rounded-lg text-sm font-semibold ring-1 bg-amber-50 text-amber-700 ring-amber-300 hover:bg-amber-100 flex items-center gap-2"
+            title="Ramp Up Forecast Zahlen aktualisieren"
+          >
+            🔄 Ramp-Up aktualisieren
+          </button>
         </div>
+
+        {rampUpChanges.length > 0 && !rampUpBannerDismissed && (
+          <div className="mt-4 rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-3">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-sm font-black tracking-wide text-amber-800">
+                  &#9888; {rampUpChanges.length} {rampUpChanges.length === 1 ? "Rezept hat" : "Rezepte haben"} neue Portionszahlen
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {rampUpChanges.map(c => (
+                    <div key={c.code} className="rounded-lg border border-amber-200 bg-white px-3 py-1.5 text-xs flex items-center gap-2">
+                      <span className="font-mono font-bold text-slate-700">{c.code}</span>
+                      <span className="text-slate-500 tabular-nums">{fmtNum(c.oldTotal)} → {fmtNum(c.newTotal)}</span>
+                      <RampUpDeltaBadge delta={c.delta} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <button
+                onClick={() => setRampUpBannerDismissed(true)}
+                className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-amber-200 text-amber-800 text-[10px] font-bold hover:bg-amber-300 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap gap-1.5 text-[11px]">
           {sourceHealth.map(source => (
@@ -662,6 +720,9 @@ export function PlanningOasisView({
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {weekMeals.map(meal => {
               const intel = oasisData?.recipes[meal.code] ?? null;
+              const snaps = rampUpHistoryMap.get(meal.code) ?? [];
+              const vals = snaps.map(s => s.volumes[meal.code] ?? 0);
+              const delta = rampUpChanges.find(c => c.code === meal.code)?.delta ?? 0;
               return (
                 <button
                   key={meal.code}
@@ -675,7 +736,14 @@ export function PlanningOasisView({
                   <div className="mt-1 text-sm font-semibold text-slate-900 line-clamp-2">{meal.recipeName}</div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="rounded-lg bg-slate-50 p-2"><div className="text-slate-500">WO</div><div className="font-bold">{fmtNum(intel?.workOrders.length ?? 0)}</div></div>
-                    <div className="rounded-lg bg-slate-50 p-2"><div className="text-slate-500">Plating</div><div className="font-bold">{fmtNum(intel?.platingRows.reduce((sum, row) => sum + row.totalAmount, 0) ?? 0)}</div></div>
+                    <div className="rounded-lg bg-slate-50 p-2 relative">
+                      <div className="text-slate-500">Plating</div>
+                      <div className="font-bold">{fmtNum(intel?.platingRows.reduce((sum, row) => sum + row.totalAmount, 0) ?? 0)}</div>
+                      <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                        {delta !== 0 && <RampUpDeltaBadge delta={delta} />}
+                        {vals.length >= 2 && <RampUpSparkline values={vals} width={32} height={12} />}
+                      </div>
+                    </div>
                     <div className="rounded-lg bg-sky-50 p-2"><div className="text-sky-700">Forecast</div><div className="font-bold text-sky-900">{fmtNum(intel?.forecastTotal ?? 0)}</div></div>
                     <div className="rounded-lg bg-emerald-50 p-2"><div className="text-emerald-700">PDL</div><div className="font-bold text-emerald-900">{fmtNum(intel?.pdlPortions ?? 0)}</div></div>
                   </div>
@@ -700,6 +768,39 @@ export function PlanningOasisView({
         <PlanningOasisAgentForm week={week} />
       )}
     </div>
+  );
+}
+
+function RampUpSparkline({ values, width = 50, height = 14 }: { values: number[]; width?: number; height?: number }) {
+  if (values.length < 2) return null;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pad = 2;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (width - pad * 2);
+    const y = pad + ((max - v) / range) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  const last = values[values.length - 1];
+  const first = values[0];
+  const stroke = last > first ? "#10b981" : last < first ? "#f43f5e" : "#94a3b8";
+  const lastPt = pts.split(" ").pop()!.split(",");
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: "inline-block", verticalAlign: "middle" }}>
+      <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+      <circle cx={lastPt[0]} cy={lastPt[1]} r="2" fill={stroke} />
+    </svg>
+  );
+}
+
+function RampUpDeltaBadge({ delta }: { delta: number }) {
+  if (delta === 0) return null;
+  const up = delta > 0;
+  return (
+    <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-bold ${up ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+      {up ? "▲" : "▼"} {Math.abs(delta)}
+    </span>
   );
 }
 

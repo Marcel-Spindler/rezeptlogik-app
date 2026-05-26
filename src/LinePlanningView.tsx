@@ -771,6 +771,12 @@ function RecipePill({
               <span className="text-[10px] opacity-50 tabular-nums">{fmtNum(targetTotal)} Port.</span>
               {volumeDelta !== undefined && volumeDelta !== 0 && <DeltaBadge delta={volumeDelta} />}
             </div>
+            {volumeHistory && volumeHistory.length >= 2 && (
+              <div className="mt-1 flex items-center gap-2">
+                <Sparkline values={volumeHistory} width={40} height={12} />
+                <span className="text-[9px] text-slate-400 tabular-nums">{fmtNum(volumeHistory[0])} → {fmtNum(volumeHistory[volumeHistory.length - 1])}</span>
+              </div>
+            )}
           </div>
         ) : (
           <div className="min-w-0">
@@ -1297,96 +1303,98 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     return map;
   }, [appData, manufacturingSnapshot, runTargetsByRecipe, week]);
 
-  // ─── Load data ─────────────────────────────────────────────────────────────
-  useEffect(() => {
+  async function handleRefresh() {
     setManufacturingSnapshot(loadManufacturingPlanSnapshot(week));
     setLoading(true);
     setError(null);
 
-    Promise.all([
-      fetch("/data/gsheet-dump-Kitchen_Priority_List-Verden-2026.json").then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
-      loadData(),
-    ])
-      .then(([sheetData, appData]: [{ sheets: Array<{ title: string; sheetId: number; values: string[][] }> }, Awaited<ReturnType<typeof loadData>>]) => {
-        setAppData(appData);
-        const requestedWeekNum = parseInt(weekStr);
-        let hasWeekSpecificRecipePool = false;
-        setDataWarning(null);
+    try {
+      const [sheetData, appData] = await Promise.all([
+        fetch("/data/gsheet-dump-Kitchen_Priority_List-Verden-2026.json").then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
+        loadData(),
+      ]);
 
-        const weekRecipes = deriveRecipesFromWeekRecipes(appData.weekRecipes ?? [], week, 1 + upliftPercent / 100);
-        if (weekRecipes.length > 0) {
-          setRecipes(weekRecipes);
-          hasWeekSpecificRecipePool = true;
+      setAppData(appData);
+      const requestedWeekNum = parseInt(weekStr);
+      let hasWeekSpecificRecipePool = false;
+      setDataWarning(null);
+
+      const weekRecipes = deriveRecipesFromWeekRecipes(appData.weekRecipes ?? [], week, 1 + upliftPercent / 100);
+      if (weekRecipes.length > 0) {
+        setRecipes(weekRecipes);
+        hasWeekSpecificRecipePool = true;
+      }
+
+      // Ramp-Up History: Snapshot aufzeichnen + Änderungen erkennen
+      if ((appData.weekRecipes ?? []).length > 0) {
+        const { changes, history } = recordRampUpSnapshot(week, appData.weekRecipes ?? []);
+        // History-Map aufbauen: code → Snapshots (enthält totalVerdenVolume über Zeit)
+        const allCodes = new Set((appData.weekRecipes ?? []).filter(r => r.hfWeek === week).map(r => r.code));
+        const histMap = new Map<string, RampUpSnapshot[]>();
+        for (const code of allCodes) {
+          histMap.set(code, history.filter(snap => code in snap.volumes));
         }
+        setRampUpHistoryMap(histMap);
+        if (changes.length > 0) {
+          setRampUpChanges(changes);
+          setRampUpBannerDismissed(false);
+        }
+      }
 
-        // Ramp-Up History: Snapshot aufzeichnen + Änderungen erkennen
-        if ((appData.weekRecipes ?? []).length > 0) {
-          const { changes, history } = recordRampUpSnapshot(week, appData.weekRecipes ?? []);
-          // History-Map aufbauen: code → Snapshots (enthält totalVerdenVolume über Zeit)
-          const allCodes = new Set((appData.weekRecipes ?? []).filter(r => r.hfWeek === week).map(r => r.code));
-          const histMap = new Map<string, RampUpSnapshot[]>();
-          for (const code of allCodes) {
-            histMap.set(code, history.filter(snap => code in snap.volumes));
+      // Also load Lineplanning sheet for slot schedule template (even if wrong week)
+      const lpSheet = sheetData.sheets.find((s: any) => s.title === "Lineplanning");
+      if (lpSheet) {
+        const { weekNum: wn, totalVolume: tv, recipes: recs, initialSchedule } =
+          parseLineplanning(lpSheet.values);
+        setTotalVolume(tv);
+        setWeekNum(wn);
+        // Nur wenn noch kein KW-spezifischer Rezeptpool vorhanden ist,
+        // verwenden wir Rezepte aus dem Lineplanning-Sheet.
+        if (wn === requestedWeekNum) {
+          if (!hasWeekSpecificRecipePool && recs.length > 0) {
+            setRecipes(recs);
+            hasWeekSpecificRecipePool = true;
           }
-          setRampUpHistoryMap(histMap);
-          if (changes.length > 0) {
-            setRampUpChanges(changes);
-            setRampUpBannerDismissed(false);
+          dispatch({ type: "load", schedule: initialSchedule });
+        } else {
+          setDataWarning(prev => `KW ${weekStr}: Die JSON-Datei enthält nur KW ${wn}-Daten. Bitte JSON aktualisieren.${prev ? " " + prev : ""}`);
+        }
+      }
+
+      // Firestore-Manifest nur als Fallback laden, wenn weder KET noch
+      // passendes Lineplanning einen KW-spezifischen Pool geliefert haben.
+      if (!hasWeekSpecificRecipePool) {
+        try {
+          const { getFirebase } = await import("./firebase");
+          const { doc, getDoc } = await import("firebase/firestore");
+          const { db } = getFirebase();
+          const snap = await getDoc(doc(db, `apps/rezeptlogik/weekRecipes/de_${week.replace(/\W/g, "-")}`));
+          if (snap.exists()) {
+            const manifest = snap.data() as { meals: Array<{ code: string; name: string }> };
+            const fallbackRecipes = (manifest.meals ?? []).map((m) => ({
+              code: m.code,
+              name: m.name,
+              totalPlanned: 0,
+              nordics: 0,
+              bnl: 0,
+              de: 0,
+              speedPerMin: 10,
+              isSeafood: detectSeafoodByName(m.name),
+            }));
+            if (fallbackRecipes.length > 0) setRecipes(fallbackRecipes);
           }
-        }
-
-        // Also load Lineplanning sheet for slot schedule template (even if wrong week)
-        const lpSheet = sheetData.sheets.find(s => s.title === "Lineplanning");
-        if (lpSheet) {
-          const { weekNum: wn, totalVolume: tv, recipes: recs, initialSchedule } =
-            parseLineplanning(lpSheet.values);
-          setTotalVolume(tv);
-          setWeekNum(wn);
-          // Nur wenn noch kein KW-spezifischer Rezeptpool vorhanden ist,
-          // verwenden wir Rezepte aus dem Lineplanning-Sheet.
-          if (wn === requestedWeekNum) {
-            if (!hasWeekSpecificRecipePool && recs.length > 0) {
-              setRecipes(recs);
-              hasWeekSpecificRecipePool = true;
-            }
-            dispatch({ type: "load", schedule: initialSchedule });
-          } else {
-            setDataWarning(prev => `KW ${weekStr}: Die JSON-Datei enthält nur KW ${wn}-Daten. Bitte JSON aktualisieren.${prev ? " " + prev : ""}`);
-          }
-        }
-
-        // Firestore-Manifest nur als Fallback laden, wenn weder KET noch
-        // passendes Lineplanning einen KW-spezifischen Pool geliefert haben.
-        if (!hasWeekSpecificRecipePool) {
-          void (async () => {
-            try {
-              const { getFirebase } = await import("./firebase");
-              const { doc, getDoc } = await import("firebase/firestore");
-              const { db } = getFirebase();
-              const snap = await getDoc(doc(db, `apps/rezeptlogik/weekRecipes/de_${week.replace(/\W/g, "-")}`));
-              if (!snap.exists()) return;
-              const manifest = snap.data() as { meals: Array<{ code: string; name: string }> };
-              const fallbackRecipes = (manifest.meals ?? []).map((m) => ({
-                code: m.code,
-                name: m.name,
-                totalPlanned: 0,
-                nordics: 0,
-                bnl: 0,
-                de: 0,
-                speedPerMin: 10,
-                isSeafood: detectSeafoodByName(m.name),
-              }));
-              if (fallbackRecipes.length > 0) setRecipes(fallbackRecipes);
-            } catch { /* kein Firestore / offline → still ignorieren */ }
-          })();
-        }
-
-        setLoading(false);
-      })
-      .catch(err => {
-        setError((err as Error).message);
-        setLoading(false);
-      });
+        } catch { /* kein Firestore / offline → still ignorieren */ }
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  
+  // ─── Load data ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    void handleRefresh();
   }, [week, weekStr]);
 
   useEffect(() => {
@@ -2121,6 +2129,44 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       }
     }
 
+    // Desperate-Fill: Wenn nach dem Run-Fenster-Fill noch Volumen offen ist, ignoriere alle Fenster
+    // und platziere in ALLE freien Slots! Das stellt sicher, dass verplant wird, was kapazitiv geht.
+    {
+      const withRemaining = recipes
+        .map(r => {
+          const prod = producedByRecipe.get(r.code) ?? 0;
+          const tgt = runTargetsByRecipe.get(r.code) ?? lineRunTargetsForRecipe(r);
+          return { recipe: r, remaining: Math.max(0, tgt.totalTarget - prod) };
+        })
+        .filter(x => x.remaining > 0)
+        .sort((a, b) => b.remaining - a.remaining);
+
+      for (const { recipe } of withRemaining) {
+        for (const day of DAYS) {
+          const dayLineIdx = lineIdxForDay(day);
+          const prod = producedByRecipe.get(recipe.code) ?? 0;
+          const tgt = runTargetsByRecipe.get(recipe.code) ?? lineRunTargetsForRecipe(recipe);
+          const totalOpen = Math.max(0, tgt.totalTarget - prod);
+          if (totalOpen <= 0) break;
+          for (const slot of SLOTS) {
+            for (const li of dayLineIdx) {
+              const key = `${day}|${slot.key}|${li}`;
+              if (next[key]) continue;
+              const lineTarget = Math.max(0, lineCapacityByLane[String(li)] ?? 0);
+              const slotPortions = portionsInSlotByLineCapacity(lineTarget, slot.key);
+              const prod3 = producedByRecipe.get(recipe.code) ?? 0;
+              const totalOpen3 = Math.max(0, tgt.totalTarget - prod3);
+              if (totalOpen3 <= 0) continue;
+              next[key] = recipe;
+              const fRun3: 1 | 2 = cockpitRunForDay(day) ?? (prod3 < tgt.firstRunTarget ? 1 : 2);
+              addProduced(recipe, fRun3, Math.min(slotPortions, totalOpen3), day);
+              assignments += 1;
+            }
+          }
+        }
+      }
+    }
+
     // Gleiche Meal-Batches bleiben zusammen; zwischen zwei verschiedenen Batches
     // und nach Batch-Ende steht maximal eine Reinigungs-Pille.
     const normalizedNext = normalizeMealChangeBreaks(next, activeLineIdx);
@@ -2513,6 +2559,13 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
               title="Hilfe & Bedienung"
             >
               ? Hilfe
+            </button>
+            <button
+              onClick={handleRefresh}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+              title="Daten neu laden und Ramp-Up Snapshot aufzeichnen"
+            >
+              🔄 Aktualisieren
             </button>
             <button
               onClick={() => autoPlanFromTargets()}

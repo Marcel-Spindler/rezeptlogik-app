@@ -205,27 +205,32 @@ async function fetchCsvObjects(path: string): Promise<Array<Record<string, strin
 }
 
 function parseForecastRows(rows: string[][], recipes: Map<string, TruthRecipeAccumulator>, weeks: Map<string, TruthWeekAccumulator>) {
-  const headerIndex = rows.findIndex((row) => normalizeCell(row[0]) === "All Markets" && row.some((cell) => normalizeCell(cell) === "recipe code"));
+  const headerIndex = rows.findIndex((row) => row.some((cell) => normalizeCell(cell) === "recipe code"));
   if (headerIndex < 0) return;
 
   const header = rows[headerIndex].map((cell) => normalizeCell(cell));
-  const weekIdx = header.findIndex((cell) => cell === "week.value");
-  const slotIdx = header.findIndex((cell) => cell === "slot");
-  const recipeIdx = header.findIndex((cell) => cell === "recipe code");
-  const bnlIdx = header.findIndex((cell) => cell === "orderSize BNL");
-  const norIdx = header.findIndex((cell) => cell === "orderSize NOR");
-  const deIdx = header.findIndex((cell) => cell === "orderSize DE");
+  let weekIdx = header.findIndex((cell) => cell.toLowerCase() === "week.value" || cell.toLowerCase() === "week");
+  let slotIdx = header.findIndex((cell) => cell.toLowerCase() === "slot" || cell.toLowerCase() === "slot bnl");
+  let recipeIdx = header.findIndex((cell) => cell.toLowerCase() === "recipe code");
+  let bnlIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize bnl" || cell.toLowerCase() === "bnl count w/ buffer");
+  let norIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize nor" || cell.toLowerCase() === "nor count w/ buffer");
+  let deIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize de" || cell.toLowerCase() === "de count w/ buffer");
+
+  // Fallbacks if columns change names
+  if (weekIdx < 0) weekIdx = header.findIndex((cell) => cell.toLowerCase().includes("week"));
+  if (recipeIdx < 0) recipeIdx = header.findIndex((cell) => cell.toLowerCase().includes("recipe") && cell.toLowerCase().includes("code"));
 
   for (const row of rows.slice(headerIndex + 1)) {
+    if (row.length <= recipeIdx || row.length <= weekIdx) continue;
     const week = normalizeCell(row[weekIdx]);
     const rawRecipeCode = normalizeCell(row[recipeIdx]);
     if (!week || !rawRecipeCode) continue;
     const recipe = ensureRecipe(recipes, rawRecipeCode);
     const weekInfo = ensureWeek(weeks, week);
-    const slot = normalizeCell(row[slotIdx]);
-    const bnl = parseNum(row[bnlIdx]);
-    const nordics = parseNum(row[norIdx]);
-    const germany = parseNum(row[deIdx]);
+    const slot = slotIdx >= 0 ? normalizeCell(row[slotIdx]) : "none";
+    const bnl = bnlIdx >= 0 ? parseNum(row[bnlIdx]) : 0;
+    const nordics = norIdx >= 0 ? parseNum(row[norIdx]) : 0;
+    const germany = deIdx >= 0 ? parseNum(row[deIdx]) : 0;
     const total = bnl + nordics + germany;
     if (total <= 0) continue;
 
