@@ -201,7 +201,7 @@ SELECT
     "preblast_location",
     "status",
     "expiration_date",
-    "production_time",
+    "production_.time",
     "last_updated"
 FROM US_OPS_ANALYTICS.HIGHJUMP_ANALYTICS.V_SUBMEAL_PRODUCTION
 WHERE "wh_id" = ?
@@ -307,7 +307,10 @@ function createSnowflakeConnectionOptions() {
 
   // Private Key aus env var rekonstruieren (PKCS8 PEM, 64-Zeichen-Zeilen)
   const lines = privateKeyRaw.replace(/\s+/g, "").match(/.{1,64}/g) || [];
-  const privateKey = `-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----`;
+  const privateKey = `-----BEGIN PRIVATE KEY-----
+${lines.join("
+")}
+-----END PRIVATE KEY-----`;
 
   return {
     account,
@@ -733,9 +736,10 @@ async function extractImageInsights(file) {
     const image = { content: file.contentBase64 };
     const [docResult] = await client.documentTextDetection({ image });
     const fullText = docResult?.fullTextAnnotation?.text || "";
-    const lines = fullText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const lines = fullText.split(/?
+/).map((line) => line.trim()).filter(Boolean);
     const tableLikeRows = lines
-      .filter((line) => /\t|\s{2,}|\|/.test(line))
+      .filter((line) => /	|\s{2,}|\|/.test(line))
       .slice(0, 20)
       .map((line) => clampString(line, 300));
 
@@ -791,7 +795,7 @@ async function enrichAttachment(file) {
         kind: "excel",
         parserState: "excel-ok",
         textPreview: clampString(sheetHead, 1000),
-        tablePreview: excel.sheets.flatMap((sheet) => sheet.previewRows.slice(0, 4).map((row) => row.join("\t"))).slice(0, 20),
+        tablePreview: excel.sheets.flatMap((sheet) => sheet.previewRows.slice(0, 4).map((row) => row.join("	"))).slice(0, 20),
         excel,
       };
     } catch (error) {
@@ -805,8 +809,9 @@ async function enrichAttachment(file) {
 
   if (isTextLike(file.mimeType, file.name)) {
     const text = decodeBase64Text(file.contentBase64);
-    const separator = isTsvLike(file.mimeType, file.name) ? "\t" : ",";
-    const rows = text.split(/\r?\n/).filter(Boolean);
+    const separator = isTsvLike(file.mimeType, file.name) ? "	" : ",";
+    const rows = text.split(/?
+/).filter(Boolean);
     const previewRows = rows.slice(0, 20).map((line) => clampString(line, 300));
     const firstWidth = rows[0] ? rows[0].split(separator).length : 0;
     return {
@@ -837,9 +842,12 @@ function buildAttachmentContext(attachments) {
     const header = `- ${file.name} (${file.mimeType}, ${file.sizeBytes} bytes)`;
     if (file.kind === "image") {
       lines.push(`${header} [Bild: OCR=${file.ocr?.ocrState || "n/a"}]`);
-      if (file.textPreview) lines.push(`  OCR-Text:\n${clampString(file.textPreview, 1200)}`);
+      if (file.textPreview) lines.push(`  OCR-Text:
+${clampString(file.textPreview, 1200)}`);
       if (Array.isArray(file.tablePreview) && file.tablePreview.length > 0) {
-        lines.push(`  Tabellen-Extrakt:\n${file.tablePreview.slice(0, 8).join("\n")}`);
+        lines.push(`  Tabellen-Extrakt:
+${file.tablePreview.slice(0, 8).join("
+")}`);
       }
       continue;
     }
@@ -849,11 +857,14 @@ function buildAttachmentContext(attachments) {
       if (file.excel?.sheets?.length) {
         const sheetLines = file.excel.sheets
           .map((sheet) => `  - Sheet ${sheet.name}: ${sheet.rowCount}x${sheet.columnCount}`)
-          .join("\n");
+          .join("
+");
         lines.push(sheetLines);
       }
       if (Array.isArray(file.tablePreview) && file.tablePreview.length > 0) {
-        lines.push(`  Vorschau:\n${file.tablePreview.slice(0, 8).join("\n")}`);
+        lines.push(`  Vorschau:
+${file.tablePreview.slice(0, 8).join("
+")}`);
       }
       continue;
     }
@@ -861,9 +872,12 @@ function buildAttachmentContext(attachments) {
     if (file.kind === "tsv" || file.kind === "csv" || file.kind === "text") {
       lines.push(`${header} [${file.kind}: ${file.parserState}]`);
       if (Array.isArray(file.tablePreview) && file.tablePreview.length > 0) {
-        lines.push(`  Vorschau:\n${file.tablePreview.slice(0, 10).join("\n")}`);
+        lines.push(`  Vorschau:
+${file.tablePreview.slice(0, 10).join("
+")}`);
       } else if (file.textPreview) {
-        lines.push(`  Text:\n${clampString(file.textPreview, 1200)}`);
+        lines.push(`  Text:
+${clampString(file.textPreview, 1200)}`);
       }
       continue;
     }
@@ -871,7 +885,8 @@ function buildAttachmentContext(attachments) {
     lines.push(`${header} [Dateityp ohne Parser, nur Metadaten verwendet]`);
   }
 
-  return lines.join("\n");
+  return lines.join("
+");
 }
 
 async function cleanupExpiredArtifacts() {
@@ -977,7 +992,8 @@ function buildSystemPrompt(schema) {
     rack.enforceDeLinerRules ? "Rack-Regel: DE-Liner-Regeln einhalten." : "",
     rack.enforceForezoneSlots ? "Rack-Regel: Forezone-Slots einhalten." : "",
     rack.enforceTierLogic ? "Rack-Regel: Tier-Logik einhalten." : "",
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean).join("
+");
 }
 
 function buildDeterministicFallbackResult(request, reason) {
@@ -1057,7 +1073,14 @@ async function callGemini(request, enrichedAttachments, modelOverride) {
 
   const systemPrompt = buildSystemPrompt(request.schema);
   const attachmentContext = buildAttachmentContext(enrichedAttachments || []);
-  const userParts = [{ text: `${systemPrompt}\n\nAuftrag: ${request.objective}\n\nSchema:\n${JSON.stringify(request.schema)}\n\n${attachmentContext}` }];
+  const userParts = [{ text: `${systemPrompt}
+
+Auftrag: ${request.objective}
+
+Schema:
+${JSON.stringify(request.schema)}
+
+${attachmentContext}` }];
 
   for (const file of enrichedAttachments || []) {
     if (file.kind !== "image") continue;
@@ -1116,7 +1139,12 @@ async function callGitHubModels(request, enrichedAttachments, modelOverride) {
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user", content: `Auftrag: ${request.objective}\n\nSchema:\n${JSON.stringify(request.schema)}\n\n${attachmentContext}` },
+      { role: "user", content: `Auftrag: ${request.objective}
+
+Schema:
+${JSON.stringify(request.schema)}
+
+${attachmentContext}` },
     ],
   };
 
@@ -1209,51 +1237,304 @@ async function createSheetsClient() {
   return google.sheets({ version: "v4", auth: await auth.getClient() });
 }
 
+function normalizeCell(value) {
+  return String(value ?? "").trim();
+}
+
+function extractHfWeekFromTitle(title) {
+  const direct = /(20\d{2})[-_ ]?W(\d{1,2})/i.exec(title);
+  if (direct) return `${direct[1]}-W${String(parseInt(direct[2], 10)).padStart(2, "0")}`;
+  const kw = /KW\s*(\d{1,2})/i.exec(title);
+  if (kw) {
+    const year = (process.env.GSHEET_HF_YEAR || "").trim() || String(new Date().getFullYear());
+    return `${year}-W${String(parseInt(kw[1], 10)).padStart(2, "0")}`;
+  }
+  const w = /^W(\d{1,2})$/i.exec(title.trim());
+  if (w) {
+    const year = (process.env.GSHEET_HF_YEAR || "").trim() || String(new Date().getFullYear());
+    return `${year}-W${String(parseInt(w[1], 10)).padStart(2, "0")}`;
+  }
+  return undefined;
+}
+
+function parseRecipeNameCell(full) {
+  const text = normalizeCell(full);
+  const m = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s*-\s*(.+?)(?:\s*\[(?:BNL|BENL|DE|DKSE|NORD)\])?\s*$/.exec(text);
+  if (m) return { code: m[1], base: m[2].trim() };
+  return { code: text, base: text };
+}
+
+function parseLegacyMealSelectionRows(rows, upsertWeekRecipe) {
+  let added = 0;
+  for (const row of rows) {
+    const hfWeek = normalizeCell(row[0]);
+    const code = normalizeCell(row[1]);
+    const verdenAbsBENL = num(row[18]);
+    const verdenAbsNORD = num(row[19]);
+    const verdenAbsDE = num(row[20]);
+    const ok = upsertWeekRecipe({
+      hfWeek,
+      weekShort: hfWeek.slice(5),
+      code,
+      recipeName: normalizeCell(row[3]),
+      preference: normalizeCell(row[2]),
+      slot: {
+        BENL: num(row[5]) || undefined,
+        DKSE: num(row[6]) || undefined,
+        DE: num(row[7]) || undefined,
+      },
+      verdenVolume: {
+        BENL: verdenAbsBENL,
+        DKSE: verdenAbsNORD,
+        DE: verdenAbsDE,
+      },
+      totalVerdenVolume: num(row[21]) || (verdenAbsBENL + verdenAbsNORD + verdenAbsDE),
+      productionBuffer: num(row[23]),
+    }, 40);
+    if (ok) added += 1;
+  }
+  return added;
+}
+
+function parseRampUpConviniRows(rows, upsertWeekRecipe) {
+  let added = 0;
+  let inAllMarkets = false;
+
+  for (const raw of rows) {
+    const row = raw.map((cell) => normalizeCell(cell));
+    const c0 = row[0] || "";
+    const c1 = row[1] || "";
+    const c3 = row[3] || "";
+    const code = row[8] || "";
+
+    if (!inAllMarkets && c0 === "All Markets" && c1 === "week.value" && code === "recipe code") {
+      inAllMarkets = true;
+      continue;
+    }
+    if (!inAllMarkets) continue;
+
+    // PO-Abschnitte unterhalb der Tabelle sind keine Meal-Zeilen.
+    if (c0.includes("Use POs below") || c0.includes("PO") || c1 === "distributionCenter.value") {
+      break;
+    }
+
+    const hfWeek = c1;
+    if (!/^\d{4}-W\d{2}$/.test(hfWeek) || !code) continue;
+
+    const bnl = num(row[10]);
+    const nord = num(row[14]);
+    const de = num(row[18]);
+    const slotVal = num(c3);
+
+    const ok = upsertWeekRecipe({
+      hfWeek,
+      weekShort: normalizeCell(row[2]) || hfWeek.slice(5),
+      code,
+      recipeName: "",
+      preference: "",
+      slot: {
+        BENL: slotVal || undefined,
+        DKSE: slotVal || undefined,
+        DE: slotVal || undefined,
+      },
+      verdenVolume: { BENL: bnl, DKSE: nord, DE: de },
+      totalVerdenVolume: bnl + nord + de,
+      productionBuffer: 0,
+    }, 100);
+    if (ok) added += 1;
+  }
+
+  return added;
+}
+
+function parseMskuInputRows(rows, hfWeek, upsertWeekRecipe) {
+  if (!rows.length) return 0;
+  const header = rows[0].map((cell) => normalizeCell(cell).toLowerCase());
+  const recipeIdx = header.findIndex((h) => h === "recipe name" || h.includes("recipe name"));
+  if (recipeIdx < 0) return 0;
+
+  let added = 0;
+  for (let i = 1; i < rows.length; i += 1) {
+    const full = normalizeCell(rows[i]?.[recipeIdx]);
+    if (!full) continue;
+    const { code, base } = parseRecipeNameCell(full);
+    if (!/^[A-Z]{2}\d{4}[A-Z0-9]+$/.test(code)) continue;
+
+    const ok = upsertWeekRecipe({
+      hfWeek,
+      weekShort: hfWeek.slice(5),
+      code,
+      recipeName: base,
+    }, 10);
+    if (ok) added += 1;
+  }
+  return added;
+}
+
+function parseWTabRows(rows, hfWeek, upsertWeekRecipe) {
+  const marketToken = (value) => {
+    const token = normalizeCell(value).toUpperCase().replace(/\s+/g, "");
+    if (token === "BNL" || token === "BENL") return "BENL";
+    if (token === "NOR" || token === "NORD" || token === "DKSE") return "DKSE";
+    if (token === "DE") return "DE";
+    return undefined;
+  };
+
+  const extractVolumes = (row) => {
+    const out = { BENL: 0, DKSE: 0, DE: 0 };
+    for (let i = 0; i < row.length - 1; i += 1) {
+      const mk = marketToken(row[i] || "");
+      if (!mk) continue;
+      const v = num(row[i + 1]);
+      if (v > 0) out[mk] = v;
+    }
+    return out;
+  };
+
+  let added = 0;
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i].map((cell) => normalizeCell(cell));
+    const recipeCell = row.find((cell) => /^[A-Z]{2}\d{4}[A-Z0-9]+\s*-\s*/.test(cell));
+    if (!recipeCell) continue;
+
+    const { code, base } = parseRecipeNameCell(recipeCell);
+    const vol = { BENL: 0, DKSE: 0, DE: 0 };
+
+    const blockRows = rows.slice(i, Math.min(i + 10, rows.length));
+    for (const blockRow of blockRows) {
+      const parsed = extractVolumes(blockRow.map((cell) => normalizeCell(cell)));
+      vol.BENL = Math.max(vol.BENL, parsed.BENL);
+      vol.DKSE = Math.max(vol.DKSE, parsed.DKSE);
+      vol.DE = Math.max(vol.DE, parsed.DE);
+    }
+
+    const ok = upsertWeekRecipe({
+      hfWeek,
+      weekShort: hfWeek.slice(5),
+      code,
+      recipeName: base,
+      verdenVolume: vol,
+      totalVerdenVolume: vol.BENL + vol.DKSE + vol.DE,
+    }, 20);
+    if (ok) added += 1;
+  }
+
+  return added;
+}
+
 async function readMealSelectionRows() {
   const sheets = await createSheetsClient();
-  const weekRecipes = [];
+  const byKey = new Map();
+  const sourcePriority = new Map();
   const weeks = new Set();
-  const seen = new Set();
 
-  for (const spreadsheetId of getSheetIds()) {
-    const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: SHEET_RANGE });
-    const rows = response.data.values || [];
-    for (const row of rows) {
-      const hfWeek = (row[0] || "").toString().trim();
-      const code = (row[1] || "").toString().trim();
-      if (!hfWeek || !code || !/^\d{4}-W\d{2}$/.test(hfWeek)) continue;
-      const dedupeKey = `${hfWeek}__${code}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
+  const keyOf = (hfWeek, code) => `${hfWeek}__${code}`;
 
-      const verdenAbsBENL = num(row[18]);
-      const verdenAbsNORD = num(row[19]);
-      const verdenAbsDE = num(row[20]);
-      weekRecipes.push({
+  const upsertWeekRecipe = (patch, priority = 0) => {
+    const hfWeek = normalizeCell(patch.hfWeek);
+    const code = normalizeCell(patch.code).toUpperCase();
+    if (!hfWeek || !code || !/^\d{4}-W\d{2}$/.test(hfWeek)) return false;
+
+    const key = keyOf(hfWeek, code);
+    const prevPriority = sourcePriority.get(key) ?? -1;
+    const existing = byKey.get(key);
+
+    if (existing && priority < prevPriority) {
+      if (!existing.recipeName && patch.recipeName) existing.recipeName = patch.recipeName;
+      if (!existing.preference && patch.preference) existing.preference = patch.preference;
+      return false;
+    }
+
+    const next = {
+      ...(existing || {
         hfWeek,
         weekShort: hfWeek.slice(5),
         code,
-        recipeName: (row[3] || "").toString(),
-        preference: (row[2] || "").toString(),
-        slot: {
-          BENL: num(row[5]) || undefined,
-          DKSE: num(row[6]) || undefined,
-          DE: num(row[7]) || undefined
-        },
-        verdenVolume: {
-          BENL: verdenAbsBENL,
-          DKSE: verdenAbsNORD,
-          DE: verdenAbsDE
-        },
-        totalVerdenVolume: num(row[21]) || (verdenAbsBENL + verdenAbsNORD + verdenAbsDE),
-        productionBuffer: num(row[23])
+        recipeName: "",
+        preference: "",
+        slot: {},
+        verdenVolume: { BENL: 0, DKSE: 0, DE: 0 },
+        totalVerdenVolume: 0,
+        productionBuffer: 0,
+      }),
+      hfWeek,
+      weekShort: patch.weekShort || (existing?.weekShort ?? hfWeek.slice(5)),
+      code,
+      recipeName: patch.recipeName || existing?.recipeName || "",
+      preference: patch.preference || existing?.preference || "",
+      slot: {
+        BENL: patch.slot?.BENL ?? existing?.slot?.BENL,
+        DKSE: patch.slot?.DKSE ?? existing?.slot?.DKSE,
+        DE: patch.slot?.DE ?? existing?.slot?.DE,
+      },
+      verdenVolume: {
+        BENL: patch.verdenVolume?.BENL ?? existing?.verdenVolume?.BENL ?? 0,
+        DKSE: patch.verdenVolume?.DKSE ?? existing?.verdenVolume?.DKSE ?? 0,
+        DE: patch.verdenVolume?.DE ?? existing?.verdenVolume?.DE ?? 0,
+      },
+      totalVerdenVolume: patch.totalVerdenVolume ?? existing?.totalVerdenVolume ?? 0,
+      productionBuffer: patch.productionBuffer ?? existing?.productionBuffer ?? 0,
+    };
+
+    if (!patch.totalVerdenVolume) {
+      next.totalVerdenVolume =
+        (next.verdenVolume.BENL || 0) +
+        (next.verdenVolume.DKSE || 0) +
+        (next.verdenVolume.DE || 0);
+    }
+
+    byKey.set(key, next);
+    sourcePriority.set(key, priority);
+    weeks.add(hfWeek);
+    return !existing;
+  };
+
+  for (const spreadsheetId of getSheetIds()) {
+    let titles = [];
+    try {
+      const meta = await sheets.spreadsheets.get({
+        spreadsheetId,
+        fields: "sheets(properties(title))",
       });
-      weeks.add(hfWeek);
+      titles = (meta.data.sheets || [])
+        .map((sheet) => sheet.properties?.title || "")
+        .filter(Boolean);
+    } catch {
+      titles = [];
+    }
+
+    let addedFromRampUp = 0;
+    const rampRanges = [
+      "'PO Maitre'!A1:Z5000",
+      "'[Import] Convini Order Sheet'!A1:Z5000",
+      "'_Import_ Convini Order Sheet'!A1:Z5000",
+      "'Input '!A1:Z5000",
+    ];
+    for (const range of rampRanges) {
+      try {
+        const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+        const rows = response.data.values || [];
+        const added = parseRampUpConviniRows(rows, upsertWeekRecipe);
+        addedFromRampUp += added;
+        if (added > 0) break;
+      } catch {
+        // ignore and try next range candidate
+      }
+    }
+
+    // Legacy Fallback nur wenn in diesem Sheet keine Ramp-up-Meals erkannt wurden.
+    if (addedFromRampUp === 0) {
+      try {
+        const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: SHEET_RANGE });
+        parseLegacyMealSelectionRows(response.data.values || [], upsertWeekRecipe);
+      } catch {
+        // ignore
+      }
     }
   }
 
   return {
-    weekRecipes,
+    weekRecipes: Array.from(byKey.values()),
     weeks: [...weeks].sort()
   };
 }

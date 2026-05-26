@@ -205,7 +205,7 @@ async function fetchCsvObjects(path: string): Promise<Array<Record<string, strin
 }
 
 function parseForecastRows(rows: string[][], recipes: Map<string, TruthRecipeAccumulator>, weeks: Map<string, TruthWeekAccumulator>) {
-  const headerIndex = rows.findIndex((row) => row.some((cell) => normalizeCell(cell) === "recipe code"));
+  const headerIndex = rows.findIndex((row) => row.some((cell) => normalizeCell(cell).toLowerCase() === "recipe code"));
   if (headerIndex < 0) return;
 
   const header = rows[headerIndex].map((cell) => normalizeCell(cell));
@@ -222,7 +222,11 @@ function parseForecastRows(rows: string[][], recipes: Map<string, TruthRecipeAcc
 
   for (const row of rows.slice(headerIndex + 1)) {
     if (row.length <= recipeIdx || row.length <= weekIdx) continue;
-    const week = normalizeCell(row[weekIdx]);
+    let week = normalizeCell(row[weekIdx]);
+    const matchWeek = week.match(/^W(\d{2})[a-z]*$/i);
+    if (matchWeek) {
+      week = `2026-W${matchWeek[1]}`;
+    }
     const rawRecipeCode = normalizeCell(row[recipeIdx]);
     if (!week || !rawRecipeCode) continue;
     const recipe = ensureRecipe(recipes, rawRecipeCode);

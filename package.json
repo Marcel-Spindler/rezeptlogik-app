@@ -17,6 +17,7 @@
     "rackfile:generate": "tsx scripts/rackfile-tool.ts generate",
     "push:firestore": "tsx scripts/push-firestore.ts",
     "sync:factor:forecast": "tsx scripts/sync-factor-forecast.ts",
+    "sync:running:forecast": "tsx scripts/sync-running-forecast.ts",
     "sync:gsheet:registry": "tsx scripts/refresh-gsheet-sources.ts",
     "test:smoke:oase": "playwright test Test/planning-oase-smoke.spec.ts --browser=chromium",
     "deploy": "npm run build && firebase deploy --only hosting",

@@ -37,6 +37,14 @@ if errorlevel 1 (
     echo OK: Factor Forecast abgeschlossen >> "%LOG%"
 )
 
+echo [3.5/4] Running Forecast All Markets aktualisieren... >> "%LOG%"
+call npm run sync:running:forecast >> "%LOG%" 2>&1
+if errorlevel 1 (
+    echo FEHLER: Running Forecast Sync fehlgeschlagen >> "%LOG%"
+) else (
+    echo OK: Running Forecast abgeschlossen >> "%LOG%"
+)
+
 echo [4/4] Build + Deploy zu Firebase Hosting... >> "%LOG%"
 call npm run build >> "%LOG%" 2>&1
 if errorlevel 1 (

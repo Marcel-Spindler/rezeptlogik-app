@@ -240,15 +240,36 @@ export function PlanningOasisView({
     loadFactorDailyMeta().then(setFactorDailyMeta).catch(() => setFactorDailyMeta(null));
   }, []);
 
-  const weekMeals = useMemo(() => {
-    return data.weekRecipes
-      .filter(row => row.hfWeek === week)
-      .filter(isProducedInVerden)
-      .filter((row, index, all) => all.findIndex(other => other.code === row.code) === index)
-      .sort((a, b) => b.totalVerdenVolume - a.totalVerdenVolume);
-  }, [data.weekRecipes, week]);
-
   const weekIntel = oasisData?.weeks[week] ?? null;
+  const weekMeals = useMemo(() => {
+    const weekShort = week.match(/W\d{1,2}/)?.[0] ?? week;
+    const byCode = new Map<string, WeekRecipe>();
+
+    for (const row of data.weekRecipes) {
+      if (row.hfWeek !== week) continue;
+      if (!byCode.has(row.code)) byCode.set(row.code, row);
+    }
+
+    return (weekIntel?.recipes ?? [])
+      .map((code) => {
+        const existing = byCode.get(code);
+        if (existing) return existing;
+        const intel = oasisData?.recipes[code] ?? oasisData?.recipes[recipeDigitKey(code)] ?? null;
+        return {
+          hfWeek: week,
+          weekShort,
+          code,
+          recipeName: intel?.recipeName ?? code,
+          preference: "",
+          slot: {},
+          verdenVolume: { BENL: 0, DKSE: 0, DE: 0 },
+          totalVerdenVolume: 0,
+          productionBuffer: 0,
+        } satisfies WeekRecipe;
+      })
+      .sort((a, b) => b.totalVerdenVolume - a.totalVerdenVolume || a.code.localeCompare(b.code, "de"));
+  }, [data.weekRecipes, oasisData, week, weekIntel]);
+
   const weekForecastFallback = useMemo(
     () => weekMeals.reduce((sum, m) => sum + m.totalVerdenVolume, 0),
     [weekMeals]

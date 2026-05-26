@@ -287,6 +287,13 @@ function pickLowestLoadSlot(
   return best ? { day: best.day, shift: best.shift } : null;
 }
 
+function pickLowestLoadSlotWithFallback(
+  slotLoads: Map<string, number>,
+  activeShifts: readonly PlannerShift[]
+): { day: PlannerDay; shift: PlannerShift } | null {
+  return pickLowestLoadSlot(slotLoads, activeShifts) ?? pickLowestLoadSlot(slotLoads, PLANNER_SHIFTS);
+}
+
 const REGULAR_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
 const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi"];
 const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
@@ -308,6 +315,13 @@ function pickLowestRegularSubSlot(
     }
   }
   return best ? { day: best.day, shift: best.shift } : null;
+}
+
+function pickLowestRegularSubSlotWithFallback(
+  slotLoads: Map<string, number>,
+  activeShifts: readonly PlannerShift[]
+): { day: PlannerDay; shift: PlannerShift } | null {
+  return pickLowestRegularSubSlot(slotLoads, activeShifts) ?? pickLowestRegularSubSlot(slotLoads, PLANNER_SHIFTS);
 }
 
 function topConflictLabel(conflict: PlannerStationConflict): string {
@@ -404,6 +418,14 @@ function pickLowestLoadSlotForDay(
     }
   }
   return best ? { day: best.day, shift: best.shift } : null;
+}
+
+function pickLowestLoadSlotForDayWithFallback(
+  slotLoads: Map<string, number>,
+  day: PlannerDay,
+  activeShifts: readonly PlannerShift[]
+): { day: PlannerDay; shift: PlannerShift } | null {
+  return pickLowestLoadSlotForDay(slotLoads, day, activeShifts) ?? pickLowestLoadSlotForDay(slotLoads, day, PLANNER_SHIFTS);
 }
 
 function normalizeBatches(raw: AutoFulfillmentBatch[], totalTarget: number): AutoFulfillmentBatch[] {
@@ -1912,10 +1934,10 @@ export function PlanningView(
   }
 
   function handleAutoplanRecipe(targetCode: string) {
-    if (activeShifts.length === 0) return;
     setStorage((prev) => {
+      const planningShifts = activeShifts.length > 0 ? activeShifts : PLANNER_SHIFTS;
       const isShiftActive = (shift: PlannerShift | undefined): boolean => {
-        return !!shift && activeShifts.includes(shift);
+        return !!shift && planningShifts.includes(shift);
       };
       const weekState = getWeekState(prev, week);
       const currentScenario = getActiveScenario(prev, week);
@@ -1991,8 +2013,8 @@ export function PlanningView(
       const platingDay = avoidSaturday(batches[0]?.day ?? existingMain?.day ?? "Fr");
 
       if (!keepExistingMain) {
-        const slot = pickLowestLoadSlotForDay(slotLoads, platingDay, activeShifts)
-          ?? pickLowestLoadSlot(slotLoads, activeShifts);
+        const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, platingDay, planningShifts)
+          ?? pickLowestLoadSlotWithFallback(slotLoads, planningShifts);
         if (slot) {
           nextAssignments[assignmentKey(targetCode)] = {
             recipeCode: targetCode,
@@ -2029,9 +2051,9 @@ export function PlanningView(
         const preferredSubDay = allowSundayPrep
           ? "So"
           : preferredSubProductionDay(sub.category, spec, platingDay, leadDays);
-        const slot = pickLowestLoadSlotForDay(slotLoads, preferredSubDay, activeShifts)
-          ?? (preferredSubDay === "So" ? null : pickLowestRegularSubSlot(slotLoads, activeShifts))
-          ?? pickLowestLoadSlot(slotLoads, activeShifts);
+        const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, preferredSubDay, planningShifts)
+          ?? (preferredSubDay === "So" ? null : pickLowestRegularSubSlotWithFallback(slotLoads, planningShifts))
+          ?? pickLowestLoadSlotWithFallback(slotLoads, planningShifts);
         if (!slot) continue;
         nextAssignments[assignmentKey(targetCode, sub.subRecipeId)] = {
           recipeCode: targetCode,
@@ -2066,10 +2088,10 @@ export function PlanningView(
   }
 
   function handleAutoPlanWeekBoard() {
-    if (activeShifts.length === 0) return;
     setStorage((prev) => {
+      const planningShifts = activeShifts.length > 0 ? activeShifts : PLANNER_SHIFTS;
       const isShiftActive = (shift: PlannerShift | undefined): boolean => {
-        return !!shift && activeShifts.includes(shift);
+        return !!shift && planningShifts.includes(shift);
       };
       const isPlannerDay = (day: unknown): day is PlannerDay => {
         return typeof day === "string" && (PLANNER_DAYS as readonly string[]).includes(day);
@@ -2140,8 +2162,8 @@ export function PlanningView(
         const platingDay = avoidSaturday(safePlannerDay(batches[0]?.day ?? existingMain?.day ?? "Fr"));
 
         if (!keepExistingMain) {
-          const slot = pickLowestLoadSlotForDay(slotLoads, platingDay, activeShifts)
-            ?? pickLowestLoadSlot(slotLoads, activeShifts);
+          const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, platingDay, planningShifts)
+            ?? pickLowestLoadSlotWithFallback(slotLoads, planningShifts);
           if (slot) {
             nextAssignments[mainKey] = {
               recipeCode: recipeSummary.recipeCode,
@@ -2242,9 +2264,9 @@ export function PlanningView(
             : batches.length > 1
               ? distributedRunSubDay(0, subIndex)
               : preferredSubProductionDay(sub.category, spec, needDay, leadDays);
-          const slot = pickLowestLoadSlotForDay(slotLoads, preferredSubDay, activeShifts)
-            ?? (preferredSubDay === "So" ? null : pickLowestRegularSubSlot(slotLoads, activeShifts))
-            ?? pickLowestLoadSlot(slotLoads, activeShifts);
+          const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, preferredSubDay, planningShifts)
+            ?? (preferredSubDay === "So" ? null : pickLowestRegularSubSlotWithFallback(slotLoads, planningShifts))
+            ?? pickLowestLoadSlotWithFallback(slotLoads, planningShifts);
           if (!slot) continue;
           const subKey = assignmentKey(recipeSummary.recipeCode, sub.subRecipeId);
           nextAssignments[subKey] = {
@@ -2281,8 +2303,8 @@ export function PlanningView(
         const fallbackTarget = Math.max(0, Math.round((weekRecipe.totalVerdenVolume ?? 0) * portionMultiplier));
         const fallbackBatches = resolveAutoBatches(recipeSummary.recipeCode, fallbackTarget, autoProfile, batchSplitByRecipe);
         const fallbackDay = avoidSaturday(safePlannerDay(fallbackBatches[0]?.day ?? currentMain?.day ?? "Fr"));
-        const slot = pickLowestLoadSlotForDay(slotLoads, fallbackDay, activeShifts)
-          ?? pickLowestLoadSlot(slotLoads, activeShifts);
+        const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, fallbackDay, planningShifts)
+          ?? pickLowestLoadSlotWithFallback(slotLoads, planningShifts);
         if (!slot) continue;
 
         nextAssignments[mainKey] = {
@@ -2332,7 +2354,7 @@ export function PlanningView(
             return sourceLoadDelta || b.activeMin - a.activeMin || a.key.localeCompare(b.key);
           })[0];
 
-        const slot = pickLowestLoadSlotForDay(slotLoads, targetDay, activeShifts);
+        const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, targetDay, planningShifts);
         if (!candidate || !slot) continue;
         const parsedNote = parseBoardNote(candidate.row.note);
         nextAssignments[candidate.key] = {

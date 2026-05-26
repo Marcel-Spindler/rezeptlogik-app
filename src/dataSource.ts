@@ -1,6 +1,6 @@
 import type { DataBundle } from "./types";
 
-const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "local") as "local" | "firestore";
+const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "firestore";
 
 export async function refreshRampUpDataOnStart(): Promise<void> {
   if (SOURCE !== "firestore") return;
@@ -17,6 +17,53 @@ export async function refreshRampUpDataOnStart(): Promise<void> {
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+export function subscribeRampUpHashChanges(onChanged: () => void): () => void {
+  if (SOURCE !== "firestore") return () => {};
+
+  let disposed = false;
+  let initialized = false;
+  let lastHash = "";
+  let unsubscribe: (() => void) | null = null;
+
+  (async () => {
+    try {
+      const [{ getFirebase }, { doc, onSnapshot }] = await Promise.all([
+        import("./firebase"),
+        import("firebase/firestore"),
+      ]);
+      if (disposed) return;
+
+      const { db } = getFirebase();
+      unsubscribe = onSnapshot(
+        doc(db, "apps", "rezeptlogik"),
+        (snapshot) => {
+          const data = snapshot.data() as { rampUpHash?: string } | undefined;
+          const nextHash = String(data?.rampUpHash ?? "");
+          if (!initialized) {
+            initialized = true;
+            lastHash = nextHash;
+            return;
+          }
+          if (nextHash && nextHash !== lastHash) {
+            lastHash = nextHash;
+            onChanged();
+          }
+        },
+        () => {
+          // Bei Listener-Fehlern bleibt Polling als Fallback aktiv.
+        }
+      );
+    } catch {
+      // Firestore optional: bei Fehlern still zurückfallen.
+    }
+  })();
+
+  return () => {
+    disposed = true;
+    if (unsubscribe) unsubscribe();
+  };
 }
 
 export async function loadData(): Promise<DataBundle> {

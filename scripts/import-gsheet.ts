@@ -327,36 +327,6 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
       console.warn(`     Konnte Sheet-Metadaten nicht lesen (${e?.message ?? e})`);
     }
 
-    const mskuTitles = titles.filter(t => /MSKU\s*INPUT\s*\(KW\d{1,2}\)/i.test(t));
-    for (const title of mskuTitles) {
-      const hfWeek = extractHfWeekFromTitle(title);
-      if (!hfWeek) continue;
-      try {
-        const range = `'${title}'!A1:Z5000`;
-        const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range });
-        const rows = res.data.values ?? [];
-        const count = parseMskuInputRows(rows, hfWeek);
-        if (count > 0) console.log(`     ${count} neue Zeilen aus ${title} übernommen`);
-      } catch {
-        // intentionally ignored
-      }
-    }
-
-    const weekTitles = titles.filter(t => /^W\d{1,2}$/i.test(t.trim()));
-    for (const title of weekTitles) {
-      const hfWeek = extractHfWeekFromTitle(title);
-      if (!hfWeek) continue;
-      try {
-        const range = `'${title}'!A1:Z5000`;
-        const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range });
-        const rows = res.data.values ?? [];
-        const count = parseWTabRows(rows, hfWeek);
-        if (count > 0) console.log(`     ${count} neue Zeilen aus ${title} übernommen`);
-      } catch {
-        // intentionally ignored
-      }
-    }
-
     // 1) Preferred source: Ramp-up table.
     let added = 0;
     try {

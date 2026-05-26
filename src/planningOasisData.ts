@@ -392,7 +392,7 @@ function buildDataset(sheets: DumpSheet[], truth: PlanningTruthDataset, appData:
     weeks[week] = {
       week,
       hasTruthData: Boolean(truthWeek),
-      recipes: Array.from(recipeSet).sort((a, b) => a.localeCompare(b, "de")),
+      recipes: Array.from(weekRecipeCodes).sort((a, b) => a.localeCompare(b, "de")),
       workOrderCount: weekWorkOrders.get(week) ?? 0,
       totalTargetPortions: weekTargets.get(week) ?? 0,
       platingTotal: weekPlating.get(week) ?? 0,

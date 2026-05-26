@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { loadData, refreshRampUpDataOnStart } from "./dataSource";
+import { loadData, refreshRampUpDataOnStart, subscribeRampUpHashChanges } from "./dataSource";
 import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, Station, ShelfLifeInfo, DetailedSubRecipe, RecipeStructure } from "./types";
 import { STATIONS } from "./types";
 import { DEFAULT_SHIFT_MIN, DEFAULT_STATION_DEVICE_COUNTS, DEFAULT_STATION_POOLS, computeWeekLoad, fmtMin, getBaseVerdenVolume, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools, normalizePoolName, saveStationDeviceCounts, saveStationPools, tokenToStation, workflowSteps } from "./equipment";
@@ -70,6 +70,26 @@ function resolveStructureByCode(
   if (!wantedDigits) return undefined;
 
   for (const [key, value] of Object.entries(structures)) {
+    if (codeDigits(key) === wantedDigits || codeDigits(value.code) === wantedDigits) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function resolveRecipeByCode(
+  recipes: DataBundle["recipes"] | undefined,
+  primaryCode: string,
+  fallbackCode?: string
+): Recipe | undefined {
+  if (!recipes) return undefined;
+  if (recipes[primaryCode]) return recipes[primaryCode];
+  if (fallbackCode && recipes[fallbackCode]) return recipes[fallbackCode];
+
+  const wantedDigits = codeDigits(primaryCode) || codeDigits(fallbackCode);
+  if (!wantedDigits) return undefined;
+
+  for (const [key, value] of Object.entries(recipes)) {
     if (codeDigits(key) === wantedDigits || codeDigits(value.code) === wantedDigits) {
       return value;
     }
@@ -421,25 +441,44 @@ export default function App() {
 
   useEffect(() => {
     let disposed = false;
+    let refreshTimer: number | null = null;
+    let unsubscribeRampUp = () => {};
+
+    const loadLatestData = async () => {
+      const d = await loadData();
+      if (disposed) return;
+      setData(d);
+      // Nur setzen wenn noch kein gespeicherter Wert vorhanden
+      const saved = lsGet<string>("week", "");
+      if (!saved || !d.weeks.includes(saved)) {
+        const firstWithRecipes = d.weeks.find(w => d.weekRecipes.some(r => r.hfWeek === w));
+        const week = firstWithRecipes ?? d.weeks[0] ?? "";
+        setSelectedWeek(week);
+      }
+    };
+
     (async () => {
       try {
         await refreshRampUpDataOnStart();
-        const d = await loadData();
-        if (disposed) return;
-        setData(d);
-        // Nur setzen wenn noch kein gespeicherter Wert vorhanden
-        const saved = lsGet<string>("week", "");
-        if (!saved || !d.weeks.includes(saved)) {
-          const firstWithRecipes = d.weeks.find(w => d.weekRecipes.some(r => r.hfWeek === w));
-          const week = firstWithRecipes ?? d.weeks[0] ?? "";
-          setSelectedWeek(week);
-        }
+        await loadLatestData();
+
+        // Live-Ramp-up: regelmäßig GSheet→Firestore sync triggern.
+        refreshTimer = window.setInterval(() => {
+          void refreshRampUpDataOnStart();
+        }, 60_000);
+
+        // Realtime-Refresh nur bei echter Hash-Änderung.
+        unsubscribeRampUp = subscribeRampUpHashChanges(() => {
+          void loadLatestData();
+        });
       } catch (e: any) {
         if (!disposed) setError(String(e?.message ?? e));
       }
     })();
     return () => {
       disposed = true;
+      if (refreshTimer !== null) window.clearInterval(refreshTimer);
+      unsubscribeRampUp();
     };
   }, []);
 
@@ -509,7 +548,7 @@ export default function App() {
       if (delta !== 0) {
         changed.push({
           code,
-          recipeName: recipesByCode[code]?.baseName || stripMarketTag(current.recipeName || previous.recipeName),
+          recipeName: resolveRecipeByCode(recipesByCode, code)?.baseName || stripMarketTag(current.recipeName || previous.recipeName),
           current: currentPortions,
           previous: previousPortions,
           delta,
@@ -649,7 +688,7 @@ export default function App() {
                       <span className="font-mono text-xs" style={tone.code}>{r.code}</span>
                       <span className="text-sm font-semibold">{fmtNum(adjustedPortions(getBaseVerdenVolume(r), upliftPercent))}</span>
                     </div>
-                    <div className="text-sm font-medium" style={tone.title}>{data.recipes[r.code]?.baseName || stripMarketTag(r.recipeName)}</div>
+                    <div className="text-sm font-medium" style={tone.title}>{resolveRecipeByCode(data.recipes, r.code)?.baseName || stripMarketTag(r.recipeName)}</div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       <span className="pill" style={tone.preference}>{r.preference}</span>
                       {MARKETS.map(m => r.verdenVolume[m] > 0 && (
@@ -767,7 +806,7 @@ export default function App() {
             </Suspense>
           )}
           {view === "recipe" && (activeRecipe
-            ? <RecipeDetail wr={activeRecipe} recipe={data.recipes[activeRecipe.code]} data={data}
+            ? <RecipeDetail wr={activeRecipe} recipe={resolveRecipeByCode(data.recipes, activeRecipe.code)} data={data}
                             cookSchedules={data.cookSchedules} processSpecs={data.processSpecs ?? {}}
                             upliftPercent={upliftPercent} />
             : <div className="card p-6 text-slate-500">{tl(locale, "Kein Rezept ausgewählt.")}</div>)}
@@ -777,7 +816,7 @@ export default function App() {
       </div>
       <footer className="mt-6 text-xs text-slate-400">
         Daten generiert: {formatDateTime(locale, data.generatedAt)} ·
-        Quelle: {(import.meta.env.VITE_DATA_SOURCE ?? "local")} · Site: VF (Verden)
+        Quelle: {(import.meta.env.VITE_DATA_SOURCE ?? "firestore")} · Site: VF (Verden)
       </footer>
     </Shell>
   );

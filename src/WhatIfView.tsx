@@ -23,6 +23,7 @@ import type {
 } from "./types";
 import type { UiLocale } from "./i18n";
 import { tl } from "./i18n";
+import { usePlanningOasisData } from "./planningOasisData";
 
 // ════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -331,25 +332,68 @@ export function WhatIfView({
   locale: UiLocale;
 }): JSX.Element {
 
+  const { data: oasisData } = usePlanningOasisData();
+  const weekIntel = oasisData?.weeks[week] ?? null;
+
   const weekMeals = useMemo(() => {
-    return data.weekRecipes
-      .filter(r => r.hfWeek === week)
-      .filter(isProducedInVerden)
-      .filter((r, i, arr) => arr.findIndex(x => x.code === r.code) === i)
-      .sort((a, b) => getBaseVolume(b) - getBaseVolume(a));
-  }, [data.weekRecipes, week]);
+    const weekShort = week.match(/W\d{1,2}/)?.[0] ?? week;
+    const byCode = new Map<string, WeekRecipe>();
+
+    for (const row of data.weekRecipes) {
+      if (row.hfWeek !== week) continue;
+      if (!byCode.has(row.code)) byCode.set(row.code, row);
+    }
+
+    return (weekIntel?.recipes ?? [])
+      .map((code) => {
+        const existing = byCode.get(code);
+        if (existing) return existing;
+        const recipe = data.recipes[code] ?? data.recipes[code.replace(/^[A-Z]{2}/, "")];
+        return {
+          hfWeek: week,
+          weekShort,
+          code,
+          recipeName: recipe?.baseName ?? code,
+          preference: "",
+          slot: {},
+          verdenVolume: { BENL: 0, DKSE: 0, DE: 0 },
+          totalVerdenVolume: 0,
+          productionBuffer: 0,
+        } satisfies WeekRecipe;
+      })
+      .sort((a, b) => getBaseVolume(b) - getBaseVolume(a) || a.code.localeCompare(b.code, "de"));
+  }, [data.recipes, data.weekRecipes, week, weekIntel]);
+  
+  type MealChoice = {
+    code: string;
+    recipeName: string;
+    basePortions: number;
+    weekMeal?: WeekRecipe;
+  };
+  
+  const mealChoices = useMemo(() => {
+    return weekMeals
+      .map((meal) => ({
+        code: meal.code,
+        recipeName: meal.recipeName,
+        basePortions: getBaseVolume(meal),
+        weekMeal: meal,
+      }))
+      .sort((a, b) => b.basePortions - a.basePortions || a.code.localeCompare(b.code, "de"));
+  }, [weekMeals]);
 
   const [selectedCode, setSelectedCode] = useState<string | null>(
-    weekMeals[0]?.code ?? null
+    mealChoices[0]?.code ?? null
   );
   useEffect(() => {
-    if (weekMeals.length > 0 && !weekMeals.find(m => m.code === selectedCode)) {
-      setSelectedCode(weekMeals[0].code);
+    if (mealChoices.length > 0 && !mealChoices.find(m => m.code === selectedCode)) {
+      setSelectedCode(mealChoices[0].code);
     }
-  }, [weekMeals, selectedCode]);
+  }, [mealChoices, selectedCode]);
 
-  const selectedMeal: WeekRecipe | undefined = weekMeals.find(m => m.code === selectedCode);
-  const selectedRecipe: Recipe | undefined = selectedCode ? data.recipes[selectedCode] : undefined;
+  const selectedMealChoice = mealChoices.find(m => m.code === selectedCode) ?? null;
+  const selectedMeal: WeekRecipe | undefined = selectedMealChoice?.weekMeal;
+  const selectedRecipe: Recipe | undefined = selectedCode ? data.recipes[selectedCode] ?? data.recipes[selectedCode.replace(/^[A-Z]{2}/, "")] : undefined;
   const selectedStructure: RecipeStructure | undefined = selectedCode ? data.structures?.[selectedCode] : undefined;
 
   const [overrideTick, setOverrideTick] = useState(0);
@@ -442,7 +486,8 @@ export function WhatIfView({
 
   const [direction, setDirection] = useState<Direction>("forward");
   const basePortions = selectedMeal ? getBaseVolume(selectedMeal) : 0;
-  const upliftedPortions = Math.round(basePortions * (1 + upliftPercent / 100));
+  const selectedMealBasePortions = selectedMealChoice?.basePortions ?? 0;
+  const upliftedPortions = Math.round(selectedMealBasePortions * (1 + upliftPercent / 100));
   const [targetPortions, setTargetPortions] = useState<number>(upliftedPortions || 1000);
   const [subRecipeScenario, setSubRecipeScenario] = useState<SubRecipeScenario>("missing-meals");
   const [subRecipeMissingMeals, setSubRecipeMissingMeals] = useState<number>(1000);
@@ -773,7 +818,7 @@ export function WhatIfView({
 
   const overrideCount = overrides.size;
 
-  if (!selectedMeal || !selectedRecipe) {
+  if (!selectedRecipe) {
     return (
       <div className="card p-6">
         <h2 className="text-xl font-bold">{tl(locale, "What-if & Diff")}</h2>
@@ -911,9 +956,9 @@ export function WhatIfView({
           onChange={e => setSelectedCode(e.target.value)}
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium"
         >
-          {weekMeals.map(m => (
+          {mealChoices.map(m => (
             <option key={m.code} value={m.code}>
-              {m.code} · {m.recipeName} · ({fmt(getBaseVolume(m))} Portionen)
+              {m.code} · {m.recipeName} · ({fmt(m.basePortions)} Portionen)
             </option>
           ))}
         </select>
