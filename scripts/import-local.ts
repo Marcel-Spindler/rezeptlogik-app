@@ -39,13 +39,15 @@ function resolveSourceDir(): string {
   const configured = process.env.REZEPTLOGIK_SOURCE_DIR?.trim();
   if (configured) return configured;
 
+  // Priorität: ./imports (im Projektordner) → C:\Rezeptlogik → ./Rezeptlogik
   const candidates = [
+    resolve("imports"),
     "C:\\Rezeptlogik",
     resolve("Rezeptlogik"),
   ];
 
   for (const candidate of candidates) {
-    if (existsSync(join(candidate, XLSX_FILE))) return candidate;
+    if (existsSync(join(candidate, COOK_CSV))) return candidate;
   }
 
   return candidates[0];

@@ -1,0 +1,104 @@
+import type { WeekRecipe, Recipe } from "../types";
+import { getRampUpHistory } from "../rampUpHistory";
+import { RampHistorySparkline } from "../RecipeDetailView";
+import {
+  adjustedPortions, fmtNum,
+  MARKETS, MARKET_COLOR, MARKET_LABEL,
+  recipeListTone, recipeSearchText, stripMarketTag,
+  resolveRecipeByCode,
+} from "../helpers";
+import { getBaseVerdenVolume } from "../equipment";
+
+interface Props {
+  recipes: WeekRecipe[];
+  allRecipesCount: number;
+  recipesByCode: Record<string, Recipe>;
+  activeCode: string | undefined;
+  selectedWeek: string;
+  upliftPercent: number;
+  searchText: string;
+  onSearchChange: (text: string) => void;
+  onSelect: (code: string) => void;
+}
+
+function RecipeListItem({ wr, recipe, isActive, week, upliftPercent, onClick }: {
+  wr: WeekRecipe;
+  recipe: ReturnType<typeof resolveRecipeByCode>;
+  isActive: boolean;
+  week: string;
+  upliftPercent: number;
+  onClick: () => void;
+}) {
+  const tone = recipeListTone(wr.code);
+  const portions = adjustedPortions(getBaseVerdenVolume(wr), upliftPercent);
+  const rampHistory = getRampUpHistory(week);
+  const sparkValues = rampHistory.map(s => s.volumes[wr.code] ?? 0).filter(v => v > 0);
+
+  return (
+    <button onClick={onClick} className="w-full text-left px-3 py-2.5 rounded-xl transition-all"
+      style={isActive ? tone.active : tone.base}>
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-mono text-xs mt-0.5" style={tone.code}>{wr.code}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          {sparkValues.length >= 2 && <RampHistorySparkline values={sparkValues} width={56} height={18} />}
+          <span className="text-sm font-bold tabular-nums">{fmtNum(portions)}</span>
+        </div>
+      </div>
+      <div className="text-sm font-medium mt-0.5 leading-tight" style={tone.title}>
+        {recipe?.baseName || stripMarketTag(wr.recipeName)}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        <span className="pill text-[10px]" style={tone.preference}>{wr.preference}</span>
+        {MARKETS.map(m => wr.verdenVolume[m] > 0 && (
+          <span key={m} className={`pill text-[10px] ${MARKET_COLOR[m]}`}>
+            {MARKET_LABEL[m]} {fmtNum(wr.verdenVolume[m])}
+          </span>
+        ))}
+      </div>
+    </button>
+  );
+}
+
+export function RecipeList({ recipes, allRecipesCount, recipesByCode, activeCode, selectedWeek, upliftPercent, searchText, onSearchChange, onSelect }: Props) {
+  return (
+    <div className="card p-2">
+      <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        Rezepte in {selectedWeek}
+      </div>
+      <div className="px-2 pb-2">
+        <input
+          type="search" value={searchText}
+          onChange={e => onSearchChange(e.target.value)}
+          placeholder="Meal, Artikel, SKU, Zutat ..."
+          className="w-full rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-3 py-2 text-sm"
+        />
+        <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+          <span>{fmtNum(recipes.length)} von {fmtNum(allRecipesCount)}</span>
+          {searchText && (
+            <button className="hover:text-slate-800" onClick={() => onSearchChange("")}>leeren</button>
+          )}
+        </div>
+      </div>
+      <ul className="divide-y divide-slate-100 space-y-0.5">
+        {recipes.map(r => (
+          <li key={r.code}>
+            <RecipeListItem
+              wr={r}
+              recipe={resolveRecipeByCode(recipesByCode, r.code)}
+              isActive={activeCode === r.code}
+              week={selectedWeek}
+              upliftPercent={upliftPercent}
+              onClick={() => onSelect(r.code)}
+            />
+          </li>
+        ))}
+        {recipes.length === 0 && allRecipesCount > 0 && (
+          <li className="px-3 py-4 text-sm text-slate-500">Keine Treffer für diese Suche.</li>
+        )}
+        {allRecipesCount === 0 && (
+          <li className="px-3 py-4 text-sm text-slate-500">Keine Rezepte in dieser Woche.</li>
+        )}
+      </ul>
+    </div>
+  );
+}

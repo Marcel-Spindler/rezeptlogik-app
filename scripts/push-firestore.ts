@@ -88,6 +88,35 @@ async function main() {
     })));
   }
 
+  if (bundle.productionPlan) {
+    const week = bundle.productionPlan.week ?? "unknown";
+    console.log(`Push productionPlan (${bundle.productionPlan.rows.length} WO-Zeilen, KW ${week}) …`);
+    await APP_ROOT.collection("productionPlan").doc(week).set(bundle.productionPlan);
+  }
+
+  if (bundle.printOrders?.length) {
+    console.log(`Push printOrders (${bundle.printOrders.length}) …`);
+    await batchedSet("printOrders", bundle.printOrders.map((r, i) => ({
+      id: `${r.week || "?"}__${r.code}__${r.msku || i}`.replace(/[^A-Za-z0-9_-]/g, "_"),
+      data: r as any
+    })));
+  }
+
+  if (bundle.kitchenPriority?.length) {
+    console.log(`Push kitchenPriority (${bundle.kitchenPriority.length} Einträge) …`);
+    await APP_ROOT.collection("kitchenPriority").doc("current").set({
+      rows: bundle.kitchenPriority,
+      updatedAt: bundle.generatedAt
+    });
+  }
+
+  if (bundle.produktionsplanung) {
+    console.log("Push produktionsplanung …");
+    for (const [market, entry] of Object.entries(bundle.produktionsplanung)) {
+      await APP_ROOT.collection("produktionsplanung").doc(`${entry.week}__${market}`).set(entry);
+    }
+  }
+
   console.log("✓ Firestore aktualisiert");
 }
 

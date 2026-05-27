@@ -1,20 +1,21 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
-import type { DataBundle, WeekRecipe } from "./types";
-import { PlanningView } from "./PlanningView";
-import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
-import { WmsLiveView } from "./WmsLiveView";
-import type { UiLocale } from "./i18n";
-import { usePlanningOasisData } from "./planningOasisData";
-import { loadFactorDailyMeta, type FactorDailyMeta } from "./planningTruthData";
+﻿import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import type { DataBundle, WeekRecipe } from "../types";
+import { PlanningView } from "../PlanningView";
+import { BreakdownEquipmentView } from "../BreakdownEquipmentView";
+import { WmsLiveView } from "../WmsLiveView";
+import type { UiLocale } from "../i18n";
+import { usePlanningOasisData } from "../planningOasisData";
+import { loadFactorDailyMeta, type FactorDailyMeta } from "../planningTruthData";
 import { PlanningOasisAgentForm } from "./PlanningOasisAgentForm";
-import { runSplitForRecipeLike } from "./runPlanning";
-import { refreshRampUpDataOnStart } from "./dataSource";
-import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
+import { runSplitForRecipeLike } from "../runPlanning";
+import { refreshRampUpDataOnStart } from "../dataSource";
+import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "../rampUpHistory";
 
-const LinePlanningSection = lazy(() => import("./LinePlanningView").then((module) => ({ default: module.LinePlanningView })));
-const RackSection = lazy(() => import("./RackV2View").then((module) => ({ default: module.RackV2View })));
+const LinePlanningSection = lazy(() => import("../LinePlanningView").then((module) => ({ default: module.LinePlanningView })));
+const RackSection = lazy(() => import("../RackV2View").then((module) => ({ default: module.RackV2View })));
+const MfgCalendarSection = lazy(() => import("../ManufacturingCalendarView").then(m => ({ default: m.ManufacturingCalendarView })));
 
-type OasisSection = "cockpit" | "lines" | "rack" | "breakdown" | "wms" | "recipes" | "agent";
+type OasisSection = "cockpit" | "mfg" | "lines" | "rack" | "breakdown" | "wms" | "recipes" | "agent";
 type SourceHealthStatus = "ok" | "warn" | "missing" | "checking";
 type GsheetRegistry = {
   generatedAt: string;
@@ -47,7 +48,7 @@ type GsheetRegistry = {
   }>;
 };
 
-const OASIS_SECTIONS: readonly OasisSection[] = ["cockpit", "lines", "rack", "breakdown", "wms", "recipes", "agent"] as const;
+const OASIS_SECTIONS: readonly OasisSection[] = ["cockpit", "mfg", "lines", "rack", "breakdown", "wms", "recipes", "agent"] as const;
 const OASIS_SOURCE_CHECKS: ReadonlyArray<{ key: string; label: string; path: string; optional?: boolean }> = [
   { key: "app-data", label: "App Data", path: "/data/data.json" },
   { key: "kpl", label: "KPL Dump", path: "/data/gsheet-dump-Kitchen_Priority_List-Verden-2026.json" },
@@ -231,6 +232,19 @@ export function PlanningOasisView({
     writeOasisSectionToUrl(section);
   }, [section]);
 
+  // Delivery week for Manufacturing Calendar + Linienplanung.
+  // If productionPlan is already available and ahead of selected week → use it.
+  // Otherwise: next ISO week from selected.
+  const mfgWeek = useMemo<string>(() => {
+    const pPlanWeek = data.productionPlan?.week ?? "";
+    if (pPlanWeek && pPlanWeek > week) return pPlanWeek;
+    const m = /^(\d{4})-W(\d{2})$/.exec(week);
+    if (!m) return week;
+    const y = parseInt(m[1]), kw = parseInt(m[2]);
+    if (kw < 52) return `${y}-W${String(kw + 1).padStart(2, "0")}`;
+    return `${y + 1}-W01`;
+  }, [data.productionPlan, week]);
+
   const { data: oasisData } = usePlanningOasisData();
   const sourceHealth = useOasisSourceHealth();
   const gsheetRegistry = useGsheetRegistry();
@@ -401,6 +415,7 @@ export function PlanningOasisView({
           <div className="flex flex-wrap gap-2">
             {([
               ["cockpit", "Cockpit"],
+              ["mfg", "Küchen-Kalender"],
               ["lines", "Linienplanung"],
               ["rack", "Rack"],
               ["breakdown", "Breakdown+"],
@@ -700,18 +715,41 @@ export function PlanningOasisView({
         </div>
       )}
 
+      {section === "mfg" && (
+        <Suspense fallback={<div className="card p-6 text-slate-500">Küchen-Kalender wird geladen …</div>}>
+          <MfgCalendarSection
+            data={data}
+            week={week}
+            mfgWeek={mfgWeek}
+            onSelectRecipe={onSelectRecipe}
+            onRequestLinesSection={() => setSection("lines")}
+          />
+        </Suspense>
+      )}
+
       {section === "lines" && (
         <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
-          <LinePlanningSection week={week} locale={locale} upliftPercent={upliftPercent} />
+          {mfgWeek !== week && (
+            <div className="mb-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700">
+              Linienplanung für <span className="font-black">{mfgWeek}</span> (nächste Lieferwoche).
+              Snapshot aus Küchen-Kalender wird automatisch geladen sobald vorhanden.
+            </div>
+          )}
+          <LinePlanningSection week={mfgWeek} locale={locale} upliftPercent={upliftPercent} />
         </Suspense>
       )}
 
       {section === "rack" && (
         <Suspense fallback={<div className="card p-6 text-slate-500">Rack wird geladen …</div>}>
+          {mfgWeek !== week && (
+            <div className="mb-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-xs font-semibold text-teal-700">
+              Rack für <span className="font-black">{mfgWeek}</span> (nächste Lieferwoche — nach Linienplanung).
+            </div>
+          )}
           <RackSection
-            week={week}
+            week={mfgWeek}
             locale={locale}
-            weekRecipes={data.weekRecipes}
+            weekRecipes={data.weekRecipes.filter(r => r.hfWeek === mfgWeek)}
             recipes={data.recipes}
             cookSchedules={data.cookSchedules}
             processSpecs={data.processSpecs}

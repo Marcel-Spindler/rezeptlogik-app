@@ -174,6 +174,55 @@ export interface RecipeStructure {
   markets: Partial<Record<Market, DetailedSubRecipe[]>>; // Top-Level-Sub-Rezepte je Markt
 }
 
+// === Production Plan (Sheet 6: Fertigstellungszeitplan) ======================
+// Work Order structure — "W{XX} Transperancy Total Overview" tab.
+// Each row = one sub-recipe batch within a Work Order.
+export interface WorkOrderEntry {
+  run: number;
+  kitchenDay: string;         // "2026-05-24"
+  workOrder: string;          // "23-175"
+  recipeCode: string;         // "FV0035A"
+  recipeName: string;         // "Salmon with pesto [BNL]"
+  subRecipe: string;          // "Salmon - garlic seasoning"
+  plannedMeals: number;
+  stagingKg: number;
+  kitchenKg: number;
+  postKg: number;
+  yieldPct: number;           // 40.9 (not 0.409)
+  logisticTarget?: number;
+}
+
+export interface ProductionPlan {
+  week: string;
+  generatedAt: string;
+  rows: WorkOrderEntry[];
+}
+
+// === Print Orders (Sheet 2: Print Orders Sleeven) ============================
+export interface PrintOrderRow {
+  week: string;
+  code: string;
+  msku: string;
+  qty: number;
+  sleeveType?: string;
+}
+
+// === Kitchen Priority (Sheet 3) ==============================================
+// "Verden-2026-W{XX}" tab: header row 1, data from row 2.
+// Cols: [0]=date-group, [2]=Priority, [3]=WOStaging by, [4]=Comments,
+//       [5]=Debox Day, [6]=WO Ready, [7]=Hot Kitchen Weekday,
+//       [8]=Date Needed, [9]=Work Order Number
+export interface KitchenPriorityRow {
+  priority: number;
+  workOrder: string;          // "23-175"
+  woStagingBy?: string;
+  deboxDay?: string;          // "Tuesday"
+  woReady: boolean;
+  hotKitchenWeekday?: string; // "Monday"
+  dateNeeded?: string;        // "2026-05-24 - 1"
+  comments?: string;
+}
+
 export interface DataBundle {
   generatedAt: string;
   weeks: string[];                                // sortiert: ["2026-W17", ...]
@@ -183,6 +232,11 @@ export interface DataBundle {
   processSpecs?: Record<string, ProcessSpec>;     // key = subRecipeId
   shelfLifeBySku?: Record<string, ShelfLifeInfo>; // key = ingredient / SKU code
   structures?: Record<string, RecipeStructure>;   // key = recipe code
+  productionPlan?: ProductionPlan;
+  printOrders?: PrintOrderRow[];
+  kitchenPriority?: KitchenPriorityRow[];
+  produktionsplanung?: Record<string, ProduktionsplanungEntry>;
+  maitreRampup?: Record<string, MaitreRampupEntry>;
 }
 
 // === Fulfillment Report: Maitre-Ramp-up ======================================

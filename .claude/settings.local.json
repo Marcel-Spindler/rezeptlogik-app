@@ -1,7 +1,28 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(npm install *)",
+      "Bash(dir \"c:\\\\Factor Projekte\\\\rezeptlogik-app\" -Recurse -Name -Include \".env*\")",
+      "Bash(dir \"c:\\\\Factor Projekte\\\\rezeptlogik-app\\\\secrets\")",
+      "Bash(not exist *)",
+      "Bash(node -e ' *)",
+      "Bash(Get-ChildItem -Path \"c:\\\\Factor Projekte\\\\rezeptlogik-app\\\\scripts\" -Force)",
+      "Bash(node --check index.js)",
+      "Bash(npx firebase-tools *)",
+      "Bash(Start-Process -FilePath \"cmd\" -ArgumentList \"/c npm run dev\" -WindowStyle Minimized)",
+      "Bash(Write-Output \"Dev server started\")",
+      "PowerShell(Start-Process -FilePath \"cmd\" -ArgumentList \"/c cd `\"c:\\\\Factor Projekte\\\\rezeptlogik-app`\" && npm run dev\" -WindowStyle Normal)",
+      "Bash(Get-ChildItem -Path 'C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\src\\\\planning-oasis' -Force)",
+      "Bash(dir \"c:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\\" /b 2>&1)",
+      "Bash(node -e \"console.log\\(/^export-recipes.*\\\\.csv$/i.test\\('export-recipes \\(1\\).csv'\\)\\)\")",
+      "Bash(node --loader tsx/esm scripts/import-sub-recipes.ts)",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\MarcelSpindler\\\\Downloads\\\\export-sub-recipes-by-recipe-detailed \\(7\\).csv\" -Destination \"C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\\")",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\MarcelSpindler\\\\Downloads\\\\export-recipes \\(1\\).csv\" -Destination \"C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\export-recipes W23.csv\")",
+      "PowerShell(Copy-Item \"C:\\\\Users\\\\MarcelSpindler\\\\Downloads\\\\export-recipes \\(2\\).csv\" -Destination \"C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\export-recipes W24.csv\")",
+      "Bash(Test-Path \"c:\\\\Factor Projekte\\\\rezeptlogik-app\\\\CONTEXT_SESSION.md\")"
     ]
   }
 }

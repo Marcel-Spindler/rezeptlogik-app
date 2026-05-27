@@ -7,3 +7,7 @@ secrets/
 public/data/*.json
 !public/data/.gitkeep
 *.tsbuildinfo
+imports/*.csv
+imports/*.xlsx
+imports/*.xls
+!imports/.gitkeep

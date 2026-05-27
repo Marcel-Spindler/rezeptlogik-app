@@ -2,6 +2,23 @@ import type { DataBundle } from "./types";
 
 const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "firestore";
 
+export async function refreshOperationalData(): Promise<void> {
+  if (SOURCE !== "firestore") return;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 25000);
+  try {
+    await fetch("/api/refresh-operational", {
+      method: "POST",
+      signal: controller.signal,
+      cache: "no-store"
+    });
+  } catch {
+    // Non-fatal — letzten Firestore-Stand nutzen.
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export async function refreshRampUpDataOnStart(): Promise<void> {
   if (SOURCE !== "firestore") return;
   const controller = new AbortController();
@@ -108,6 +125,11 @@ async function loadFromFirestore(): Promise<DataBundle> {
   const csSnap  = await getDocs(collection(ROOT, "cookSchedules"));
   const psSnap  = await getDocs(collection(ROOT, "processSpecs")).catch(() => null);
   const slSnap  = await getDocs(collection(ROOT, "shelfLifeBySku")).catch(() => null);
+  const pkgSnap = await getDocs(collection(ROOT, "productionPlan")).catch(() => null);
+  const poSnap  = await getDocs(collection(ROOT, "printOrders")).catch(() => null);
+  const kpSnap  = await getDocs(collection(ROOT, "kitchenPriority")).catch(() => null);
+  const pplSnap = await getDocs(collection(ROOT, "produktionsplanung")).catch(() => null);
+  const mrSnap  = await getDocs(collection(ROOT, "maitreRampup")).catch(() => null);
   const recipes: DataBundle["recipes"] = {};
   recSnap.forEach(d => { recipes[d.id] = d.data() as any; });
   const structures: NonNullable<DataBundle["structures"]> = {};
@@ -121,6 +143,38 @@ async function loadFromFirestore(): Promise<DataBundle> {
     const row = d.data() as any;
     if (row?.skuCode) shelfLifeBySku[row.skuCode] = row;
   });
+
+  // Production plan: docs sorted by week, take the latest
+  let productionPlan: DataBundle["productionPlan"] = undefined;
+  if (pkgSnap && !pkgSnap.empty) {
+    const sorted = pkgSnap.docs.sort((a, b) => b.id.localeCompare(a.id));
+    productionPlan = sorted[0].data() as any;
+  }
+
+  const printOrders: DataBundle["printOrders"] = [];
+  poSnap?.forEach(d => { const row = d.data() as any; if (row) printOrders!.push(row); });
+
+  const kitchenPriority: DataBundle["kitchenPriority"] = [];
+  kpSnap?.forEach(d => { const row = d.data() as any; if (row) kitchenPriority!.push(row); });
+  kitchenPriority.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+
+  const produktionsplanung: NonNullable<DataBundle["produktionsplanung"]> = {};
+  pplSnap?.forEach(d => {
+    const row = d.data() as any;
+    if (row && row.market) {
+      produktionsplanung[row.market] = row;
+    }
+  });
+
+  const maitreRampup: NonNullable<DataBundle["maitreRampup"]> = {};
+  mrSnap?.forEach(d => {
+    const row = d.data() as any;
+    if (row && row.recipeCode) {
+      const key = `${row.market}__${row.week}__${row.recipeCode}`;
+      maitreRampup[key] = row;
+    }
+  });
+
   return {
     generatedAt: meta.generatedAt ?? "",
     weeks: meta.weeks ?? [],
@@ -129,6 +183,11 @@ async function loadFromFirestore(): Promise<DataBundle> {
     structures,
     cookSchedules,
     processSpecs,
-    shelfLifeBySku
+    shelfLifeBySku,
+    productionPlan,
+    printOrders: printOrders.length ? printOrders : undefined,
+    kitchenPriority: kitchenPriority.length ? kitchenPriority : undefined,
+    produktionsplanung: Object.keys(produktionsplanung).length ? produktionsplanung : undefined,
+    maitreRampup: Object.keys(maitreRampup).length ? maitreRampup : undefined,
   };
 }

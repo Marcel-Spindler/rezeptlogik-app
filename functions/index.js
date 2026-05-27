@@ -25,7 +25,7 @@ const PLAN_WRITES = APP_ROOT.collection("planWrites");
 const RACK_WRITES = APP_ROOT.collection("rackWrites");
 const AGENT_ARTIFACTS = APP_ROOT.collection("agentRunArtifacts");
 const DEFAULT_GSHEET_ID = "1IEi_CB9KylW2MgjNiGax5EIvhhAtkIzm57uO1sSESj8";
-const SHEET_RANGE = "Meal Selection!A3:X1000";
+const SHEET_RANGE = "'Menu-Selection-LIVE'!A3:X1000";
 
 function getSheetIds() {
   return [
@@ -307,10 +307,7 @@ function createSnowflakeConnectionOptions() {
 
   // Private Key aus env var rekonstruieren (PKCS8 PEM, 64-Zeichen-Zeilen)
   const lines = privateKeyRaw.replace(/\s+/g, "").match(/.{1,64}/g) || [];
-  const privateKey = `-----BEGIN PRIVATE KEY-----
-${lines.join("
-")}
------END PRIVATE KEY-----`;
+  const privateKey = `-----BEGIN PRIVATE KEY-----\n${lines.join("\n")}\n-----END PRIVATE KEY-----`;
 
   return {
     account,
@@ -736,8 +733,7 @@ async function extractImageInsights(file) {
     const image = { content: file.contentBase64 };
     const [docResult] = await client.documentTextDetection({ image });
     const fullText = docResult?.fullTextAnnotation?.text || "";
-    const lines = fullText.split(/?
-/).map((line) => line.trim()).filter(Boolean);
+    const lines = fullText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const tableLikeRows = lines
       .filter((line) => /	|\s{2,}|\|/.test(line))
       .slice(0, 20)
@@ -810,8 +806,7 @@ async function enrichAttachment(file) {
   if (isTextLike(file.mimeType, file.name)) {
     const text = decodeBase64Text(file.contentBase64);
     const separator = isTsvLike(file.mimeType, file.name) ? "	" : ",";
-    const rows = text.split(/?
-/).filter(Boolean);
+    const rows = text.split(/\r?\n/).filter(Boolean);
     const previewRows = rows.slice(0, 20).map((line) => clampString(line, 300));
     const firstWidth = rows[0] ? rows[0].split(separator).length : 0;
     return {
@@ -846,8 +841,7 @@ function buildAttachmentContext(attachments) {
 ${clampString(file.textPreview, 1200)}`);
       if (Array.isArray(file.tablePreview) && file.tablePreview.length > 0) {
         lines.push(`  Tabellen-Extrakt:
-${file.tablePreview.slice(0, 8).join("
-")}`);
+${file.tablePreview.slice(0, 8).join("\n")}`);
       }
       continue;
     }
@@ -857,14 +851,12 @@ ${file.tablePreview.slice(0, 8).join("
       if (file.excel?.sheets?.length) {
         const sheetLines = file.excel.sheets
           .map((sheet) => `  - Sheet ${sheet.name}: ${sheet.rowCount}x${sheet.columnCount}`)
-          .join("
-");
+          .join("\n");
         lines.push(sheetLines);
       }
       if (Array.isArray(file.tablePreview) && file.tablePreview.length > 0) {
         lines.push(`  Vorschau:
-${file.tablePreview.slice(0, 8).join("
-")}`);
+${file.tablePreview.slice(0, 8).join("\n")}`);
       }
       continue;
     }
@@ -873,8 +865,7 @@ ${file.tablePreview.slice(0, 8).join("
       lines.push(`${header} [${file.kind}: ${file.parserState}]`);
       if (Array.isArray(file.tablePreview) && file.tablePreview.length > 0) {
         lines.push(`  Vorschau:
-${file.tablePreview.slice(0, 10).join("
-")}`);
+${file.tablePreview.slice(0, 10).join("\n")}`);
       } else if (file.textPreview) {
         lines.push(`  Text:
 ${clampString(file.textPreview, 1200)}`);
@@ -885,8 +876,7 @@ ${clampString(file.textPreview, 1200)}`);
     lines.push(`${header} [Dateityp ohne Parser, nur Metadaten verwendet]`);
   }
 
-  return lines.join("
-");
+  return lines.join("\n");
 }
 
 async function cleanupExpiredArtifacts() {
@@ -992,8 +982,7 @@ function buildSystemPrompt(schema) {
     rack.enforceDeLinerRules ? "Rack-Regel: DE-Liner-Regeln einhalten." : "",
     rack.enforceForezoneSlots ? "Rack-Regel: Forezone-Slots einhalten." : "",
     rack.enforceTierLogic ? "Rack-Regel: Tier-Logik einhalten." : "",
-  ].filter(Boolean).join("
-");
+  ].filter(Boolean).join("\n");
 }
 
 function buildDeterministicFallbackResult(request, reason) {
@@ -1603,6 +1592,263 @@ exports.refreshRampUp = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
     res.json({ ok: true, refreshed: true, count: weekRecipes.length, checkedAt });
   } catch (error) {
     logger.error("refreshRampUp failed", error);
+    res.status(500).json({ ok: false, error: error?.message || String(error) });
+  }
+});
+
+const OPERATIONAL_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+async function getAllTabNamesGS(sheets, spreadsheetId) {
+  try {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets(properties(title))" });
+    return (meta.data.sheets ?? []).map(s => s.properties?.title ?? "").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function findCurrentWeekTabGS(tabs, patterns, fallbackToLatest = true) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const kw = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+
+  for (const delta of [0, 1, -1, 2]) {
+    const weekNum = kw + delta;
+    for (const pattern of patterns) {
+      const needle = pattern.replace("{XX}", String(weekNum).padStart(2, "0")).replace("{KW}", String(weekNum)).replace("{YEAR}", String(year));
+      const found = tabs.find(t => t.toLowerCase().includes(needle.toLowerCase()));
+      if (found) return found;
+    }
+  }
+  if (fallbackToLatest) {
+    const kwTabs = tabs.filter(t => /W\d{2}|PW\d{2}|\d{4}-W\d{2}/.test(t));
+    if (kwTabs.length) return kwTabs[kwTabs.length - 1];
+  }
+  return null;
+}
+
+async function sheetValues(sheets, spreadsheetId, tabName) {
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:Z2000` });
+  return res.data.values ?? [];
+}
+
+function numVal(v) {
+  if (v == null || v === "") return 0;
+  const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseRecipeNameGS(full) {
+  const m = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s*-\s*(.+?)(?:\s*\[(?:BNL|BENL|DE|DKSE|NORD)\])?\s*$/.exec(full);
+  if (m) return { code: m[1], base: m[2].trim() };
+  return { code: full, base: full };
+}
+
+async function readProductionPlanGSheet(sheets) {
+  const spreadsheetId = process.env.SHEET_FERTIGSTELLUNG || "1BEaL3ggpHGS5TbncUM5OLMUbVgRx-ADKOtRr_Sc8xXY";
+  if (!spreadsheetId) return null;
+
+  let tabName = process.env.SHEET_FERTIGSTELLUNG_TAB;
+  if (!tabName) {
+    const allTabs = await getAllTabNamesGS(sheets, spreadsheetId);
+    tabName = findCurrentWeekTabGS(allTabs, ["W{XX} Transperancy", "W{XX} Transparency", "BENL Outbound W{XX}"]) || allTabs[0];
+  }
+  if (!tabName) return null;
+
+  let rows;
+  try { rows = await sheetValues(sheets, spreadsheetId, tabName); } catch { return null; }
+
+  // Derive week from tab name: "W23 Transperancy Total Overview" → 2026-W23
+  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
+  const year = new Date().getFullYear();
+  const week = tabWeekMatch
+    ? `${year}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}`
+    : `${year}-W??`;
+
+  // Find header row: contains "Work Order" and "Recipe"
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const r = rows[i].map(c => String(c || "").trim().toLowerCase());
+    if (r.some(c => c.includes("work order")) && r.some(c => c === "recipe")) {
+      headerIdx = i; break;
+    }
+  }
+  if (headerIdx < 0) return null;
+
+  const header = rows[headerIdx].map(c => String(c || "").trim().toLowerCase());
+  const runIdx     = header.findIndex(c => c === "run");
+  const dayIdx     = header.findIndex(c => c.includes("kitchen day"));
+  const woIdx      = header.findIndex(c => c === "work order");
+  const recipeIdx  = header.findIndex(c => c === "recipe");
+  const subIdx     = header.findIndex(c => c.includes("sub recipe"));
+  const mealsIdx   = header.findIndex(c => c.includes("planned meals"));
+  const stagingIdx = header.findIndex(c => c.includes("staging"));
+  const kitchenIdx = header.findIndex(c => c.includes("kitchen") && c.includes("kg"));
+  const postIdx    = header.findIndex(c => c.includes("post"));
+  const yieldIdx   = header.findIndex(c => c === "yield");
+  const logTgtIdx  = header.lastIndexOf("target");
+
+  const resultRows = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row?.length) continue;
+    const woCell = woIdx >= 0 ? String(row[woIdx] || "").trim() : "";
+    if (!woCell || !/^\d{2}-\d{3,}/.test(woCell)) continue;
+
+    const fullRecipe = recipeIdx >= 0 ? String(row[recipeIdx] || "").trim() : "";
+    const { code: recipeCode } = parseRecipeNameGS(fullRecipe);
+    const yieldPct = parseFloat(String(row[yieldIdx >= 0 ? yieldIdx : 9] || "").replace("%", "").replace(",", ".")) || 0;
+
+    resultRows.push({
+      run:            runIdx >= 0 ? (parseInt(String(row[runIdx] || ""), 10) || 0) : 0,
+      kitchenDay:     dayIdx >= 0 ? String(row[dayIdx] || "").trim() : "",
+      workOrder:      woCell,
+      recipeCode,
+      recipeName:     fullRecipe,
+      subRecipe:      subIdx >= 0 ? String(row[subIdx] || "").trim() : "",
+      plannedMeals:   mealsIdx >= 0 ? numVal(row[mealsIdx]) : 0,
+      stagingKg:      stagingIdx >= 0 ? numVal(row[stagingIdx]) : 0,
+      kitchenKg:      kitchenIdx >= 0 ? numVal(row[kitchenIdx]) : 0,
+      postKg:         postIdx >= 0 ? numVal(row[postIdx]) : 0,
+      yieldPct,
+      logisticTarget: logTgtIdx >= 0 ? (numVal(row[logTgtIdx]) || undefined) : undefined,
+    });
+  }
+
+  logger.info("readProductionPlanGSheet", { tab: tabName, rows: resultRows.length });
+  return { week, generatedAt: new Date().toISOString(), rows: resultRows };
+}
+
+async function readPrintOrdersGSheet(sheets) {
+  const spreadsheetId = process.env.SHEET_PRINT_ORDERS || "1fpEHBWmd_zk74wbu78unPoTV_u860smNlxTuioEdq-4";
+  if (!spreadsheetId) return [];
+  let tabName = process.env.SHEET_PRINT_ORDERS_TAB;
+  if (!tabName) {
+    const allTabs = await getAllTabNamesGS(sheets, spreadsheetId);
+    tabName = findCurrentWeekTabGS(allTabs, ["Verden PW{XX}", "Verden PW{KW}"]) || allTabs[0];
+  }
+  if (!tabName) return [];
+  let rows; try { rows = await sheetValues(sheets, spreadsheetId, tabName); } catch { return []; }
+  if (!rows.length) return [];
+  const h = rows[0].map(c => String(c || "").trim().toLowerCase());
+  const weekIdx = h.findIndex(x => x.includes("week") || x === "kw");
+  const codeIdx = h.findIndex(x => x.includes("code") || x.includes("recipe"));
+  const mskuIdx = h.findIndex(x => x.includes("msku") || x === "sku");
+  const qtyIdx = h.findIndex(x => x.includes("qty") || x.includes("menge") || x.includes("quantity"));
+  const sleeveIdx = h.findIndex(x => x.includes("sleeve") || x.includes("typ"));
+  return rows.slice(1).map(row => ({
+    week: weekIdx >= 0 ? String(row[weekIdx] || "").trim() : "",
+    code: String(row[codeIdx >= 0 ? codeIdx : 1] || "").trim(),
+    msku: mskuIdx >= 0 ? String(row[mskuIdx] || "").trim() : "",
+    qty: qtyIdx >= 0 ? numVal(row[qtyIdx]) : 0,
+    sleeveType: sleeveIdx >= 0 ? String(row[sleeveIdx] || "").trim() || undefined : undefined,
+  })).filter(r => r.code);
+}
+
+async function readKitchenPriorityGSheet(sheets) {
+  const spreadsheetId = process.env.SHEET_KITCHEN_PRIORITY || "13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U";
+  if (!spreadsheetId) return [];
+  let tabName = process.env.SHEET_KITCHEN_PRIORITY_TAB;
+  if (!tabName) {
+    const allTabs = await getAllTabNamesGS(sheets, spreadsheetId);
+    tabName = findCurrentWeekTabGS(allTabs, ["Verden-{YEAR}-W{XX}", "Verden-{YEAR}-W{KW}"]) || allTabs[0];
+  }
+  if (!tabName) return [];
+  let rows; try { rows = await sheetValues(sheets, spreadsheetId, tabName); } catch { return []; }
+  if (!rows.length) return [];
+
+  // Find header row: contains "Priority" and "Work Order"
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 4); i++) {
+    const r = rows[i].map(c => String(c || "").trim().toLowerCase());
+    if (r.some(c => c === "priority") && r.some(c => c.includes("work order"))) {
+      headerIdx = i; break;
+    }
+  }
+  if (headerIdx < 0) return [];
+
+  const header = rows[headerIdx].map(c => String(c || "").trim().toLowerCase());
+  const prioIdx    = header.findIndex(c => c === "priority");
+  const stagingIdx = header.findIndex(c => c.includes("wostaging") || (c.includes("wo") && c.includes("staging")));
+  const commentIdx = header.findIndex(c => c.includes("comment"));
+  const deboxIdx   = header.findIndex(c => c.includes("debox"));
+  const readyIdx   = header.findIndex(c => c.includes("wo ready"));
+  const hkIdx      = header.findIndex(c => c.includes("hot kitchen"));
+  const dateIdx    = header.findIndex(c => c.includes("date needed"));
+  const woIdx      = header.findIndex(c => c.includes("work order number"));
+
+  const result = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const wo = woIdx >= 0 ? String(row[woIdx] || "").trim() : "";
+    if (!wo || !/^\d{2}-\d{3,}/.test(wo)) continue;
+    const readyRaw = readyIdx >= 0 ? String(row[readyIdx] || "").trim().toUpperCase() : "";
+    result.push({
+      priority:          prioIdx >= 0 ? (parseInt(String(row[prioIdx] || ""), 10) || result.length + 1) : result.length + 1,
+      workOrder:         wo,
+      woStagingBy:       stagingIdx >= 0 ? String(row[stagingIdx] || "").trim() || undefined : undefined,
+      deboxDay:          deboxIdx >= 0 ? String(row[deboxIdx] || "").trim() || undefined : undefined,
+      woReady:           readyRaw === "TRUE",
+      hotKitchenWeekday: hkIdx >= 0 ? String(row[hkIdx] || "").trim() || undefined : undefined,
+      dateNeeded:        dateIdx >= 0 ? String(row[dateIdx] || "").trim() || undefined : undefined,
+      comments:          commentIdx >= 0 ? String(row[commentIdx] || "").trim() || undefined : undefined,
+    });
+  }
+  return result;
+}
+
+exports.refreshOperationalData = onRequest({ region: "europe-west3", timeoutSeconds: 120 }, async (req, res) => {
+  if (req.method !== "POST") { res.status(405).json({ ok: false, error: "method-not-allowed" }); return; }
+
+  try {
+    const metaSnap = await APP_ROOT.get();
+    const meta = metaSnap.data() || {};
+    const now = Date.now();
+    const lastMs = meta.operationalLastCheckedAt ? Date.parse(meta.operationalLastCheckedAt) : 0;
+    if (lastMs && Number.isFinite(lastMs) && now - lastMs < OPERATIONAL_COOLDOWN_MS) {
+      res.json({ ok: true, refreshed: false, reason: "cooldown", checkedAt: meta.operationalLastCheckedAt });
+      return;
+    }
+
+    const sheets = await createSheetsClient();
+    const checkedAt = new Date(now).toISOString();
+
+    const [productionPlan, printOrders, kitchenPriority] = await Promise.all([
+      readProductionPlanGSheet(sheets),
+      readPrintOrdersGSheet(sheets),
+      readKitchenPriorityGSheet(sheets),
+    ]);
+
+    const batch = db.batch();
+
+    if (productionPlan?.week) {
+      const pkgColl = APP_ROOT.collection("productionPlan");
+      const pkgRef = pkgColl.doc(productionPlan.week);
+      batch.set(pkgRef, productionPlan);
+    }
+
+    if (printOrders.length) {
+      const poColl = APP_ROOT.collection("printOrders");
+      for (const row of printOrders) {
+        const id = `${row.week || "unknown"}_${row.code}_${row.msku}`.replace(/[^A-Za-z0-9_-]/g, "_");
+        batch.set(poColl.doc(id), row);
+      }
+    }
+
+    const kpColl = APP_ROOT.collection("kitchenPriority");
+    const kpRef = kpColl.doc("current");
+    if (kitchenPriority.length) batch.set(kpRef, { rows: kitchenPriority, updatedAt: checkedAt });
+
+    await APP_ROOT.set({ operationalLastCheckedAt: checkedAt }, { merge: true });
+    await batch.commit();
+
+    logger.info("refreshOperationalData OK", { productionRows: productionPlan?.rows?.length ?? 0, printOrders: printOrders.length, kitchenPriority: kitchenPriority.length });
+    res.json({ ok: true, refreshed: true, productionRows: productionPlan?.rows?.length ?? 0, printOrders: printOrders.length, kitchenPriority: kitchenPriority.length, checkedAt });
+  } catch (error) {
+    logger.error("refreshOperationalData failed", error);
     res.status(500).json({ ok: false, error: error?.message || String(error) });
   }
 });

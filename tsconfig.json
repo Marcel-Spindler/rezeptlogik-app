@@ -17,6 +17,6 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true
   },
-  "include": ["src", "scripts"],
-  "exclude": ["scripts/sync-wms-live.ts", "scripts/wms-local-server.ts"]
+  "include": ["src"],
+  "exclude": []
 }

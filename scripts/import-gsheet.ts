@@ -19,7 +19,9 @@ import { join, resolve } from "node:path";
 import { google } from "googleapis";
 import Papa from "papaparse";
 import type {
-  DataBundle, Market, WeekRecipe, Recipe, GrossIngredient, CookSchedule
+  DataBundle, Market, WeekRecipe, Recipe, GrossIngredient, CookSchedule,
+  ProductionPlan, WorkOrderEntry, PrintOrderRow, KitchenPriorityRow,
+  ProduktionsplanungEntry, ProduktionsplanungSlot
 } from "../src/types.ts";
 import { readPfei } from "./import-pfei.ts";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
@@ -33,7 +35,9 @@ function resolveSourceDir(): string {
   const configured = process.env.REZEPTLOGIK_SOURCE_DIR?.trim();
   if (configured) return configured;
 
+  // Priorität: ./imports (im Projektordner) → C:\Rezeptlogik → ./Rezeptlogik
   const candidates = [
+    resolve("imports"),
     "C:\\Rezeptlogik",
     resolve("Rezeptlogik"),
   ];
@@ -463,6 +467,370 @@ function loadCookSchedulesVF(): Record<string, CookSchedule> {
   return out;
 }
 
+// ─── Operational Sheet Readers ────────────────────────────────────────────────
+
+// ─── KW-Tab Auswahl ────────────────────────────────────────────────────────
+// Sucht unter den Tab-Titeln nach dem Tab der aktuellen (oder nächsten) KW.
+// patterns: Array von Suchmustern, z.B. ["Verden PW{XX}", "Verden PW{KW}"]
+// {XX} = zweistellige KW-Zahl, {YEAR} = Jahr
+function findCurrentWeekTab(tabs: string[], patterns: string[], fallbackToLatest = true): string | undefined {
+  const now = new Date();
+  const year = now.getFullYear();
+  // ISO-Wochennummer
+  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const kw = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+
+  // Versuche aktuelle KW, dann nächste, dann vorherige
+  for (const delta of [0, 1, -1, 2]) {
+    const weekNum = kw + delta;
+    for (const pattern of patterns) {
+      const needle = pattern
+        .replace("{XX}", String(weekNum).padStart(2, "0"))
+        .replace("{KW}", String(weekNum))
+        .replace("{YEAR}", String(year));
+      const found = tabs.find(t => t.toLowerCase().includes(needle.toLowerCase()));
+      if (found) return found;
+    }
+  }
+
+  // Fallback: neuesten Tab mit KW-Muster suchen
+  if (fallbackToLatest) {
+    const kwTabs = tabs.filter(t => /W\d{2}|PW\d{2}|\d{4}-W\d{2}/.test(t));
+    if (kwTabs.length) return kwTabs[kwTabs.length - 1];
+  }
+  return undefined;
+}
+
+async function getAuthClient() {
+  const auth = new google.auth.GoogleAuth({
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+  });
+  return auth.getClient();
+}
+
+async function getAllTabNames(sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<string[]> {
+  try {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets(properties(title))" });
+    return (meta.data.sheets ?? []).map(s => s.properties?.title ?? "").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function readProductionPlan(spreadsheetId: string): Promise<ProductionPlan | undefined> {
+  if (!spreadsheetId) return undefined;
+  const client = await getAuthClient();
+  const sheets = google.sheets({ version: "v4", auth: client as any });
+
+  let tabName = process.env.SHEET_FERTIGSTELLUNG_TAB?.trim();
+  if (!tabName) {
+    const allTabs = await getAllTabNames(sheets, spreadsheetId);
+    tabName = findCurrentWeekTab(allTabs, ["W{XX} Transperancy", "W{XX} Transparency", "BENL Outbound W{XX}"]);
+    if (!tabName) tabName = allTabs[0];
+  }
+  if (!tabName) { console.warn("  Fertigstellung: kein Tab gefunden"); return undefined; }
+
+  let rows: any[][];
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:N2000` });
+    rows = res.data.values ?? [];
+  } catch (e: any) {
+    console.warn(`  Fertigstellung Lesen fehlgeschlagen: ${e?.message ?? e}`);
+    return undefined;
+  }
+
+  // Derive week from tab name: "W23 Transperancy Total Overview" → 2026-W23
+  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
+  const year = new Date().getFullYear();
+  const week = tabWeekMatch
+    ? `${year}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}`
+    : `${year}-W??`;
+
+  // Find header row: contains "Work Order" and "Recipe"
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const r = rows[i].map((c: unknown) => String(c ?? "").trim().toLowerCase());
+    if (r.some(c => c.includes("work order")) && r.some(c => c === "recipe")) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) {
+    console.warn(`  Fertigstellung: Header nicht gefunden in Tab "${tabName}"`);
+    return undefined;
+  }
+
+  const header = rows[headerIdx].map((c: unknown) => String(c ?? "").trim().toLowerCase());
+  const runIdx     = header.findIndex(c => c === "run");
+  const dayIdx     = header.findIndex(c => c.includes("kitchen day") || c.includes("planned kitchen"));
+  const woIdx      = header.findIndex(c => c === "work order");
+  const recipeIdx  = header.findIndex(c => c === "recipe");
+  const subIdx     = header.findIndex(c => c.includes("sub recipe") || c === "sub recipe");
+  const mealsIdx   = header.findIndex(c => c.includes("planned meals") || c === "planned meals");
+  const stagingIdx = header.findIndex(c => c.includes("staging"));
+  const kitchenIdx = header.findIndex(c => c.includes("kitchen") && c.includes("kg"));
+  const postIdx    = header.findIndex(c => c.includes("post"));
+  const yieldIdx   = header.findIndex(c => c === "yield");
+  // Logistik block appears to the right: cols 11+ (WO, Target)
+  const logTgtIdx  = header.findLastIndex(c => c === "target");
+
+  const entries: WorkOrderEntry[] = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row?.length) continue;
+    const woCell = woIdx >= 0 ? String(row[woIdx] ?? "").trim() : "";
+    if (!woCell || !/^\d{2}-\d{3,}/.test(woCell)) continue; // must look like "23-175"
+
+    const fullRecipe = recipeIdx >= 0 ? String(row[recipeIdx] ?? "").trim() : "";
+    const { code: recipeCode, base: recipeName } = parseRecipeName(fullRecipe);
+
+    const yieldRaw = String(row[yieldIdx >= 0 ? yieldIdx : 9] ?? "").replace("%", "").trim();
+    const yieldPct = parseFloat(yieldRaw.replace(",", ".")) || 0;
+
+    entries.push({
+      run:            runIdx >= 0 ? (parseInt(String(row[runIdx] ?? ""), 10) || 0) : 0,
+      kitchenDay:     dayIdx >= 0 ? String(row[dayIdx] ?? "").trim() : "",
+      workOrder:      woCell,
+      recipeCode,
+      recipeName:     fullRecipe,
+      subRecipe:      subIdx >= 0 ? String(row[subIdx] ?? "").trim() : "",
+      plannedMeals:   mealsIdx >= 0 ? num(row[mealsIdx]) : 0,
+      stagingKg:      stagingIdx >= 0 ? num(row[stagingIdx]) : 0,
+      kitchenKg:      kitchenIdx >= 0 ? num(row[kitchenIdx]) : 0,
+      postKg:         postIdx >= 0 ? num(row[postIdx]) : 0,
+      yieldPct,
+      logisticTarget: logTgtIdx >= 0 ? (num(row[logTgtIdx]) || undefined) : undefined,
+    });
+  }
+
+  console.log(`  Produktionsplan: ${entries.length} Work-Order-Zeilen aus Tab "${tabName}"`);
+  return { week, generatedAt: new Date().toISOString(), rows: entries };
+}
+
+async function readPrintOrders(spreadsheetId: string): Promise<PrintOrderRow[]> {
+  if (!spreadsheetId) return [];
+  const client = await getAuthClient();
+  const sheets = google.sheets({ version: "v4", auth: client as any });
+
+  let tabName = process.env.SHEET_PRINT_ORDERS_TAB?.trim();
+  if (!tabName) {
+    const allTabs = await getAllTabNames(sheets, spreadsheetId);
+    tabName = findCurrentWeekTab(allTabs, ["Verden PW{XX}", "Verden PW{KW}"]);
+    if (!tabName) tabName = allTabs[0];
+  }
+  if (!tabName) { console.warn("  Print Orders: kein Tab gefunden"); return []; }
+
+  let rows: any[][];
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:Z2000` });
+    rows = res.data.values ?? [];
+  } catch (e: any) {
+    console.warn(`  Print Orders Lesen fehlgeschlagen: ${e?.message ?? e}`);
+    return [];
+  }
+
+  if (!rows.length) return [];
+  const header = rows[0].map((c: unknown) => String(c ?? "").trim().toLowerCase());
+  const weekIdx   = header.findIndex(h => h.includes("week") || h === "kw");
+  const codeIdx   = header.findIndex(h => h.includes("code") || h.includes("recipe"));
+  const mskuIdx   = header.findIndex(h => h.includes("msku") || h === "sku");
+  const qtyIdx    = header.findIndex(h => h.includes("qty") || h.includes("menge") || h.includes("quantity"));
+  const sleeveIdx = header.findIndex(h => h.includes("sleeve") || h.includes("typ"));
+
+  const result: PrintOrderRow[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const code = String(row[codeIdx >= 0 ? codeIdx : 1] ?? "").trim();
+    if (!code) continue;
+    result.push({
+      week:      weekIdx >= 0 ? String(row[weekIdx] ?? "").trim() : "",
+      code,
+      msku:      mskuIdx >= 0 ? String(row[mskuIdx] ?? "").trim() : "",
+      qty:       qtyIdx >= 0 ? num(row[qtyIdx]) : 0,
+      sleeveType: sleeveIdx >= 0 ? String(row[sleeveIdx] ?? "").trim() || undefined : undefined,
+    });
+  }
+
+  console.log(`  Print Orders: ${result.length} Zeilen aus Tab "${tabName}"`);
+  return result;
+}
+
+async function readKitchenPriority(spreadsheetId: string): Promise<KitchenPriorityRow[]> {
+  if (!spreadsheetId) return [];
+  const client = await getAuthClient();
+  const sheets = google.sheets({ version: "v4", auth: client as any });
+
+  let tabName = process.env.SHEET_KITCHEN_PRIORITY_TAB?.trim();
+  if (!tabName) {
+    const allTabs = await getAllTabNames(sheets, spreadsheetId);
+    tabName = findCurrentWeekTab(allTabs, ["Verden-{YEAR}-W{XX}", "Verden-{YEAR}-W{KW}"]);
+    if (!tabName) tabName = allTabs[0];
+  }
+  if (!tabName) { console.warn("  Kitchen Priority: kein Tab gefunden"); return []; }
+
+  let rows: any[][];
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:J1000` });
+    rows = res.data.values ?? [];
+  } catch (e: any) {
+    console.warn(`  Kitchen Priority Lesen fehlgeschlagen: ${e?.message ?? e}`);
+    return [];
+  }
+
+  if (!rows.length) return [];
+
+  // Find header row: row with "Priority" and "Work Order" (may be row 0 or 1)
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 4); i++) {
+    const r = rows[i].map((c: unknown) => String(c ?? "").trim().toLowerCase());
+    if (r.some(c => c === "priority") && r.some(c => c.includes("work order"))) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) {
+    console.warn(`  Kitchen Priority: Header nicht gefunden in Tab "${tabName}"`);
+    return [];
+  }
+
+  const header = rows[headerIdx].map((c: unknown) => String(c ?? "").trim().toLowerCase());
+  const prioIdx    = header.findIndex(c => c === "priority");
+  const stagingIdx = header.findIndex(c => c.includes("wo") && c.includes("staging") || c.includes("wostaging"));
+  const commentIdx = header.findIndex(c => c.includes("comment"));
+  const deboxIdx   = header.findIndex(c => c.includes("debox"));
+  const readyIdx   = header.findIndex(c => c.includes("wo ready") || c === "wo ready");
+  const hkIdx      = header.findIndex(c => c.includes("hot kitchen"));
+  const dateIdx    = header.findIndex(c => c.includes("date needed"));
+  const woIdx      = header.findIndex(c => c.includes("work order number") || c === "work order number");
+
+  const result: KitchenPriorityRow[] = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const wo = woIdx >= 0 ? String(row[woIdx] ?? "").trim() : "";
+    if (!wo || !/^\d{2}-\d{3,}/.test(wo)) continue; // must look like "23-175"
+
+    const readyRaw = readyIdx >= 0 ? String(row[readyIdx] ?? "").trim().toUpperCase() : "";
+    result.push({
+      priority:          prioIdx >= 0 ? (parseInt(String(row[prioIdx] ?? ""), 10) || result.length + 1) : result.length + 1,
+      workOrder:         wo,
+      woStagingBy:       stagingIdx >= 0 ? String(row[stagingIdx] ?? "").trim() || undefined : undefined,
+      deboxDay:          deboxIdx >= 0 ? String(row[deboxIdx] ?? "").trim() || undefined : undefined,
+      woReady:           readyRaw === "TRUE",
+      hotKitchenWeekday: hkIdx >= 0 ? String(row[hkIdx] ?? "").trim() || undefined : undefined,
+      dateNeeded:        dateIdx >= 0 ? String(row[dateIdx] ?? "").trim() || undefined : undefined,
+      comments:          commentIdx >= 0 ? String(row[commentIdx] ?? "").trim() || undefined : undefined,
+    });
+  }
+
+  console.log(`  Kitchen Priority: ${result.length} Einträge aus Tab "${tabName}"`);
+  return result;
+}
+
+async function readProduktionsplanung(spreadsheetId: string, market: "DE" | "NORDICS"): Promise<ProduktionsplanungEntry | undefined> {
+  if (!spreadsheetId) return undefined;
+  const client = await getAuthClient();
+  const sheets = google.sheets({ version: "v4", auth: client as any });
+
+  const tabName = market === "DE" ? "Produktionsvorbereitung_DE" : "Produktionsvorbereitung_Nordics";
+  
+  let rows: any[][];
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:Z500` });
+    rows = res.data.values ?? [];
+  } catch (e: any) {
+    console.warn(`  Produktionsvorbereitung ${market} Lesen fehlgeschlagen: ${e?.message ?? e}`);
+    return undefined;
+  }
+
+  if (!rows.length) return undefined;
+
+  let week = "";
+  const row1 = rows[1] ?? [];
+  if (row1[2] && String(row1[2]).trim()) {
+    week = String(row1[2]).trim();
+  } else {
+    const now = new Date();
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const kw = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+    week = `${now.getFullYear()}-W${String(kw).padStart(2, "0")}`;
+  }
+
+  const row3 = rows[3] ?? [];
+  const boxVolRun1 = num(row3[1]);
+  const boxVolRun2 = num(row3[3]);
+
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 12); i++) {
+    const r = (rows[i] ?? []).map((c: unknown) => String(c ?? "").trim().toLowerCase());
+    if (r.includes("maitre code") && r.includes("fe/fv code")) {
+      headerIdx = i;
+      break;
+    }
+  }
+
+  if (headerIdx < 0) {
+    console.warn(`  Produktionsvorbereitung ${market}: Header nicht gefunden`);
+    return undefined;
+  }
+
+  const header = rows[headerIdx].map((c: unknown) => String(c ?? "").trim().toLowerCase());
+  const slotIdx = header.findIndex(c => c === "rezept" || c === "slot");
+  const mCodeIdx = header.findIndex(c => c === "maitre code");
+  const codeIdx = header.findIndex(c => c === "fe/fv code" || c === "code");
+  const skuIdx = header.findIndex(c => c === "sku");
+  const nameIdx = header.findIndex(c => c === "artikel" || c === "rezeptname");
+  const friIdx = header.findIndex(c => c === "friday");
+  const monIdx = header.findIndex(c => c === "monday");
+  const sumIdx = header.findIndex(c => c === "summe soll");
+  const palFriIdx = header.findIndex(c => c === "paletten friday");
+
+  const slots: ProduktionsplanungSlot[] = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row.length) continue;
+    
+    const c0 = String(row[0] ?? "").trim();
+    if (c0 === "Summe" || c0 === "Sum" || c0 === "Total") break;
+
+    const recipeCode = codeIdx >= 0 ? String(row[codeIdx] ?? "").trim() : "";
+    if (!recipeCode || recipeCode.includes("FE/FV") || recipeCode.includes("Code")) continue;
+
+    const mCode = mCodeIdx >= 0 ? String(row[mCodeIdx] ?? "").trim() : "";
+    if (!mCode) continue;
+
+    slots.push({
+      slot: slotIdx >= 0 ? (parseInt(String(row[slotIdx] ?? ""), 10) || 0) : 0,
+      maitreCode: mCode,
+      recipeCode,
+      skuCode: skuIdx >= 0 ? String(row[skuIdx] ?? "").trim() : "",
+      recipeName: nameIdx >= 0 ? String(row[nameIdx] ?? "").trim() : "",
+      volRun1: friIdx >= 0 ? num(row[friIdx]) : 0,
+      volRun2: monIdx >= 0 ? num(row[monIdx]) : 0,
+      totalVol: sumIdx >= 0 ? num(row[sumIdx]) : 0,
+      paletten: palFriIdx >= 0 ? String(row[palFriIdx] ?? "").trim() : undefined,
+    });
+  }
+
+  console.log(`  Produktionsvorbereitung ${market}: ${slots.length} Slots geladen`);
+
+  return {
+    week,
+    market,
+    boxVolRun1,
+    boxVolRun2,
+    maxKapaPerDay: 5000,
+    startTime: "06:00",
+    endTime: "22:00",
+    slots,
+    generatedAt: new Date().toISOString()
+  };
+}
+
 async function main() {
   console.log(`Lese Ramp-up Meals LIVE aus ${SHEET_IDS.length} GSheet(s) …`);
   const { weekRecipes, weeks } = await readMealSelectionFromGSheet();
@@ -477,6 +845,23 @@ async function main() {
 
   console.log("Lese Open Shelf Life / MLOR live …");
   const shelfLifeBySku = await readOpenShelfLifeSheet();
+
+  console.log("Lese Fertigstellungszeitplan (Sheet 6) …");
+  const productionPlan = await readProductionPlan(process.env.SHEET_FERTIGSTELLUNG ?? "1BEaL3ggpHGS5TbncUM5OLMUbVgRx-ADKOtRr_Sc8xXY");
+
+  console.log("Lese Print Orders Sleeven (Sheet 2) …");
+  const printOrders = await readPrintOrders(process.env.SHEET_PRINT_ORDERS ?? "1fpEHBWmd_zk74wbu78unPoTV_u860smNlxTuioEdq-4");
+
+  console.log("Lese Kitchen Priority (Sheet 3) …");
+  const kitchenPriority = await readKitchenPriority(process.env.SHEET_KITCHEN_PRIORITY ?? "13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U");
+
+  console.log("Lese Produktionsvorbereitung DE/Nordics (Sheet 1) ...");
+  const sheetWochenstartId = process.env.SHEET_WOCHENSTART ?? "1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE";
+  const dePlan = await readProduktionsplanung(sheetWochenstartId, "DE");
+  const noPlan = await readProduktionsplanung(sheetWochenstartId, "NORDICS");
+  const produktionsplanung: Record<string, ProduktionsplanungEntry> = {};
+  if (dePlan) produktionsplanung["DE"] = dePlan;
+  if (noPlan) produktionsplanung["NORDICS"] = noPlan;
 
   // FE↔FV harmonisieren über die 4-stellige Nummer im Code.
   const byDigits: Record<string, Recipe> = {};
@@ -498,7 +883,11 @@ async function main() {
     recipes,
     cookSchedules,
     processSpecs,
-    shelfLifeBySku
+    shelfLifeBySku,
+    productionPlan: productionPlan ?? undefined,
+    printOrders: printOrders.length ? printOrders : undefined,
+    kitchenPriority: kitchenPriority.length ? kitchenPriority : undefined,
+    produktionsplanung: Object.keys(produktionsplanung).length ? produktionsplanung : undefined,
   };
   if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
   writeFileSync(OUT_FILE, JSON.stringify(bundle));
