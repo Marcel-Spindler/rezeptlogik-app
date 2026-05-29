@@ -667,6 +667,10 @@ export interface SpecialDeliveryOrder {
 type ComputeBatchSplitPlanOptions = {
   lineSummary?: LinePlatingSummary;
   specialDeliveries?: SpecialDeliveryOrder[];
+  /** Letzter Sub-Rezept-Tag je Rezept-Code → Plating-Tag = nächster Tag danach */
+  subRecipeLastDays?: Map<string, PlannerDay>;
+  /** Nur Run 1 planen (kein Run-2-Split) */
+  singleRun?: boolean;
 };
 
 const CUSTOMER_TARGET_DAYS = 7;
@@ -897,12 +901,28 @@ export function computeBatchSplitPlan(
 
     const remainingPortions = Math.max(0, totalPortions - forcedTotal);
     const remainingRunOnePortions = Math.min(runOnePortions, remainingPortions);
-    const remainingRunTwoPortions = Math.max(0, remainingPortions - remainingRunOnePortions);
+    const remainingRunTwoPortions = options?.singleRun ? 0 : Math.max(0, remainingPortions - remainingRunOnePortions);
+
+    // Dynamischer Plating-Tag aus letztem Sub-Rezept-Tag (+ 1 Tag), Fallback: Fr/So
+    const lastSubDay = options?.subRecipeLastDays?.get(wr.code);
+    const run1FulfillDay: PlannerDay = (() => {
+      if (!lastSubDay) return "Fr";
+      const idx = PLANNER_DAYS.indexOf(lastSubDay);
+      return idx >= 0 && idx < PLANNER_DAYS.length - 1 ? PLANNER_DAYS[idx + 1]! : lastSubDay;
+    })();
+    const run2FulfillDay: PlannerDay = (() => {
+      if (!lastSubDay) return "So";
+      // Run 2 Sub-Rezepte liegen 1 Tag später als Run 1 → Plating = Run 1 Plating + 1
+      const idx = PLANNER_DAYS.indexOf(run1FulfillDay);
+      const next = idx >= 0 && idx < PLANNER_DAYS.length - 1 ? PLANNER_DAYS[idx + 1]! : run1FulfillDay;
+      // Run 2 darf nicht später als Samstag sein
+      const satIdx = PLANNER_DAYS.indexOf("Sa");
+      return PLANNER_DAYS.indexOf(next) <= satIdx ? next : "Sa";
+    })();
 
     if (remainingRunOnePortions > 0) {
-      // Plating muss 1 Tag VOR dem Versand (Fr) fertig sein, damit Sleeving noch stattfinden kann.
       pushBatchForDay(
-        "Fr",
+        run1FulfillDay,
         remainingRunOnePortions,
         `Run 1 (BNL ${Math.round((wr.verdenVolume.BENL ?? 0) * 0.5).toLocaleString("de-DE")} + Nordics ${(wr.verdenVolume.DKSE ?? 0).toLocaleString("de-DE")} + DE ${Math.round((wr.verdenVolume.DE ?? 0) * 0.7).toLocaleString("de-DE")})`,
         isSeafood
@@ -913,7 +933,7 @@ export function computeBatchSplitPlan(
 
     if (remainingRunTwoPortions > 0) {
       pushBatchForDay(
-        "So",
+        run2FulfillDay,
         remainingRunTwoPortions,
         "Run 2 (Restmenge Verden Plan)",
         isSeafood

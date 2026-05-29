@@ -1215,6 +1215,8 @@ export function PlanningView(
   const [expandedRecipes, setExpandedRecipes] = useState<Set<string>>(new Set());
   const [expandedBoardRecipes, setExpandedBoardRecipes] = useState<Set<string>>(new Set());
   const [boardEditor, setBoardEditor] = useState<WeekBoardEditorState | null>(null);
+  const [singleRunMode, setSingleRunMode] = useState(false);
+  const [dayDetailModal, setDayDetailModal] = useState<PlannerDay | null>(null);
   const [subRecipeInfoRequest, setSubRecipeInfoRequest] = useState<SubRecipeInfoRequest | null>(null);
   const [infoHints, setInfoHints] = useState<InfoHints>(() => ({
     capacityHints: new Map(),
@@ -1226,7 +1228,8 @@ export function PlanningView(
     targetPortions: 0,
     reason: "Planned",
     splitSpec: "",
-    notes: ""
+    notes: "",
+    createSubRecipeWOs: false,
   });
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [calendarFullView, setCalendarFullView] = useState(() => {
@@ -1449,9 +1452,29 @@ export function PlanningView(
       ?? AUTO_FULFILLMENT_PROFILES[0];
   }, [uiSettings.autoSplitProfileId]);
 
+  const subRecipeLastDays = useMemo(() => {
+    const map = new Map<string, PlannerDay>();
+    for (const r of analysis.recipes) {
+      const assignedDays = r.subRecipes
+        .filter(s => s.assigned && s.assigned.day !== "So")  // "So" = early-week prep, nicht plating-relevant
+        .map(s => PLANNER_DAYS.indexOf(s.assigned!.day))
+        .filter(i => i >= 0);
+      if (assignedDays.length > 0) {
+        const maxIdx = Math.max(...assignedDays);
+        map.set(r.recipeCode, PLANNER_DAYS[maxIdx]!);
+      }
+    }
+    return map;
+  }, [analysis.recipes]);
+
   const batchSplitPlan = useMemo(
-    () => computeBatchSplitPlan(data, week, { lineSummary: linePlatingSummary, specialDeliveries }),
-    [data, week, linePlatingSummary, specialDeliveries]
+    () => computeBatchSplitPlan(data, week, {
+      lineSummary: linePlatingSummary,
+      specialDeliveries,
+      subRecipeLastDays,
+      singleRun: singleRunMode,
+    }),
+    [data, week, linePlatingSummary, specialDeliveries, subRecipeLastDays, singleRunMode]
   );
   const batchSplitByRecipe = useMemo(() => {
     const map = new Map<string, AutoFulfillmentBatch[]>();
@@ -1616,9 +1639,10 @@ export function PlanningView(
         const parsedNote = parseBoardNote(mainAssignment.note);
         const splitSpec = extractSplitSpecFromNotes(parsedNote.notes);
         const batches = parseSplitSpecToBatches(splitSpec, mainAssignment.day, targetPortions);
-        const visibleBatches = batches.length > 0
+        const allBatches = batches.length > 0
           ? batches
           : [{ day: mainAssignment.day, portions: targetPortions > 0 ? targetPortions : Math.max(1, Math.round(recipe.activeMin)) }];
+        const visibleBatches = singleRunMode ? allBatches.slice(0, 1) : allBatches;
         // For 2-batch splits: R2 pill should show Ziel-based value (upliftTotal - R1.total)
         if (visibleBatches.length === 2) {
           const wr = recipeLookup[recipe.recipeCode];
@@ -1682,11 +1706,29 @@ export function PlanningView(
       if (!plan) continue;
       const plannableSubs = recipe.subRecipes;
       const allSubsDone = plannableSubs.length > 0 && plannableSubs.every(s => !!s.assigned);
-      const totalBatches = plan.batches.length;
-      plan.batches.forEach((batch, index) => {
+      const visibleBatchList = singleRunMode ? plan.batches.slice(0, 1) : plan.batches;
+      const totalBatches = visibleBatchList.length;
+
+      // Wenn alle Sub-Rezepte verplant sind: Plating-Tag dynamisch aus letztem Sub-Tag + 1 ermitteln
+      let dynamicFulfillmentDay: PlannerDay | undefined;
+      let dynamicProductionDay: PlannerDay | undefined;
+      if (allSubsDone && plannableSubs.length > 0) {
+        const subDayIndices = plannableSubs
+          .filter(s => s.assigned)
+          .map(s => PLANNER_DAYS.indexOf(s.assigned!.day))
+          .filter(i => i >= 0);
+        if (subDayIndices.length > 0) {
+          const lastSubIdx = Math.max(...subDayIndices);
+          dynamicProductionDay = PLANNER_DAYS[lastSubIdx];
+          dynamicFulfillmentDay = PLANNER_DAYS[Math.min(lastSubIdx + 1, PLANNER_DAYS.length - 1)];
+        }
+      }
+
+      visibleBatchList.forEach((batch, index) => {
         const tileKey = `${recipe.recipeCode}::suggest-${index}`;
         const overrideDay = suggestOverrides[tileKey];
-        const slot = slotValue(overrideDay ?? avoidSaturday(batch.recommendedProductionDay), defaultShift);
+        const effectiveProdDay = dynamicProductionDay ?? avoidSaturday(batch.recommendedProductionDay);
+        const slot = slotValue(overrideDay ?? effectiveProdDay, defaultShift);
         (buckets[slot] ??= []).push({
           key: tileKey,
           code: recipe.recipeCode,
@@ -1701,8 +1743,8 @@ export function PlanningView(
           batchIndex: totalBatches > 1 ? index : undefined,
           batchTotal: totalBatches > 1 ? totalBatches : undefined,
           suggested: true,
-          fulfillmentDay: batch.fulfillmentDay,
-          recommendedProdDay: avoidSaturday(batch.recommendedProductionDay),
+          fulfillmentDay: dynamicFulfillmentDay ?? batch.fulfillmentDay,
+          recommendedProdDay: effectiveProdDay,
           allSubsDone,
           lineCapacityPortions: batch.lineCapacityPortions,
           lineCoverageGap: plan.lineCoverageGap,
@@ -2247,6 +2289,16 @@ export function PlanningView(
         const batches = resolveAutoBatches(recipeSummary.recipeCode, mainTarget, autoProfile, batchSplitByRecipe);
         const needDay = avoidSaturday(safePlannerDay(batches[0]?.day ?? mainAssigned.day));
         const subIndexById = new Map(recipeSummary.subRecipes.map((sub, index) => [sub.subRecipeId, index]));
+        // Multi-Run: Sub-Rezepte nach Lead-Klasse absteigend sortieren → Butter/Thaw/Spice bekommen früheste Slots
+        const multiRunIndexById = new Map(
+          [...recipeSummary.subRecipes]
+            .sort((a, b) => {
+              const aLead = subLeadDaysBeforeNeed(a.category, data.processSpecs?.[a.subRecipeId]);
+              const bLead = subLeadDaysBeforeNeed(b.category, data.processSpecs?.[b.subRecipeId]);
+              return bLead - aLead;
+            })
+            .map((sub, index) => [sub.subRecipeId, index])
+        );
 
         const subsToAssign = recipeSummary.subRecipes
           .filter((sub) => !sub.assigned || sub.assigned.day === "Sa" || !isShiftActive(sub.assigned.shift))
@@ -2255,7 +2307,9 @@ export function PlanningView(
         for (const sub of subsToAssign) {
           const spec = data.processSpecs?.[sub.subRecipeId];
           const leadDays = subLeadDaysBeforeNeed(sub.category, spec);
-          const subIndex = subIndexById.get(sub.subRecipeId) ?? 0;
+          const subIndex = batches.length > 1
+            ? (multiRunIndexById.get(sub.subRecipeId) ?? 0)
+            : (subIndexById.get(sub.subRecipeId) ?? 0);
           const allowSundayPrep = isSundayLightPrepSub(sub.category, spec)
             && sundayPrepJobsScheduled < SUNDAY_LIGHT_PREP_MAX_JOBS
             && sundayPrepMinScheduled + sub.activeMin <= SUNDAY_LIGHT_PREP_MAX_TOTAL_MIN;
@@ -2443,12 +2497,13 @@ export function PlanningView(
       targetPortions: existing?.targetPortions ?? fallbackTarget,
       reason: parsedNote.reason,
       splitSpec,
-      notes: stripSplitSpecFromNotes(parsedNote.notes)
+      notes: stripSplitSpecFromNotes(parsedNote.notes),
+      createSubRecipeWOs: false,
     });
     setBoardEditor(input);
   }
 
-  function saveWeekBoardEditor() {
+  function saveWeekBoardEditorWith(reasonOverride?: string) {
     if (!boardEditor) return;
     const recipe = recipeLookup[boardEditor.recipeCode];
     if (!recipe) {
@@ -2457,15 +2512,43 @@ export function PlanningView(
     }
     const targetPortions = Math.max(0, Math.round(boardDraft.targetPortions || 0));
     const splitForNote = boardEditor.subRecipeId ? "" : boardDraft.splitSpec;
-    setStorage((prev) => assignRecipe(prev, week, scenario.id, recipe, {
-      day: boardEditor.day,
-      shift: boardDraft.shift,
-      subRecipeId: boardEditor.subRecipeId,
-      subRecipeName: boardEditor.subRecipeName,
-      targetPortions,
-      note: buildBoardNote(boardDraft.reason, composeBoardNotes(boardDraft.notes, splitForNote))
-    }));
+    const effectiveReason = reasonOverride ?? boardDraft.reason;
+    setStorage((prev) => {
+      let state = assignRecipe(prev, week, scenario.id, recipe, {
+        day: boardEditor.day,
+        shift: boardDraft.shift,
+        subRecipeId: boardEditor.subRecipeId,
+        subRecipeName: boardEditor.subRecipeName,
+        targetPortions,
+        note: buildBoardNote(effectiveReason, composeBoardNotes(boardDraft.notes, splitForNote))
+      });
+      if (boardDraft.createSubRecipeWOs && !boardEditor.subRecipeId) {
+        const recipeAnalysis = analysis.recipes.find(r => r.recipeCode === boardEditor.recipeCode);
+        const platingDay = boardEditor.day;
+        for (const sub of recipeAnalysis?.subRecipes ?? []) {
+          if (sub.assigned) continue;
+          const spec = data.processSpecs?.[sub.subRecipeId];
+          const leadDays = subLeadDaysBeforeNeed(sub.category, spec);
+          const subDay = isSundayPrepSub(sub.category, spec)
+            ? "So" as PlannerDay
+            : preferredSubProductionDay(sub.category, spec, platingDay, leadDays);
+          state = assignRecipe(state, week, scenario.id, recipe, {
+            day: subDay,
+            shift: boardDraft.shift,
+            subRecipeId: sub.subRecipeId,
+            subRecipeName: sub.subRecipeName,
+            targetPortions,
+            note: buildBoardNote("Auto/SubFromMain", ""),
+          });
+        }
+      }
+      return state;
+    });
     setBoardEditor(null);
+  }
+
+  function saveWeekBoardEditor() {
+    saveWeekBoardEditorWith();
   }
 
   function clearWeekBoardEditorAssignment() {
@@ -2565,6 +2648,141 @@ export function PlanningView(
     return () => window.clearTimeout(timer);
   }, [manufacturingLiveSignature]);
 
+  function exportDayKitchenPlan(day: PlannerDay) {
+    const DAY_LABELS: Record<PlannerDay, string> = { Mo: "Montag", Di: "Dienstag", Mi: "Mittwoch", Do: "Donnerstag", Fr: "Freitag", Sa: "Samstag", So: "Sonntag" };
+    const dayLabel = DAY_LABELS[day] ?? day;
+
+    // Recipes with main assignment on this day
+    const mainRecipes = analysis.recipes
+      .filter(r => r.assigned?.day === day)
+      .sort((a, b) => (a.assigned!.order ?? 999) - (b.assigned!.order ?? 999));
+
+    // Sub-recipe assignments on this day (for any recipe)
+    const allSubsToday = analysis.recipes.flatMap(r =>
+      r.subRecipes
+        .filter(s => s.assigned?.day === day)
+        .map(s => ({ recipeCode: r.recipeCode, recipeName: r.recipeName, sub: s }))
+    );
+
+    // Collect allergens from recipe
+    const getAllergens = (code: string): string[] => {
+      const recipe = data.recipes?.[code];
+      if (!recipe) return [];
+      const all = Object.values(recipe.markets)
+        .flatMap(m => (m?.allergens ?? "").split(/[,;/]/).map(a => a.trim()).filter(Boolean));
+      return [...new Set(all)];
+    };
+
+    const allergenSet = new Set<string>();
+    mainRecipes.forEach(r => getAllergens(r.recipeCode).forEach(a => allergenSet.add(a)));
+
+    // Build HTML
+    let html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+<title>Küchenplan ${dayLabel} – KW ${week}</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 12px; margin: 20px; color: #111; }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  h2 { font-size: 14px; margin-top: 20px; margin-bottom: 6px; border-bottom: 2px solid #333; padding-bottom: 4px; }
+  h3 { font-size: 12px; margin: 12px 0 4px; color: #1a4; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 12px; }
+  th { background: #1e6b3d; color: white; padding: 4px 8px; text-align: left; font-size: 11px; }
+  td { border: 1px solid #ccc; padding: 4px 8px; vertical-align: top; }
+  .allergen { background: #fff3cd; border: 1px solid #e6ac00; border-radius: 3px; padding: 1px 5px; margin: 1px; display: inline-block; font-size: 10px; font-weight: bold; }
+  .alarm { background: #f8d7da; border: 1px solid #c00; border-radius: 3px; padding: 2px 6px; margin: 4px 0; font-weight: bold; font-size: 11px; }
+  .sub { font-size: 11px; color: #444; }
+  .method { display: inline-block; background: #e8f0fe; border-radius: 3px; padding: 1px 5px; font-size: 10px; margin: 1px; }
+  .instruction { font-size: 10px; color: #555; margin-top: 2px; font-style: italic; }
+  @media print { body { margin: 10px; } }
+</style></head><body>`;
+
+    html += `<h1>Küchenplan: ${dayLabel}, ${week}</h1>`;
+    html += `<p style="color:#555;font-size:11px;">Exportiert: ${new Date().toLocaleString("de-DE")}</p>`;
+
+    if (allergenSet.size > 0) {
+      html += `<div style="margin:8px 0;padding:8px;background:#fff3cd;border:1px solid #e6ac00;border-radius:4px;">`;
+      html += `<strong>Allergene heute:</strong> `;
+      allergenSet.forEach(a => { html += `<span class="allergen">${a}</span> `; });
+      html += `</div>`;
+    }
+
+    // Zeitplan / Main recipes
+    html += `<h2>Zeitplan – Hauptrezepte (${mainRecipes.length})</h2>`;
+    html += `<table><tr><th>Reihenfolge</th><th>Code</th><th>Rezept</th><th>Schicht</th><th>Portionen</th><th>Allergene</th></tr>`;
+    mainRecipes.forEach((r, idx) => {
+      const allergens = getAllergens(r.recipeCode);
+      const portions = r.assigned?.targetPortions ?? 0;
+      html += `<tr>
+        <td>${r.assigned?.order ?? (idx + 1)}</td>
+        <td><strong>${r.recipeCode}</strong></td>
+        <td>${r.recipeName}</td>
+        <td>${r.assigned?.shift ?? "-"}</td>
+        <td><strong>${fmtNum(Math.round(portions))}</strong></td>
+        <td>${allergens.map(a => `<span class="allergen">${a}</span>`).join(" ") || "-"}</td>
+      </tr>`;
+    });
+    html += `</table>`;
+
+    // Allergen-Wechsel-Alarm
+    let prevAllergens: string[] = [];
+    const alarms: string[] = [];
+    mainRecipes.forEach(r => {
+      const curAllergens = getAllergens(r.recipeCode);
+      const removed = prevAllergens.filter(a => !curAllergens.includes(a));
+      const added = curAllergens.filter(a => !prevAllergens.includes(a));
+      if (removed.length > 0 && prevAllergens.length > 0) {
+        alarms.push(`⚠ Allergen-Wechsel vor ${r.recipeName}: ${removed.join(", ")} entfernt → Linie reinigen!`);
+      }
+      if (added.length > 0 && prevAllergens.length > 0) {
+        alarms.push(`⚠ Neues Allergen bei ${r.recipeName}: ${added.join(", ")} neu eingeführt`);
+      }
+      prevAllergens = curAllergens;
+    });
+    if (alarms.length > 0) {
+      html += `<h2>Allergen-Alarme</h2>`;
+      alarms.forEach(alarm => { html += `<div class="alarm">${alarm}</div>`; });
+    }
+
+    // Sub-Rezepte / Produktionsanweisungen
+    html += `<h2>Produktionsanweisungen – Sub-Rezepte heute (${allSubsToday.length})</h2>`;
+    if (allSubsToday.length === 0) {
+      html += `<p style="color:#888">Keine Sub-Rezepte für heute verplant.</p>`;
+    } else {
+      const grouped = new Map<string, typeof allSubsToday>();
+      allSubsToday.forEach(entry => {
+        const key = entry.recipeCode;
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key)!.push(entry);
+      });
+      grouped.forEach((entries, code) => {
+        const rName = entries[0]!.recipeName;
+        html += `<h3>${code} – ${rName}</h3><table><tr><th>Sub-Rezept</th><th>Methode</th><th>Schicht</th><th>Portionen</th><th>Anweisungen</th></tr>`;
+        entries.forEach(({ sub }) => {
+          const subDef = (data.recipes?.[code]?.markets?.DE?.subRecipes ?? data.recipes?.[code]?.markets?.BENL?.subRecipes ?? [])
+            .find(s => s.id === sub.subRecipeId);
+          const instructions = subDef?.instructions ?? "-";
+          const methods = sub.category.split(/[/,]/).map(m => `<span class="method">${m.trim()}</span>`).join(" ");
+          html += `<tr>
+            <td class="sub">${sub.subRecipeName}</td>
+            <td>${methods}</td>
+            <td>${sub.assigned?.shift ?? "-"}</td>
+            <td>${fmtNum(Math.round(sub.assigned?.targetPortions ?? 0))}</td>
+            <td class="instruction">${instructions}</td>
+          </tr>`;
+        });
+        html += `</table>`;
+      });
+    }
+
+    html += `</body></html>`;
+    const win = window.open("", "_blank", "width=900,height=800");
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 500);
+    }
+  }
+
   return (
     <div className="space-y-3 w-full max-w-none">
       <div className={calendarFullView
@@ -2599,6 +2817,13 @@ export function PlanningView(
               </label>
               <button className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800" onClick={handleAutoPlanWeekBoard}>
                 Auto: Meals + Subs
+              </button>
+              <button
+                className={`rounded-md px-3 py-1.5 text-xs font-semibold ring-1 ${singleRunMode ? "bg-amber-600 text-white ring-amber-600" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-100"}`}
+                onClick={() => setSingleRunMode((prev) => !prev)}
+                title="Nur Run 1 planen – kein automatischer Run-2-Split"
+              >
+                {singleRunMode ? "Nur Run 1 ✓" : "Nur Run 1"}
               </button>
               <button
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold ring-1 ${calendarFullView ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-100"}`}
@@ -2901,7 +3126,15 @@ export function PlanningView(
                 <th className="sticky left-[260px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]" rowSpan={2}>Forecast / Runs</th>
                 <th className="sticky left-[350px] z-20 bg-white px-2 py-2 text-right font-semibold text-slate-700 min-w-[76px]" rowSpan={2}>Mapped</th>
                 {MANUFACTURING_DAYS.map((column) => (
-                  <th key={column.id} colSpan={activeShifts.length} className="border-l border-slate-300 px-2 py-2 text-center font-semibold text-slate-700 min-w-[136px]">{column.label}</th>
+                  <th
+                    key={column.id}
+                    colSpan={activeShifts.length}
+                    className={`border-l border-slate-300 px-2 py-2 text-center font-semibold text-slate-700 min-w-[136px] ${column.lane === "regular" ? "cursor-pointer hover:bg-emerald-50 hover:text-emerald-800 select-none" : ""}`}
+                    onClick={column.lane === "regular" ? () => setDayDetailModal(column.day) : undefined}
+                    title={column.lane === "regular" ? `${column.label} anklicken für Tages-Details & Export` : undefined}
+                  >
+                    {column.label}{column.lane === "regular" ? " ↓" : ""}
+                  </th>
                 ))}
               </tr>
               <tr className="bg-white border-b border-slate-300">
@@ -3441,75 +3674,212 @@ export function PlanningView(
           </div>
         </div>
 
-      {boardEditor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setBoardEditor(null)}>
-          <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl ring-1 ring-slate-300" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between rounded-t-xl bg-emerald-700 px-4 py-2 text-white">
-              <div className="text-sm font-semibold">{boardEditor.subRecipeId ? "Create sub-recipe work order" : "Create recipe work order"}</div>
-              <button className="text-lg leading-none" onClick={() => setBoardEditor(null)}>×</button>
-            </div>
-            <div className="space-y-3 px-4 py-3">
-              <div className="rounded bg-slate-100 px-3 py-2">
-                <div className="text-[11px] text-slate-500">Recipe</div>
-                <div className="text-sm font-semibold text-slate-900">{boardEditor.recipeCode} {analysis.recipes.find((row) => row.recipeCode === boardEditor.recipeCode)?.recipeName ?? ""}</div>
-                {boardEditor.subRecipeId && <div className="mt-1 text-xs text-slate-700">{boardEditor.subRecipeName ?? boardEditor.subRecipeId}</div>}
+      {boardEditor && (() => {
+        const editorRecipe = recipeLookup[boardEditor.recipeCode];
+        const editorAnalysis = analysis.recipes.find((row) => row.recipeCode === boardEditor.recipeCode);
+        const demand = Math.max(0, Math.round((editorRecipe?.totalVerdenVolume ?? 0) * portionMultiplier));
+        const mapped = editorAnalysis?.assigned?.targetPortions ?? 0;
+        const earliestPlatDay = batchSplitPlan.find(p => p.recipeCode === boardEditor.recipeCode)?.batches[0]?.fulfillmentDay ?? "-";
+        const unassignedSubCount = editorAnalysis?.subRecipes.filter(s => !s.assigned).length ?? 0;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setBoardEditor(null)}>
+            <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl ring-1 ring-slate-300" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center justify-between rounded-t-xl bg-emerald-700 px-4 py-2 text-white">
+                <div className="text-sm font-semibold">{boardEditor.subRecipeId ? "Create sub-recipe work order" : "Create recipe work order"}</div>
+                <button className="text-lg leading-none" onClick={() => setBoardEditor(null)}>×</button>
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="text-xs font-semibold text-slate-600">
-                  Scheduled day
-                  <input className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardEditor.day} readOnly />
-                </label>
-                <div>
-                  <div className="text-xs font-semibold text-slate-600">Shift</div>
-                  <div className="mt-1 grid grid-cols-3 gap-1">
-                    {activeShifts.map((shift) => (
-                      <button key={`edit-${shift}`} className={`rounded border px-2 py-2 text-sm font-semibold ${boardDraft.shift === shift ? "border-emerald-700 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600"}`} onClick={() => setBoardDraft((prev) => ({ ...prev, shift }))}>
-                        {shift === "S1" ? "1st shift" : shift === "S2" ? "2nd shift" : "3rd shift"}
-                      </button>
-                    ))}
+              <div className="space-y-3 px-4 py-3">
+                <div className="rounded bg-slate-100 px-3 py-2">
+                  <div className="text-sm font-semibold text-slate-900">{boardEditor.recipeCode} – {editorAnalysis?.recipeName ?? editorRecipe?.recipeName ?? ""}</div>
+                  {boardEditor.subRecipeId && <div className="mt-0.5 text-xs text-slate-600">{boardEditor.subRecipeName ?? boardEditor.subRecipeId}</div>}
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                    <span>Earliest plating day: <strong className="text-slate-700">{earliestPlatDay}</strong></span>
+                    <span>Demand: <strong className="text-slate-700">{fmtNum(demand)}</strong></span>
+                    <span>Mapped: <strong className="text-slate-700">{fmtNum(Math.round(mapped))}</strong></span>
                   </div>
                 </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-xs font-semibold text-slate-600">
+                    Plating day
+                    <input className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardEditor.day} readOnly />
+                  </label>
+                  <div>
+                    <div className="text-xs font-semibold text-slate-600">Shift</div>
+                    <div className="mt-1 grid grid-cols-3 gap-1">
+                      {activeShifts.map((shift) => (
+                        <button key={`edit-${shift}`} className={`rounded border px-2 py-2 text-sm font-semibold ${boardDraft.shift === shift ? "border-emerald-700 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600"}`} onClick={() => setBoardDraft((prev) => ({ ...prev, shift }))}>
+                          {shift === "S1" ? "1st shift" : shift === "S2" ? "2nd shift" : "3rd shift"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-xs font-semibold text-slate-600">
+                    Target
+                    <input type="number" min={0} className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardDraft.targetPortions} onChange={(event) => setBoardDraft((prev) => ({ ...prev, targetPortions: Math.max(0, Number(event.target.value) || 0) }))} />
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600">
+                    Reason
+                    <select className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardDraft.reason} onChange={(event) => setBoardDraft((prev) => ({ ...prev, reason: event.target.value }))}>
+                      <option value="Planned">Planned</option>
+                      <option value="Forecast">Forecast adjustment</option>
+                      <option value="Urgent">Urgent fix</option>
+                    </select>
+                  </label>
+                </div>
+                {!boardEditor.subRecipeId && (
+                  <label className="text-xs font-semibold text-slate-600">
+                    Split spec (optional, e.g. Fr:1200|Sa:900|So:700)
+                    <input
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
+                      placeholder="Fr:1200|Sa:900|So:700"
+                      value={boardDraft.splitSpec}
+                      onChange={(event) => setBoardDraft((prev) => ({ ...prev, splitSpec: event.target.value.trim() }))}
+                    />
+                  </label>
+                )}
+                <label className="text-xs font-semibold text-slate-600">
+                  Notes
+                  <textarea className="mt-1 h-16 w-full resize-none rounded border border-slate-300 px-2 py-2 text-sm" placeholder="Add notes about this work order" value={boardDraft.notes} onChange={(event) => setBoardDraft((prev) => ({ ...prev, notes: event.target.value }))} />
+                </label>
+                {!boardEditor.subRecipeId && unassignedSubCount > 0 && (
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={boardDraft.createSubRecipeWOs}
+                      onChange={(e) => setBoardDraft((prev) => ({ ...prev, createSubRecipeWOs: e.target.checked }))}
+                    />
+                    Create sub-recipe WOs ({unassignedSubCount} unassigned)
+                  </label>
+                )}
               </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="text-xs font-semibold text-slate-600">
-                  Target
-                  <input type="number" min={0} className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardDraft.targetPortions} onChange={(event) => setBoardDraft((prev) => ({ ...prev, targetPortions: Math.max(0, Number(event.target.value) || 0) }))} />
-                </label>
-                <label className="text-xs font-semibold text-slate-600">
-                  Creation Reason
-                  <select className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardDraft.reason} onChange={(event) => setBoardDraft((prev) => ({ ...prev, reason: event.target.value }))}>
-                    <option value="Planned">Planned</option>
-                    <option value="Forecast">Forecast adjustment</option>
-                    <option value="Urgent">Urgent fix</option>
-                  </select>
-                </label>
-              </div>
-              {!boardEditor.subRecipeId && (
-                <label className="text-xs font-semibold text-slate-600">
-                  Split spec (optional, e.g. Fr:1200|Sa:900|So:700)
-                  <input
-                    className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
-                    placeholder="Fr:1200|Sa:900|So:700"
-                    value={boardDraft.splitSpec}
-                    onChange={(event) => setBoardDraft((prev) => ({ ...prev, splitSpec: event.target.value.trim() }))}
-                  />
-                </label>
-              )}
-              <label className="text-xs font-semibold text-slate-600">
-                Notes
-                <textarea className="mt-1 h-20 w-full resize-none rounded border border-slate-300 px-2 py-2 text-sm" placeholder="Add notes about this work order" value={boardDraft.notes} onChange={(event) => setBoardDraft((prev) => ({ ...prev, notes: event.target.value }))} />
-              </label>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
-              <button className="rounded border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700" onClick={clearWeekBoardEditorAssignment}>Remove assignment</button>
-              <div className="flex gap-2">
-                <button className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700" onClick={() => setBoardEditor(null)}>Cancel</button>
-                <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white" onClick={saveWeekBoardEditor}>Save & Lock</button>
+              <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+                <button className="rounded border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700" onClick={clearWeekBoardEditorAssignment}>Remove assignment</button>
+                <div className="flex gap-2">
+                  <button className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700" onClick={() => setBoardEditor(null)}>Cancel</button>
+                  <button className="rounded border border-emerald-600 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-700" onClick={() => saveWeekBoardEditorWith("Unlocked")}>Save as Unlocked</button>
+                  <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white" onClick={saveWeekBoardEditor}>Save & Lock</button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {dayDetailModal && (() => {
+        const DAY_LABELS: Record<PlannerDay, string> = { Mo: "Montag", Di: "Dienstag", Mi: "Mittwoch", Do: "Donnerstag", Fr: "Freitag", Sa: "Samstag", So: "Sonntag" };
+        const dayLabel = DAY_LABELS[dayDetailModal] ?? dayDetailModal;
+        const mainRecipes = analysis.recipes
+          .filter(r => r.assigned?.day === dayDetailModal)
+          .sort((a, b) => (a.assigned!.order ?? 999) - (b.assigned!.order ?? 999));
+        const subsToday = analysis.recipes.flatMap(r =>
+          r.subRecipes.filter(s => s.assigned?.day === dayDetailModal)
+            .map(s => ({ code: r.recipeCode, name: r.recipeName, sub: s }))
+        );
+        const getAllergens = (code: string): string[] => {
+          const recipe = data.recipes?.[code];
+          if (!recipe) return [];
+          return [...new Set(Object.values(recipe.markets)
+            .flatMap(m => (m?.allergens ?? "").split(/[,;/]/).map(a => a.trim()).filter(Boolean)))];
+        };
+        const allAllergens = [...new Set(mainRecipes.flatMap(r => getAllergens(r.recipeCode)))];
+        // Allergen-Wechsel-Alarme
+        const alarms: string[] = [];
+        let prevAllergens: string[] = [];
+        mainRecipes.forEach(r => {
+          const cur = getAllergens(r.recipeCode);
+          const removed = prevAllergens.filter(a => !cur.includes(a));
+          if (removed.length > 0 && prevAllergens.length > 0)
+            alarms.push(`Linie reinigen vor ${r.recipeName}: ${removed.join(", ")} entfernt`);
+          prevAllergens = cur;
+        });
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setDayDetailModal(null)}>
+            <div className="flex h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl ring-1 ring-slate-300" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between rounded-t-xl bg-slate-800 px-4 py-2 text-white">
+                <div className="text-sm font-semibold">Küchenplan: {dayLabel} · {week}</div>
+                <div className="flex items-center gap-2">
+                  <button className="rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700" onClick={() => exportDayKitchenPlan(dayDetailModal)}>Drucken / Export</button>
+                  <button className="text-lg leading-none" onClick={() => setDayDetailModal(null)}>×</button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+                {allAllergens.length > 0 && (
+                  <div className="rounded bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
+                    <div className="text-xs font-bold text-amber-800 mb-1">Allergene heute</div>
+                    <div className="flex flex-wrap gap-1">
+                      {allAllergens.map(a => <span key={a} className="rounded bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">{a}</span>)}
+                    </div>
+                  </div>
+                )}
+                {alarms.length > 0 && (
+                  <div className="space-y-1">
+                    {alarms.map((alarm, i) => <div key={i} className="rounded bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 ring-1 ring-rose-200">⚠ {alarm}</div>)}
+                  </div>
+                )}
+                <div>
+                  <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Hauptrezepte ({mainRecipes.length})</div>
+                  {mainRecipes.length === 0 && <div className="text-xs text-slate-400">Keine Hauptrezepte für diesen Tag verplant.</div>}
+                  <div className="space-y-2">
+                    {mainRecipes.map((r, i) => {
+                      const allergens = getAllergens(r.recipeCode);
+                      return (
+                        <div key={r.recipeCode} className="rounded border border-slate-200 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <span className="mr-1 text-[10px] font-black text-slate-400">{i + 1}.</span>
+                              <span className="font-semibold text-slate-900">{r.recipeCode}</span>
+                              <span className="ml-1 text-sm text-slate-600">{r.recipeName}</span>
+                            </div>
+                            <div className="text-right text-xs text-slate-500">
+                              <div className="font-bold">{fmtNum(Math.round(r.assigned?.targetPortions ?? 0))} Port.</div>
+                              <div>{r.assigned?.shift ?? "-"}</div>
+                            </div>
+                          </div>
+                          {allergens.length > 0 && (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {allergens.map(a => <span key={a} className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">{a}</span>)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Sub-Rezepte heute ({subsToday.length})</div>
+                  {subsToday.length === 0 && <div className="text-xs text-slate-400">Keine Sub-Rezepte für diesen Tag verplant.</div>}
+                  <div className="space-y-1">
+                    {subsToday.map(({ code, name, sub }, i) => {
+                      const subDef = Object.values(data.recipes?.[code]?.markets ?? {})
+                        .flatMap(m => m?.subRecipes ?? []).find(s => s.id === sub.subRecipeId);
+                      return (
+                        <div key={`${code}-${sub.subRecipeId}-${i}`} className="rounded border border-slate-100 bg-slate-50 px-3 py-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="text-[10px] font-semibold text-slate-500">{code} · </span>
+                              <span className="text-xs font-semibold text-slate-800">{sub.subRecipeName}</span>
+                              <div className="mt-0.5 flex flex-wrap gap-1">
+                                {sub.category.split(/[/,]/).map(m => <span key={m} className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] text-sky-800">{m.trim()}</span>)}
+                              </div>
+                              {subDef?.instructions && <div className="mt-0.5 text-[10px] italic text-slate-500">{subDef.instructions}</div>}
+                            </div>
+                            <div className="shrink-0 text-right text-xs text-slate-500">
+                              <div className="font-bold">{fmtNum(Math.round(sub.assigned?.targetPortions ?? 0))}</div>
+                              <div>{sub.assigned?.shift ?? "-"}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {subRecipeInfoRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setSubRecipeInfoRequest(null)}>
@@ -4138,6 +4508,7 @@ type WeekBoardEditorDraft = {
   reason: string;
   splitSpec: string;
   notes: string;
+  createSubRecipeWOs: boolean;
 };
 
 type SubRecipeInfoRequest = {

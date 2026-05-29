@@ -11,6 +11,7 @@
     "preview": "vite preview --port 5173",
     "discover:sheets": "tsx scripts/discover-sheets.ts",
     "import:local": "tsx scripts/import-local.ts",
+    "watch:operational": "tsx scripts/watch-operational.ts",
     "import:gsheet": "tsx scripts/import-gsheet.ts",
     "import:sub-recipes": "tsx scripts/import-sub-recipes.ts",
     "import:pfei": "tsx scripts/import-pfei.ts",

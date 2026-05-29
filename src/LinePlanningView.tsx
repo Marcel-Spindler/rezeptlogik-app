@@ -134,7 +134,7 @@ const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi", "Do"];
 const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do", "Fr"];
 
 const RUN_PLATING_WINDOWS: Record<1 | 2, { startDay: PlanDay; dueDay: PlanDay }> = {
-  1: { startDay: "Dienstag", dueDay: "Donnerstag" },
+  1: { startDay: "Dienstag", dueDay: "Freitag" },
   2: { startDay: "Mittwoch", dueDay: "Samstag" },
 };
 
@@ -324,6 +324,11 @@ function runReadyDayIndex(day: PlanDay, run: 1 | 2): number {
 
 function laterRunReadyDay(left: PlanDay, right: PlanDay, run: 1 | 2): PlanDay {
   return runReadyDayIndex(left, run) >= runReadyDayIndex(right, run) ? left : right;
+}
+
+function nextPlanDay(day: PlanDay): PlanDay {
+  const idx = planDayIndex(day);
+  return idx < DAYS.length - 1 ? DAYS[idx + 1] : day;
 }
 
 function parseLineBoardNote(note?: string): { notes: string } {
@@ -1287,8 +1292,12 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             readyDay = hasSubDay ? laterRunReadyDay(readyDay, planSubDay, run) : planSubDay;
             hasSubDay = true;
           });
+          // Plating-Tag = der Tag NACH dem letzten Submeal-Tag
+          if (hasSubDay) readyDay = nextPlanDay(readyDay);
+          // Niemals später als das Run-Deadline
+          if (planDayIndex(readyDay) > planDayIndex(dueDay)) readyDay = dueDay;
           perRun[run] = {
-            startDay,
+            startDay: readyDay,
             readyDay,
             dueDay,
             portions: batch.portions,

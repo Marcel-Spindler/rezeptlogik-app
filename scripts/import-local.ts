@@ -1,5 +1,7 @@
 // Liest die XLSX (Meal Selection) und die CSVs aus dem konfigurierten
 // Rezeptlogik-Quellordner und schreibt eine konsolidierte public/data/data.json.
+import { config as loadEnv } from "dotenv";
+loadEnv({ path: ".env.local" }); loadEnv();
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import Papa from "papaparse";
@@ -7,9 +9,12 @@ import ExcelJS from "exceljs";
 import type {
   DataBundle, Market, WeekRecipe, Recipe,
   GrossIngredient, CookSchedule,
-  RecipeStructure, DetailedSubRecipe, ShelfLifeInfo
+  RecipeStructure, DetailedSubRecipe, ShelfLifeInfo, ProcessSpec, ProductionPlan
 } from "../src/types.ts";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
+import { readPfei } from "./import-pfei.ts";
+import { readCookSchedulesFromGSheet } from "./read-cook-schedules.ts";
+import { readProductionPlan } from "./read-production-plan.ts";
 
 // Detaillierte Sub-Rezept CSVs: werden automatisch per Glob aus SOURCE_DIR erkannt.
 // Alle Dateien "export-sub-recipes-by-recipe-detailed*.csv" werden zusammengeführt.
@@ -683,6 +688,10 @@ function loadDetailedStructures(): Record<string, RecipeStructure> {
 // ---------- 4) Cook Schedules (CSV) — nur Site VF ----------
 function loadCookSchedules(): Record<string, CookSchedule> {
   const path = join(SOURCE_DIR, COOK_CSV);
+  if (!existsSync(path)) {
+    console.warn(`  Cook-Schedules-CSV nicht gefunden (${COOK_CSV}) — überspringe`);
+    return {};
+  }
   const rows = readCsv<Record<string, string>>(path);
   const out: Record<string, CookSchedule> = {};
 
@@ -711,9 +720,21 @@ function loadCookSchedules(): Record<string, CookSchedule> {
 
 // ---------- main ----------
 async function main() {
-  console.log("Lese Meal Selection …");
-  const { weekRecipes, weeks } = await loadMealSelection();
-  console.log(`  ${weekRecipes.length} Zeilen, ${weeks.length} Wochen`);
+  const xlsxPath = join(SOURCE_DIR, XLSX_FILE);
+  let weekRecipes: WeekRecipe[];
+  let weeks: string[];
+  if (existsSync(xlsxPath)) {
+    console.log("Lese Meal Selection …");
+    ({ weekRecipes, weeks } = await loadMealSelection());
+    console.log(`  ${weekRecipes.length} Zeilen, ${weeks.length} Wochen`);
+  } else {
+    console.warn(`  XLSX nicht gefunden (${XLSX_FILE}) — behalte bestehende weekRecipes aus data.json`);
+    const existing: DataBundle = existsSync(OUT_FILE)
+      ? JSON.parse(readFileSync(OUT_FILE, "utf8"))
+      : { weekRecipes: [], weeks: [], recipes: {}, cookSchedules: {}, structures: {}, generatedAt: "" };
+    weekRecipes = existing.weekRecipes ?? [];
+    weeks = existing.weeks ?? [];
+  }
 
   console.log("Lese Recipes …");
   const recipes = loadRecipes();
@@ -723,7 +744,14 @@ async function main() {
   loadGross(recipes);
 
   console.log("Lese Cook Schedules (Site VF) …");
-  const cookSchedules = loadCookSchedules();
+  let cookSchedules = loadCookSchedules();
+  if (Object.keys(cookSchedules).length === 0) {
+    try {
+      cookSchedules = await readCookSchedulesFromGSheet();
+    } catch {
+      console.warn("  Cook-Schedules-GSheet nicht erreichbar. Überspringe.");
+    }
+  }
   console.log(`  ${Object.keys(cookSchedules).length} VF-Cook-Methoden`);
 
   console.log("Lese Open Shelf Life / MLOR live …");
@@ -732,6 +760,22 @@ async function main() {
     shelfLifeBySku = await readOpenShelfLifeSheet();
   } catch {
     console.warn("  Shelf-Life-Tabelle nicht erreichbar (Google-Credentials fehlen?). Überspringe.");
+  }
+
+  console.log("Lese PFEI (Equipment- & Batch-Daten) live …");
+  let processSpecs: Record<string, ProcessSpec> = {};
+  try {
+    processSpecs = await readPfei();
+  } catch {
+    console.warn("  PFEI-Sheet nicht erreichbar. Überspringe.");
+  }
+
+  console.log("Lese Fertigstellungszeitplan (Sheet 6) live …");
+  let productionPlan: ProductionPlan | undefined;
+  try {
+    productionPlan = await readProductionPlan(process.env.SHEET_FERTIGSTELLUNG ?? "1BEaL3ggpHGS5TbncUM5OLMUbVgRx-ADKOtRr_Sc8xXY") ?? undefined;
+  } catch {
+    console.warn("  Fertigstellungszeitplan nicht erreichbar. Überspringe.");
   }
 
   console.log("Lese Detailed Recipe Structures …");
@@ -769,8 +813,10 @@ async function main() {
     weekRecipes,
     recipes,
     cookSchedules,
+    processSpecs,
     shelfLifeBySku,
-    structures
+    structures,
+    productionPlan: productionPlan ?? undefined,
   };
 
   if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });

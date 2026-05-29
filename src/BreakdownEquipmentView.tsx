@@ -1312,6 +1312,22 @@ export function BreakdownEquipmentView({
     });
   }
 
+  // Sidebar: welches Meal gerade rechts angezeigt wird
+  const [selectedMealCode, setSelectedMealCode] = useState<string | null>(null);
+  // Welche Path-Cards aufgeklappt sind (Zutaten-Tabelle sichtbar)
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  // Slide-in zum Hinzufügen von Meals
+  const [addMealOpen, setAddMealOpen] = useState(false);
+
+  function togglePath(pathKey: string) {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(pathKey)) next.delete(pathKey);
+      else next.add(pathKey);
+      return next;
+    });
+  }
+
   function toggleWanne(kg: number) {
     setActiveWannen((prev) => {
       const next = new Set(prev);
@@ -2209,138 +2225,225 @@ export function BreakdownEquipmentView({
   const totalKgAll = mealAggs.reduce((sum, meal) => sum + meal.totalKg, 0);
   const totalPathCount = mealAggs.reduce((sum, meal) => sum + meal.paths.length, 0);
 
+  // Auto-select erstes Meal wenn mealAggs sich ändert
+  useEffect(() => {
+    if (mealAggs.length > 0 && (selectedMealCode === null || !mealAggs.find((m) => m.code === selectedMealCode))) {
+      setSelectedMealCode(mealAggs[0].code);
+    }
+  }, [mealAggs, selectedMealCode]);
+
+  const selectedMeal = mealAggs.find((m) => m.code === selectedMealCode) ?? null;
+
   return (
-    <div className="space-y-5 pb-12">
-      {/* === MEAL SELECTION PANEL === */}
-      <div className="card overflow-hidden">
-        <button
-          onClick={() => setPanelOpen((v) => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-white hover:bg-slate-50/80 transition-colors text-left"
-        >
-          <div className="flex items-center gap-2.5">
-            <span className="text-sm font-bold text-slate-800 tracking-tight">🍽 Meal-Auswahl</span>
-            {entries.length > 0 && (
-              <span className="text-[11px] font-semibold bg-indigo-600 text-white px-2 py-0.5 rounded-full tabular-nums">
-                {entries.length} ausgewählt
-              </span>
-            )}
-          </div>
-          <span className="text-slate-400 text-sm">{panelOpen ? "▾" : "▸"}</span>
-        </button>
+    // Escape the Shell's px-4 py-4 padding so the sidebar goes edge-to-edge
+    <div className="-mx-4 -mt-4 flex overflow-hidden bg-slate-100" style={{ height: "calc(100vh - 64px)" }}>
 
-        {panelOpen && (
-          <div className="border-t border-slate-100 px-4 py-3 space-y-3">
-            {weekRecipes.length === 0 ? (
-              <p className="text-sm text-slate-500">Keine Rezepte für Woche {week}.</p>
-            ) : (
-              <>
-                <input
-                  type="search"
-                  placeholder="Rezept oder Code suchen …"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-300 focus:outline-none transition"
-                />
-                {suggestions.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                    {suggestions.map((wr) => (
-                      <button
-                        key={wr.code}
-                        onClick={() => addRecipe(wr)}
-                        className="group rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left hover:border-indigo-400 hover:shadow-sm transition-all"
-                      >
-                        <div className="text-[10px] font-mono text-slate-400 group-hover:text-indigo-500 transition-colors">{wr.code}</div>
-                        <div className="text-sm font-semibold text-slate-800 leading-snug truncate">{wrStripMarketTag(wr.recipeName)}</div>
-                        <div className="text-[11px] text-slate-400 tabular-nums mt-0.5">
-                          {wr.totalVerdenVolume.toLocaleString("de-DE")} Port.{wr.preference ? ` · ${wr.preference}` : ""}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {needle && suggestions.length === 0 && (
-                  <p className="text-sm text-slate-400 italic">Kein Rezept gefunden.</p>
-                )}
-              </>
-            )}
-          </div>
-        )}
-      </div>
+      {/* ═══════════════════════════════════════════════════════════════════
+          LEFT SIDEBAR — Meal-Navigation
+      ════════════════════════════════════════════════════════════════════ */}
+      <aside className="relative flex w-[300px] shrink-0 flex-col h-full border-r border-slate-200 bg-white shadow-xl z-10">
 
-      {/* === ENTRIES LIST === */}
-      {entries.length > 0 && (
-        <div className="space-y-2">
-          {entries.map((entry) => {
-            const effective =
-              entry.mode === "fertig"
+        {/* Sidebar-Header */}
+        <div className="px-4 py-3.5 bg-gradient-to-br from-slate-900 to-slate-800 border-b border-slate-700/50">
+          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Breakdown Rechner</div>
+          <div className="flex items-baseline gap-2 mt-0.5">
+            <span className="text-xl font-black text-white tabular-nums">{wrFmtKg(totalKgAll)}</span>
+            <span className="text-xs text-slate-400">{mealAggs.length} Meals · {totalPathCount} Pfade</span>
+          </div>
+        </div>
+
+        {/* Meal-Liste */}
+        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+          {entries.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="text-3xl mb-3">📋</div>
+              <p className="text-xs font-semibold text-slate-500">Noch kein Meal ausgewählt</p>
+              <p className="text-[10px] text-slate-400 mt-1">Klicke "+ Mahlzeit" um zu starten</p>
+            </div>
+          ) : (
+            entries.map((entry) => {
+              const meal = mealAggs.find((m) => m.code === entry.code);
+              const isSelected = selectedMealCode === entry.code;
+              const effective = entry.mode === "fertig"
                 ? Math.round(entry.portions * (1 + upliftPercent / 100))
                 : entry.portions;
-            return (
-              <div key={entry.code} className="card flex flex-wrap items-center gap-3 px-4 py-3 border-l-[3px] border-l-indigo-500">
-                <div className="flex-1 min-w-[160px]">
-                  <div className="text-[10px] font-mono text-slate-400">{entry.code}</div>
-                  <div className="text-sm font-semibold text-slate-800">{wrStripMarketTag(entry.name)}</div>
-                  <div className="text-[11px] text-slate-400 tabular-nums">
-                    {entry.mode === "fertig" ? "Fertigware" : "Rohware"} · eff. {effective.toLocaleString("de-DE")} Port.
+              return (
+                <div
+                  key={entry.code}
+                  onClick={() => setSelectedMealCode(entry.code)}
+                  className={`relative rounded-xl border cursor-pointer transition-all select-none ${
+                    isSelected
+                      ? "border-indigo-300 bg-indigo-50 ring-1 ring-indigo-200 shadow-sm"
+                      : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                  }`}
+                >
+                  {/* Aktiv-Indikator-Balken */}
+                  {isSelected && (
+                    <div className="absolute left-0 inset-y-0 w-1 rounded-l-xl bg-indigo-500" />
+                  )}
+                  <div className="px-3 py-2.5 pl-4">
+                    {/* Zeile 1: Code + Name + Remove */}
+                    <div className="flex items-start justify-between gap-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[9px] font-mono text-slate-400 leading-none">{entry.code}</div>
+                        <div className={`text-sm font-bold leading-snug mt-0.5 break-words ${isSelected ? "text-indigo-900" : "text-slate-800"}`}>
+                          {entry.name}
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeRecipe(entry.code); }}
+                        className="text-slate-300 hover:text-rose-400 text-xl leading-none shrink-0 transition-colors mt-0.5 ml-1"
+                      >×</button>
+                    </div>
+
+                    {/* KG + Modus-Badges */}
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      {meal && (
+                        <span className={`text-xs font-black tabular-nums px-2 py-0.5 rounded-lg ${isSelected ? "bg-indigo-100 text-indigo-800" : "bg-slate-100 text-slate-700"}`}>
+                          {wrFmtKg(meal.totalKg)}
+                        </span>
+                      )}
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wide ${
+                        entry.mode === "fertig" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-700"
+                      }`}>
+                        {entry.mode === "fertig" ? "Fertig" : "Roh"}
+                      </span>
+                      {effective !== entry.portions && (
+                        <span className="text-[9px] text-slate-400 tabular-nums">eff. {effective.toLocaleString("de-DE")}</span>
+                      )}
+                    </div>
+
+                    {/* Portionen-Controls */}
+                    <div className="mt-2.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Portionen</div>
+                      {/* Preset-Chips */}
+                      <div className="flex gap-1 mb-2 flex-wrap">
+                        {[100, 200, 500, 1000, 2000].map((preset) => (
+                          <button
+                            key={preset}
+                            onClick={() => patchEntry(entry.code, { portions: preset })}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all ${
+                              entry.portions === preset
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                      {/* +/- Stepper */}
+                      <div className="flex items-center rounded-lg ring-1 ring-slate-200 overflow-hidden w-full">
+                        <button
+                          onClick={() => patchEntry(entry.code, { portions: Math.max(0, entry.portions - 100) })}
+                          className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 text-sm font-bold transition-colors shrink-0 border-r border-slate-200"
+                        >−</button>
+                        <input
+                          type="number"
+                          min={0}
+                          step={100}
+                          value={entry.portions}
+                          onChange={(e) => patchEntry(entry.code, { portions: Math.max(0, Number(e.target.value)) })}
+                          className="flex-1 text-center text-sm font-semibold tabular-nums bg-white py-1.5 focus:outline-none focus:ring-inset focus:ring-1 focus:ring-indigo-300 min-w-0 w-full"
+                        />
+                        <button
+                          onClick={() => patchEntry(entry.code, { portions: entry.portions + 100 })}
+                          className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 text-sm font-bold transition-colors shrink-0 border-l border-slate-200"
+                        >+</button>
+                      </div>
+                      {/* Modus-Toggle */}
+                      <div className="flex mt-1.5 rounded-lg ring-1 ring-slate-200 overflow-hidden text-xs">
+                        <button
+                          onClick={() => patchEntry(entry.code, { mode: "fertig" })}
+                          className={`flex-1 py-1 transition-colors ${entry.mode === "fertig" ? "bg-indigo-600 text-white font-semibold" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                        >Fertigware</button>
+                        <button
+                          onClick={() => patchEntry(entry.code, { mode: "roh" })}
+                          className={`flex-1 py-1 border-l border-slate-200 transition-colors ${entry.mode === "roh" ? "bg-indigo-600 text-white font-semibold" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                        >Rohware</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="flex rounded-lg ring-1 ring-slate-200 overflow-hidden text-xs shrink-0">
-                  <button
-                    onClick={() => patchEntry(entry.code, { mode: "fertig" })}
-                    className={`px-3 py-1.5 transition-colors ${entry.mode === "fertig" ? "bg-indigo-600 text-white font-semibold" : "bg-white text-slate-500 hover:bg-slate-50"}`}
-                  >Fertigware</button>
-                  <button
-                    onClick={() => patchEntry(entry.code, { mode: "roh" })}
-                    className={`px-3 py-1.5 border-l border-slate-200 transition-colors ${entry.mode === "roh" ? "bg-indigo-600 text-white font-semibold" : "bg-white text-slate-500 hover:bg-slate-50"}`}
-                  >Rohware</button>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <input
-                    type="number"
-                    min={0}
-                    step={50}
-                    value={entry.portions}
-                    onChange={(e) => patchEntry(entry.code, { portions: Math.max(0, Number(e.target.value)) })}
-                    className="w-24 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-center tabular-nums focus:bg-white focus:ring-2 focus:ring-indigo-300 focus:outline-none"
-                  />
-                  <span className="text-xs text-slate-400">Port.</span>
-                </div>
-                <button
-                  onClick={() => removeRecipe(entry.code)}
-                  aria-label="Entfernen"
-                  className="text-slate-200 hover:text-rose-400 text-xl leading-none shrink-0 transition-colors"
-                >×</button>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
-      )}
 
-      {/* === BREAKDOWN OVERVIEW === */}
-      {mealAggs.length > 0 && (
-        <div className="space-y-4">
-          {/* Toolbar */}
-          <div className="card overflow-hidden">
-            <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 flex flex-wrap items-center gap-4 justify-between">
-              <div>
-                <div className="text-[9px] font-bold text-slate-500 tracking-widest uppercase">Breakdown Rechner</div>
-                <div className="flex items-baseline gap-3 mt-0.5 flex-wrap">
-                  <span className="text-2xl font-black text-white tabular-nums">{wrFmtKg(totalKgAll)}</span>
-                  <span className="text-xs text-slate-400 tabular-nums">{totalPathCount} Sub-Pfade</span>
-                  <span className="text-xs text-slate-400 tabular-nums">{mealAggs.length} Meals</span>
+        {/* "+ Mahlzeit hinzufügen"-Button */}
+        <div className="px-3 pt-2 pb-1 border-t border-slate-100">
+          <button
+            onClick={() => setAddMealOpen(true)}
+            className="w-full rounded-xl bg-indigo-600 text-white text-sm font-bold py-2.5 hover:bg-indigo-700 active:bg-indigo-800 transition-colors flex items-center justify-center gap-2"
+          >
+            <span className="text-base leading-none">+</span>
+            Mahlzeit hinzufügen
+          </button>
+        </div>
+
+        {/* Export-Strip */}
+        <div className="px-3 py-2.5 flex gap-1.5 flex-wrap">
+          <button onClick={exportAllMealsSettings} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">JSON</button>
+          <button onClick={() => { void exportAllMealsExcel(); }} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">Excel</button>
+          <button onClick={exportAllMealsGsheet} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">GSheet</button>
+          <button onClick={exportAllMealsPdf} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">PDF alle</button>
+          <button onClick={handleImportJsonClick} className="text-[10px] bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-1 rounded-lg border border-emerald-200 transition-colors font-medium">↑ Import</button>
+        </div>
+      </aside>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          RIGHT CONTENT — Meal-Detail
+      ════════════════════════════════════════════════════════════════════ */}
+      <main className="flex-1 overflow-y-auto min-w-0 relative">
+        {entries.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-center p-8">
+            <div>
+              <div className="text-5xl mb-4">👈</div>
+              <p className="text-sm font-semibold text-slate-600">Meal aus der linken Leiste wählen</p>
+              <p className="text-xs text-slate-400 mt-1">oder "+ Mahlzeit hinzufügen" klicken</p>
+            </div>
+          </div>
+        ) : !selectedMeal ? (
+          <div className="flex items-center justify-center h-full text-center p-8">
+            <div>
+              <div className="text-4xl mb-3">🔍</div>
+              <p className="text-sm font-semibold text-slate-600">Keine Zutaten-Daten gefunden</p>
+              <p className="text-xs text-slate-400 mt-1">Die ausgewählten Rezepte haben für diese Woche keine Einträge.</p>
+            </div>
+          </div>
+        ) : (
+          <div>
+            {/* ── Meal-Header (sticky) ── */}
+            <div className="sticky top-0 z-10 px-6 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 flex flex-wrap items-start gap-4 justify-between shadow-lg">
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] font-mono text-slate-400 tracking-widest">{selectedMeal.code}</div>
+                <div className="text-xl font-black text-white leading-tight break-words">{selectedMeal.name}</div>
+                <div className="text-xs text-slate-400 mt-1 tabular-nums">
+                  {selectedMeal.mode === "fertig" ? "Fertigware" : "Rohware"}
+                  <span className="mx-1.5 text-slate-600">·</span>
+                  Input: <span className="text-slate-300">{selectedMeal.portionsInput.toLocaleString("de-DE")}</span>
+                  <span className="mx-1.5 text-slate-600">·</span>
+                  Eff.: <span className="text-slate-300">{Math.round(selectedMeal.portionsEffective).toLocaleString("de-DE")}</span> Port.
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <button onClick={exportAllMealsSettings} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-lg transition-colors">JSON</button>
-                <button onClick={() => { void exportAllMealsExcel(); }} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-lg transition-colors">Excel</button>
-                <button onClick={exportAllMealsGsheet} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-lg transition-colors">GSheet</button>
-                <button onClick={exportAllMealsPdf} className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded-lg transition-colors">PDF</button>
-                <div className="w-px h-4 bg-white/20 mx-0.5" />
-                <button onClick={handleImportJsonClick} className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 px-2 py-1 rounded-lg border border-emerald-500/30 transition-colors">↑ Import</button>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <div className="text-2xl font-black text-white tabular-nums">{wrFmtKg(selectedMeal.totalKg)}</div>
+                {selectedMeal.totalLossKg > 0 && (
+                  <div className="text-sm font-bold text-amber-400 tabular-nums">
+                    −{wrFmtKg(selectedMeal.totalLossKg)} ({Math.round((selectedMeal.totalLossKg / selectedMeal.totalKg) * 100)}% Verlust)
+                  </div>
+                )}
+                <div className="flex items-center gap-1 mt-0.5 flex-wrap justify-end">
+                  <button onClick={() => exportMealSettings(selectedMeal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">JSON</button>
+                  <button onClick={() => { void exportMealExcel(selectedMeal); }} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">Excel</button>
+                  <button onClick={() => exportMealGsheet(selectedMeal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">GSheet</button>
+                  <button onClick={() => exportMealPdf(selectedMeal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">PDF</button>
+                </div>
               </div>
             </div>
-            {/* Wannen selector */}
-            <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+
+            {/* ── Wannen-Selector (sticky unter Header) ── */}
+            <div className="sticky top-[88px] z-10 px-5 py-2.5 bg-white border-b border-slate-200 flex items-center gap-2 flex-wrap shadow-sm">
               <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mr-1">Container:</span>
               {WANNEN.map((w) => {
                 const active = activeWannen.has(w.kg);
@@ -2349,7 +2452,9 @@ export function BreakdownEquipmentView({
                     key={w.kg}
                     onClick={() => toggleWanne(w.kg)}
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg ring-1 transition-all ${
-                      active ? "bg-indigo-600 text-white ring-indigo-600 shadow-sm" : "bg-white text-slate-400 ring-slate-200 hover:ring-indigo-300 hover:text-indigo-600"
+                      active
+                        ? "bg-indigo-600 text-white ring-indigo-600 shadow-sm"
+                        : "bg-white text-slate-400 ring-slate-200 hover:ring-indigo-300 hover:text-indigo-600"
                     }`}
                   >
                     {w.label}
@@ -2357,308 +2462,336 @@ export function BreakdownEquipmentView({
                 );
               })}
             </div>
-          </div>
 
-          {/* Meal cards */}
-          {mealAggs.map((meal) => (
-            <div key={meal.code} className="overflow-hidden rounded-2xl border border-slate-200 shadow-sm">
-              {/* Meal header */}
-              <div className="px-5 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 flex flex-wrap items-start gap-4 justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="text-[10px] font-mono text-slate-400 tracking-widest">{meal.code}</div>
-                  <div className="text-lg font-black text-white leading-tight truncate">{meal.name}</div>
-                  <div className="text-xs text-slate-400 mt-1 tabular-nums">
-                    {meal.mode === "fertig" ? "Fertigware" : "Rohware"}
-                    <span className="mx-1.5 text-slate-600">·</span>
-                    Input: <span className="text-slate-300">{meal.portionsInput.toLocaleString("de-DE")}</span>
-                    <span className="mx-1.5 text-slate-600">·</span>
-                    Eff.: <span className="text-slate-300">{Math.round(meal.portionsEffective).toLocaleString("de-DE")}</span> Port.
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                  <div className="text-right">
-                    <div className="text-2xl font-black text-white tabular-nums">{wrFmtKg(meal.totalKg)}</div>
-                    <div className="text-[8px] text-slate-500 uppercase tracking-widest">Gesamt Roh</div>
-                  </div>
-                  {meal.totalLossKg > 0 && (
-                    <div className="text-right">
-                      <div className="text-base font-bold text-amber-400 tabular-nums">
-                        −{wrFmtKg(meal.totalLossKg)}
-                      </div>
-                      <div className="text-[8px] text-amber-600 uppercase tracking-widest">
-                        {Math.round((meal.totalLossKg / meal.totalKg) * 100)}% Yield-Verlust
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1 flex-wrap justify-end">
-                    <button onClick={() => exportMealSettings(meal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">JSON</button>
-                    <button onClick={() => { void exportMealExcel(meal); }} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">Excel</button>
-                    <button onClick={() => exportMealGsheet(meal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">GSheet</button>
-                    <button onClick={() => exportMealPdf(meal)} className="text-[9px] bg-white/10 hover:bg-white/20 text-white px-1.5 py-0.5 rounded transition-colors">PDF</button>
-                  </div>
-                </div>
-              </div>
+            {/* ── Path-Cards ── */}
+            {selectedMeal.paths.length === 0 ? (
+              <div className="px-6 py-10 text-sm text-slate-400 italic text-center">Keine Zutaten-Daten gefunden.</div>
+            ) : (
+              <div className="p-4 space-y-3">
+                {selectedMeal.paths.map((path, idx) => {
+                  const visibleWannen = WANNEN.filter((w) => activeWannen.has(w.kg));
+                  const briningFactor = path.isBrining ? 2 : 1;
+                  const bibleKg = path.capacityKgHint;
+                  const effectiveTubKg = path.totalKg * briningFactor;
+                  const batchCount = bibleKg && bibleKg > 0 && path.totalKg > 0
+                    ? Math.ceil(effectiveTubKg / bibleKg)
+                    : null;
+                  const crumbs = [path.sub1, path.sub2, path.sub3]
+                    .filter((s) => s && s !== "—" && s !== "Ohne Sub-Rezept")
+                    .filter(Boolean);
+                  const pathKey = `${selectedMeal.code}-path-${idx}`;
+                  const rawStr = pathRawInputs[pathKey] ?? "";
+                  const rawKg = rawStr !== "" ? (wrParseNumberLoose(rawStr) ?? null) : null;
+                  const rawCoverage = rawKg != null && path.totalKg > 0 ? rawKg / path.totalKg : null;
+                  const rawPortions = rawCoverage != null ? Math.floor(selectedMeal.portionsEffective * rawCoverage) : null;
+                  const pathYieldFactor = path.totalKg > 0 ? (path.totalKg - path.totalLossKg) / path.totalKg : 1;
+                  const rawNetKg = rawKg != null ? rawKg * pathYieldFactor : null;
+                  const rawMissingKg = rawKg != null ? Math.max(0, path.totalKg - rawKg) : null;
+                  const rawSurplusKg = rawKg != null ? Math.max(0, rawKg - path.totalKg) : null;
+                  const rawCoveragePct = rawCoverage != null ? Math.round(rawCoverage * 100) : null;
+                  const pathNetKg = Math.max(0, path.totalKg - path.totalLossKg);
+                  const pathLossPct = path.totalKg > 0 ? Math.round((path.totalLossKg / path.totalKg) * 100) : 0;
+                  const primarySub = wrHasSubName(path.sub1) ? path.sub1 : "Ohne Sub-Rezept";
+                  const secondarySub = wrHasSubName(path.sub2) ? path.sub2 : "";
+                  const tertiarySub = wrHasSubName(path.sub3) ? path.sub3 : "";
+                  const scenarioTone = wrScenarioTone(rawCoverage);
+                  const eq = path.equipmentHint;
+                  const colors = equipmentColorScheme(eq);
+                  const isExpanded = expandedPaths.has(pathKey);
 
-              {/* Paths */}
-              {meal.paths.length === 0 ? (
-                <div className="px-5 py-4 text-sm text-slate-400 italic bg-slate-50">Keine Zutaten-Daten gefunden.</div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {meal.paths.map((path, idx) => {
-                    const visibleWannen = WANNEN.filter((w) => activeWannen.has(w.kg));
-                    const briningFactor = path.isBrining ? 2 : 1;
-                    const bibleKg = path.capacityKgHint;
-                    const effectiveTubKg = path.totalKg * briningFactor;
-                    const batchCount = bibleKg && bibleKg > 0 && path.totalKg > 0
-                      ? Math.ceil(effectiveTubKg / bibleKg)
-                      : null;
-                    const crumbs = [path.sub1, path.sub2, path.sub3]
-                      .filter((s) => s && s !== "—" && s !== "Ohne Sub-Rezept")
-                      .filter(Boolean);
-                    // Rohwaren-Rechner: Berechnungen für diesen Pfad
-                    const pathKey = `${meal.code}-path-${idx}`;
-                    const rawStr = pathRawInputs[pathKey] ?? "";
-                    const rawKg = rawStr !== "" ? (wrParseNumberLoose(rawStr) ?? null) : null;
-                    const rawCoverage = rawKg != null && path.totalKg > 0 ? rawKg / path.totalKg : null;
-                    const rawPortions = rawCoverage != null ? Math.floor(meal.portionsEffective * rawCoverage) : null;
-                    const pathYieldFactor = path.totalKg > 0 ? (path.totalKg - path.totalLossKg) / path.totalKg : 1;
-                    const rawNetKg = rawKg != null ? rawKg * pathYieldFactor : null;
-                    const rawMissingKg = rawKg != null ? Math.max(0, path.totalKg - rawKg) : null;
-                    const rawSurplusKg = rawKg != null ? Math.max(0, rawKg - path.totalKg) : null;
-                    const rawCoveragePct = rawCoverage != null ? Math.round(rawCoverage * 100) : null;
-                    const pathNetKg = Math.max(0, path.totalKg - path.totalLossKg);
-                    const pathLossPct = path.totalKg > 0 ? Math.round((path.totalLossKg / path.totalKg) * 100) : 0;
-                    const primarySub = wrHasSubName(path.sub1) ? path.sub1 : "Ohne Sub-Rezept";
-                    const secondarySub = wrHasSubName(path.sub2) ? path.sub2 : "";
-                    const tertiarySub = wrHasSubName(path.sub3) ? path.sub3 : "";
-                    const focusName = tertiarySub || secondarySub || primarySub;
-                    const scenarioTone = wrScenarioTone(rawCoverage);
-                    const eq = path.equipmentHint;
-                    const colors = equipmentColorScheme(eq);
-                    return (
-                      <div key={`${meal.code}-${idx}`} className={colors.bg}>
-                        {/* Path header */}
-                        <div className={`border-l-[5px] ${colors.border} ${colors.headerBg}`}>
-                          <div className="grid gap-3 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-                            <div className="min-w-0 space-y-3">
-                              <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className={`rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-widest ${scenarioTone.badge} ring-1`}>
-                                      {scenarioTone.label}
-                                    </span>
-                                    <span className={`rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-widest ${colors.badge}`}>
-                                      Pfad {idx + 1}
-                                    </span>
-                                    {path.isBrining && (
-                                      <span className="rounded-md bg-sky-100 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-sky-700 ring-1 ring-sky-200">
-                                        Brining 1:1
-                                      </span>
-                                    )}
+                  return (
+                    <div key={pathKey} className={`rounded-2xl border overflow-hidden shadow-sm ${colors.border}`}>
+
+                      {/* Equipment-Header */}
+                      <div className={`border-l-[6px] ${colors.border} ${colors.headerBg}`}>
+                        <div className="px-5 py-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              {/* Equipment-Icon + Name */}
+                              <div className="flex items-center gap-2.5 mb-3 flex-wrap">
+                                <span className="text-2xl leading-none">{colors.icon}</span>
+                                <div>
+                                  <div className={`text-xs font-black uppercase tracking-widest ${colors.text}`}>
+                                    {eq ?? "Equipment unbekannt"}
                                   </div>
-                                  <div className="mt-2 text-xl font-black leading-tight text-slate-950" title={focusName}>
-                                    {focusName}
-                                  </div>
-                                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-500">
-                                    <span className="max-w-[18rem] truncate" title={primarySub}>{primarySub}</span>
-                                    {secondarySub && <span className="text-slate-300">/</span>}
-                                    {secondarySub && <span className="max-w-[18rem] truncate" title={secondarySub}>{secondarySub}</span>}
-                                    {tertiarySub && <span className="text-slate-300">/</span>}
-                                    {tertiarySub && <span className="rounded-md bg-white px-2 py-0.5 text-slate-900 ring-1 ring-slate-200" title={tertiarySub}>{tertiarySub}</span>}
-                                  </div>
+                                  {path.cookCategories && (
+                                    <div className="text-[10px] text-slate-500 font-semibold">{path.cookCategories}</div>
+                                  )}
                                 </div>
-                                <button
-                                  onClick={() => exportMealsPdf([{ ...meal, paths: [path] }], `${meal.code} · ${crumbs[crumbs.length - 1] ?? path.sub1}`)}
-                                  title="Dieses Sub-Rezept drucken"
-                                  className={`shrink-0 rounded-lg px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${colors.badge} hover:opacity-80`}
-                                >
-                                  PDF
-                                </button>
+                                {path.isBrining && (
+                                  <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-sky-700 ring-1 ring-sky-200">
+                                    💧 Brining 1:1
+                                  </span>
+                                )}
+                                <div className="flex items-center gap-1.5 ml-auto">
+                                  <span className={`rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-widest ${scenarioTone.badge} ring-1`}>
+                                    {scenarioTone.label}
+                                  </span>
+                                  <span className={`rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-widest ${colors.badge}`}>
+                                    Pfad {idx + 1}
+                                  </span>
+                                </div>
                               </div>
 
-                              <div className="grid gap-2 md:grid-cols-3">
-                                {([
-                                  { label: "Sub-Rezept", value: primarySub, active: true },
-                                  { label: "Sub-Sub", value: secondarySub || "nicht gesetzt", active: !!secondarySub },
-                                  { label: "Sub-Sub Detail", value: tertiarySub || "nicht gesetzt", active: !!tertiarySub },
-                                ] as Array<{ label: string; value: string; active: boolean }>).map((item) => (
-                                  <div
-                                    key={item.label}
-                                    className={`min-h-20 rounded-lg border px-3 py-2 ${item.active ? "border-slate-200 bg-white/85 shadow-sm" : "border-slate-200/70 bg-white/45"}`}
-                                  >
-                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">{item.label}</div>
-                                    <div className={`mt-1 text-sm font-bold leading-snug ${item.active ? "text-slate-900" : "text-slate-400 italic"}`} title={item.value}>
-                                      {item.value}
-                                    </div>
-                                  </div>
+                              {/* Breadcrumb */}
+                              <div className="flex items-center gap-1.5 flex-wrap text-[12px] mb-3">
+                                {crumbs.length === 0 ? (
+                                  <span className="text-slate-500 italic text-xs">Ohne Sub-Rezept</span>
+                                ) : crumbs.map((crumb, ci) => (
+                                  <span key={ci} className="flex items-center gap-1.5">
+                                    {ci > 0 && <span className="text-slate-300 font-bold">›</span>}
+                                    <span className={`font-semibold ${ci === crumbs.length - 1 ? "text-slate-900 bg-white px-2 py-0.5 rounded-md ring-1 ring-slate-200 shadow-sm" : "text-slate-500"}`}>
+                                      {crumb}
+                                    </span>
+                                  </span>
                                 ))}
                               </div>
 
+                              {/* Equipment-Pills */}
                               <div className="flex flex-wrap items-center gap-1.5">
                                 {eq && eq.split(",").map((e, ei) => (
-                                  <span key={ei} className={`rounded-full px-2 py-1 text-[10px] font-bold ${colors.badge}`}>
+                                  <span key={ei} className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${colors.badge}`}>
                                     {e.trim()}
                                   </span>
                                 ))}
-                                {path.cookCategories && (
-                                  <span className="rounded-full bg-white/75 px-2 py-1 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
-                                    {path.cookCategories}
-                                  </span>
-                                )}
                               </div>
                             </div>
 
-                            <div className={`rounded-xl p-4 shadow-sm ring-1 ${scenarioTone.band}`}>
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <div className="text-[10px] font-black uppercase tracking-widest opacity-70">Sub-Path Szenario</div>
-                                  <div className="mt-1 text-3xl font-black tabular-nums">
-                                    {rawCoveragePct != null ? `${rawCoveragePct}%` : wrFmtKg(path.totalKg)}
-                                  </div>
+                            {/* Rechts: KG + Batch + PDF */}
+                            <div className="shrink-0 text-right flex flex-col gap-1 items-end">
+                              <div className="text-2xl font-black tabular-nums text-slate-900">{wrFmtKg(path.totalKg)}</div>
+                              {bibleKg && (
+                                <div className="text-xs font-semibold text-slate-500 tabular-nums">
+                                  {batchCount}× à {bibleKg} kg
                                 </div>
-                                <div className="text-right">
-                                  <div className="text-[10px] font-bold uppercase tracking-widest opacity-70">Machbar</div>
-                                  <div className="text-lg font-black tabular-nums">
-                                    {rawPortions != null ? rawPortions.toLocaleString("de-DE") : Math.round(meal.portionsEffective).toLocaleString("de-DE")}
-                                  </div>
-                                  <div className="text-[10px] opacity-70">Portionen</div>
+                              )}
+                              {path.totalLossKg > 0 && (
+                                <div className="text-xs font-bold text-amber-600 tabular-nums">
+                                  −{wrFmtKg(path.totalLossKg)} ({pathLossPct}%)
                                 </div>
-                              </div>
-                              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15">
-                                <div
-                                  className={`h-full rounded-full ${scenarioTone.meter}`}
-                                  style={{ width: `${Math.min(100, rawCoverage != null ? rawCoverage * 100 : 100)}%` }}
-                                />
-                              </div>
-                              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-                                <div className="rounded-lg bg-white/10 px-2 py-1.5 ring-1 ring-white/10">
-                                  <div className="opacity-65">Rohbedarf</div>
-                                  <div className="font-black tabular-nums">{wrFmtKg(path.totalKg)}</div>
-                                </div>
-                                <div className="rounded-lg bg-white/10 px-2 py-1.5 ring-1 ring-white/10">
-                                  <div className="opacity-65">Netto nach Yield</div>
-                                  <div className="font-black tabular-nums">{wrFmtKg(pathNetKg)}</div>
-                                </div>
-                                <div className="rounded-lg bg-white/10 px-2 py-1.5 ring-1 ring-white/10">
-                                  <div className="opacity-65">{rawMissingKg && rawMissingKg > 0 ? "Fehlt" : "Überschuss"}</div>
-                                  <div className="font-black tabular-nums">{rawMissingKg && rawMissingKg > 0 ? wrFmtKg(rawMissingKg) : wrFmtKg(rawSurplusKg ?? 0)}</div>
-                                </div>
-                                <div className="rounded-lg bg-white/10 px-2 py-1.5 ring-1 ring-white/10">
-                                  <div className="opacity-65">Yield-Verlust</div>
-                                  <div className="font-black tabular-nums">{path.totalLossKg > 0 ? `${wrFmtKg(path.totalLossKg)} (${pathLossPct}%)` : "0 kg"}</div>
-                                </div>
-                              </div>
+                              )}
+                              <button
+                                onClick={() => exportMealsPdf([{ ...selectedMeal, paths: [path] }], `${selectedMeal.code} · ${crumbs[crumbs.length - 1] ?? path.sub1}`)}
+                                title="Sub-Pfad drucken"
+                                className={`mt-1 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-widest transition-colors ${colors.badge} hover:opacity-80`}
+                              >
+                                PDF
+                              </button>
                             </div>
                           </div>
                         </div>
-                        {/* Brining info banner */}
-                        {path.isBrining && (
-                          <div className="px-4 py-2 bg-sky-50 border-b border-sky-100 flex items-center gap-2 text-xs text-sky-700">
-                            <span className="text-base">💧</span>
-                            <span>
-                              <strong>Brining 1:1:</strong>{" "}
-                              {wrFmtKg(path.totalKg)} Rohware + {wrFmtKg(path.totalKg)} Wasser ={" "}
-                              <strong>{wrFmtKg(effectiveTubKg)} Wannenvolumen</strong>
-                              {bibleKg ? ` → ${batchCount} Wannen à ${bibleKg} kg` : ""}
-                            </span>
+                      </div>
+
+                      {/* Brining-Banner */}
+                      {path.isBrining && (
+                        <div className="px-5 py-2 bg-sky-50 border-b border-sky-100 flex items-center gap-2 text-xs text-sky-700">
+                          <span className="text-base">💧</span>
+                          <span>
+                            <strong>Brining 1:1:</strong>{" "}
+                            {wrFmtKg(path.totalKg)} Rohware + {wrFmtKg(path.totalKg)} Wasser ={" "}
+                            <strong>{wrFmtKg(effectiveTubKg)} Wannenvolumen</strong>
+                            {bibleKg ? ` → ${batchCount} Wannen à ${bibleKg} kg` : ""}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* ══ EQUIPMENT-BEDARF ═══════════════════════════════════════════════
+                          Aggregiert alle Wannen + GN-Bleche für diesen Pfad — sofort sichtbar
+                      ══════════════════════════════════════════════════════════════════════ */}
+                      {(() => {
+                        // GN-Bleche: Summe aller Zeilen die Stückware haben
+                        const totalGnTrays = path.rows.reduce((sum, row) => {
+                          const n = rowTrayCount(row);
+                          return sum + (n ?? 0);
+                        }, 0);
+
+                        // Wannen pro aktiver Größe summieren (über alle Zutaten)
+                        const wannenSums = visibleWannen.map((w) => ({
+                          label: w.label,
+                          kg: w.kg,
+                          total: path.rows.reduce((sum, row) => {
+                            // Nur Zeilen die kg haben (keine reinen Stückware-Zeilen)
+                            if (row.totalKg == null || row.totalKg <= 0) return sum;
+                            const gnC = rowTrayCount(row);
+                            if (gnC != null) return sum; // GN-Items nicht in Wannen zählen
+                            const n = rowTubCountByWanne(row, w.kg, briningFactor);
+                            return sum + (n ?? 0);
+                          }, 0),
+                        })).filter((ws) => ws.total > 0);
+
+                        const hasEquipment = batchCount != null || wannenSums.length > 0 || totalGnTrays > 0;
+                        if (!hasEquipment) return null;
+
+                        return (
+                          <div className={`border-b px-4 py-4 ${colors.headerBg}`}>
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-3">
+                              Equipment-Bedarf · {Math.round(selectedMeal.portionsEffective).toLocaleString("de-DE")} Portionen {selectedMeal.mode === "fertig" ? "(Fertigware)" : "(Rohware)"}
+                            </div>
+                            <div className="flex flex-wrap gap-2.5">
+
+                              {/* Haupt-Equipment: Batches aus Bible-Daten */}
+                              {batchCount != null && (
+                                <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 bg-white shadow-sm ring-1 ${colors.border} min-w-[140px]`}>
+                                  <span className="text-3xl leading-none">{colors.icon}</span>
+                                  <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none">
+                                      {eq?.split(",")[0]?.trim() ?? "Equipment"}
+                                    </div>
+                                    <div className={`text-3xl font-black tabular-nums leading-none mt-0.5 ${colors.text}`}>
+                                      {batchCount}×
+                                    </div>
+                                    <div className="text-[10px] font-semibold text-slate-500 mt-0.5 tabular-nums">
+                                      à {wrFmtKg(bibleKg!)} Batch
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* GN-Bleche */}
+                              {totalGnTrays > 0 && (
+                                <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 bg-white shadow-sm ring-1 border-violet-300 min-w-[120px]`}>
+                                  <span className="text-3xl leading-none">🍽️</span>
+                                  <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none">GN-Bleche</div>
+                                    <div className="text-3xl font-black tabular-nums leading-none mt-0.5 text-violet-700">
+                                      {totalGnTrays}×
+                                    </div>
+                                    <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                                      GN-Einschübe
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Wannen nach Größe */}
+                              {wannenSums.map((ws) => (
+                                <div key={ws.kg} className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 bg-white shadow-sm ring-1 ring-slate-200 min-w-[120px]">
+                                  <span className="text-3xl leading-none">🪣</span>
+                                  <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none">{ws.label} Wanne</div>
+                                    <div className={`text-3xl font-black tabular-nums leading-none mt-0.5 ${
+                                      ws.total <= 1 ? "text-emerald-700"
+                                      : ws.total <= 3 ? "text-sky-700"
+                                      : ws.total <= 6 ? "text-amber-700"
+                                      : "text-rose-700"
+                                    }`}>
+                                      {ws.total}×
+                                    </div>
+                                    <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                                      {path.isBrining ? "inkl. Wasser" : "Wannen"}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
+                        );
+                      })()}
+
+                      {/* Stats-Grid */}
+                      <div className="grid gap-2 border-b border-slate-100 bg-white px-4 py-3 sm:grid-cols-3 xl:grid-cols-6">
+                        {([
+                          { label: "Ziel-Rohware", value: wrFmtKg(path.totalKg), tone: "text-slate-900" },
+                          { label: "Wannenvolumen", value: wrFmtKg(effectiveTubKg), tone: path.isBrining ? "text-sky-700" : "text-slate-900" },
+                          { label: "Bible / Batch", value: bibleKg ? `${wrFmtKg(bibleKg)} / ${batchCount ?? 0}×` : "offen", tone: bibleKg ? "text-indigo-700" : "text-slate-400" },
+                          { label: "Yield Netto", value: wrFmtKg(pathNetKg), tone: "text-emerald-700" },
+                          { label: "Verlust", value: path.totalLossKg > 0 ? `${wrFmtKg(path.totalLossKg)} (${pathLossPct}%)` : "kein Verlust", tone: path.totalLossKg > 0 ? "text-amber-700" : "text-emerald-700" },
+                          { label: "Roh-Szenario", value: rawCoveragePct != null ? `${rawCoveragePct}% Deckung` : "noch kein Ist", tone: rawCoverage != null && rawCoverage < 1 ? "text-rose-700" : "text-slate-900" },
+                        ] as Array<{ label: string; value: string; tone: string }>).map((item) => (
+                          <div key={item.label} className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+                            <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">{item.label}</div>
+                            <div className={`mt-1 text-sm font-black tabular-nums ${item.tone}`}>{item.value}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Rohwaren-Szenario */}
+                      <div className={`px-4 py-3 border-b flex flex-wrap items-center gap-x-3 gap-y-2 transition-colors ${
+                        rawCoverage != null && rawCoverage < 0.8
+                          ? "bg-rose-50/60 border-rose-100"
+                          : rawCoverage != null && rawCoverage < 1
+                          ? "bg-amber-50/60 border-amber-100"
+                          : rawCoverage != null && rawCoverage >= 1
+                          ? "bg-emerald-50/50 border-emerald-100"
+                          : "bg-slate-50/80 border-slate-100"
+                      }`}>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 shrink-0">Rohwaren-Szenario</span>
+                        <div className="flex items-center gap-1.5 rounded-lg bg-white px-2 py-1 ring-1 ring-slate-200">
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            placeholder="kg eingeben …"
+                            value={rawStr}
+                            onChange={(e) =>
+                              setPathRawInputs((prev) => ({ ...prev, [pathKey]: e.target.value }))
+                            }
+                            className="w-28 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 tabular-nums focus:bg-white focus:ring-1 focus:ring-indigo-300 focus:outline-none"
+                          />
+                          <span className="text-[10px] text-slate-400">kg verfügbar</span>
+                        </div>
+                        {rawKg != null && (
+                          <>
+                            <div className="h-3 w-px bg-slate-200 shrink-0" />
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="flex items-center gap-1">
+                                <span className={`text-sm font-black tabular-nums leading-none ${
+                                  rawCoverage != null && rawCoverage >= 1 ? "text-emerald-600"
+                                  : rawCoverage != null && rawCoverage >= 0.8 ? "text-amber-600"
+                                  : "text-rose-600"
+                                }`}>
+                                  {rawCoverage != null ? Math.round(rawCoverage * 100) : 0}%
+                                </span>
+                                <span className="text-[9px] text-slate-400">Deckung</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className={`text-[11px] font-bold tabular-nums ${
+                                  rawCoverage != null && rawCoverage >= 1 ? "text-emerald-700" : "text-amber-700"
+                                }`}>
+                                  {rawPortions?.toLocaleString("de-DE")}
+                                </span>
+                                <span className="text-[9px] text-slate-400">/ {Math.round(selectedMeal.portionsEffective).toLocaleString("de-DE")} Port.</span>
+                              </div>
+                              {rawNetKg != null && path.totalLossKg > 0 && (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] text-slate-400">Netto-Ertrag:</span>
+                                  <span className="text-[10px] font-bold text-emerald-600 tabular-nums">{wrFmtKg(rawNetKg)}</span>
+                                </div>
+                              )}
+                              {rawCoverage != null && rawCoverage < 1 && (
+                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ring-1 ${
+                                  rawCoverage < 0.8
+                                    ? "text-rose-700 bg-rose-50 ring-rose-200"
+                                    : "text-amber-700 bg-amber-50 ring-amber-200"
+                                }`}>
+                                  ⚠ Engpass: −{Math.round((1 - rawCoverage) * selectedMeal.portionsEffective).toLocaleString("de-DE")} Port. fehlen
+                                </span>
+                              )}
+                              {rawCoverage != null && rawCoverage >= 1 && (
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg ring-1 ring-emerald-200">
+                                  ✓ Volldeckung{rawCoverage > 1
+                                    ? ` (+${Math.round((rawCoverage - 1) * selectedMeal.portionsEffective).toLocaleString("de-DE")} Port. Überschuss)`
+                                    : ""}
+                                </span>
+                              )}
+                            </div>
+                          </>
                         )}
-                        <div className="grid gap-2 border-b border-slate-100 bg-white px-4 py-3 sm:grid-cols-2 xl:grid-cols-6">
-                          {([
-                            { label: "Ziel-Rohware", value: wrFmtKg(path.totalKg), tone: "text-slate-900" },
-                            { label: "Wannenvolumen", value: wrFmtKg(effectiveTubKg), tone: path.isBrining ? "text-sky-700" : "text-slate-900" },
-                            { label: "Bible / Batch", value: bibleKg ? `${wrFmtKg(bibleKg)} / ${batchCount ?? 0}x` : "offen", tone: bibleKg ? "text-indigo-700" : "text-slate-400" },
-                            { label: "Yield Netto", value: wrFmtKg(pathNetKg), tone: "text-emerald-700" },
-                            { label: "Verlust", value: path.totalLossKg > 0 ? `${wrFmtKg(path.totalLossKg)} (${pathLossPct}%)` : "kein Verlust", tone: path.totalLossKg > 0 ? "text-amber-700" : "text-emerald-700" },
-                            { label: "Roh-Szenario", value: rawCoveragePct != null ? `${rawCoveragePct}% Deckung` : "noch kein Ist", tone: rawCoverage != null && rawCoverage < 1 ? "text-rose-700" : "text-slate-900" },
-                          ] as Array<{ label: string; value: string; tone: string }>).map((item) => (
-                            <div key={item.label} className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
-                              <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">{item.label}</div>
-                              <div className={`mt-1 text-sm font-black tabular-nums ${item.tone}`}>{item.value}</div>
-                            </div>
-                          ))}
-                        </div>
-                        {/* Rohwaren-Rechner: Verfügbarkeits-Kalkulator für diesen Sub-Pfad */}
-                        <div className={`px-4 py-3 border-b flex flex-wrap items-center gap-x-3 gap-y-2 transition-colors ${
-                          rawCoverage != null && rawCoverage < 0.8
-                            ? "bg-rose-50/60 border-rose-100"
-                            : rawCoverage != null && rawCoverage < 1
-                            ? "bg-amber-50/60 border-amber-100"
-                            : rawCoverage != null && rawCoverage >= 1
-                            ? "bg-emerald-50/50 border-emerald-100"
-                            : "bg-slate-50/80 border-slate-100"
-                        }`}>
-                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 shrink-0">Rohwaren-Szenario</span>
-                          <div className="flex items-center gap-1.5 rounded-lg bg-white px-2 py-1 ring-1 ring-slate-200">
-                            <input
-                              type="number"
-                              min={0}
-                              step={1}
-                              placeholder="kg eingeben …"
-                              value={rawStr}
-                              onChange={(e) =>
-                                setPathRawInputs((prev) => ({ ...prev, [pathKey]: e.target.value }))
-                              }
-                              className="w-28 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 tabular-nums focus:bg-white focus:ring-1 focus:ring-indigo-300 focus:outline-none"
-                            />
-                            <span className="text-[10px] text-slate-400">kg verfügbar</span>
-                          </div>
-                          {rawKg != null && (
-                            <>
-                              <div className="h-3 w-px bg-slate-200 shrink-0" />
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {/* Deckungsgrad */}
-                                <div className="flex items-center gap-1">
-                                  <span className={`text-sm font-black tabular-nums leading-none ${
-                                    rawCoverage != null && rawCoverage >= 1
-                                      ? "text-emerald-600"
-                                      : rawCoverage != null && rawCoverage >= 0.8
-                                      ? "text-amber-600"
-                                      : "text-rose-600"
-                                  }`}>
-                                    {rawCoverage != null ? Math.round(rawCoverage * 100) : 0}%
-                                  </span>
-                                  <span className="text-[9px] text-slate-400">Deckung</span>
-                                </div>
-                                {/* Portionen die machbar sind */}
-                                <div className="flex items-center gap-1">
-                                  <span className={`text-[11px] font-bold tabular-nums ${
-                                    rawCoverage != null && rawCoverage >= 1 ? "text-emerald-700" : "text-amber-700"
-                                  }`}>
-                                    {rawPortions?.toLocaleString("de-DE")}
-                                  </span>
-                                  <span className="text-[9px] text-slate-400">/ {Math.round(meal.portionsEffective).toLocaleString("de-DE")} Port.</span>
-                                </div>
-                                {/* Netto-Ertrag (nach Yield-Verlust) */}
-                                {rawNetKg != null && path.totalLossKg > 0 && (
-                                  <div className="flex items-center gap-1">
-                                    <span className="text-[9px] text-slate-400">Netto-Ertrag:</span>
-                                    <span className="text-[10px] font-bold text-emerald-600 tabular-nums">{wrFmtKg(rawNetKg)}</span>
-                                  </div>
-                                )}
-                                {/* Engpass-Warnung */}
-                                {rawCoverage != null && rawCoverage < 1 && (
-                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ring-1 ${
-                                    rawCoverage < 0.8
-                                      ? "text-rose-700 bg-rose-50 ring-rose-200"
-                                      : "text-amber-700 bg-amber-50 ring-amber-200"
-                                  }`}>
-                                    ⚠ Engpass: −{Math.round((1 - rawCoverage) * meal.portionsEffective).toLocaleString("de-DE")} Port. fehlen im Gesamtmeal
-                                  </span>
-                                )}
-                                {/* Volldeckung */}
-                                {rawCoverage != null && rawCoverage >= 1 && (
-                                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg ring-1 ring-emerald-200">
-                                    ✓ Volldeckung{rawCoverage > 1
-                                      ? ` (+${Math.round((rawCoverage - 1) * meal.portionsEffective).toLocaleString("de-DE")} Port. Überschuss)`
-                                      : ""}
-                                  </span>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        {/* Ingredient table */}
+                      </div>
+
+                      {/* Collapse-Toggle */}
+                      <button
+                        onClick={() => togglePath(pathKey)}
+                        className="w-full px-5 py-2.5 flex items-center justify-between bg-slate-50 hover:bg-slate-100 border-t border-slate-100 transition-colors"
+                      >
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                          {isExpanded ? "Zutaten ausblenden" : `Zutaten anzeigen (${path.rows.length} Positionen)`}
+                        </span>
+                        <span className="text-slate-400 text-sm">{isExpanded ? "▴" : "▾"}</span>
+                      </button>
+
+                      {/* Zutaten-Tabelle (collapsible) */}
+                      {isExpanded && (
                         <div className="overflow-x-auto bg-white">
                           <table className="w-full text-sm">
                             <thead>
@@ -2717,17 +2850,12 @@ export function BreakdownEquipmentView({
                                     <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
                                       {row.totalKg !== null ? wrFmtKg(row.totalKg) : wrFmtQty(row.totalQty, row.uom)}
                                     </td>
-                                    {/* Yield-Verlust-Spalte */}
                                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                                       {row.lossKg != null && row.lossKg > 0 ? (
                                         <div className="flex flex-col items-end gap-0.5">
-                                          <span className="text-[10px] font-bold text-amber-600">
-                                            −{wrFmtKg(row.lossKg)}
-                                          </span>
+                                          <span className="text-[10px] font-bold text-amber-600">−{wrFmtKg(row.lossKg)}</span>
                                           {row.yieldPct != null && (
-                                            <span className="text-[9px] text-slate-400">
-                                              {Math.round((1 - row.yieldPct) * 100)}%
-                                            </span>
+                                            <span className="text-[9px] text-slate-400">{Math.round((1 - row.yieldPct) * 100)}%</span>
                                           )}
                                         </div>
                                       ) : (
@@ -2737,7 +2865,6 @@ export function BreakdownEquipmentView({
                                     {(() => {
                                       const gnCount = rowTrayCount(row);
                                       if (gnCount != null) {
-                                        // GN tray item: show single spanning cell with tray badge
                                         return (
                                           <td colSpan={visibleWannen.length} className="px-2 py-2.5 text-center">
                                             <span className={`inline-flex items-center gap-1.5 justify-center min-w-[80px] h-7 px-3 text-sm font-bold tabular-nums rounded-lg ${wrTubCellCls(gnCount)}`}>
@@ -2751,7 +2878,6 @@ export function BreakdownEquipmentView({
                                           </td>
                                         );
                                       }
-                                      // Normal Wannen display (with brining factor)
                                       return visibleWannen.map((w) => {
                                         const count = rowTubCountByWanne(row, w.kg, briningFactor);
                                         if (count === null) {
@@ -2776,8 +2902,8 @@ export function BreakdownEquipmentView({
                                         title="Werte anpassen"
                                         className={`inline-flex items-center justify-center w-6 h-6 rounded-md text-[11px] transition-colors ${
                                           hasOverride ? "bg-indigo-100 text-indigo-600 ring-1 ring-indigo-300"
-                                            : overrideOpen ? "bg-slate-100 text-slate-600"
-                                            : "text-slate-200 hover:text-slate-500 hover:bg-slate-100"
+                                          : overrideOpen ? "bg-slate-100 text-slate-600"
+                                          : "text-slate-200 hover:text-slate-500 hover:bg-slate-100"
                                         }`}
                                       >✎</button>
                                     </td>
@@ -2785,7 +2911,6 @@ export function BreakdownEquipmentView({
                                 );
                               })}
                             </tbody>
-                            {/* Path total + loss footer */}
                             <tfoot>
                               <tr className="border-t-2 border-slate-200 bg-slate-50">
                                 <td className="px-4 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-wide">Gesamt</td>
@@ -2795,9 +2920,7 @@ export function BreakdownEquipmentView({
                                     <div className="flex flex-col items-end">
                                       <span className="text-[10px] font-bold text-amber-600">−{wrFmtKg(path.totalLossKg)}</span>
                                       {path.totalKg > 0 && (
-                                        <span className="text-[9px] text-slate-400">
-                                          {Math.round((path.totalLossKg / path.totalKg) * 100)}% Verlust
-                                        </span>
+                                        <span className="text-[9px] text-slate-400">{Math.round((path.totalLossKg / path.totalKg) * 100)}% Verlust</span>
                                       )}
                                     </div>
                                   ) : <span className="text-[10px] text-slate-300">—</span>}
@@ -2807,32 +2930,72 @@ export function BreakdownEquipmentView({
                             </tfoot>
                           </table>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          ADD MEAL SLIDE-IN
+      ════════════════════════════════════════════════════════════════════ */}
+      {addMealOpen && (
+        <div
+          className="absolute inset-0 z-30 flex"
+          onClick={() => setAddMealOpen(false)}
+        >
+          <div
+            className="w-[340px] h-full bg-white shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-900 to-slate-800">
+              <span className="text-sm font-bold text-white">Mahlzeit hinzufügen</span>
+              <button
+                onClick={() => setAddMealOpen(false)}
+                className="text-slate-400 hover:text-white text-xl leading-none transition-colors"
+              >×</button>
+            </div>
+            <div className="px-4 py-3 flex-1 overflow-y-auto space-y-3">
+              {weekRecipes.length === 0 ? (
+                <p className="text-sm text-slate-500">Keine Rezepte für Woche {week}.</p>
+              ) : (
+                <>
+                  <input
+                    type="search"
+                    placeholder="Rezept oder Code suchen …"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    autoFocus
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:bg-white focus:ring-2 focus:ring-indigo-300 focus:outline-none transition"
+                  />
+                  {suggestions.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {suggestions.map((wr) => (
+                        <button
+                          key={wr.code}
+                          onClick={() => { addRecipe(wr); setAddMealOpen(false); }}
+                          className="group w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left hover:border-indigo-400 hover:shadow-sm transition-all"
+                        >
+                          <div className="text-[10px] font-mono text-slate-400 group-hover:text-indigo-500 transition-colors">{wr.code}</div>
+                          <div className="text-sm font-semibold text-slate-800 leading-snug">{wrStripMarketTag(wr.recipeName)}</div>
+                          <div className="text-[11px] text-slate-400 tabular-nums mt-0.5">
+                            {wr.totalVerdenVolume.toLocaleString("de-DE")} Port.{wr.preference ? ` · ${wr.preference}` : ""}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : needle ? (
+                    <p className="text-sm text-slate-400 italic">Kein Rezept gefunden.</p>
+                  ) : null}
+                </>
               )}
             </div>
-          ))}
-        </div>
-      )}
-
-      {entries.length > 0 && mealAggs.length === 0 && (
-        <div className="card px-6 py-8 text-center">
-          <div className="text-3xl mb-2">🔍</div>
-          <p className="text-sm font-semibold text-slate-600">Keine Zutaten-Daten gefunden</p>
-          <p className="text-xs text-slate-400 mt-1">Die ausgewählten Rezepte haben für diese Woche keine Zutaten-Einträge.</p>
-        </div>
-      )}
-
-      {entries.length === 0 && (
-        <div className="card px-6 py-10 text-center">
-          <div className="text-4xl mb-3">📋</div>
-          <p className="text-sm font-semibold text-slate-700">Meal auswählen</p>
-          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-            Wähle oben ein oder mehrere Rezepte aus und gib die gewünschte Portionszahl ein.
-          </p>
-          <p className="text-[11px] text-slate-300 mt-2">Fertigware = Zielportionen mit Uplift · Rohware = direkt</p>
+          </div>
+          <div className="flex-1 bg-black/20 backdrop-blur-sm" />
         </div>
       )}
     </div>

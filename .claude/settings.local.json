@@ -23,7 +23,14 @@
       "PowerShell(Copy-Item \"C:\\\\Users\\\\MarcelSpindler\\\\Downloads\\\\export-recipes \\(1\\).csv\" -Destination \"C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\export-recipes W23.csv\")",
       "PowerShell(Copy-Item \"C:\\\\Users\\\\MarcelSpindler\\\\Downloads\\\\export-recipes \\(2\\).csv\" -Destination \"C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\export-recipes W24.csv\")",
       "Bash(Test-Path \"c:\\\\Factor Projekte\\\\rezeptlogik-app\\\\CONTEXT_SESSION.md\")",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(dir \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\")",
+      "Bash(dir \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\src\" -Recurse)",
+      "Bash(xargs grep -l \"lastSubDay\\\\|subRecipeLastDays\")",
+      "WebFetch(domain:docs.google.com)",
+      "Bash(findstr /N \"equipmentHint\\\\|capacityKgHint\" src/BreakdownEquipmentView.tsx)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k: d[k] for k in ['scripts','name'] if k in d}, indent=2\\)\\)\")",
+      "Bash(findstr /i \"build\\\\|deploy\\\\|firebase\\\\|preview\\\\|host\")"
     ]
   }
 }
