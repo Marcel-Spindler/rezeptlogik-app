@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SHIFT_MIN, getSubRecipeMassProfile, tokenToStation } from "./equipment";
 import { getActiveScenario, getWeekState, loadPlannerStorage } from "./planner";
+import { isProducedInVerden } from "./helpers";
 import type { DataBundle, DetailedSubRecipe, GrossIngredient, Market, Recipe, RecipeStructure, Station, SubRecipe, WeekRecipe, ProcessSpec, CookSchedule, ShelfLifeInfo } from "./types";
 import { STATIONS } from "./types";
 import type { UiLocale } from "./i18n";
@@ -358,7 +359,8 @@ function findHeaderIndex(headers: string[], candidates: RegExp[]): number {
 
 async function parseEtTracker(file: File): Promise<EtTrackerRow[]> {
   const exceljs = await import("exceljs");
-  const workbook = new exceljs.Workbook();
+  const WorkbookClass = exceljs.Workbook || (exceljs as any).default?.Workbook;
+  const workbook = new WorkbookClass();
   await workbook.xlsx.load(await file.arrayBuffer());
 
   const sheet = workbook.worksheets.find((candidate) => /et\s*tracker/i.test(candidate.name));
@@ -407,7 +409,8 @@ async function parseEtTracker(file: File): Promise<EtTrackerRow[]> {
 
 async function parseBreakdownSupervisor(file: File): Promise<Map<string, SupervisorHint>> {
   const exceljs = await import("exceljs");
-  const workbook = new exceljs.Workbook();
+  const WorkbookClass = exceljs.Workbook || (exceljs as any).default?.Workbook;
+  const workbook = new WorkbookClass();
   await workbook.xlsx.load(await file.arrayBuffer());
 
   const sheet = workbook.worksheets.find((candidate) => /breakdown\s*_?\s*supervisor/i.test(candidate.name));
@@ -466,7 +469,8 @@ async function parseBreakdownSupervisor(file: File): Promise<Map<string, Supervi
 
 async function parseBibles(file: File): Promise<Map<string, BibleHint>> {
   const exceljs = await import("exceljs");
-  const workbook = new exceljs.Workbook();
+  const WorkbookClass = exceljs.Workbook || (exceljs as any).default?.Workbook;
+  const workbook = new WorkbookClass();
   await workbook.xlsx.load(await file.arrayBuffer());
 
   const hints = new Map<string, BibleHint>();
@@ -1351,9 +1355,29 @@ export function BreakdownEquipmentView({
   }, []);
 
   const weekRecipes = useMemo(
-    () => data.weekRecipes.filter((r) => r.hfWeek === week),
+    () => data.weekRecipes.filter((r) => r.hfWeek === week && isProducedInVerden(r)),
     [data.weekRecipes, week],
   );
+
+  // Pre-fill entries with all Verden produced recipes of the selected week by default
+  useEffect(() => {
+    const uniqueRecipes: WeekRecipe[] = [];
+    const seen = new Set<string>();
+    for (const r of weekRecipes) {
+      if (!seen.has(r.code)) {
+        seen.add(r.code);
+        uniqueRecipes.push(r);
+      }
+    }
+    setEntries(
+      uniqueRecipes.map((wr) => ({
+        code: wr.code,
+        name: wrStripMarketTag(wr.recipeName),
+        portions: wr.totalVerdenVolume > 0 ? wr.totalVerdenVolume : 500,
+        mode: "roh",
+      }))
+    );
+  }, [weekRecipes]);
 
   const selectedCodes = useMemo(() => new Set(entries.map((e) => e.code)), [entries]);
 
@@ -1719,8 +1743,9 @@ export function BreakdownEquipmentView({
   }
 
   async function exportMealsExcel(meals: WR_MealAgg[], fileName: string): Promise<void> {
-    const { Workbook } = await import("exceljs");
-    const wb = new Workbook();
+    const exceljs = await import("exceljs");
+    const WorkbookClass = exceljs.Workbook || (exceljs as any).default?.Workbook;
+    const wb = new WorkbookClass();
     wb.creator = "rezeptlogik-app";
     wb.created = new Date();
     const ws = wb.addWorksheet("Breakdown");

@@ -170,8 +170,157 @@ async function loadMealSelection(): Promise<{ weekRecipes: WeekRecipe[]; weeks: 
     weekSet.add(hfWeek);
   }
 
+  const kw23Overrides: WeekRecipe[] = [
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV0322A",
+      recipeName: "Sour Cream & Chive Chicken",
+      preference: "CS",
+      slot: { BENL: 402, DKSE: 602, DE: 302 },
+      verdenVolume: { BENL: 3194, DKSE: 1909, DE: 1812 },
+      totalVerdenVolume: 6915,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV0402A",
+      recipeName: "Spicy jalapeño bowl with beef",
+      preference: "Keto",
+      slot: { BENL: 403, DKSE: 603, DE: 303 },
+      verdenVolume: { BENL: 2577, DKSE: 1436, DE: 1288 },
+      totalVerdenVolume: 5301,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV1320A",
+      recipeName: "Ají Verde Salmon",
+      preference: "P+",
+      slot: { BENL: 404, DKSE: 604, DE: 304 },
+      verdenVolume: { BENL: 5035, DKSE: 2537, DE: 2055 },
+      totalVerdenVolume: 9627,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV0035A",
+      recipeName: "Salmon with spinach pesto",
+      preference: "Keto",
+      slot: { BENL: 406, DKSE: 606, DE: 306 },
+      verdenVolume: { BENL: 2355, DKSE: 1286, DE: 1544 },
+      totalVerdenVolume: 5185,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV0401A",
+      recipeName: "Pulled chicken with cheddar and bacon",
+      preference: "Keto",
+      slot: { BENL: 407, DKSE: 607, DE: 307 },
+      verdenVolume: { BENL: 2523, DKSE: 1301, DE: 1291 },
+      totalVerdenVolume: 5115,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV0778A",
+      recipeName: "Creamy pesto pasta",
+      preference: "Veggie",
+      slot: { BENL: 409, DKSE: 609, DE: 309 },
+      verdenVolume: { BENL: 730, DKSE: 338, DE: 302 },
+      totalVerdenVolume: 1370,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV0131A",
+      recipeName: "Black Bean Bowl and Enchilada Sauce",
+      preference: "Veggie",
+      slot: { BENL: 410, DKSE: 610, DE: 310 },
+      verdenVolume: { BENL: 556, DKSE: 288, DE: 273 },
+      totalVerdenVolume: 1117,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV4048A",
+      recipeName: "Creamy Leek Pork tenderloin",
+      preference: "CS",
+      slot: { BENL: 413, DKSE: 613, DE: 313 },
+      verdenVolume: { BENL: 799, DKSE: 524, DE: 421 },
+      totalVerdenVolume: 1744,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV0601A",
+      recipeName: "Mozzarella Burger & Roasted Potatoes",
+      preference: "Keto",
+      slot: { BENL: 415, DKSE: 615, DE: 315 },
+      verdenVolume: { BENL: 3792, DKSE: 1652, DE: 1450 },
+      totalVerdenVolume: 6894,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV4053A",
+      recipeName: "Gochugaru Chicken",
+      preference: "P+",
+      slot: { BENL: 417, DKSE: 617, DE: 317 },
+      verdenVolume: { BENL: 1764, DKSE: 887, DE: 826 },
+      totalVerdenVolume: 3477,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV4042A",
+      recipeName: "Pork tenderloin and Mediterranean mash",
+      preference: "CS",
+      slot: { BENL: 418, DKSE: 618, DE: 318 },
+      verdenVolume: { BENL: 883, DKSE: 597, DE: 400 },
+      totalVerdenVolume: 1880,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV1646A",
+      recipeName: "Lemon Garlic Shrimp & Spanakorizo",
+      preference: "CS",
+      slot: { BENL: 419, DKSE: 619, DE: 319 },
+      verdenVolume: { BENL: 1795, DKSE: 736, DE: 750 },
+      totalVerdenVolume: 3281,
+      productionBuffer: 0
+    },
+    {
+      hfWeek: "2026-W23",
+      weekShort: "W23",
+      code: "FV0612A",
+      recipeName: "Ground Beef & Mushroom Skillet",
+      preference: "Perf",
+      slot: { BENL: 421, DKSE: 621, DE: 321 },
+      verdenVolume: { BENL: 1183, DKSE: 635, DE: 686 },
+      totalVerdenVolume: 2504,
+      productionBuffer: 0
+    }
+  ];
+
+  const finalOut = out.filter(r => r.hfWeek !== "2026-W23");
+  finalOut.push(...kw23Overrides);
+
   const weeks = [...weekSet].sort();
-  return { weekRecipes: out, weeks };
+  return { weekRecipes: finalOut, weeks };
 }
 
 // ---------- 2) Recipes (CSV je Markt oder kombiniert) ----------

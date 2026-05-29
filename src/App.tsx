@@ -7,6 +7,7 @@ import { RecipeDetail } from "./RecipeDetailView";
 import { PackingScheduleView } from "./PackingScheduleView";
 import { PlanningOasisView } from "./planning-oasis/PlanningOasisView";
 import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
+import { WhatIfView } from "./WhatIfView";
 import { WeekSelector } from "./components/WeekSelector";
 import { RecipeList } from "./components/RecipeList";
 import { DataHealthBanner } from "./components/DataHealthBanner";
@@ -19,10 +20,10 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-type AppView = "recipe" | "planning" | "packing";
+type AppView = "recipe" | "planning" | "packing" | "breakdown" | "whatif";
 type AppSurface = "full" | "kitchen";
 
-const ALL_VIEWS: readonly AppView[] = ["recipe", "planning", "packing"];
+const ALL_VIEWS: readonly AppView[] = ["recipe", "planning", "packing", "breakdown", "whatif"];
 
 // ─── URL helpers ───────────────────────────────────────────────────────────
 
@@ -59,6 +60,8 @@ const NAV_TABS: { view: AppView; label: string }[] = [
   { view: "recipe",   label: "Rezept" },
   { view: "planning", label: "Planning OASE" },
   { view: "packing",  label: "Packing" },
+  { view: "breakdown", label: "Breakdown-Rechner" },
+  { view: "whatif",   label: "What-If Rechner" },
 ];
 
 // ─── Main App ──────────────────────────────────────────────────────────────
@@ -355,6 +358,14 @@ export default function App() {
                     <code className="bg-slate-100 px-1 rounded">npm run import:gsheet</code>
                   </div>
                 </div>
+          )}
+
+          {view === "breakdown" && (
+            <BreakdownEquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale="de" />
+          )}
+
+          {view === "whatif" && (
+            <WhatIfView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale="de" />
           )}
 
         </main>

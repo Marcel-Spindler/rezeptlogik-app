@@ -27,14 +27,10 @@ export const SINGLE_RUN_MAX = 800;
 // 3 runs: > 4500 total portions (very large batches)
 export const TRIPLE_RUN_MIN = 4500;
 
-export const RUN_ONE_FACTORS = {
-  bnl:     1.0,
-  nordics: 1.0,
-  de_2run: 0.7,   // 2-run: 70% DE in Run 1, 30% in Run 2
-  de_3run: 0.35,  // 3-run: 35% DE per run
-} as const;
+export const RUN_ONE_FACTOR = 0.65; // Run 1 always gets 65% of base total
+export const LAST_RUN_FACTOR = 0.10; // Last run (Run 3) always gets 10% of uplift total
 
-export const SECOND_RUN_TOTAL_FACTOR = 1.1;
+export const SECOND_RUN_TOTAL_FACTOR = 1.05; // 5% uplift on everything
 
 export function recommendedRunCount(totalBase: number): RunCount {
   if (totalBase <= SINGLE_RUN_MAX) return 1;
@@ -54,36 +50,47 @@ export function calculateRunSplit(volumes: RunMarketVolumes): RunSplitPlan {
   const upliftTotal = Math.round(baseTotal * SECOND_RUN_TOTAL_FACTOR);
   const runCount    = recommendedRunCount(baseTotal);
 
-  const deFactor = runCount === 3 ? RUN_ONE_FACTORS.de_3run : RUN_ONE_FACTORS.de_2run;
-
-  const firstRun = {
-    bnl:     Math.round(bnl     * RUN_ONE_FACTORS.bnl),
-    nordics: Math.round(nordics * RUN_ONE_FACTORS.nordics),
-    de:      Math.round(de      * deFactor),
-  };
-  const firstTotal = firstRun.bnl + firstRun.nordics + firstRun.de;
-
+  let firstRun = { bnl: 0, nordics: 0, de: 0, total: 0 };
   let secondRun = 0;
   let thirdRun  = 0;
 
   if (runCount === 1) {
+    firstRun = {
+      bnl,
+      nordics,
+      de,
+      total: baseTotal
+    };
     secondRun = 0;
     thirdRun  = 0;
   } else if (runCount === 2) {
-    secondRun = Math.max(0, upliftTotal - firstTotal);
+    firstRun = {
+      bnl:     Math.round(bnl     * RUN_ONE_FACTOR),
+      nordics: Math.round(nordics * RUN_ONE_FACTOR),
+      de:      Math.round(de      * RUN_ONE_FACTOR),
+      total:   0
+    };
+    firstRun.total = firstRun.bnl + firstRun.nordics + firstRun.de;
+    secondRun = Math.max(0, upliftTotal - firstRun.total);
     thirdRun  = 0;
   } else {
-    // 3 runs: Run 2 covers second slice of DE, Run 3 gets remainder + uplift
-    const run2De = Math.round(de * RUN_ONE_FACTORS.de_3run);
-    secondRun = run2De;
-    thirdRun  = Math.max(0, upliftTotal - firstTotal - secondRun);
+    // 3 runs: Run 1 = 65%, Run 3 = 10%, Run 2 = rest
+    firstRun = {
+      bnl:     Math.round(bnl     * RUN_ONE_FACTOR),
+      nordics: Math.round(nordics * RUN_ONE_FACTOR),
+      de:      Math.round(de      * RUN_ONE_FACTOR),
+      total:   0
+    };
+    firstRun.total = firstRun.bnl + firstRun.nordics + firstRun.de;
+    thirdRun  = Math.round(upliftTotal * LAST_RUN_FACTOR);
+    secondRun = Math.max(0, upliftTotal - firstRun.total - thirdRun);
   }
 
   return {
     runCount,
-    firstRun: { ...firstRun, total: firstTotal },
+    firstRun,
     baseTotal,
-    baseRemainder: Math.max(0, baseTotal - firstTotal),
+    baseRemainder: Math.max(0, baseTotal - firstRun.total),
     upliftTotal,
     upliftPortions: Math.max(0, upliftTotal - baseTotal),
     secondRun,

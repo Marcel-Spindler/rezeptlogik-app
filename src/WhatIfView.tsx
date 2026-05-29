@@ -336,33 +336,19 @@ export function WhatIfView({
   const weekIntel = oasisData?.weeks[week] ?? null;
 
   const weekMeals = useMemo(() => {
-    const weekShort = week.match(/W\d{1,2}/)?.[0] ?? week;
-    const byCode = new Map<string, WeekRecipe>();
-
-    for (const row of data.weekRecipes) {
-      if (row.hfWeek !== week) continue;
-      if (!byCode.has(row.code)) byCode.set(row.code, row);
+    const activeWeekRecipes = data.weekRecipes
+      .filter((r) => r.hfWeek === week && isProducedInVerden(r));
+    
+    const uniqueRecipes: WeekRecipe[] = [];
+    const seen = new Set<string>();
+    for (const r of activeWeekRecipes) {
+      if (!seen.has(r.code)) {
+        seen.add(r.code);
+        uniqueRecipes.push(r);
+      }
     }
-
-    return (weekIntel?.recipes ?? [])
-      .map((code) => {
-        const existing = byCode.get(code);
-        if (existing) return existing;
-        const recipe = data.recipes[code] ?? data.recipes[code.replace(/^[A-Z]{2}/, "")];
-        return {
-          hfWeek: week,
-          weekShort,
-          code,
-          recipeName: recipe?.baseName ?? code,
-          preference: "",
-          slot: {},
-          verdenVolume: { BENL: 0, DKSE: 0, DE: 0 },
-          totalVerdenVolume: 0,
-          productionBuffer: 0,
-        } satisfies WeekRecipe;
-      })
-      .sort((a, b) => getBaseVolume(b) - getBaseVolume(a) || a.code.localeCompare(b.code, "de"));
-  }, [data.recipes, data.weekRecipes, week, weekIntel]);
+    return uniqueRecipes.sort((a, b) => getBaseVolume(b) - getBaseVolume(a) || a.code.localeCompare(b.code, "de"));
+  }, [data.recipes, data.weekRecipes, week]);
   
   type MealChoice = {
     code: string;
@@ -668,8 +654,9 @@ export function WhatIfView({
     if (!selectedSubRecipe) return;
     setSubRecipeExportLoading(true);
     try {
-      const { Workbook } = await import("exceljs");
-      const workbook = new Workbook();
+      const exceljs = await import("exceljs");
+      const WorkbookClass = exceljs.Workbook || (exceljs as any).default?.Workbook;
+      const workbook = new WorkbookClass();
       workbook.creator = "Rezeptlogik Verden";
       workbook.created = new Date();
 

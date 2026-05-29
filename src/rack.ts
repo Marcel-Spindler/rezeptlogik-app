@@ -141,8 +141,9 @@ export async function parseRackfileCsv(file: File): Promise<RackEntry[]> {
 }
 
 export async function parseMultilineExcel(file: File, market: RackMarket, lines?: string[]): Promise<RackEntry[]> {
-  const { Workbook } = await import("exceljs");
-  const workbook = new Workbook();
+  const exceljs = await import("exceljs");
+  const WorkbookClass = exceljs.Workbook || (exceljs as any).default?.Workbook;
+  const workbook = new WorkbookClass();
   await workbook.xlsx.load(await file.arrayBuffer());
 
   const profile = RACK_MARKET_PROFILES[market];
@@ -281,8 +282,9 @@ export async function parseCo2Csv(file: File, boxPrefix?: string): Promise<Set<s
 
   const lowerName = String(file.name ?? "").toLowerCase();
   if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")) {
-    const { Workbook } = await import("exceljs");
-    const workbook = new Workbook();
+    const exceljs = await import("exceljs");
+    const WorkbookClass = exceljs.Workbook || (exceljs as any).default?.Workbook;
+    const workbook = new WorkbookClass();
     await workbook.xlsx.load(await file.arrayBuffer());
     for (const worksheet of workbook.worksheets) {
       const headerRow = worksheet.getRow(1);

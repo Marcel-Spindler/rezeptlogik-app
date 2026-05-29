@@ -33,7 +33,7 @@
 
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" }); loadEnv();
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import Papa from "papaparse";
 import admin from "firebase-admin";
@@ -355,7 +355,59 @@ async function pushToFirestore(structures: Record<string, RecipeStructure>) {
 
 async function runImport() {
   const structures = loadStructures();
-  await pushToFirestore(structures);
+  
+  // Update local public/data/data.json with structures and recipes
+  const localDataPath = resolve("public", "data", "data.json");
+  if (existsSync(localDataPath)) {
+    try {
+      const data = JSON.parse(readFileSync(localDataPath, "utf8"));
+      data.structures = { ...(data.structures || {}), ...structures };
+      
+      // If data.recipes is empty or missing, let's populate it from the structures
+      if (!data.recipes || Object.keys(data.recipes).length === 0) {
+        data.recipes = {};
+      }
+      for (const [code, s] of Object.entries(structures)) {
+        if (!data.recipes[code]) {
+          data.recipes[code] = {
+            code,
+            baseName: s.name,
+            markets: {},
+            grossIngredients: {}
+          };
+        }
+        // Populate markets if they don't exist
+        for (const [market, subRecipes] of Object.entries(s.markets)) {
+          if (!data.recipes[code].markets[market]) {
+            const recipeId = s.recipeId || "";
+            data.recipes[code].markets[market] = {
+              market,
+              msku: recipeId,
+              recipeNameLocal: s.name,
+              subRecipes: subRecipes.map(sr => ({
+                id: sr.id,
+                name: sr.name,
+                category: sr.categories || ""
+              })),
+              ingredients: []
+            };
+          }
+        }
+      }
+
+      writeFileSync(localDataPath, JSON.stringify(data));
+      console.log(`✓ structures und Rezepte lokal in ${localDataPath} aktualisiert`);
+    } catch (e) {
+      console.error("Fehler beim Aktualisieren der lokalen data.json:", e);
+    }
+  }
+
+  // Attempt pushing to Firestore, but don't fail if we have insufficient permissions locally
+  try {
+    await pushToFirestore(structures);
+  } catch (err: any) {
+    console.warn("Firestore-Push übersprungen oder fehlgeschlagen (normal im lokalen Modus):", err.message || err);
+  }
 }
 
 function watchAndImport() {

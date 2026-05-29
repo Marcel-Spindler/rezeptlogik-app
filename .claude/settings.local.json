@@ -22,7 +22,8 @@
       "PowerShell(Copy-Item \"C:\\\\Users\\\\MarcelSpindler\\\\Downloads\\\\export-sub-recipes-by-recipe-detailed \\(7\\).csv\" -Destination \"C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\\")",
       "PowerShell(Copy-Item \"C:\\\\Users\\\\MarcelSpindler\\\\Downloads\\\\export-recipes \\(1\\).csv\" -Destination \"C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\export-recipes W23.csv\")",
       "PowerShell(Copy-Item \"C:\\\\Users\\\\MarcelSpindler\\\\Downloads\\\\export-recipes \\(2\\).csv\" -Destination \"C:\\\\Factor Projekte\\\\rezeptlogik-app\\\\imports\\\\export-recipes W24.csv\")",
-      "Bash(Test-Path \"c:\\\\Factor Projekte\\\\rezeptlogik-app\\\\CONTEXT_SESSION.md\")"
+      "Bash(Test-Path \"c:\\\\Factor Projekte\\\\rezeptlogik-app\\\\CONTEXT_SESSION.md\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)"
     ]
   }
 }
