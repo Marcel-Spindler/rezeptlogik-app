@@ -304,11 +304,26 @@ function loadStructures(): Record<string, RecipeStructure> {
     process.exit(1);
   }
 
-  // Format B (name-keyed, optional) zuerst laden, dann Format A (FV-Code) drüber mergen
+  // Format B (detailliert, mit Zutaten) zuerst laden, dann Format A (FV-Code) drüber mergen.
+  // WICHTIG: Deep-Merge damit Format-B-Zutaten nicht von Format A überschrieben werden.
+  // Strategie: Metadaten + fehlende Märkte aus A; für Märkte die B abdeckt → B bevorzugen (hat Zutaten).
   const detailed  = detailedCsvs.length > 0 ? loadFromDetailedCsv(detailedCsvs)  : {};
   const recipes   = recipesCsvs.length  > 0 ? loadFromRecipesCsv(recipesCsvs)    : {};
 
-  const merged = { ...detailed, ...recipes };
+  const allCodes = new Set([...Object.keys(detailed), ...Object.keys(recipes)]);
+  const merged: Record<string, RecipeStructure> = {};
+  for (const code of allCodes) {
+    const a = recipes[code];   // Format A: FV-Code, keine Zutaten
+    const b = detailed[code];  // Format B: Zutaten vorhanden
+    if (!a && b)  { merged[code] = b; continue; }
+    if (a && !b)  { merged[code] = a; continue; }
+    // Beide vorhanden: Metadaten + alle Märkte aus A; Märkte die B hat → B-Version (mit Zutaten)
+    const markets = { ...a.markets };
+    for (const [mkt, bData] of Object.entries(b.markets)) {
+      markets[mkt] = bData;
+    }
+    merged[code] = { ...a, markets };
+  }
   console.log(`  Gesamt: ${Object.keys(merged).length} Strukturen (${Object.keys(recipes).length} mit FV-Code, ${Object.keys(detailed).length} detailliert)`);
   return merged;
 }
@@ -353,16 +368,55 @@ async function pushToFirestore(structures: Record<string, RecipeStructure>) {
   console.log("✓ structures in Firestore aktualisiert");
 }
 
+function countIngredients(structures: Record<string, any>): number {
+  let n = 0;
+  for (const s of Object.values(structures)) {
+    for (const mkt of Object.values(s.markets || {})) {
+      if (Array.isArray(mkt)) mkt.forEach((sr: any) => { n += (sr.ingredients?.length ?? 0); if (sr.subRecipes) sr.subRecipes.forEach((c: any) => { n += (c.ingredients?.length ?? 0); }); });
+    }
+  }
+  return n;
+}
+
 async function runImport() {
   const structures = loadStructures();
-  
+
   // Update local public/data/data.json with structures and recipes
   const localDataPath = resolve("public", "data", "data.json");
   if (existsSync(localDataPath)) {
     try {
       const data = JSON.parse(readFileSync(localDataPath, "utf8"));
-      data.structures = { ...(data.structures || {}), ...structures };
-      
+      const prevIngCount = countIngredients(data.structures || {});
+
+      // Deep-Merge: bestehende Zutaten-Daten niemals überschreiben
+      const existing: Record<string, any> = data.structures || {};
+      for (const [code, s] of Object.entries(structures)) {
+        const newS = s as any;
+        if (!existing[code]) { existing[code] = newS; continue; }
+        // Für jeden Markt: neue Version nur verwenden wenn sie MEHR Zutaten hat
+        const mergedMarkets = { ...existing[code].markets };
+        for (const [mkt, newMktData] of Object.entries(newS.markets)) {
+          const oldData = mergedMarkets[mkt];
+          const newIngCount = Array.isArray(newMktData)
+            ? (newMktData as any[]).reduce((s: number, sr: any) => s + (sr.ingredients?.length ?? 0), 0)
+            : 0;
+          const oldIngCount = Array.isArray(oldData)
+            ? (oldData as any[]).reduce((s: number, sr: any) => s + (sr.ingredients?.length ?? 0), 0)
+            : 0;
+          // Neue Daten nur übernehmen wenn sie besser oder gleich gut sind
+          if (newIngCount >= oldIngCount) mergedMarkets[mkt] = newMktData;
+        }
+        existing[code] = { ...existing[code], ...newS, markets: mergedMarkets };
+      }
+      data.structures = existing;
+
+      // Schutzsperre: niemals schreiben wenn Zutaten verloren gehen würden
+      const newIngCount = countIngredients(data.structures);
+      if (prevIngCount > 0 && newIngCount < prevIngCount) {
+        console.warn(`⚠  Import würde Zutaten verlieren (${prevIngCount} → ${newIngCount}) — data.json wird NICHT überschrieben.`);
+        return;
+      }
+
       // If data.recipes is empty or missing, let's populate it from the structures
       if (!data.recipes || Object.keys(data.recipes).length === 0) {
         data.recipes = {};
@@ -371,20 +425,20 @@ async function runImport() {
         if (!data.recipes[code]) {
           data.recipes[code] = {
             code,
-            baseName: s.name,
+            baseName: (s as any).name,
             markets: {},
             grossIngredients: {}
           };
         }
         // Populate markets if they don't exist
-        for (const [market, subRecipes] of Object.entries(s.markets)) {
+        for (const [market, subRecipes] of Object.entries((s as any).markets)) {
           if (!data.recipes[code].markets[market]) {
-            const recipeId = s.recipeId || "";
+            const recipeId = (s as any).recipeId || "";
             data.recipes[code].markets[market] = {
               market,
               msku: recipeId,
-              recipeNameLocal: s.name,
-              subRecipes: subRecipes.map(sr => ({
+              recipeNameLocal: (s as any).name,
+              subRecipes: (subRecipes as any[]).map((sr: any) => ({
                 id: sr.id,
                 name: sr.name,
                 category: sr.categories || ""
@@ -396,7 +450,7 @@ async function runImport() {
       }
 
       writeFileSync(localDataPath, JSON.stringify(data));
-      console.log(`✓ structures und Rezepte lokal in ${localDataPath} aktualisiert`);
+      console.log(`✓ structures und Rezepte lokal in ${localDataPath} aktualisiert (${newIngCount} Zutaten)`);
     } catch (e) {
       console.error("Fehler beim Aktualisieren der lokalen data.json:", e);
     }

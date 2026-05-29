@@ -4,10 +4,7 @@ dist/
 .env
 .env.local
 secrets/
-public/data/*.json
-!public/data/.gitkeep
 *.tsbuildinfo
-imports/*.csv
-imports/*.xlsx
-imports/*.xls
-!imports/.gitkeep
+# data.json und CSV-Quelldaten werden versioniert – sie sind Deployment-Artefakte
+# !public/data/data.json  (bewusst NICHT ignoriert)
+# !imports/*.csv          (bewusst NICHT ignoriert)

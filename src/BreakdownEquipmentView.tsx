@@ -2080,7 +2080,7 @@ export function BreakdownEquipmentView({
 
       let grossList: GrossIngredient[] | undefined;
       for (const mkt of MARKET_PRIO_NEW) {
-        const list = recipe.grossIngredients[mkt];
+        const list = recipe.grossIngredients?.[mkt];
         if (list && list.length > 0) {
           grossList = list;
           break;
@@ -2234,9 +2234,18 @@ export function BreakdownEquipmentView({
 
   const selectedMeal = mealAggs.find((m) => m.code === selectedMealCode) ?? null;
 
+  const noIngredientData = !data.structures || Object.keys(data.structures).length === 0;
+
   return (
     // Escape the Shell's px-4 py-4 padding so the sidebar goes edge-to-edge
-    <div className="-mx-4 -mt-4 flex overflow-hidden bg-slate-100" style={{ height: "calc(100vh - 64px)" }}>
+    <div className="-mx-4 -mt-4 flex flex-col overflow-hidden bg-slate-100" style={{ height: "calc(100vh - 64px)" }}>
+      {noIngredientData && (
+        <div className="shrink-0 mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 flex items-center gap-2 text-sm shadow z-50">
+          <span>⚠</span>
+          <span><strong>Zutaten-Daten fehlen</strong> — bitte <code className="bg-amber-100 px-1 rounded">npm run import:local</code> ausführen und Seite neu laden.</span>
+        </div>
+      )}
+      <div className="flex flex-1 overflow-hidden">
 
       {/* ═══════════════════════════════════════════════════════════════════
           LEFT SIDEBAR — Meal-Navigation
@@ -2998,6 +3007,7 @@ export function BreakdownEquipmentView({
           <div className="flex-1 bg-black/20 backdrop-blur-sm" />
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { PackingScheduleView } from "./PackingScheduleView";
 import { PlanningOasisView } from "./planning-oasis/PlanningOasisView";
 import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
 import { WhatIfView } from "./WhatIfView";
+import { RundmailView } from "./RundmailView";
 import { WeekSelector } from "./components/WeekSelector";
 import { RecipeList } from "./components/RecipeList";
 import { DataHealthBanner } from "./components/DataHealthBanner";
@@ -20,15 +21,18 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
-type AppView = "recipe" | "planning" | "packing" | "breakdown" | "whatif";
-type AppSurface = "full" | "kitchen";
+type AppView = "recipe" | "planning" | "packing" | "breakdown" | "whatif" | "rundmail";
+type AppSurface = "full" | "kitchen" | "rundmail";
 
-const ALL_VIEWS: readonly AppView[] = ["recipe", "planning", "packing", "breakdown", "whatif"];
+const ALL_VIEWS: readonly AppView[] = ["recipe", "planning", "packing", "breakdown", "whatif", "rundmail"];
 
 // ─── URL helpers ───────────────────────────────────────────────────────────
 
 function resolveSurfaceFromUrl(): AppSurface {
-  return new URLSearchParams(window.location.search).get("surface") === "kitchen" ? "kitchen" : "full";
+  const s = new URLSearchParams(window.location.search).get("surface");
+  if (s === "kitchen") return "kitchen";
+  if (s === "rundmail") return "rundmail";
+  return "full";
 }
 
 // ─── Micro components ──────────────────────────────────────────────────────
@@ -62,6 +66,7 @@ const NAV_TABS: { view: AppView; label: string }[] = [
   { view: "packing",  label: "Packing" },
   { view: "breakdown", label: "Breakdown-Rechner" },
   { view: "whatif",   label: "What-If Rechner" },
+  { view: "rundmail", label: "Rundmail" },
 ];
 
 // ─── Main App ──────────────────────────────────────────────────────────────
@@ -69,6 +74,7 @@ const NAV_TABS: { view: AppView; label: string }[] = [
 export default function App() {
   const surface = useMemo<AppSurface>(() => resolveSurfaceFromUrl(), []);
   const kitchenMode = surface === "kitchen";
+  const rundmailMode = surface === "rundmail";
 
   const [data, setData] = useState<DataBundle | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -221,6 +227,16 @@ export default function App() {
     </Shell>
   );
 
+  // ── Rundmail standalone mode ───────────────────────────────────────────────
+
+  if (rundmailMode) {
+    return (
+      <Shell>
+        <RundmailView />
+      </Shell>
+    );
+  }
+
   // ── Kitchen mode ───────────────────────────────────────────────────────────
 
   if (kitchenMode) {
@@ -366,6 +382,10 @@ export default function App() {
 
           {view === "whatif" && (
             <WhatIfView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale="de" />
+          )}
+
+          {view === "rundmail" && (
+            <RundmailView onNavigate={(v) => setView(v as AppView)} />
           )}
 
         </main>

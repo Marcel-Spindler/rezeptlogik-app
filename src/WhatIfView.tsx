@@ -170,7 +170,7 @@ function aggregateSubRecipe(
 ): SubRecipeAggregate {
   const path = [...parentPath, node.name];
 
-  const ingredients: FlatIngredient[] = node.ingredients.map(ing => {
+  const ingredients: FlatIngredient[] = (node.ingredients ?? []).map(ing => {
     const ovKey = `${ing.id}__${node.id}`;
     const override = overrides.get(ovKey);
     const effectiveYield = override !== undefined
@@ -190,7 +190,7 @@ function aggregateSubRecipe(
     };
   });
 
-  const childSubRecipes = node.subRecipes.map(child =>
+  const childSubRecipes = (node.subRecipes ?? []).map(child =>
     aggregateSubRecipe(child, path, depth + 1, overrides, instructionsMap)
   );
 
@@ -817,9 +817,22 @@ export function WhatIfView({
   }
 
   const hasStructure = aggregateRoots.length > 0;
+  const noIngredientData = !data.structures || Object.keys(data.structures).length === 0;
 
   return (
     <div className="space-y-4">
+      {noIngredientData && (
+        <div className="card p-4 bg-amber-50 border border-amber-300 text-amber-900 flex items-start gap-3">
+          <span className="text-xl">⚠</span>
+          <div>
+            <div className="font-semibold">Zutaten-Daten fehlen</div>
+            <div className="text-sm mt-0.5">
+              Die Sub-Rezept- und Zutaten-Strukturen sind noch nicht geladen.
+              Bitte <code className="bg-amber-100 px-1 rounded">npm run import:local</code> ausführen und die Seite neu laden.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* HEADER */}
       <div className="card p-5 bg-gradient-to-r from-indigo-50 to-violet-50 border-2 border-indigo-200">
