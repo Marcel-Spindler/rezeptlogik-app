@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "vite",
     "dev": "concurrently -n vite,csv -c cyan,green \"vite\" \"tsx scripts/import-sub-recipes.ts --watch\"",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
