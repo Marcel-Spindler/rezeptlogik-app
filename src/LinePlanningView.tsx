@@ -12,7 +12,7 @@ import { analyzePlan, type PlannerDay, type PlannerScenario } from "./planner";
 import type { DataBundle, WeekRecipe } from "./types";
 import type { UiLocale } from "./i18n";
 import { calculateRunSplit, type RunSplitPlan } from "./runPlanning";
-import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
+import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  DOMAIN TYPES
@@ -239,7 +239,8 @@ function recipeTone(code: string): {
   };
 }
 
-function pillStyle(code: string): React.CSSProperties {
+// @ts-expect-error unused
+function _pillStyle(code: string): React.CSSProperties {
   return recipeTone(code).base;
 }
 
@@ -311,7 +312,8 @@ function planDayCompare(left: PlanDay, right: PlanDay): number {
   return planDayIndex(left) - planDayIndex(right);
 }
 
-function laterPlanDay(left: PlanDay, right: PlanDay): PlanDay {
+// @ts-expect-error unused
+function _laterPlanDay(left: PlanDay, right: PlanDay): PlanDay {
   return planDayCompare(left, right) >= 0 ? left : right;
 }
 
@@ -448,7 +450,8 @@ function emptyRunProduction(): Record<1 | 2, number> {
   return { 1: 0, 2: 0 };
 }
 
-function runWindowDays(run: 1 | 2): PlanDay[] {
+// @ts-expect-error unused
+function _runWindowDays(run: 1 | 2): PlanDay[] {
   const { startDay, dueDay } = RUN_PLATING_WINDOWS[run];
   const startIdx = planDayIndex(startDay);
   const dueIdx = planDayIndex(dueDay);
@@ -1209,7 +1212,8 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     }
     return map;
   }, [planningOasis?.recipes, recipes, subMealRecipeCodes]);
-  const recipeByCode = useMemo(() => {
+  // @ts-expect-error unused
+  const _recipeByCode = useMemo(() => {
     return new Map(recipes.map((recipe) => [recipe.code, recipe] as const));
   }, [recipes]);
   const forecastVarianceRows = useMemo<ForecastVarianceRow[]>(() => {

@@ -1256,6 +1256,7 @@ function equipmentColorScheme(eq: string | null): {
   return { bg: "bg-indigo-50", headerBg: "bg-gradient-to-r from-indigo-100 to-blue-50", border: "border-indigo-300", badge: "bg-indigo-100 text-indigo-800", text: "text-indigo-800", icon: "⚙️" };
 }
 
+// @ts-expect-error unused
 function wrHasSubName(value: string): boolean {
   return !!value && value !== "—" && value !== "Ohne Sub-Rezept";
 }
@@ -1311,7 +1312,7 @@ export function BreakdownEquipmentView({
 }) {
   const [search, setSearch] = useState("");
   const [entries, setEntries] = useState<WR_RecipeEntry[]>([]);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [_panelOpen, _setPanelOpen] = useState(true);
   const [overrides, setOverrides] = useState<Record<string, WROverride>>(() => {
     if (typeof window === "undefined") return {};
     try {
@@ -2531,8 +2532,6 @@ export function BreakdownEquipmentView({
                   const rawPortions = rawCoverage != null ? Math.floor(selectedMeal.portionsEffective * rawCoverage) : null;
                   const pathYieldFactor = path.totalKg > 0 ? (path.totalKg - path.totalLossKg) / path.totalKg : 1;
                   const rawNetKg = rawKg != null ? rawKg * pathYieldFactor : null;
-                  const rawMissingKg = rawKg != null ? Math.max(0, path.totalKg - rawKg) : null;
-                  const rawSurplusKg = rawKg != null ? Math.max(0, rawKg - path.totalKg) : null;
                   const rawCoveragePct = rawCoverage != null ? Math.round(rawCoverage * 100) : null;
                   const pathNetKg = Math.max(0, path.totalKg - path.totalLossKg);
 
@@ -2552,9 +2551,6 @@ export function BreakdownEquipmentView({
                     ? visibleWannen.map(w => ({ label: w.label, kg: w.kg, total: Math.ceil(directFertigKg * briningFactor / w.kg) })).filter(ws => ws.total > 0)
                     : [];
                   const pathLossPct = path.totalKg > 0 ? Math.round((path.totalLossKg / path.totalKg) * 100) : 0;
-                  const primarySub = wrHasSubName(path.sub1) ? path.sub1 : "Ohne Sub-Rezept";
-                  const secondarySub = wrHasSubName(path.sub2) ? path.sub2 : "";
-                  const tertiarySub = wrHasSubName(path.sub3) ? path.sub3 : "";
                   const scenarioTone = wrScenarioTone(rawCoverage);
                   const eq = path.equipmentHint;
                   const colors = equipmentColorScheme(eq);
@@ -3133,7 +3129,8 @@ export function BreakdownEquipmentView({
 
   // ─── Legacy-Implementierung (nicht mehr aktiv, bleibt zur Referenz) ───────────
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  function BreakdownEquipmentViewLegacy({
+  // @ts-expect-error unused legacy component
+  function _BreakdownEquipmentViewLegacy({
   data,
   week,
   upliftPercent,

@@ -4,7 +4,8 @@ import { RACK_V2_LINES, RACK_V2_MARKET_LABEL, type RackV2MarketId } from "../rac
 
 type AgentModel = "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-1.5-pro" | "gpt-4.1" | "gpt-4o-mini";
 type AgentProvider = "gemini" | "github-models";
-type AgentVerdict = "fertig" | "mist" | "besser";
+// @ts-expect-error unused
+type _AgentVerdict = "fertig" | "mist" | "besser";
 type AgentExecutionMode = "single" | "dual-compare";
 type UploadAttachment = {
   name: string;

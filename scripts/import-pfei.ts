@@ -14,12 +14,7 @@
 import { google } from "googleapis";
 import type { ProcessSpec, Station } from "../src/types.ts";
 import { STATIONS } from "../src/types.ts";
-
-function num(v: unknown): number | undefined {
-  if (v == null || v === "") return undefined;
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
-  return Number.isFinite(n) ? n : undefined;
-}
+import { numOpt as num } from "./lib/helpers.ts";
 
 export async function readPfei(): Promise<Record<string, ProcessSpec>> {
   const PFEI_ID = process.env.PFEI_GSHEET_ID ?? "";

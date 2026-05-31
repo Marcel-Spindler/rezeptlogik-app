@@ -6,7 +6,6 @@ import {
   assignmentKey,
   PLANNER_DAYS,
   PLANNER_SHIFTS,
-  SHIFT_CAPACITY_MIN,
   analyzePlan,
   assignRecipe,
   computeBatchSplitPlan,
@@ -33,7 +32,7 @@ import { usePlanningOasisData } from "./planningOasisData";
 import { exportAsTSV, exportAsExcel, exportAsPDF } from "./planExport";
 import type { RunSplitPlan } from "./runPlanning";
 import { calculateRunSplit } from "./runPlanning";
-import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
+import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
 
 const PLANNER_UI_SETTINGS_STORAGE_KEY = "rezeptlogik-planner-ui-settings-v1";
 const SPECIAL_DELIVERY_STORAGE_KEY = "rezeptlogik-special-deliveries-v1";
@@ -637,12 +636,14 @@ function getWeekSplit(data: DataBundle, week: string) {
   };
 }
 
+// @ts-expect-error unused
 function planningRoleTone(role: "factory" | "hybrid" | "supplied" | undefined): string {
   if (role === "hybrid") return "bg-sky-50 text-sky-800 ring-sky-200";
   if (role === "supplied") return "bg-amber-50 text-amber-800 ring-amber-200";
   return "bg-emerald-50 text-emerald-800 ring-emerald-200";
 }
 
+// @ts-expect-error unused
 function planningRoleLabel(role: "factory" | "hybrid" | "supplied" | undefined): string {
   if (role === "hybrid") return "Hybrid";
   if (role === "supplied") return "Zulieferung";
@@ -1205,6 +1206,7 @@ export function PlanningView(
   const [stationPools] = useState(() => loadStationPools());
   const [uiSettings, setUiSettings] = useState<PlannerUiSettings>(() => loadPlannerUiSettings());
   const [draggingCode, setDraggingCode] = useState<string | null>(null);
+  // @ts-expect-error unused
   const [draggingSubId, setDraggingSubId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   // Refs für synchronen Zugriff in dragover-Handlern (State wäre stale wegen Closure)
@@ -1212,6 +1214,7 @@ export function PlanningView(
   const draggingSubIdRef = useRef<string | null>(null);
   const draggingSuggestKeyRef = useRef<string | null>(null);
   const [dragOverUnplanned, setDragOverUnplanned] = useState(false);
+  // @ts-expect-error unused
   const [expandedRecipes, setExpandedRecipes] = useState<Set<string>>(new Set());
   const [expandedBoardRecipes, setExpandedBoardRecipes] = useState<Set<string>>(new Set());
   const [boardEditor, setBoardEditor] = useState<WeekBoardEditorState | null>(null);
@@ -1239,6 +1242,7 @@ export function PlanningView(
   const [savePlanStamp, setSavePlanStamp] = useState<string | null>(null);
   /** Manuelle Verschiebungen der Ghost-Pillen per Drag & Drop: tileKey → neuer Produktionstag */
   const [suggestOverrides, setSuggestOverrides] = useState<Record<string, PlannerDay>>({});
+  // @ts-expect-error unused
   const [draggingSuggestKey, setDraggingSuggestKey] = useState<string | null>(null);
   const [rampUpHistoryMap, setRampUpHistoryMap] = useState<Map<string, RampUpSnapshot[]>>(new Map());
   const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);
@@ -1483,6 +1487,7 @@ export function PlanningView(
     }
     return map;
   }, [batchSplitPlan]);
+  // @ts-expect-error unused
   const weekIntel = planningOasis?.weeks[week] ?? null;
   const shelfRisk = useMemo(() => {
     const seen = new Set<string>();
@@ -1583,6 +1588,7 @@ export function PlanningView(
     );
   }, [data, subRecipeInfoRequest, infoHints]);
 
+  // @ts-expect-error unused
   const assignmentsBySlot = useMemo(() => {
     const buckets: Record<string, Array<{ code: string; name: string; activeMin: number }>> = {};
     for (const recipe of analysis.recipes) {
@@ -1762,6 +1768,7 @@ export function PlanningView(
     return buckets;
   }, [analysis.recipes, batchSplitPlan, activeShifts, suggestOverrides, recipeLookup, portionMultiplier]);
 
+  // @ts-expect-error unused
   const stationsBySlot = useMemo(() => {
     return Object.fromEntries(
       Object.entries(analysis.stationLoadBySlot).map(([slot, loads]) => [
@@ -1975,6 +1982,7 @@ export function PlanningView(
     setStorage(prev => removeAssignment(prev, week, scenario.id, parsed.recipe.code, parsed.subRecipeId));
   }
 
+  // @ts-expect-error unused
   function handleAutoplanRecipe(targetCode: string) {
     setStorage((prev) => {
       const planningShifts = activeShifts.length > 0 ? activeShifts : PLANNER_SHIFTS;
@@ -3280,6 +3288,7 @@ export function PlanningView(
                         const mainTiles = column.lane === "prep"
                           ? []
                           : rows.filter((row) => row.code === recipe.recipeCode && row.kind === "main");
+                        // @ts-expect-error unused
                         const subTiles = rows.filter((row) => row.code === recipe.recipeCode && row.kind === "sub");
                         const hasReal = mainTiles.some(t => !t.suggested);
                         const hasAny = mainTiles.length > 0;
@@ -3851,7 +3860,7 @@ export function PlanningView(
                   <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Sub-Rezepte heute ({subsToday.length})</div>
                   {subsToday.length === 0 && <div className="text-xs text-slate-400">Keine Sub-Rezepte für diesen Tag verplant.</div>}
                   <div className="space-y-1">
-                    {subsToday.map(({ code, name, sub }, i) => {
+                    {subsToday.map(({ code, name: _name, sub }, i) => {
                       const subDef = Object.values(data.recipes?.[code]?.markets ?? {})
                         .flatMap(m => m?.subRecipes ?? []).find(s => s.id === sub.subRecipeId);
                       return (

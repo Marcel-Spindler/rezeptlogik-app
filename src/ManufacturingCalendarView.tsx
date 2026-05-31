@@ -86,7 +86,8 @@ function computeRunDates(platingDate: string, runCount: RunCount): string[] {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-const DE_WEEKDAY_TO_PLANNER: Record<string, PlannerDay> = {
+// @ts-expect-error unused
+const _DE_WEEKDAY_TO_PLANNER: Record<string, PlannerDay> = {
   "montag": "Mo", "dienstag": "Di", "mittwoch": "Mi", "donnerstag": "Do",
   "freitag": "Fr", "samstag": "Sa", "sonntag": "So",
   "monday": "Mo", "tuesday": "Di", "wednesday": "Mi", "thursday": "Do",

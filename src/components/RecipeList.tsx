@@ -4,10 +4,17 @@ import { RampHistorySparkline } from "../RecipeDetailView";
 import {
   adjustedPortions, fmtNum,
   MARKETS, MARKET_COLOR, MARKET_LABEL,
-  recipeListTone, recipeSearchText, stripMarketTag,
-  resolveRecipeByCode,
+  recipeListTone, stripMarketTag,
+  resolveRecipeByCode, searchMatchReason,
 } from "../helpers";
 import { getBaseVerdenVolume } from "../equipment";
+
+const MATCH_ICON: Record<string, string> = {
+  ingredient: "🥩",
+  subrecipe:  "⚙",
+  sku:        "🏷",
+  allergen:   "⚠",
+};
 
 interface Props {
   recipes: WeekRecipe[];
@@ -21,21 +28,23 @@ interface Props {
   onSelect: (code: string) => void;
 }
 
-function RecipeListItem({ wr, recipe, isActive, week, upliftPercent, onClick }: {
+function RecipeListItem({ wr, recipe, isActive, week, upliftPercent, searchNeedle, onClick }: {
   wr: WeekRecipe;
   recipe: ReturnType<typeof resolveRecipeByCode>;
   isActive: boolean;
   week: string;
   upliftPercent: number;
+  searchNeedle: string;
   onClick: () => void;
 }) {
   const tone = recipeListTone(wr.code);
   const portions = adjustedPortions(getBaseVerdenVolume(wr), upliftPercent);
   const rampHistory = getRampUpHistory(week);
   const sparkValues = rampHistory.map(s => s.volumes[wr.code] ?? 0).filter(v => v > 0);
+  const matchReason = searchNeedle ? searchMatchReason(searchNeedle, wr, recipe) : null;
 
   return (
-    <button onClick={onClick} className="w-full text-left px-3 py-2.5 rounded-xl transition-all"
+    <button type="button" onClick={onClick} className="w-full text-left px-3 py-2.5 rounded-xl transition-all"
       style={isActive ? tone.active : tone.base}>
       <div className="flex items-start justify-between gap-2">
         <span className="font-mono text-xs mt-0.5" style={tone.code}>{wr.code}</span>
@@ -54,12 +63,18 @@ function RecipeListItem({ wr, recipe, isActive, week, upliftPercent, onClick }: 
             {MARKET_LABEL[m]} {fmtNum(wr.verdenVolume[m])}
           </span>
         ))}
+        {matchReason && (
+          <span className="pill text-[10px] bg-violet-100 text-violet-800 max-w-[14rem] truncate" title={matchReason.label}>
+            {MATCH_ICON[matchReason.kind] ?? "🔍"} {matchReason.label}
+          </span>
+        )}
       </div>
     </button>
   );
 }
 
 export function RecipeList({ recipes, allRecipesCount, recipesByCode, activeCode, selectedWeek, upliftPercent, searchText, onSearchChange, onSelect }: Props) {
+  const searchNeedle = searchText.trim().toLowerCase();
   return (
     <div className="card p-2">
       <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -69,13 +84,13 @@ export function RecipeList({ recipes, allRecipesCount, recipesByCode, activeCode
         <input
           type="search" value={searchText}
           onChange={e => onSearchChange(e.target.value)}
-          placeholder="Meal, Artikel, SKU, Zutat ..."
+          placeholder="Meal, Code, SKU, Zutat, Allergen ..."
           className="w-full rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-3 py-2 text-sm"
         />
         <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
           <span>{fmtNum(recipes.length)} von {fmtNum(allRecipesCount)}</span>
           {searchText && (
-            <button className="hover:text-slate-800" onClick={() => onSearchChange("")}>leeren</button>
+            <button type="button" className="hover:text-slate-800" onClick={() => onSearchChange("")}>leeren</button>
           )}
         </div>
       </div>
@@ -88,6 +103,7 @@ export function RecipeList({ recipes, allRecipesCount, recipesByCode, activeCode
               isActive={activeCode === r.code}
               week={selectedWeek}
               upliftPercent={upliftPercent}
+              searchNeedle={searchNeedle}
               onClick={() => onSelect(r.code)}
             />
           </li>

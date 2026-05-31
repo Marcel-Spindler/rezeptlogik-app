@@ -7,6 +7,8 @@
     "start": "vite",
     "dev": "concurrently -n vite,csv -c cyan,green \"vite\" \"tsx scripts/import-sub-recipes.ts --watch\"",
     "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "preview": "vite preview --port 5173",
@@ -56,6 +58,7 @@
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "typescript-eslint": "^8.19.0",
-    "vite": "^5.4.10"
+    "vite": "^5.4.10",
+    "vitest": "^4.1.7"
   }
 }

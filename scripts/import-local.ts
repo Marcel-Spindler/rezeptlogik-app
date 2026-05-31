@@ -4,7 +4,6 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" }); loadEnv();
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import Papa from "papaparse";
 import ExcelJS from "exceljs";
 import type {
   DataBundle, Market, WeekRecipe, Recipe,
@@ -15,6 +14,8 @@ import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
 import { readPfei } from "./import-pfei.ts";
 import { readCookSchedulesFromGSheet } from "./read-cook-schedules.ts";
 import { readProductionPlan } from "./read-production-plan.ts";
+import { parseRecipeName, digitKey, resolveSourceDir, readCsv } from "./lib/helpers.ts";
+import { loadRecipeDb, mergeIntoDb, saveRecipeDb, supplementFromDb } from "./lib/recipe-db.ts";
 
 // Detaillierte Sub-Rezept CSVs: werden automatisch per Glob aus SOURCE_DIR erkannt.
 // Alle Dateien "export-sub-recipes-by-recipe-detailed*.csv" werden zusammengeführt.
@@ -40,24 +41,6 @@ function findCombinedRecipeCsv(dir: string): string | null {
 // Aggregiertes Gross-Ingredients-CSV (Vorrang vor Per-Markt-Dateien)
 const AGGREGATED_GROSS_CSV = "export-gross-aggregated-ingredients-by-recipe.csv";
 
-function resolveSourceDir(): string {
-  const configured = process.env.REZEPTLOGIK_SOURCE_DIR?.trim();
-  if (configured) return configured;
-
-  // Priorität: ./imports (im Projektordner) → C:\Rezeptlogik → ./Rezeptlogik
-  const candidates = [
-    resolve("imports"),
-    "C:\\Rezeptlogik",
-    resolve("Rezeptlogik"),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(join(candidate, COOK_CSV))) return candidate;
-  }
-
-  return candidates[0];
-}
-
 const OUT_DIR = resolve("public", "data");
 const OUT_FILE = join(OUT_DIR, "data.json");
 
@@ -78,12 +61,6 @@ const GROSS_CSVS: Record<Market, string> = {
 };
 
 // ---------- Helpers ----------
-function readCsv<T = Record<string, string>>(path: string): T[] {
-  const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
-  const res = Papa.parse<T>(text, { header: true, skipEmptyLines: true });
-  if (res.errors.length) console.warn(`CSV warnings ${path}:`, res.errors.slice(0, 3));
-  return res.data as T[];
-}
 
 // ExcelJS liefert Formel-Zellen als { result, formula, ... } — Wert daraus extrahieren.
 function cellVal(v: unknown): unknown {
@@ -103,26 +80,6 @@ function num(v: unknown): number {
   if (x == null || x === "") return 0;
   const n = typeof x === "number" ? x : parseFloat(String(x).replace(",", "."));
   return Number.isFinite(n) ? n : 0;
-}
-
-// "FE0628B - Mushroom Chicken & Wild Rice [BNL]" -> { code: "FE0628B", base: "Mushroom Chicken & Wild Rice" }
-// "FV1646A Lemon Garlic Shrimp & Spanakopita Rice DKSE" -> { code: "FV1646A", base: "Lemon Garlic Shrimp & Spanakopita Rice" }
-function parseRecipeName(full: string): { code: string; base: string } {
-  const m = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s*-\s*(.+?)(?:\s*\[(?:BNL|BENL|DE|DKSE|NORD)\])?\s*$/.exec(full);
-  if (m) return { code: m[1], base: m[2].trim() };
-  const suffix = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s+(.+?)\s+(?:BNL|BENL|DE|DKSE|NORD)\s*$/i.exec(full);
-  if (suffix) return { code: suffix[1], base: suffix[2].trim() };
-  const plain = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s+(.+?)\s*$/.exec(full);
-  if (plain) return { code: plain[1], base: plain[2].trim() };
-  return { code: full, base: full };
-}
-
-// Kern-Schlüssel: nur die 4-stellige Nummer (z. B. "FE0972B" und "FV0972A" -> "0972").
-// Damit lassen sich Meal-Selection-Codes (FE…) und Verden-Produktions-Codes (FV…)
-// trotz unterschiedlichem Prefix / Trailing-Letter zusammenführen.
-function digitKey(code: string): string {
-  const m = /(\d{4,5})/.exec(code);
-  return m ? m[1] : code;
 }
 
 // ---------- 1) Meal Selection (XLSX) ----------
@@ -780,6 +737,19 @@ async function main() {
 
   console.log("Lese Detailed Recipe Structures …");
   const structures = loadDetailedStructures();
+
+  // ---- Persistente Rezept-Datenbank: alle gesehenen Rezepte akkumulieren ----
+  console.log("Aktualisiere Rezept-Datenbank …");
+  const recipeDb = loadRecipeDb(SOURCE_DIR);
+  const { added, updated } = mergeIntoDb(recipeDb, recipes, structures);
+  saveRecipeDb(SOURCE_DIR, recipeDb);
+  console.log(`  Neu: ${added}, aktualisiert: ${updated}`);
+  // Aus DB ergänzen: Rezepte die geplant sind aber nicht in den aktuellen CSVs enthalten
+  const weekCodes = weekRecipes.map(wr => wr.code);
+  const { supplementedRecipes, supplementedStructures } = supplementFromDb(recipeDb, recipes, structures, weekCodes);
+  if (supplementedRecipes > 0 || supplementedStructures > 0) {
+    console.log(`  Aus DB ergänzt: ${supplementedRecipes} Rezepte, ${supplementedStructures} Strukturen`);
+  }
 
   // ---- Codes harmonisieren: FE… (Meal Selection) ↔ FV… (Recipes) per 4-stelliger Nummer ----
   const recipeByDigits: Record<string, Recipe> = {};

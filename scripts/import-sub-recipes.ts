@@ -33,65 +33,24 @@
 
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" }); loadEnv();
-import { readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import Papa from "papaparse";
 import admin from "firebase-admin";
 import type { Market, RecipeStructure, DetailedSubRecipe, DetailedIngredient } from "../src/types.ts";
-
-// ─── Source directory ─────────────────────────────────────────────────────
-
-const COOK_CSV = "Cook Schedules Per DC - Cook Shifts per DC.csv";
-
-function resolveSourceDir(): string {
-  const configured = process.env.REZEPTLOGIK_SOURCE_DIR?.trim();
-  if (configured) return configured;
-  for (const dir of [resolve("imports"), "C:\\Rezeptlogik", resolve("Rezeptlogik")]) {
-    if (!existsSync(dir)) continue;
-    if (
-      existsSync(join(dir, COOK_CSV)) ||
-      existsSync(join(dir, "export-sub-recipes-by-recipe-detailed.csv")) ||
-      readdirSync(dir).some(f => /^export-recipes.*\.csv$/i.test(f))
-    ) return dir;
-  }
-  return resolve("imports");
-}
+import { readCsv, resolveSourceDir, detectMarket, parseRecipeName as parseRecipeCode, num as numStr } from "./lib/helpers.ts";
+import { loadRecipeDb, mergeIntoDb, saveRecipeDb } from "./lib/recipe-db.ts";
 
 const SOURCE_DIR = resolveSourceDir();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
-function readCsv<T = Record<string, string>>(path: string): T[] {
-  const text = readFileSync(path, "utf8").replace(/^﻿/, "");
-  const res = Papa.parse<T>(text, { header: true, skipEmptyLines: true });
-  if (res.errors.length) console.warn(`CSV warnings ${path}:`, res.errors.slice(0, 3));
-  return res.data as T[];
-}
-
-function numStr(v: string | undefined): number {
-  if (!v || v.trim() === "") return 0;
-  const n = parseFloat(v.replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
-}
-
-function parseRecipeCode(full: string): { code: string; base: string } {
-  // "FV0024A - Chicken in tomato cream sauce [BNL]" → code=FV0024A, base=Chicken in tomato cream sauce
-  const m = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s*[-\s]\s*(.+?)(?:\s*\[(?:BNL|BENL|DE|DKSE|NORD)\])?\s*$/.exec(full);
-  if (m) return { code: m[1], base: m[2].trim() };
-  return { code: full, base: full };
-}
-
-function parseMarket(fullName: string): Market | null {
-  if (/\[BNL\]/i.test(fullName) || /\[BENL\]/i.test(fullName)) return "BENL";
-  if (/\[DKSE\]/i.test(fullName) || /\[NORD\]/i.test(fullName)) return "DKSE";
-  if (/\[DE\]/i.test(fullName)) return "DE";
-  return null;
-}
-
 function findCsvs(dir: string, pattern: RegExp): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter(f => pattern.test(f)).sort();
 }
+
+// Alias für Abwärtskompatibilität im Rest der Datei
+const parseMarket = detectMarket;
 
 // ─── FORMAT A: export-recipes*.csv ────────────────────────────────────────
 //  Wöchentlicher Export → StructureTab (Kochschritte, Sub-Recipes, Mengen).
@@ -380,6 +339,12 @@ function countIngredients(structures: Record<string, any>): number {
 
 async function runImport() {
   const structures = loadStructures();
+
+  // Persistente Rezept-Datenbank: Strukturen (inkl. Zutaten + Yield) akkumulieren
+  const recipeDb = loadRecipeDb(SOURCE_DIR);
+  const { added, updated } = mergeIntoDb(recipeDb, {}, structures);
+  saveRecipeDb(SOURCE_DIR, recipeDb);
+  console.log(`  DB aktualisiert: +${added} neu, ${updated} aktualisiert`);
 
   // Update local public/data/data.json with structures and recipes
   const localDataPath = resolve("public", "data", "data.json");

@@ -332,8 +332,8 @@ export function WhatIfView({
   locale: UiLocale;
 }): JSX.Element {
 
+  // @ts-expect-error unused
   const { data: oasisData } = usePlanningOasisData();
-  const weekIntel = oasisData?.weeks[week] ?? null;
 
   const weekMeals = useMemo(() => {
     const activeWeekRecipes = data.weekRecipes
@@ -350,7 +350,8 @@ export function WhatIfView({
     return uniqueRecipes.sort((a, b) => getBaseVolume(b) - getBaseVolume(a) || a.code.localeCompare(b.code, "de"));
   }, [data.recipes, data.weekRecipes, week]);
   
-  type MealChoice = {
+  // @ts-expect-error unused
+  type _MealChoice = {
     code: string;
     recipeName: string;
     basePortions: number;

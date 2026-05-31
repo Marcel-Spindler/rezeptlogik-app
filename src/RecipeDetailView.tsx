@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, ShelfLifeInfo, DetailedSubRecipe, RecipeStructure } from "./types";
-import { getBaseVerdenVolume, getSubRecipeMassProfile, workflowSteps, tokenToStation } from "./equipment";
-import { marketVariantLabel, MARKET_LANGUAGE_LABEL, tl } from "./i18n";
+import { getBaseVerdenVolume, getSubRecipeMassProfile, workflowSteps } from "./equipment";
+import { marketVariantLabel, MARKET_LANGUAGE_LABEL } from "./i18n";
 import { useRecipePlanningIntel } from "./planningOasisData";
 import { getRampUpHistory } from "./rampUpHistory";
 import {
-  fmtNum, fmtMin, fmtIngName, scaleQty, codeDigits, adjustedPortions, resolveStructureByCode,
+  fmtNum, fmtMin, fmtIngName, scaleQty, adjustedPortions, resolveStructureByCode,
   resolveCookSchedule, matchedScheduleSteps, oneShiftLabel, oneShiftShortLabel, getFulfillmentSplit,
   shelfLifeTone, findShelfLifeNameHint, isPreproductionRecommended, methodColorToCSS,
   subRecipeTone, subRecipeUrgency, subRecipeUrgencyLabel, ingredientSectionTone, categoryRiskTone,
-  matchesNeedle, normalizeIngredientName, engpassStatus, engpassStatusLabel, engpassStatusColor,
-  engpassScenarioText, recipeHue, usePersistent, lsSet, MARKETS, MARKET_COLOR, MARKET_LABEL
+  matchesNeedle, engpassStatus, engpassStatusLabel, engpassStatusColor,
+  engpassScenarioText, recipeHue, usePersistent, MARKETS, MARKET_COLOR, MARKET_LABEL
 } from "./helpers";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -556,7 +556,7 @@ function TreeCanvas({ roots, code }: { roots: DetailedSubRecipe[]; code: string 
 
 // ─── StructureTab ──────────────────────────────────────────────────────────
 
-function StructureTab({ code, structure, market, recipeName, portionsTotal, upliftPercent }:
+function StructureTab({ code, structure, market, recipeName, portionsTotal: _portionsTotal, upliftPercent: _upliftPercent }:
   { code: string; structure?: RecipeStructure; market: Market; week: string; recipeName: string; wr: WeekRecipe; portionsTotal: number; upliftPercent: number; data: DataBundle }) {
   const [treeMode, setTreeMode] = useState<"svg" | "list">("svg");
 
@@ -1267,7 +1267,7 @@ function WorkflowTab({ wr, recipe, md, processSpecs, detailSearch }:
       <div className="card p-4 text-sm text-slate-600">
         Reihenfolge aus <code>Sub-Rezept-Cook-Method</code>, Equipment-Zeiten aus PFEI (gerechnet auf <b>{fmtNum(portions)}</b> Portionen Verden gesamt).
       </div>
-      {rows.map(({ sub, spec, steps, gpp, totalKg, outputKg, batchSize, batches, mass }) => (
+      {rows.map(({ sub, spec, steps, gpp, totalKg, outputKg, batchSize: _batchSize, batches, mass }) => (
         <div key={sub.id} className="card p-4">
           <div className="flex flex-wrap items-baseline gap-2 mb-2">
             <span className="font-mono text-xs text-slate-500">{sub.id}</span>

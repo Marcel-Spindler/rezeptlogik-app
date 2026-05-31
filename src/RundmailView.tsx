@@ -766,6 +766,7 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
   })() : "";
 
   // Section D: Allergen summary table
+  // @ts-expect-error unused
   const allergenTableHtml = platingPlan.map((entry) => {
     const allergenText = entry.allergens.map((a) => a.label).join(", ") || "–";
     const hasHighRisk = entry.allergens.some((a) => a.label === "Fisch");
@@ -1392,6 +1393,7 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
     void navigator.clipboard.writeText(mailText);
   }
 
+  // @ts-expect-error unused
   const run1Mail = useMemo(() => buildRun1Mail(run1Rows), [run1Rows]);
   const toolLinks = useMemo(() => ({
     whatIf: appOrigin + "?view=whatif",

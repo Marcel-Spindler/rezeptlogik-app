@@ -25,29 +25,8 @@ import type {
 } from "../src/types.ts";
 import { readPfei } from "./import-pfei.ts";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
-
-// Wiederverwenden: importiere die Loader aus import-local NICHT direkt (zyklus); kopieren würde Logik dupliziertn.
-// Stattdessen: die Funktionen sind klein genug, hier neu für Sheet aufzubauen.
-
-const COOK_CSV = "Cook Schedules Per DC - Cook Shifts per DC.csv";
-
-function resolveSourceDir(): string {
-  const configured = process.env.REZEPTLOGIK_SOURCE_DIR?.trim();
-  if (configured) return configured;
-
-  // Priorität: ./imports (im Projektordner) → C:\Rezeptlogik → ./Rezeptlogik
-  const candidates = [
-    resolve("imports"),
-    "C:\\Rezeptlogik",
-    resolve("Rezeptlogik"),
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(join(candidate, COOK_CSV))) return candidate;
-  }
-
-  return candidates[0];
-}
+import { num, readCsv, parseRecipeName, resolveSourceDir } from "./lib/helpers.ts";
+import { getAuthClient, getAllTabNames, findCurrentWeekTab } from "./lib/gsheet-helpers.ts";
 
 const SOURCE_DIR = resolveSourceDir();
 const OUT_DIR = resolve("public", "data");
@@ -74,21 +53,6 @@ const GROSS_CSVS: Record<Market, string> = {
   DE:   "export-gross-ingredients-and-sub-recipes-by-recipe (2).csv",
   DKSE: "export-gross-ingredients-and-sub-recipes-by-recipe (3).csv"
 };
-
-function num(v: unknown): number {
-  if (v == null || v === "") return 0;
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
-}
-function readCsv<T = Record<string, string>>(path: string): T[] {
-  const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
-  return Papa.parse<T>(text, { header: true, skipEmptyLines: true }).data as T[];
-}
-function parseRecipeName(full: string): { code: string; base: string } {
-  const m = /^([A-Z]{2}\d{4}[A-Z0-9]+)\s*-\s*(.+?)(?:\s*\[(?:BNL|BENL|DE|DKSE|NORD)\])?\s*$/.exec(full);
-  if (m) return { code: m[1], base: m[2].trim() };
-  return { code: full, base: full };
-}
 
 async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[]; weeks: string[] }> {
   const auth = new google.auth.GoogleAuth({
@@ -469,55 +433,7 @@ function loadCookSchedulesVF(): Record<string, CookSchedule> {
 
 // ─── Operational Sheet Readers ────────────────────────────────────────────────
 
-// ─── KW-Tab Auswahl ────────────────────────────────────────────────────────
-// Sucht unter den Tab-Titeln nach dem Tab der aktuellen (oder nächsten) KW.
-// patterns: Array von Suchmustern, z.B. ["Verden PW{XX}", "Verden PW{KW}"]
-// {XX} = zweistellige KW-Zahl, {YEAR} = Jahr
-function findCurrentWeekTab(tabs: string[], patterns: string[], fallbackToLatest = true): string | undefined {
-  const now = new Date();
-  const year = now.getFullYear();
-  // ISO-Wochennummer
-  const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const kw = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-
-  // Versuche aktuelle KW, dann nächste, dann vorherige
-  for (const delta of [0, 1, -1, 2]) {
-    const weekNum = kw + delta;
-    for (const pattern of patterns) {
-      const needle = pattern
-        .replace("{XX}", String(weekNum).padStart(2, "0"))
-        .replace("{KW}", String(weekNum))
-        .replace("{YEAR}", String(year));
-      const found = tabs.find(t => t.toLowerCase().includes(needle.toLowerCase()));
-      if (found) return found;
-    }
-  }
-
-  // Fallback: neuesten Tab mit KW-Muster suchen
-  if (fallbackToLatest) {
-    const kwTabs = tabs.filter(t => /W\d{2}|PW\d{2}|\d{4}-W\d{2}/.test(t));
-    if (kwTabs.length) return kwTabs[kwTabs.length - 1];
-  }
-  return undefined;
-}
-
-async function getAuthClient() {
-  const auth = new google.auth.GoogleAuth({
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-  });
-  return auth.getClient();
-}
-
-async function getAllTabNames(sheets: ReturnType<typeof google.sheets>, spreadsheetId: string): Promise<string[]> {
-  try {
-    const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: "sheets(properties(title))" });
-    return (meta.data.sheets ?? []).map(s => s.properties?.title ?? "").filter(Boolean);
-  } catch {
-    return [];
-  }
-}
+// ─── Operational Sheet Readers (getAuthClient/getAllTabNames/findCurrentWeekTab aus lib/gsheet-helpers) ────
 
 async function readProductionPlan(spreadsheetId: string): Promise<ProductionPlan | undefined> {
   if (!spreadsheetId) return undefined;

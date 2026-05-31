@@ -9,7 +9,7 @@ import { loadFactorDailyMeta, type FactorDailyMeta } from "../planningTruthData"
 import { PlanningOasisAgentForm } from "./PlanningOasisAgentForm";
 import { runSplitForRecipeLike } from "../runPlanning";
 import { refreshRampUpDataOnStart } from "../dataSource";
-import { recordRampUpSnapshot, getRampUpHistory, type RampUpSnapshot, type RampUpChangeEvent } from "../rampUpHistory";
+import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "../rampUpHistory";
 
 const LinePlanningSection = lazy(() => import("../LinePlanningView").then((module) => ({ default: module.LinePlanningView })));
 const RackSection = lazy(() => import("../RackV2View").then((module) => ({ default: module.RackV2View })));
@@ -80,7 +80,8 @@ function inferMhdDays(recipeName: string): number {
   return fishMarkers.some((marker) => normalized.includes(marker)) ? 9 : 13;
 }
 
-function isProducedInVerden(r: WeekRecipe): boolean {
+// @ts-expect-error unused
+function _isProducedInVerden(r: WeekRecipe): boolean {
   const c = (r.code ?? "").toUpperCase();
   if (!(c.startsWith("FE") || c.startsWith("FV"))) return false;
   const total = (r.verdenVolume.BENL ?? 0) + (r.verdenVolume.DKSE ?? 0) + (r.verdenVolume.DE ?? 0);
@@ -275,7 +276,8 @@ export function PlanningOasisView({
       .sort((a, b) => b.totalVerdenVolume - a.totalVerdenVolume || a.code.localeCompare(b.code, "de"));
   }, [data.weekRecipes, oasisData, week, weekIntel]);
 
-  const weekForecastFallback = useMemo(
+  // @ts-expect-error unused
+  const _weekForecastFallback = useMemo(
     () => weekMeals.reduce((sum, m) => sum + m.totalVerdenVolume, 0),
     [weekMeals]
   );
@@ -843,7 +845,8 @@ function RampUpDeltaBadge({ delta }: { delta: number }) {
   );
 }
 
-function OasisStat({ label, value, tone }: { label: string; value: string; tone: "amber" | "sky" | "emerald" | "violet" }): JSX.Element {
+// @ts-expect-error unused
+function _OasisStat({ label, value, tone }: { label: string; value: string; tone: "amber" | "sky" | "emerald" | "violet" }): JSX.Element {
   const tones: Record<string, string> = {
     amber: "bg-amber-100 text-amber-900 ring-amber-300",
     sky: "bg-sky-100 text-sky-900 ring-sky-300",

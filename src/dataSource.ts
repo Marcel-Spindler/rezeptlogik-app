@@ -2,6 +2,13 @@ import type { DataBundle } from "./types";
 
 const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "firestore";
 
+function logWarn(context: string, err?: unknown) {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  console.warn(`[dataSource] ${context}${msg ? ": " + msg : ""}`);
+}
+
+export let lastDataError: string | null = null;
+
 export async function refreshOperationalData(): Promise<void> {
   if (SOURCE !== "firestore") return;
   const controller = new AbortController();
@@ -12,8 +19,8 @@ export async function refreshOperationalData(): Promise<void> {
       signal: controller.signal,
       cache: "no-store"
     });
-  } catch {
-    // Non-fatal — letzten Firestore-Stand nutzen.
+  } catch (e) {
+    logWarn("refresh-operational fehlgeschlagen (non-fatal)", e);
   } finally {
     window.clearTimeout(timeout);
   }
@@ -29,8 +36,8 @@ export async function refreshRampUpDataOnStart(): Promise<void> {
       signal: controller.signal,
       cache: "no-store"
     });
-  } catch {
-    // Bei Netzwerk-/Function-Fehlern mit den letzten Firestore-Daten weiterlaufen.
+  } catch (e) {
+    logWarn("refresh-ramp-up fehlgeschlagen (non-fatal)", e);
   } finally {
     window.clearTimeout(timeout);
   }
@@ -68,12 +75,12 @@ export function subscribeRampUpHashChanges(onChanged: () => void): () => void {
             onChanged();
           }
         },
-        () => {
-          // Bei Listener-Fehlern bleibt Polling als Fallback aktiv.
+        (err) => {
+          logWarn("Firestore-Listener Fehler (Polling bleibt aktiv)", err);
         }
       );
-    } catch {
-      // Firestore optional: bei Fehlern still zurückfallen.
+    } catch (e) {
+      logWarn("Firestore-Verbindung fehlgeschlagen (non-fatal)", e);
     }
   })();
 
@@ -86,9 +93,13 @@ export function subscribeRampUpHashChanges(onChanged: () => void): () => void {
 export async function loadData(): Promise<DataBundle> {
   if (SOURCE === "firestore") {
     try {
-      return await loadFromFirestore();
-    } catch {
-      // Stabilitäts-Guardrail: Bei Firestore-Problemen auf lokale Daten zurückfallen.
+      const bundle = await loadFromFirestore();
+      lastDataError = null;
+      return bundle;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      lastDataError = msg;
+      logWarn("Firestore-Load fehlgeschlagen, Fallback auf data.json", e);
       return loadFromJson();
     }
   }
@@ -99,14 +110,14 @@ async function loadFromJson(): Promise<DataBundle> {
   let res: Response;
   try {
     res = await fetch(`/data/data.json?ts=${Date.now()}`, { cache: "no-store" });
-  } catch {
-    throw new Error(`Datenquelle nicht erreichbar (data.json).`);
+  } catch (e) {
+    throw new Error(`Datenquelle nicht erreichbar (data.json): ${e instanceof Error ? e.message : e}`);
   }
-  if (!res.ok) throw new Error(`data.json nicht gefunden – npm run import:local ausführen.`);
+  if (!res.ok) throw new Error(`data.json nicht gefunden (HTTP ${res.status}) – npm run import:local ausführen.`);
   try {
     return await res.json();
-  } catch {
-    throw new Error(`data.json ist ungültig formatiert.`);
+  } catch (e) {
+    throw new Error(`data.json ist ungültig formatiert: ${e instanceof Error ? e.message : e}`);
   }
 }
 

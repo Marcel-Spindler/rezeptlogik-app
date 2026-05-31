@@ -1,6 +1,5 @@
 import { useState, type CSSProperties } from "react";
 import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, ShelfLifeInfo, RecipeStructure } from "./types";
-import { getBaseVerdenVolume } from "./equipment";
 import { marketToLocale } from "./i18n";
 import type { UiLocale } from "./i18n";
 
@@ -206,6 +205,65 @@ export function recipeSearchText(row: WeekRecipe, recipe?: Recipe): string {
     }
   }
   return parts.join(" ").toLowerCase();
+}
+
+// Gibt zurück, warum ein Rezept auf eine Suchanfrage zutrifft.
+// Rückgabe: null wenn kein "besonderer" Treffer (Name/Code-Match ist selbsterklärend),
+// sonst { kind: "ingredient"|"subrecipe"|"sku"|"allergen", label: string }
+export function searchMatchReason(
+  needle: string,
+  row: WeekRecipe,
+  recipe: Recipe | undefined
+): { kind: string; label: string } | null {
+  if (!needle || !recipe) return null;
+  const n = needle.toLowerCase();
+
+  // Wenn Name oder Code matchen, kein extra Kontext nötig
+  if (
+    row.code.toLowerCase().includes(n) ||
+    row.recipeName.toLowerCase().includes(n) ||
+    recipe.baseName.toLowerCase().includes(n)
+  ) return null;
+
+  for (const md of Object.values(recipe.markets)) {
+    // Lokaler Rezeptname
+    if (md.recipeNameLocal.toLowerCase().includes(n)) return null;
+
+    // MSKU / Packaging
+    if (
+      md.msku.toLowerCase().includes(n) ||
+      (md.primaryPackagingSku ?? "").toLowerCase().includes(n) ||
+      (md.secondaryPackagingSkus ?? "").toLowerCase().includes(n)
+    ) return { kind: "sku", label: `SKU: ${md.msku}` };
+
+    // Allergen
+    if ((md.allergens ?? "").toLowerCase().includes(n))
+      return { kind: "allergen", label: `Allergen: ${(md.allergens ?? "").slice(0, 40)}` };
+
+    // Sub-Rezept
+    for (const sub of md.subRecipes) {
+      if (sub.name.toLowerCase().includes(n) || sub.id.toLowerCase().includes(n))
+        return { kind: "subrecipe", label: sub.name };
+    }
+
+    // Zutat (net)
+    for (const ing of md.ingredients) {
+      if (ing.name.toLowerCase().includes(n) || ing.ingredientId.toLowerCase().includes(n))
+        return { kind: "ingredient", label: ing.name };
+    }
+  }
+
+  // Brutto-Zutaten
+  for (const grossRows of Object.values(recipe.grossIngredients)) {
+    for (const g of grossRows ?? []) {
+      if (
+        g.ingredient.toLowerCase().includes(n) ||
+        g.ingredientId.toLowerCase().includes(n)
+      ) return { kind: "ingredient", label: g.ingredient };
+    }
+  }
+
+  return null;
 }
 
 // ─── Shelf life ────────────────────────────────────────────────────────────
