@@ -31,8 +31,6 @@ export function DataHealthBanner({ data }: { data: DataBundle }) {
   if (structCount === 0)
     issues.push({ label: "Kein Rezeptbaum (Sub-Rezepte)", fix: "export-sub-recipes-by-recipe-detailed.csv fehlt in imports/" });
 
-  if (scheduleCount === 0)
-    issues.push({ label: "Keine Cook Schedules (D-2/D-1/D0)", fix: "Cook Schedules Per DC.csv fehlt in imports/ → npm run import:local" });
 
   if (specCount === 0)
     issues.push({ label: "Keine PFEI-Daten (Batch-Größen)", fix: "PFEI GSheet nicht importiert → npm run import:pfei && npm run push:firestore" });

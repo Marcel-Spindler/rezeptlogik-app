@@ -1318,10 +1318,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     setError(null);
 
     try {
-      const [sheetData, appData] = await Promise.all([
-        fetch("/data/gsheet-dump-Kitchen_Priority_List-Verden-2026.json").then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
-        loadData(),
-      ]);
+      const appData = await loadData();
 
       setAppData(appData);
       const requestedWeekNum = parseInt(weekStr);
@@ -1337,7 +1334,6 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       // Ramp-Up History: Snapshot aufzeichnen + Änderungen erkennen
       if ((appData.weekRecipes ?? []).length > 0) {
         const { changes, history } = recordRampUpSnapshot(week, appData.weekRecipes ?? []);
-        // History-Map aufbauen: code → Snapshots (enthält totalVerdenVolume über Zeit)
         const allCodes = new Set((appData.weekRecipes ?? []).filter(r => r.hfWeek === week).map(r => r.code));
         const histMap = new Map<string, RampUpSnapshot[]>();
         for (const code of allCodes) {
@@ -1350,24 +1346,28 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
         }
       }
 
-      // Also load Lineplanning sheet for slot schedule template (even if wrong week)
-      const lpSheet = sheetData.sheets.find((s: any) => s.title === "Lineplanning");
-      if (lpSheet) {
-        const { weekNum: wn, totalVolume: tv, recipes: recs, initialSchedule } =
-          parseLineplanning(lpSheet.values);
-        setTotalVolume(tv);
-        setWeekNum(wn);
-        // Nur wenn noch kein KW-spezifischer Rezeptpool vorhanden ist,
-        // verwenden wir Rezepte aus dem Lineplanning-Sheet.
-        if (wn === requestedWeekNum) {
-          if (!hasWeekSpecificRecipePool && recs.length > 0) {
-            setRecipes(recs);
-            hasWeekSpecificRecipePool = true;
+      // KPL-Sheet optional laden — kein harter Fehler wenn nicht vorhanden
+      try {
+        const kplRes = await fetch("/data/gsheet-dump-Kitchen_Priority_List-Verden-2026.json");
+        if (kplRes.ok) {
+          const sheetData = await kplRes.json();
+          const lpSheet = (sheetData.sheets ?? []).find((s: any) => s.title === "Lineplanning");
+          if (lpSheet) {
+            const { weekNum: wn, totalVolume: tv, recipes: recs, initialSchedule } =
+              parseLineplanning(lpSheet.values);
+            setTotalVolume(tv);
+            setWeekNum(wn);
+            if (wn === requestedWeekNum) {
+              if (!hasWeekSpecificRecipePool && recs.length > 0) {
+                setRecipes(recs);
+                hasWeekSpecificRecipePool = true;
+              }
+              dispatch({ type: "load", schedule: initialSchedule });
+            }
           }
-          dispatch({ type: "load", schedule: initialSchedule });
-        } else {
-          setDataWarning(prev => `KW ${weekStr}: Die JSON-Datei enthält nur KW ${wn}-Daten. Bitte JSON aktualisieren.${prev ? " " + prev : ""}`);
         }
+      } catch {
+        // KPL-Sheet nicht verfügbar — Linienplanung startet mit leerem Schedule
       }
 
       // Firestore-Manifest nur als Fallback laden, wenn weder KET noch
@@ -1608,7 +1608,11 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       setSaveOk(true);
       setTimeout(() => setSaveOk(false), 3000);
     } catch (err) {
-      alert(`Speichern fehlgeschlagen: ${(err as Error).message}`);
+      const msg = (err as Error).message ?? "";
+      if (!msg.includes("Firebase config")) {
+        alert(`Speichern fehlgeschlagen: ${msg}`);
+      }
+      // Firebase nicht konfiguriert → Plan ist lokal gespeichert, kein Alert nötig
     } finally {
       setSaving(false);
     }
@@ -1641,8 +1645,8 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
         dayLineCount: defaultDayLineCountMap(),
         runSplitByRecipe,
       });
-    } catch (err) {
-      alert(`Bereinigen fehlgeschlagen: ${(err as Error).message}`);
+    } catch {
+      // Firebase nicht konfiguriert oder nicht erreichbar — nur lokal bereinigt
     }
   }
 

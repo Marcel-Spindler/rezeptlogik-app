@@ -10,4 +10,40 @@
   .card { @apply rounded-xl bg-white shadow-sm ring-1 ring-slate-200; }
   .btn  { @apply inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ring-slate-300 bg-white hover:bg-slate-50; }
   .btn-primary { @apply bg-verden-600 text-white ring-verden-700 hover:bg-verden-700; }
+
+  .rundmail-page {
+    background-image: radial-gradient(circle at 10% -10%, rgba(14, 165, 233, 0.12), transparent 35%),
+                      radial-gradient(circle at 95% 0%, rgba(249, 115, 22, 0.14), transparent 34%);
+  }
+
+  .rundmail-hero {
+    @apply bg-gradient-to-r from-orange-50 via-white to-cyan-50;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rundmail-hero::after {
+    content: "";
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 280px;
+    height: 280px;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgba(14, 165, 233, 0.2) 0%, rgba(14, 165, 233, 0) 70%);
+    pointer-events: none;
+  }
+
+  .rundmail-chip {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 bg-slate-900 text-white ring-slate-800;
+  }
+
+  .rundmail-chip-soft {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 bg-white/80 text-slate-700 ring-slate-300;
+  }
+
+  .rundmail-progress {
+    @apply bg-gradient-to-r from-cyan-500 via-sky-500 to-blue-600;
+    transition: width 320ms ease;
+  }
 }

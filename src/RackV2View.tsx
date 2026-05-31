@@ -1303,7 +1303,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
           <div className="card p-3 space-y-2">
             <div className="text-sm font-bold text-slate-800">Detail</div>
-            {!selectedEntry && <div className="text-[11px] text-slate-500">Eintrag auswaehlen.</div>}
+            {!selectedEntry && <div className="text-[11px] text-slate-500">Eintrag auswählen.</div>}
             {selectedEntry && (
               <div className="space-y-2 text-[11px] text-slate-700">
                 <div><span className="font-semibold">Linie:</span> {currentLine.code}</div>

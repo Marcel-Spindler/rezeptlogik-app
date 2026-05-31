@@ -754,6 +754,7 @@ interface WR_IngRow {
   totalKg: number | null;
   pieceKgHint: number | null;
   inferredPcsPerTray: number | null;
+  inferredGnType: string | null;
   // Yield-Verlust
   yieldPct: number | null;   // 0..1 (z. B. 0.85 = 85 % Ausbeute, 15 % Verlust)
   lossKg: number | null;     // = totalKg * (1 - yieldPct)
@@ -793,6 +794,30 @@ interface WRCapacityHint {
 interface WRTrayHint {
   key: string;
   pcsPerTray: number;
+  gnType?: string;  // e.g. "GN 2/1", "GN 1/1"
+}
+
+function parseGnType(spec: string): string | null {
+  const m = spec.match(/GN\s*(\d+)[:/](\d+)/i);
+  if (!m) return null;
+  return `GN ${m[1]}/${m[2]}`;
+}
+
+function wrLookupGnType(trayHints: WRTrayHint[], ingredientName: string, ingredientId?: string): string | null {
+  if (ingredientId && PTN_ID_TRAY_SPECS[ingredientId]) return "GN 2/1";
+  const keyTokens = new Set(tokenize(ingredientName));
+  if (keyTokens.size === 0) return null;
+  let best: { hintSize: number; gnType: string } | null = null;
+  for (const hint of trayHints) {
+    if (!hint.gnType) continue;
+    const hintTokens = new Set(tokenize(hint.key));
+    if (hintTokens.size === 0) continue;
+    let overlap = 0;
+    for (const t of hintTokens) { if (keyTokens.has(t)) overlap++; }
+    if (overlap < hintTokens.size) continue;
+    if (!best || hintTokens.size > best.hintSize) best = { hintSize: hintTokens.size, gnType: hint.gnType };
+  }
+  return best ? best.gnType : null;
 }
 
 interface WROverride {
@@ -1064,11 +1089,19 @@ function wrBuildHintsFromDumps(master: unknown, bibles: unknown): {
           if (!label) continue;
 
           const pieces = piecesIdx >= 0 ? wrParseNumberLoose(row[piecesIdx]) : null;
-          const pcsFromTray = trayIdx >= 0 ? wrParsePcs(row[trayIdx]) : null;
+          const traySpecRaw = trayIdx >= 0 ? String(row[trayIdx] ?? "").trim() : "";
+          const pcsFromTray = traySpecRaw ? wrParsePcs(traySpecRaw) : null;
+          const gnFromTray = traySpecRaw ? parseGnType(traySpecRaw) : null;
           const trayPcs = pcsFromTray ?? pieces;
           if (trayPcs && trayPcs > 0) {
-            trayHints.push({ key: norm(label), pcsPerTray: trayPcs });
-            if (protein && cut) trayHints.push({ key: norm(`${protein} ${cut}`), pcsPerTray: trayPcs });
+            const hint: WRTrayHint = { key: norm(label), pcsPerTray: trayPcs };
+            if (gnFromTray) hint.gnType = gnFromTray;
+            trayHints.push(hint);
+            if (protein && cut) {
+              const hint2: WRTrayHint = { key: norm(`${protein} ${cut}`), pcsPerTray: trayPcs };
+              if (gnFromTray) hint2.gnType = gnFromTray;
+              trayHints.push(hint2);
+            }
           }
 
           const rowWeight = weightIdx >= 0 ? wrParseKgLoose(row[weightIdx]) : null;
@@ -1094,7 +1127,7 @@ function wrBuildHintsFromDumps(master: unknown, bibles: unknown): {
           if (!item) continue;
           upsertCapacity(item, capIdx >= 0 ? wrParseKgLoose(row[capIdx]) : null, "VEGGIE-DEBOX");
           const trayPcs = trayCntIdx >= 0 ? wrParseNumberLoose(row[trayCntIdx]) : null;
-          if (trayPcs && trayPcs > 0) trayHints.push({ key: norm(item), pcsPerTray: trayPcs });
+          if (trayPcs && trayPcs > 0) trayHints.push({ key: norm(item), pcsPerTray: trayPcs, gnType: "GN 2/1" });
           const kgPerGn = kgPerGnIdx >= 0 ? wrParseKgLoose(row[kgPerGnIdx]) : null;
           if (kgPerGn && kgPerGn > 0) pieceWeightKg.set(norm(item), kgPerGn);
         }
@@ -1294,6 +1327,7 @@ export function BreakdownEquipmentView({
   const [pieceWeightKg, setPieceWeightKg] = useState<Map<string, number>>(new Map());
   const [trayHints, setTrayHints] = useState<WRTrayHint[]>([]);
   const [pathRawInputs, setPathRawInputs] = useState<Record<string, string>>({});
+  const [pathDirectKg, setPathDirectKg] = useState<Record<string, { mode: "fertig" | "roh"; kg: string }>>({});
 
   // Welche Wannengrößen in den Spalten anzeigen (Default: 40/60/80/120 kg)
   const [activeWannen, setActiveWannen] = useState<Set<number>>(
@@ -2122,6 +2156,7 @@ export function BreakdownEquipmentView({
           : null;
         // Tray hint for ALL items (proteins may be in g/kg UOM, not EA)
         const trayPcsHint = wrLookupTrayPcs(trayHints, item.ingredient || "", item.ingredientId || "");
+        const gnTypeHint = wrLookupGnType(trayHints, item.ingredient || "", item.ingredientId || "");
         // Piece weight for kg-based piece items (needed to compute piece count → GN tray count)
         const gnPieceKg = baseKg != null && trayPcsHint != null
           ? (wrLookupPieceKg(pieceWeightKg, item.ingredient || "", item.ingredientId || "")
@@ -2151,6 +2186,7 @@ export function BreakdownEquipmentView({
             totalKg: addK,
             pieceKgHint: pieceKg ?? gnPieceKg,
             inferredPcsPerTray: trayPcsHint,
+            inferredGnType: gnTypeHint,
             yieldPct: ingYield,
             lossKg: ingLossKg,
           });
@@ -2499,6 +2535,22 @@ export function BreakdownEquipmentView({
                   const rawSurplusKg = rawKg != null ? Math.max(0, rawKg - path.totalKg) : null;
                   const rawCoveragePct = rawCoverage != null ? Math.round(rawCoverage * 100) : null;
                   const pathNetKg = Math.max(0, path.totalKg - path.totalLossKg);
+
+                  // Direkte kg-Eingabe für Equipment-Berechnung
+                  const directEntry = pathDirectKg[pathKey];
+                  const directMode = directEntry?.mode ?? "fertig";
+                  const directKgStr = directEntry?.kg ?? "";
+                  const directKgInput = directKgStr !== "" ? (wrParseNumberLoose(directKgStr) ?? null) : null;
+                  // Rohware → Fertigware via Yield; Fertigware direkt
+                  const directFertigKg = directKgInput != null
+                    ? (directMode === "roh" ? directKgInput * pathYieldFactor : directKgInput)
+                    : null;
+                  const directBatchCount = directFertigKg != null && bibleKg && bibleKg > 0
+                    ? Math.ceil(directFertigKg * briningFactor / bibleKg)
+                    : null;
+                  const directWannenSums = directFertigKg != null
+                    ? visibleWannen.map(w => ({ label: w.label, kg: w.kg, total: Math.ceil(directFertigKg * briningFactor / w.kg) })).filter(ws => ws.total > 0)
+                    : [];
                   const pathLossPct = path.totalKg > 0 ? Math.round((path.totalLossKg / path.totalKg) * 100) : 0;
                   const primarySub = wrHasSubName(path.sub1) ? path.sub1 : "Ohne Sub-Rezept";
                   const secondarySub = wrHasSubName(path.sub2) ? path.sub2 : "";
@@ -2608,11 +2660,15 @@ export function BreakdownEquipmentView({
                           Aggregiert alle Wannen + GN-Bleche für diesen Pfad — sofort sichtbar
                       ══════════════════════════════════════════════════════════════════════ */}
                       {(() => {
-                        // GN-Bleche: Summe aller Zeilen die Stückware haben
-                        const totalGnTrays = path.rows.reduce((sum, row) => {
+                        // GN-Bleche: gruppiert nach GN-Typ
+                        const gnByType = new Map<string, number>();
+                        for (const row of path.rows) {
                           const n = rowTrayCount(row);
-                          return sum + (n ?? 0);
-                        }, 0);
+                          if (!n) continue;
+                          const gnType = row.inferredGnType ?? "GN (unbekannt)";
+                          gnByType.set(gnType, (gnByType.get(gnType) ?? 0) + n);
+                        }
+                        const totalGnTrays = Array.from(gnByType.values()).reduce((s, v) => s + v, 0);
 
                         // Wannen pro aktiver Größe summieren (über alle Zutaten)
                         const wannenSums = visibleWannen.map((w) => ({
@@ -2656,26 +2712,26 @@ export function BreakdownEquipmentView({
                                 </div>
                               )}
 
-                              {/* GN-Bleche */}
-                              {totalGnTrays > 0 && (
-                                <div className={`flex items-center gap-3 rounded-xl border px-4 py-3 bg-white shadow-sm ring-1 border-violet-300 min-w-[120px]`}>
+                              {/* GN-Bleche — pro Typ eine Card */}
+                              {Array.from(gnByType.entries()).map(([gnType, count]) => (
+                                <div key={gnType} className="flex items-center gap-3 rounded-xl border px-4 py-3 bg-white shadow-sm ring-1 border-violet-300 min-w-[130px]">
                                   <span className="text-3xl leading-none">🍽️</span>
                                   <div>
-                                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none">GN-Bleche</div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-violet-500 leading-none">GN-Blech</div>
                                     <div className="text-3xl font-black tabular-nums leading-none mt-0.5 text-violet-700">
-                                      {totalGnTrays}×
+                                      {count}×
                                     </div>
-                                    <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
-                                      GN-Einschübe
+                                    <div className="text-[10px] font-bold text-violet-600 mt-0.5">
+                                      {gnType}
                                     </div>
                                   </div>
                                 </div>
-                              )}
+                              ))}
 
                               {/* Wannen nach Größe */}
                               {wannenSums.map((ws) => (
                                 <div key={ws.kg} className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 bg-white shadow-sm ring-1 ring-slate-200 min-w-[120px]">
-                                  <span className="text-3xl leading-none">🪣</span>
+                                  <span className="text-3xl leading-none">🫙</span>
                                   <div>
                                     <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none">{ws.label} Wanne</div>
                                     <div className={`text-3xl font-black tabular-nums leading-none mt-0.5 ${
@@ -2692,6 +2748,69 @@ export function BreakdownEquipmentView({
                                   </div>
                                 </div>
                               ))}
+                            </div>
+
+                            {/* Direkte kg-Eingabe: Equipment aus Fertig- / Rohware */}
+                            <div className="mt-3 pt-3 border-t border-dashed border-slate-200">
+                              <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                                Direkt berechnen — Fertig- oder Rohware
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                  value={directMode}
+                                  onChange={e => setPathDirectKg(prev => ({ ...prev, [pathKey]: { mode: e.target.value as "fertig" | "roh", kg: directKgStr } }))}
+                                  className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                                >
+                                  <option value="fertig">Fertigware (kg)</option>
+                                  <option value="roh">Rohware (kg)</option>
+                                </select>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  placeholder="kg eingeben …"
+                                  value={directKgStr}
+                                  onChange={e => setPathDirectKg(prev => ({ ...prev, [pathKey]: { mode: directMode, kg: e.target.value } }))}
+                                  className="w-28 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs tabular-nums text-slate-700 focus:bg-white focus:ring-1 focus:ring-indigo-300 focus:outline-none"
+                                />
+                                {directKgInput != null && (
+                                  <span className="text-[10px] text-slate-500">
+                                    {directMode === "roh"
+                                      ? `→ ~${wrFmtKg(directFertigKg!)} Fertigware`
+                                      : `→ direkt`}
+                                  </span>
+                                )}
+                                {directKgStr && (
+                                  <button
+                                    onClick={() => setPathDirectKg(prev => { const n = { ...prev }; delete n[pathKey]; return n; })}
+                                    className="text-[10px] text-slate-400 hover:text-rose-500 px-1"
+                                  >✕</button>
+                                )}
+                              </div>
+                              {directFertigKg != null && (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {directBatchCount != null && (
+                                    <div className="flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2">
+                                      <span className="text-lg">{colors.icon}</span>
+                                      <div>
+                                        <div className="text-[9px] font-black uppercase text-indigo-400">Batches</div>
+                                        <div className="text-xl font-black tabular-nums text-indigo-700">{directBatchCount}×</div>
+                                        <div className="text-[9px] text-indigo-400">à {wrFmtKg(bibleKg!)} kg</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {directWannenSums.map(ws => (
+                                    <div key={ws.kg} className="flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-2">
+                                      <span className="text-lg">🫙</span>
+                                      <div>
+                                        <div className="text-[9px] font-black uppercase text-indigo-400">{ws.label} Wanne</div>
+                                        <div className="text-xl font-black tabular-nums text-indigo-700">{ws.total}×</div>
+                                        <div className="text-[9px] text-indigo-400">Wannen</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                         );

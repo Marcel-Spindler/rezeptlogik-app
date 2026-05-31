@@ -365,6 +365,7 @@ export default function App() {
             data.productionPlan
               ? <PackingScheduleView
                   plan={data.productionPlan}
+                  selectedWeek={selectedWeek}
                   onRecipeClick={code => { setSelectedRecipe(code); setView("recipe"); }}
                 />
               : <div className="card p-8 text-center text-slate-400">
@@ -391,10 +392,19 @@ export default function App() {
         </main>
       </div>
 
-      <footer className="mt-8 pb-6 text-xs text-slate-400 text-center">
-        Daten: {formatDateTime("de", data.generatedAt)} ·
-        Quelle: {(import.meta.env.VITE_DATA_SOURCE ?? "firestore")} ·
-        Standort: Verden (VF)
+      <footer className="mt-8 pb-6 text-xs text-slate-400 text-center space-y-0.5">
+        <div>
+          Stand: {formatDateTime("de", data.generatedAt)} ·
+          Quelle: {(import.meta.env.VITE_DATA_SOURCE ?? "firestore")} ·
+          Verden (VF)
+        </div>
+        <div className="text-slate-300">
+          🔗 <a href="/?surface=rundmail" className="hover:text-slate-500 underline">Rundmail (standalone)</a>
+          {" · "}
+          <a href="/?view=whatif" className="hover:text-slate-500 underline">What-If</a>
+          {" · "}
+          <a href="/?view=breakdown" className="hover:text-slate-500 underline">Breakdown</a>
+        </div>
       </footer>
     </Shell>
   );

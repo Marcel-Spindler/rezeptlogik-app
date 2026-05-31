@@ -1,0 +1,6975 @@
+{
+  "id": "1jZXgFcnDhmALSbIlyDbzL-uKpDyLycwdxcVnFNPn32c",
+  "name": "Bibles_K_Operations_Manager_Supervisors",
+  "sheets": [
+    {
+      "title": "DAILY PRODUCTION TEMPLATE (Provisional)",
+      "sheetId": 0,
+      "values": [
+        [],
+        [
+          "",
+          "KITCHEN PRODUCTION TEMPLATE EU Verden (Aller)"
+        ],
+        [
+          "",
+          "PRODUCTION OVERVIEW",
+          "",
+          "",
+          "",
+          "",
+          "PRODUCTION RESPONSIBILITY"
+        ],
+        [
+          "",
+          "DATE_",
+          "2/18/2026",
+          "AREA / DEPT_",
+          "VD|PT|BR|MK",
+          "K.SUPERVISOR_",
+          "Name (Dropdown)",
+          "TPP (TOTAL PLANNED PORTIONS)_",
+          "Units "
+        ],
+        [
+          "",
+          "SHIFT_",
+          "AM  (00:00 AM - 00:00 PM)",
+          "WO BATCH NUMBER_",
+          "W0-0000-HK00",
+          "DEPUTY WORKERS_",
+          "Name (Dropdown)",
+          "TR (TOTAL RECIPES)_",
+          "Units "
+        ],
+        [],
+        [],
+        [
+          "",
+          "RECIPE BREAKDOWN",
+          "",
+          "",
+          "TASK ASSIGNAMENT",
+          "",
+          "",
+          "VOLUME & SCALING",
+          "",
+          "",
+          "",
+          "",
+          "EFFICIENCY PERFORMANCE",
+          "",
+          "",
+          "",
+          "",
+          "QA TRAZABILITY"
+        ],
+        [
+          "",
+          "RECIPE_",
+          "SUBRECIPE_",
+          "PRIORITY_",
+          "AREA ASSOCIATED_",
+          "KS ASSOCIATED_",
+          "DEPUTY WORKERS_",
+          "WORK ORDER_ (WO)",
+          "BATCH_ (BR)",
+          "PLANNED PORTIONS_ (KG)",
+          "BASE YIELD_ (KG)",
+          "SCALING FACTOR_ (x)",
+          "ESTIMATED TIME_",
+          "START TIME_",
+          "END TIME_",
+          "ESTIMATED TIME ARRIVAL_ (ETA)",
+          "STATUS_",
+          "CHECKED_",
+          "CONTROL Tº",
+          "CONTROL pH"
+        ],
+        [
+          "",
+          "Recipe name 1",
+          "Subrecipe name",
+          "Low",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-000",
+          "4",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "0:00:00",
+          "9:00:00 AM",
+          "10:00:00 AM",
+          "10/3/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "50.00 ºC",
+          "0.00"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "VD (Veggie Debox)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-001",
+          "4",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "1:00:00",
+          "10:00:00 AM",
+          "11:00:00 AM",
+          "10/4/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC",
+          "0.00"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "PT (Protein)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-002",
+          "4",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "2:00:00",
+          "11:00:00 AM",
+          "12:00:00 PM",
+          "10/5/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC",
+          "0.00"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "BR (Braiser)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-003",
+          "4",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "3:00:00",
+          "12:00:00 PM",
+          "1:00:00 PM",
+          "10/6/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC",
+          "0.00"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "MK (Middle Kitchen)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-004",
+          "4",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "4:00:00",
+          "1:00:00 PM",
+          "2:00:00 PM",
+          "10/7/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC",
+          "0.00"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-005",
+          "4",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "5:00:00",
+          "2:00:00 PM",
+          "3:00:00 PM",
+          "10/8/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC",
+          "0.00"
+        ],
+        [],
+        [
+          "",
+          "Recipe name 2",
+          "Subrecipe name",
+          "Low",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-000",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "0:00:00",
+          "9:00:00 AM",
+          "10:00:00 AM",
+          "10/3/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "VD (Veggie Debox)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-001",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "1:00:00",
+          "10:00:00 AM",
+          "11:00:00 AM",
+          "10/4/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "PT (Protein)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-002",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "2:00:00",
+          "11:00:00 AM",
+          "12:00:00 PM",
+          "10/5/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "BR (Braiser)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-003",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "3:00:00",
+          "12:00:00 PM",
+          "1:00:00 PM",
+          "10/6/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "MK (Middle Kitchen)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-004",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "4:00:00",
+          "1:00:00 PM",
+          "2:00:00 PM",
+          "10/7/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-005",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "5:00:00",
+          "2:00:00 PM",
+          "3:00:00 PM",
+          "10/8/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [],
+        [
+          "",
+          "Recipe name 3",
+          "Subrecipe name",
+          "Low",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-000",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "0:00:00",
+          "9:00:00 AM",
+          "10:00:00 AM",
+          "10/3/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "VD (Veggie Debox)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-001",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "1:00:00",
+          "10:00:00 AM",
+          "11:00:00 AM",
+          "10/4/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "PT (Protein)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-002",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "2:00:00",
+          "11:00:00 AM",
+          "12:00:00 PM",
+          "10/5/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "BR (Braiser)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-003",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "3:00:00",
+          "12:00:00 PM",
+          "1:00:00 PM",
+          "10/6/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "MK (Middle Kitchen)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-004",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "4:00:00",
+          "1:00:00 PM",
+          "2:00:00 PM",
+          "10/7/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Low",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-005",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "5:00:00",
+          "2:00:00 PM",
+          "3:00:00 PM",
+          "10/8/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [],
+        [
+          "",
+          "Recipe name 4",
+          "Subrecipe name",
+          "Medium",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-000",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "0:00:00",
+          "9:00:00 AM",
+          "10:00:00 AM",
+          "10/3/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "VD (Veggie Debox)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-001",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "1:00:00",
+          "10:00:00 AM",
+          "11:00:00 AM",
+          "10/4/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "PT (Protein)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-002",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "2:00:00",
+          "11:00:00 AM",
+          "12:00:00 PM",
+          "10/5/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "BR (Braiser)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-003",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "3:00:00",
+          "12:00:00 PM",
+          "1:00:00 PM",
+          "10/6/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "MK (Middle Kitchen)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-004",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "4:00:00",
+          "1:00:00 PM",
+          "2:00:00 PM",
+          "10/7/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-005",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "5:00:00",
+          "2:00:00 PM",
+          "3:00:00 PM",
+          "10/8/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [],
+        [
+          "",
+          "Recipe name 5",
+          "Subrecipe name",
+          "Medium",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-000",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "0:00:00",
+          "9:00:00 AM",
+          "10:00:00 AM",
+          "10/3/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "VD (Veggie Debox)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-001",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "1:00:00",
+          "10:00:00 AM",
+          "11:00:00 AM",
+          "10/4/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "PT (Protein)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-002",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "2:00:00",
+          "11:00:00 AM",
+          "12:00:00 PM",
+          "10/5/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "BR (Braiser)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-003",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "3:00:00",
+          "12:00:00 PM",
+          "1:00:00 PM",
+          "10/6/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "MK (Middle Kitchen)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-004",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "4:00:00",
+          "1:00:00 PM",
+          "2:00:00 PM",
+          "10/7/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-005",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "5:00:00",
+          "2:00:00 PM",
+          "3:00:00 PM",
+          "10/8/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [],
+        [
+          "",
+          "Recipe name 6",
+          "Subrecipe name",
+          "Medium",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-000",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "0:00:00",
+          "9:00:00 AM",
+          "10:00:00 AM",
+          "10/3/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "VD (Veggie Debox)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-001",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "1:00:00",
+          "10:00:00 AM",
+          "11:00:00 AM",
+          "10/4/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "PT (Protein)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-002",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "2:00:00",
+          "11:00:00 AM",
+          "12:00:00 PM",
+          "10/5/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "BR (Braiser)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-003",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "3:00:00",
+          "12:00:00 PM",
+          "1:00:00 PM",
+          "10/6/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "MK (Middle Kitchen)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-004",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "4:00:00",
+          "1:00:00 PM",
+          "2:00:00 PM",
+          "10/7/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "Medium",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-005",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "5:00:00",
+          "2:00:00 PM",
+          "3:00:00 PM",
+          "10/8/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [],
+        [
+          "",
+          "Recipe name 7",
+          "Subrecipe name",
+          "High",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-000",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "0:00:00",
+          "9:00:00 AM",
+          "10:00:00 AM",
+          "10/3/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "VD (Veggie Debox)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-001",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "1:00:00",
+          "10:00:00 AM",
+          "11:00:00 AM",
+          "10/4/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "PT (Protein)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-002",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "2:00:00",
+          "11:00:00 AM",
+          "12:00:00 PM",
+          "10/5/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "BR (Braiser)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-003",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "3:00:00",
+          "12:00:00 PM",
+          "1:00:00 PM",
+          "10/6/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "MK (Middle Kitchen)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-004",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "4:00:00",
+          "1:00:00 PM",
+          "2:00:00 PM",
+          "10/7/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-005",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "5:00:00",
+          "2:00:00 PM",
+          "3:00:00 PM",
+          "10/8/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [],
+        [
+          "",
+          "Recipe name 8",
+          "Subrecipe name",
+          "High",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-000",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "0:00:00",
+          "9:00:00 AM",
+          "10:00:00 AM",
+          "10/3/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "VD (Veggie Debox)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-001",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "1:00:00",
+          "10:00:00 AM",
+          "11:00:00 AM",
+          "10/4/2026 15:30:00",
+          "In progress",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "PT (Protein)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-002",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "2:00:00",
+          "11:00:00 AM",
+          "12:00:00 PM",
+          "10/5/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "BR (Braiser)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-003",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "3:00:00",
+          "12:00:00 PM",
+          "1:00:00 PM",
+          "10/6/2026 15:30:00",
+          "On hold",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "MK (Middle Kitchen)",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-004",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "4:00:00",
+          "1:00:00 PM",
+          "2:00:00 PM",
+          "10/7/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ],
+        [
+          "",
+          "",
+          "Subrecipe name",
+          "High",
+          "VD|PT|BR|MK",
+          "Name (Dropdown)",
+          "Name (Dropdown)",
+          "00-005",
+          "",
+          "10000.00 KG",
+          "2500.00 KG",
+          "4",
+          "5:00:00",
+          "2:00:00 PM",
+          "3:00:00 PM",
+          "10/8/2026 15:30:00",
+          "Completed",
+          "FALSE",
+          "75.00 ºC"
+        ]
+      ]
+    },
+    {
+      "title": "SPICE_ROOM_EN(Provisional)",
+      "sheetId": 1504937997,
+      "values": [
+        [],
+        [],
+        [
+          "",
+          "",
+          "SPICE ROOM ORDER"
+        ],
+        [],
+        [
+          "",
+          "",
+          "RECIPE_",
+          "SUBRECIPE_",
+          "SUBRECIPE SKU_",
+          "INGREDIENT SKU NAME_",
+          "INGREDIENT SKU CODE_",
+          "Nº BATCHES_",
+          "QUANTITY PER BATCH_",
+          "UNIT_",
+          "DELIVERY LOCATION_",
+          "14-ALLERGEN_",
+          "CHECK_"
+        ],
+        [
+          "",
+          "",
+          "Recipe name 1",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "Pepper",
+          "SPI-X-X-X-X-X-X-X",
+          "",
+          "0.100 KG",
+          "KG",
+          "VD|PT|BR|MK",
+          "Treenuts",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Peanuts",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Fish",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Soybeans",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Mustard",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Sesame seeds",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "TOTAL SPICE WEIGHT PER BATCH_"
+        ],
+        [
+          "",
+          "",
+          "TOTAL SPICE WEIGHT PER PRODUCTION"
+        ],
+        [],
+        [
+          "",
+          "",
+          "RECIPE_",
+          "SUBRECIPE_",
+          "SUBRECIPE SKU_",
+          "INGREDIENT SKU NAME_",
+          "INGREDIENT SKU CODE_",
+          "Nº BATCHES_",
+          "QUANTITY PER BATCH_",
+          "UNIT_",
+          "DELIVERY LOCATION_",
+          "14-ALLERGEN_",
+          "CHECK_"
+        ],
+        [
+          "",
+          "",
+          "Recipe name 1",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "FA-DE Almond, Sliced, Blanched",
+          "SPI-00-139147-5",
+          "5",
+          "0.100 KG",
+          "KG",
+          "VD|PT|BR|MK",
+          "Treenuts",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Peanuts",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Fish",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Soybeans",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Mustard",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Sesame seeds",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "TOTAL SPICE WEIGHT PER BATCH_"
+        ],
+        [
+          "",
+          "",
+          "TOTAL SPICE WEIGHT PER PRODUCTION"
+        ],
+        [],
+        [
+          "",
+          "",
+          "RECIPE_",
+          "SUBRECIPE_",
+          "SUBRECIPE SKU_",
+          "INGREDIENT SKU NAME_",
+          "INGREDIENT SKU CODE_",
+          "Nº BATCHES_",
+          "QUANTITY PER BATCH_",
+          "UNIT_",
+          "DELIVERY LOCATION_",
+          "14-ALLERGEN_",
+          "CHECK_"
+        ],
+        [
+          "",
+          "",
+          "Recipe name 1",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "FA-DE Almond, Sliced, Blanched",
+          "SPI-00-139147-5",
+          "5",
+          "0.100 KG",
+          "KG",
+          "VD|PT|BR|MK",
+          "Treenuts",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Peanuts",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Fish",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Soybeans",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Mustard",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Sesame seeds",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "TOTAL SPICE WEIGHT PER BATCH_"
+        ],
+        [
+          "",
+          "",
+          "TOTAL SPICE WEIGHT PER PRODUCTION"
+        ],
+        [],
+        [
+          "",
+          "",
+          "RECIPE_",
+          "SUBRECIPE_",
+          "SUBRECIPE SKU_",
+          "INGREDIENT SKU NAME_",
+          "INGREDIENT SKU CODE_",
+          "Nº BATCHES_",
+          "QUANTITY PER BATCH_",
+          "UNIT_",
+          "DELIVERY LOCATION_",
+          "14-ALLERGEN_",
+          "CHECK_"
+        ],
+        [
+          "",
+          "",
+          "Recipe name 1",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "FA-DE Almond, Sliced, Blanched",
+          "SPI-00-139147-5",
+          "5",
+          "0.100 KG",
+          "KG",
+          "VD|PT|BR|MK",
+          "Treenuts",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Peanuts",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Fish",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Soybeans",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Mustard",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Subrecipe name",
+          "Subrecipe SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Sesame seeds",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "TOTAL SPICE WEIGHT PER BATCH_"
+        ],
+        [
+          "",
+          "",
+          "TOTAL SPICE WEIGHT PER PRODUCTION"
+        ]
+      ]
+    },
+    {
+      "title": "SPICE_ROOM_DE (Provisional)",
+      "sheetId": 971299091,
+      "values": [
+        [],
+        [],
+        [
+          "",
+          "",
+          "SPICE ROOM ORDER"
+        ],
+        [],
+        [
+          "",
+          "",
+          "REZEPT_",
+          "UNTERREZEPT__",
+          "UNTERREZEPT SKU_",
+          "ZUTAT SKU NAME_",
+          "ZUTAT SKU CODE_",
+          "ANZAHL DER CHARGEN_",
+          "MENGE PRO CHARGE_",
+          "EINHEIT",
+          "LIEFERORT",
+          "14-ALLERGEN_",
+          "PRÜFEN_"
+        ],
+        [
+          "",
+          "",
+          "Rezept name 1",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "FA-DE Almond, Sliced, Blanched",
+          "SPI-00-139147-5",
+          "5",
+          "0.100 KG",
+          "KG",
+          "VD|PT|BR|MK",
+          "Weichtiere",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Krebstiere",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Fisch",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Sojabohnen",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Erdnüsse",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Senf",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "GESAMTGEWICHT DER GEWÜRZE PRO CHARGE_"
+        ],
+        [
+          "",
+          "",
+          "GESAMTGEWICHT DER GEWÜRZE PRO PRODUKTION"
+        ],
+        [],
+        [
+          "",
+          "",
+          "REZEPT_",
+          "UNTERREZEPT__",
+          "UNTERREZEPT SKU_",
+          "ZUTAT SKU NAME_",
+          "ZUTAT SKU CODE_",
+          "ANZAHL DER CHARGEN_",
+          "MENGE PRO CHARGE_",
+          "EINHEIT",
+          "LIEFERORT",
+          "14-ALLERGEN_",
+          "PRÜFEN_"
+        ],
+        [
+          "",
+          "",
+          "Rezept name 1",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "FA-DE Almond, Sliced, Blanched",
+          "SPI-00-139147-5",
+          "5",
+          "0.100 KG",
+          "KG",
+          "VD|PT|BR|MK",
+          "Weichtiere",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Krebstiere",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Fisch",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Sojabohnen",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Erdnüsse",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Senf",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "GESAMTGEWICHT DER GEWÜRZE PRO CHARGE_"
+        ],
+        [
+          "",
+          "",
+          "GESAMTGEWICHT DER GEWÜRZE PRO PRODUKTION"
+        ],
+        [],
+        [
+          "",
+          "",
+          "REZEPT_",
+          "UNTERREZEPT__",
+          "UNTERREZEPT SKU_",
+          "ZUTAT SKU NAME_",
+          "ZUTAT SKU CODE_",
+          "ANZAHL DER CHARGEN_",
+          "MENGE PRO CHARGE_",
+          "EINHEIT",
+          "LIEFERORT",
+          "14-ALLERGEN_",
+          "PRÜFEN_"
+        ],
+        [
+          "",
+          "",
+          "Rezept name 1",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "FA-DE Almond, Sliced, Blanched",
+          "SPI-00-139147-5",
+          "5",
+          "0.100 KG",
+          "KG",
+          "VD|PT|BR|MK",
+          "Weichtiere",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Krebstiere",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Fisch",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Sojabohnen",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Erdnüsse",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Senf",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "GESAMTGEWICHT DER GEWÜRZE PRO CHARGE_"
+        ],
+        [
+          "",
+          "",
+          "GESAMTGEWICHT DER GEWÜRZE PRO PRODUKTION"
+        ],
+        [],
+        [
+          "",
+          "",
+          "REZEPT_",
+          "UNTERREZEPT__",
+          "UNTERREZEPT SKU_",
+          "ZUTAT SKU NAME_",
+          "ZUTAT SKU CODE_",
+          "ANZAHL DER CHARGEN_",
+          "MENGE PRO CHARGE_",
+          "EINHEIT",
+          "LIEFERORT",
+          "14-ALLERGEN_",
+          "PRÜFEN_"
+        ],
+        [
+          "",
+          "",
+          "Rezept name 1",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "FA-DE Almond, Sliced, Blanched",
+          "SPI-00-139147-5",
+          "5",
+          "0.100 KG",
+          "KG",
+          "VD|PT|BR|MK",
+          "Weichtiere",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Krebstiere",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Fisch",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Sojabohnen",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Erdnüsse",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Unterrezept name",
+          "Unterrezept SKU",
+          "",
+          "",
+          "",
+          "",
+          "KG",
+          "VD|PT|BR|MK",
+          "Senf",
+          "FALSE"
+        ],
+        [
+          "",
+          "",
+          "GESAMTGEWICHT DER GEWÜRZE PRO CHARGE_"
+        ],
+        [
+          "",
+          "",
+          "GESAMTGEWICHT DER GEWÜRZE PRO PRODUKTION"
+        ]
+      ]
+    },
+    {
+      "title": "PROTEIN-DEBOX_V-Mag200L Bible_EN (Provisional)",
+      "sheetId": 1071859205,
+      "values": [
+        [],
+        [],
+        [
+          "",
+          "",
+          "PROTEIN DEBOX "
+        ],
+        [
+          "",
+          "",
+          "Parameter Control - Per V-Mag 200 L"
+        ],
+        [
+          "",
+          "",
+          "PARAMETER ",
+          "VALUE"
+        ],
+        [
+          "",
+          "",
+          "MACHINE_",
+          "PER V-MAG 200L"
+        ],
+        [
+          "",
+          "",
+          "MACHINE CAPACITY_",
+          "200 L"
+        ],
+        [
+          "",
+          "",
+          "MAX INPUT LOAD_",
+          "90 KG"
+        ],
+        [
+          "",
+          "",
+          "WATER RATIO_",
+          "1:1"
+        ],
+        [
+          "",
+          "",
+          "SALT RATIO_",
+          "0.89% (0.8KG-90KG)"
+        ],
+        [
+          "",
+          "",
+          "STANDARD CYCLE TIME_",
+          "4 HOURS"
+        ],
+        [],
+        [
+          "",
+          "",
+          "PROTEIN TYPE_",
+          "CUT_",
+          "WEIGHT_ (KG)",
+          "EST. PIECES_",
+          "TIME_",
+          "WATER_ (KG)",
+          "SALT_ (KG) ",
+          "TRAY SPEC_",
+          "GRILL SPEC_"
+        ],
+        [
+          "",
+          "",
+          "Chicken",
+          "Breast",
+          "90",
+          "720",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "30 PCS",
+          "GRILL RECOMMENDATIONS CHICKEN BREAST_EN.pdf"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Chunks",
+          "90",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "4 KG / GN 2:1"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Thighs",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "Pork",
+          "Bacon",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "2 KG / GN 2:1"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Chops",
+          "",
+          "160",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "12 PCS"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Tenderloin",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "12 PCS",
+          "GRILL RECOMMENDATIONS PORK TENDERLOIN_EN.pdf"
+        ],
+        [
+          "",
+          "",
+          "Fish",
+          "Salmon",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "28 PCS ea GN 2/1"
+        ],
+        [
+          "",
+          "",
+          "Shellfish",
+          "Shrimps",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "Ground Beef/Pork Dought",
+          "Burger",
+          "60",
+          "",
+          "4:00:00",
+          "",
+          "",
+          "30 PCS ea GN 2/1",
+          "GRILL RECOMMENDATIONS BURGER MEAT_EN.pdf"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [],
+        [
+          "",
+          "",
+          "CHICKEN BREAST - Per V-Mag 200 L",
+          "",
+          "",
+          "BURGER MEAT",
+          "",
+          "",
+          "PORK TENDERLOIN"
+        ],
+        [
+          "",
+          "",
+          "PARAMETER ",
+          "VALUE",
+          "",
+          "PARAMETER ",
+          "VALUE",
+          "",
+          "PARAMETER ",
+          "VALUE"
+        ],
+        [
+          "",
+          "",
+          "MACHINE_",
+          "V-MAG 200L",
+          "",
+          "MACHINE_ MIXER ( Burger/ Meatball) ",
+          "95Kg MAX",
+          "",
+          "MACHINE_"
+        ],
+        [
+          "",
+          "",
+          "MACHINE CAPACITY_",
+          "200 L",
+          "",
+          "PATTY MACHINE CAPACITY_",
+          "15Kg",
+          "",
+          "MACHINE CAPACITY_"
+        ],
+        [
+          "",
+          "",
+          "MAX INPUT LOAD_",
+          "90.00 KG",
+          "",
+          "MAX INPUT LOAD_",
+          "",
+          "",
+          "MAX INPUT LOAD_"
+        ],
+        [
+          "",
+          "",
+          "APROX. CHICKEN BREAST UNITS",
+          "562",
+          "",
+          "APROX. BURGER MEAT UNITS",
+          "0",
+          "",
+          "APROX. PORK TENDERLOIN UNITS"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST - Per GN 2/1 53x65x2cm",
+          "",
+          "",
+          "BURGER MEAT - Per GN 2/1 53x65x2cm",
+          "",
+          "",
+          "PORK TENDERLOIN - Per GN 2/1 53x65x2cm"
+        ],
+        [
+          "",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "30 UNITS",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "30 UNITS",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "12 UNITS"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST - Per OVEN RACK",
+          "",
+          "",
+          "BURGER MEAT - Per OVEN RACK",
+          "",
+          "",
+          "PORK TENDERLOIN - Per OVEN RACK"
+        ],
+        [
+          "",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST MAX per OVEN RACK",
+          "540",
+          "",
+          "BURGER MEAT MAX per OVEN RACK",
+          "540",
+          "",
+          "PORK TENDERLOIN MAX per OVEN RACK",
+          "216"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST - Per GRILL",
+          "",
+          "",
+          "BURGER MEAT - Per GRILL",
+          "",
+          "",
+          "PORK TENDERLOIN - Per GRILL"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST MAX per GRILL",
+          "60",
+          "",
+          "BURGER MEAT MAX per GRILL",
+          "45",
+          "",
+          "PORK TENDERLOIN MAX per GRILL",
+          "20"
+        ],
+        [],
+        [
+          "",
+          "",
+          "CHICKEN CHUNKS DICED",
+          "",
+          "",
+          "SALMON ",
+          "",
+          "",
+          "DICED BACON"
+        ],
+        [
+          "",
+          "",
+          "PARAMETER ",
+          "VALUE",
+          "",
+          "PARAMETER ",
+          "VALUE",
+          "",
+          "PARAMETER ",
+          "VALUE"
+        ],
+        [
+          "",
+          "",
+          "MACHINE_",
+          "V MAG",
+          "",
+          "MACHINE_",
+          "Wanne",
+          "",
+          "MACHINE_",
+          "Wanne"
+        ],
+        [
+          "",
+          "",
+          "MACHINE CAPACITY_",
+          "200 KG",
+          "",
+          "MACHINE CAPACITY_",
+          "300 L",
+          "",
+          "MACHINE CAPACITY_",
+          "300 L"
+        ],
+        [
+          "",
+          "",
+          "MAX INPUT LOAD_",
+          "180KG",
+          "",
+          "MAX INPUT LOAD_",
+          "",
+          "",
+          "MAX INPUT LOAD_"
+        ],
+        [
+          "",
+          "",
+          "APROX. CHUNKS x UNITS",
+          "",
+          "",
+          "APROX. SALMON UNITS",
+          "",
+          "",
+          "APROX. SALMON UNITS"
+        ],
+        [
+          "",
+          "",
+          "CHUNKS - Per GN 2/1 53x65x2cm",
+          "",
+          "",
+          "SALMON - Per GN 2/1 53x65x2cm",
+          "",
+          "",
+          "SALMON - Per GN 2/1 53x65x2cm"
+        ],
+        [
+          "",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "4 KG",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "35",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "2 KG"
+        ],
+        [
+          "",
+          "",
+          "SALMON - Per OVEN RACK",
+          "",
+          "",
+          "SALMON - Per OVEN RACK",
+          "",
+          "",
+          "SALMON - Per OVEN RACK"
+        ],
+        [
+          "",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18"
+        ],
+        [
+          "",
+          "",
+          "SALMON MAX per OVEN RACK",
+          "72.00 KG",
+          "",
+          "SALMON MAX per OVEN RACK",
+          "630",
+          "",
+          "SALMON MAX per OVEN RACK",
+          "36.00 KG"
+        ]
+      ]
+    },
+    {
+      "title": "Copy of PROTEIN-DEBOX_V-Mag200L_DE (Provisional)",
+      "sheetId": 2038346837,
+      "values": [
+        [],
+        [],
+        [
+          "",
+          "",
+          "PROTEIN DEBOX "
+        ],
+        [
+          "",
+          "",
+          "Parametersteuerung - Pro V-Mag 200 L"
+        ],
+        [
+          "",
+          "",
+          "PARAMETER ",
+          "VALUE"
+        ],
+        [
+          "",
+          "",
+          "MASCHINE_",
+          "PRO V-MAG 200L"
+        ],
+        [
+          "",
+          "",
+          "MASCHINENKAPAZITÄT_",
+          "200 L"
+        ],
+        [
+          "",
+          "",
+          "MAXIMALE BELADUNG_",
+          "90 KG"
+        ],
+        [
+          "",
+          "",
+          "WASSERVERHÄLTNIS_",
+          "1:1"
+        ],
+        [
+          "",
+          "",
+          "SALZVERHÄLTNIS_",
+          "0.89% (0.8KG-90KG)"
+        ],
+        [
+          "",
+          "",
+          "STANDARDZYKLUSZEIT_",
+          "4 STUNDEN"
+        ],
+        [],
+        [
+          "",
+          "",
+          "PROTEIN-TYP_",
+          " ZUSCHNITT_ ",
+          " GEWICHT_ (KG) ",
+          "GESCHÄTZTE STÜCKZAHL_    ",
+          "   ZEIT_ ",
+          "WASSER_ (KG)  ",
+          "SALZ_ (KG)",
+          "TABLETT-SPEZIFIKATION_",
+          "GRILL SPEC"
+        ],
+        [
+          "",
+          "",
+          "Huhn",
+          "Brust",
+          "90",
+          "720",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "30 PCS",
+          "GRILL-EMPFEHLUNGEN HÄHNCHENBRUST.pdf"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Stücke",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "4 KG / GN 2:1"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Schenkel",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "Schweinefleisch",
+          "Speck",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "2 KG / GN 2:1"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Koteletts",
+          "",
+          "160",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "12 PCS"
+        ],
+        [
+          "",
+          "",
+          "",
+          "Filet",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "12 PCS",
+          "GRILL-EMPFEHLUNGEN SCHWEINEFILET.pdf"
+        ],
+        [
+          "",
+          "",
+          "Fisch",
+          "Lachs",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG",
+          "28 PCS pro GN 2/1"
+        ],
+        [
+          "",
+          "",
+          "Meeresfrüchte",
+          "Garnelen",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "Hacktaig für Burger/Fleichbällchen",
+          "Burger/ Bällchen",
+          "60",
+          "",
+          "4:00:00",
+          "",
+          "",
+          "30 PCS pro GN 2/1",
+          "GRILL-EMPFEHLUNGEN BURGERFLEISCH.pdf"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "4:00:00",
+          "90",
+          "0.80 KG"
+        ],
+        [],
+        [
+          "",
+          "",
+          "CHICKEN BREAST - Per V-Mag 200 L",
+          "",
+          "",
+          "BURGER MEAT",
+          "",
+          "",
+          "PORK TENDERLOIN"
+        ],
+        [
+          "",
+          "",
+          "PARAMETER ",
+          "VALUE",
+          "",
+          "PARAMETER ",
+          "VALUE",
+          "",
+          "PARAMETER ",
+          "VALUE"
+        ],
+        [
+          "",
+          "",
+          "MACHINE_",
+          "V-MAG 200L",
+          "",
+          "MACHINE_",
+          "",
+          "",
+          "MACHINE_"
+        ],
+        [
+          "",
+          "",
+          "MACHINE CAPACITY_",
+          "200 L",
+          "",
+          "MACHINE CAPACITY_",
+          "",
+          "",
+          "MACHINE CAPACITY_"
+        ],
+        [
+          "",
+          "",
+          "MAX INPUT LOAD_",
+          "90.00 KG",
+          "",
+          "MAX INPUT LOAD_",
+          "",
+          "",
+          "MAX INPUT LOAD_"
+        ],
+        [
+          "",
+          "",
+          "APROX. CHICKEN BREAST UNITS",
+          "562",
+          "",
+          "APROX. BURGER MEAT UNITS",
+          "0",
+          "",
+          "APROX. PORK TENDERLOIN UNITS"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST - Per GN 2/1 53x65x2cm",
+          "",
+          "",
+          "BURGER MEAT - Per GN 2/1 53x65x2cm",
+          "",
+          "",
+          "PORK TENDERLOIN - Per GN 2/1 53x65x2cm"
+        ],
+        [
+          "",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "30 UNITS",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "30 UNITS",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "12 UNITS"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST - Per OVEN RACK",
+          "",
+          "",
+          "BURGER MEAT - Per OVEN RACK",
+          "",
+          "",
+          "PORK TENDERLOIN - Per OVEN RACK"
+        ],
+        [
+          "",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST MAX per OVEN RACK",
+          "540",
+          "",
+          "BURGER MEAT MAX per OVEN RACK",
+          "540",
+          "",
+          "PORK TENDERLOIN MAX per OVEN RACK",
+          "216"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST - Per GRILL",
+          "",
+          "",
+          "BURGER MEAT - Per GRILL",
+          "",
+          "",
+          "PORK TENDERLOIN - Per GRILL"
+        ],
+        [
+          "",
+          "",
+          "CHICKEN BREAST MAX per GRILL",
+          "60",
+          "",
+          "BURGER MEAT MAX per GRILL",
+          "45",
+          "",
+          "PORK TENDERLOIN MAX per GRILL",
+          "20"
+        ],
+        [],
+        [
+          "",
+          "",
+          "CHICKEN CHUNKS DICED",
+          "",
+          "",
+          "SALMON ",
+          "",
+          "",
+          "DICED BACON"
+        ],
+        [
+          "",
+          "",
+          "PARAMETER ",
+          "VALUE",
+          "",
+          "PARAMETER ",
+          "VALUE",
+          "",
+          "PARAMETER ",
+          "VALUE"
+        ],
+        [
+          "",
+          "",
+          "MACHINE_",
+          "V MAG",
+          "",
+          "MACHINE_",
+          "Wanne",
+          "",
+          "MACHINE_",
+          "Wanne"
+        ],
+        [
+          "",
+          "",
+          "MACHINE CAPACITY_",
+          "200 KG",
+          "",
+          "MACHINE CAPACITY_",
+          "300 L",
+          "",
+          "MACHINE CAPACITY_",
+          "300 L"
+        ],
+        [
+          "",
+          "",
+          "MAX INPUT LOAD_",
+          "180KG",
+          "",
+          "MAX INPUT LOAD_",
+          "",
+          "",
+          "MAX INPUT LOAD_"
+        ],
+        [
+          "",
+          "",
+          "APROX. SALMON UNITS",
+          "",
+          "",
+          "APROX. SALMON UNITS",
+          "",
+          "",
+          "APROX. SALMON UNITS"
+        ],
+        [
+          "",
+          "",
+          "Chunks Per GN 2/1 53x65x2cm",
+          "",
+          "",
+          "SALMON - Per GN 2/1 53x65x2cm",
+          "",
+          "",
+          "SALMON - Per GN 2/1 53x65x2cm"
+        ],
+        [
+          "",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "4 KG",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "35",
+          "",
+          "GN 2/1 MAX CAPACITY",
+          "2 KG"
+        ],
+        [
+          "",
+          "",
+          "SALMON - Per OVEN RACK",
+          "",
+          "",
+          "SALMON - Per OVEN RACK",
+          "",
+          "",
+          "SALMON - Per OVEN RACK"
+        ],
+        [
+          "",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18",
+          "",
+          "GN 2/1 tray units per OVEN RACK",
+          "18"
+        ],
+        [
+          "",
+          "",
+          "SALMON MAX per OVEN RACK",
+          "72.00 KG",
+          "",
+          "SALMON MAX per OVEN RACK",
+          "630",
+          "",
+          "SALMON MAX per OVEN RACK",
+          "36.00 KG"
+        ]
+      ]
+    },
+    {
+      "title": "VEGGIE-DEBOX Bible_EN (Provisional)",
+      "sheetId": 732210423,
+      "values": [
+        [
+          "65"
+        ],
+        [],
+        [
+          "",
+          "VEGGIE DEBOX"
+        ],
+        [
+          "",
+          "GASTRONORM TRAY OVEN CAPACITY MATRIX_"
+        ],
+        [
+          "",
+          "GN SPEC._",
+          "DEPTH_ (mm)",
+          "OVEN CAPACITY_ (UNITS)",
+          "FUNCTION_"
+        ],
+        [
+          "",
+          "GN 1:1 20 mm NP",
+          "20",
+          "40",
+          "Tap/Lid"
+        ],
+        [
+          "",
+          "GN 1:1 65 mm NP",
+          "65",
+          "12",
+          "Grains / Sauces"
+        ],
+        [
+          "",
+          "GN 1:1 100 mm NP",
+          "100",
+          "8",
+          "Spices (to organize)"
+        ],
+        [
+          "",
+          "GN 1:1 200 mm NP",
+          "200",
+          "4",
+          "Complementary"
+        ],
+        [
+          "",
+          "GN 2:1 20 mm NP",
+          "20",
+          "20",
+          "General / All"
+        ],
+        [
+          "",
+          "GN 1:1 100 mm P",
+          "100",
+          "8",
+          "Frozen / IQF"
+        ],
+        [
+          "",
+          "GN 1:1 150 mm P",
+          "150",
+          "5",
+          "Production / Decant excess liquid-fat-etc"
+        ],
+        [
+          "",
+          "CATEGORY_",
+          "ITEM_",
+          "MAX. WEIGHT_ (LB)",
+          "CAPACITY CHALUPA_ (MAX. 453 KG)",
+          "CAPACITY WANNE_ (MAX. 300 L)",
+          "KG PRODUCT_ EA 2:1 GN",
+          "MAX. TRAY EA WANNE_",
+          "OVEN RACK CAPACITY 40/20_",
+          "NOTES_"
+        ],
+        [
+          "",
+          "Fresh Vegetable",
+          "Fresh & Trimmed Green Bean",
+          "260.00 LB",
+          "118.00 KG",
+          "75",
+          "5",
+          "15"
+        ],
+        [
+          "",
+          "Fresh Vegetable",
+          "Fresh & Trimmed Green Beans No Spices",
+          "400.00 LB",
+          "183.00 KG",
+          "120",
+          "5",
+          "24"
+        ],
+        [
+          "",
+          "Frozen IQF Vegetable",
+          "IQF Green Beans",
+          "330.00 LB",
+          "150.00 KG",
+          "60",
+          "2",
+          "30"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "1-1/2 Cut Green Beans",
+          "360.00 LB",
+          "163.00 KG",
+          "105",
+          "3",
+          "35"
+        ],
+        [
+          "",
+          "Fresh Vegetable",
+          "Broccoli Florets",
+          "220.00 LB",
+          "100.00 KG",
+          "40",
+          "3",
+          "13"
+        ],
+        [
+          "",
+          "Frozen IQF Vegetable",
+          "IQF Broccoli Florets",
+          "300.00 LB",
+          "136.00 KG",
+          "40",
+          "3",
+          "13"
+        ],
+        [
+          "",
+          "Frozen IQF Vegetable",
+          "IQF Cauliflower Florets",
+          "300.00 LB",
+          "136.00 KG",
+          "40",
+          "3",
+          "13"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "Mixed 5mm\" Diced Vegetables",
+          "450.00 LB",
+          "204.00 KG",
+          "135",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "Mixed 10mm\" Diced Vegetables",
+          "425.00 LB",
+          "193.00 KG",
+          "125",
+          "3",
+          "41"
+        ],
+        [
+          "",
+          "Protein – Animal",
+          "Eggs",
+          "900.00 LB",
+          "408.00 KG",
+          "270",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Sauce / Liquid",
+          "Sauces",
+          "900.00 LB",
+          "408.00 KG",
+          "270",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Fresh Vegetable",
+          "Shredded Brussel Sprouts",
+          "200.00 LB",
+          "91.00 KG",
+          "60",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Fresh Vegetable",
+          "Zucchini Noodles",
+          "250.00 LB",
+          "113.00 KG",
+          "70",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "Diced Broccoli",
+          "400.00 LB",
+          "181.00 KG",
+          "115",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "Diced Cauliflower",
+          "400.00 LB",
+          "181.00 KG",
+          "115",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "Halve Brussel Sprouts",
+          "200.00 LB",
+          "91.00 KG",
+          "60",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Fresh Vegetable",
+          "Cherry Tomatoes",
+          "500.00 LB",
+          "227.00 KG",
+          "150",
+          "4",
+          "37"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "10mm Diced Zucchini",
+          "450.00 LB",
+          "204.00 KG",
+          "135",
+          "3",
+          "45"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "10mm Coin Cut Carrot",
+          "350.00 LB",
+          "159.00 KG",
+          "70",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "5mm Coin Cut Carrot",
+          "375.00 LB",
+          "170.00 KG",
+          "70",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Fresh Vegetable",
+          "Cauliflower Florets",
+          "300.00 LB",
+          "136.00 KG",
+          "90",
+          "5",
+          "18"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "10mm Diced Cabbage",
+          "325.00 LB",
+          "147.00 KG",
+          "95",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Fresh Vegetable",
+          "Corn Kernels",
+          "300.00 LB",
+          "136.00 KG",
+          "90",
+          "3",
+          "30"
+        ],
+        [
+          "",
+          "Mushroom",
+          "Sliced Cremini Mushrooms",
+          "250.00 LB",
+          "113.00 KG",
+          "70",
+          "2",
+          "35"
+        ],
+        [
+          "",
+          "Mushroom",
+          "Sliced Button Mushrooms",
+          "250.00 LB",
+          "113.00 KG",
+          "70",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Mushroom",
+          "Sliced Portobello Mushrooms",
+          "220.00 LB",
+          "100.00 KG",
+          "65",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "Cauliflower Rice",
+          "300.00 LB",
+          "136.00 KG",
+          "90",
+          "6.8",
+          "13"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "10mm Diced Russet Potatoes",
+          "360.00 LB",
+          "163.00 KG",
+          "105",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "10mm Diced Yukon Potatoes",
+          "360.00 LB",
+          "163.00 KG",
+          "105",
+          "3",
+          "35"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "10mm Diced Sweet Potatoes",
+          "420.00 LB",
+          "191.00 KG",
+          "125",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "10mm Diced Pepper",
+          "420.00 LB",
+          "191.00 KG",
+          "125",
+          "8",
+          "15"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "5mm Diced Russet Potatoes",
+          "390.00 LB",
+          "177.00 KG",
+          "115",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "5mm Diced Yukon Potatoes",
+          "390.00 LB",
+          "177.00 KG",
+          "115",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "5mm Sliced Russet Potatoes",
+          "330.00 LB",
+          "150.00 KG",
+          "95",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Legume",
+          "Edamame Mixed Vegetable",
+          "200.00 LB",
+          "130.00 KG",
+          "85",
+          "2",
+          "42"
+        ],
+        [
+          "",
+          "Legume",
+          "Edamame",
+          "250.00 LB",
+          "",
+          "0",
+          "",
+          "#DIV/0!"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "5mm Shredded Cabbage",
+          "330.00 LB",
+          "113.00 KG",
+          "70",
+          "5.6",
+          "12"
+        ],
+        [
+          "",
+          "Frozen IQF Vegetable",
+          "Artichoke Quartered",
+          "450.00 LB",
+          "150.00 KG",
+          "95",
+          "7.2",
+          "13"
+        ],
+        [
+          "",
+          "Protein – Plant Based",
+          "5-Spice Smoked Tofu",
+          "375.00 LB",
+          "204.00 KG",
+          "135",
+          "8",
+          "16"
+        ],
+        [
+          "",
+          "Cut / Processed Vegetable",
+          "5mm Sliced Peppers",
+          "360.00 LB",
+          "170.00 KG",
+          "110",
+          "6",
+          "18"
+        ],
+        [
+          "",
+          "Root Vegetable",
+          "Wedges Potatoes",
+          "",
+          "140.00 KG",
+          "90",
+          "4",
+          "22"
+        ],
+        [
+          "",
+          "Nuts / Dry",
+          "Oven Nuts",
+          "",
+          "",
+          "0",
+          "2",
+          "0"
+        ],
+        [
+          "",
+          "Frozen IQF Vegetable",
+          "Spinach IQF",
+          "",
+          "",
+          "0",
+          "",
+          "#DIV/0!"
+        ],
+        [
+          "",
+          "Leafy / Herb",
+          "Spinach Fresh",
+          "",
+          "",
+          "0",
+          "1",
+          "0"
+        ],
+        [
+          "",
+          "Allium",
+          "5mm Diced Leek",
+          "",
+          "",
+          "0",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Leafy / Herb",
+          "Basil Leaves Fresh",
+          "",
+          "",
+          "0",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "",
+          "Allium",
+          "Scallion",
+          "",
+          "",
+          "0",
+          "2",
+          "",
+          "40"
+        ],
+        [
+          "",
+          "Allium",
+          "Scallion",
+          "",
+          "",
+          "0",
+          "2",
+          "",
+          "40"
+        ],
+        [
+          "",
+          "Pre-Roasted / Processed",
+          "Roasted Garlic",
+          "",
+          "",
+          "0",
+          "",
+          "#DIV/0!"
+        ]
+      ]
+    },
+    {
+      "title": "Copy of VEGGIE-DEBOX Bible_DE (Provisional)",
+      "sheetId": 1164767789,
+      "values": [
+        [],
+        [],
+        [
+          "",
+          "VEGGIE DEBOX"
+        ],
+        [
+          "",
+          "GASTRONORM-TABLETT-OFEN-KAPAZITÄTSMATRIX_"
+        ],
+        [
+          "",
+          "GN SPEZ._",
+          "TIEFE_ (mm)",
+          "OFENKAPAZITÄT_ (EINHEITEN)",
+          "FUNKTION_"
+        ],
+        [
+          "",
+          "GN 1:1 65 mm NP",
+          "65",
+          "#REF!",
+          "Getreide/Soßen"
+        ],
+        [
+          "",
+          "GN 1:1 100 mm NP",
+          "100",
+          "#REF!",
+          "Gewürze (zum Ordnen)"
+        ],
+        [
+          "",
+          "GN 1:1 200 mm NP",
+          "200",
+          "#REF!",
+          "Ergänzend"
+        ],
+        [
+          "",
+          "GN 2:1 20 mm NP",
+          "20",
+          "20",
+          "Allgemein/Alle"
+        ],
+        [
+          "",
+          "GN 1:1 100 mm P",
+          "100",
+          "#REF!",
+          "Gefroren/IQF"
+        ],
+        [
+          "",
+          "GN 1:1 150 mm P",
+          "150",
+          "#REF!",
+          "Produktion/Überschüssige Flüssigkeit/Fett usw. abgießen"
+        ],
+        [
+          "",
+          "KATEGORIE_",
+          "ITEM_",
+          "MAX. GEWICHT (LB)",
+          "KAPAZITÄT CHALUPA_ (MAX. 453 KG)",
+          "FASSUNGSVERMÖGEN WANNE_ (MAX. 300 L)",
+          "KG PRODUKT_ EA 2:1 GN",
+          "MAX. TABLETT EA WANNE_",
+          "OFENROST-KAPAZITÄT 40/20_",
+          "HINWEISE_"
+        ],
+        [],
+        [
+          "FA-DE Manual stretch film, transparent, 17my, 500mm x 280m / Handstretchfolie transparent 17my, 500mm x 280m",
+          "Frisches Gemüse",
+          "Frische & Geputzte Grüne Bohnen",
+          "260.00 LB",
+          "118.00 KG",
+          "75",
+          "5",
+          "15"
+        ],
+        [
+          "FA-DE Machine stretch wrapping film XCP, 2100 m / Automatenstretchfolie XCP, 2100m",
+          "Frisches Gemüse",
+          "Frische & Geputzte Grüne Bohnen Ohne Gewürze",
+          "400.00 LB",
+          "183.00 KG",
+          "120",
+          "5",
+          "24"
+        ],
+        [
+          "FA-NO Mozzarella Burger & Roasted Potatoes (FE0601)",
+          "Tiefgekühltes IQF-Gemüse",
+          "IQF Grüne Bohnen",
+          "330.00 LB",
+          "150.00 KG",
+          "60",
+          "2",
+          "30"
+        ],
+        [
+          "FA-DE Vinegar, Balsamic /Essig, Balsamico",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "1–1/2 Geschnittene Grüne Bohnen",
+          "360.00 LB",
+          "163.00 KG",
+          "105",
+          "3",
+          "35"
+        ],
+        [
+          "FA-DE Tamari, Reduced Sodium Soy Sauce /Tamari, natriumreduzierte Sojasauce",
+          "Frisches Gemüse",
+          "Brokkoliröschen",
+          "220.00 LB",
+          "100.00 KG",
+          "40",
+          "5",
+          "8"
+        ],
+        [
+          "FA-DE Oil, Sesame Seed, Toasted /Öl, Sesamsamen, geröstet",
+          "Tiefgekühltes IQF-Gemüse",
+          "IQF Brokkoliröschen",
+          "300.00 LB",
+          "136.00 KG",
+          "40",
+          "3",
+          "13"
+        ],
+        [
+          "FA-DE Oil, Olive, Extra Virgin /Öl, Olivenöl, Natives Extra",
+          "Tiefgekühltes IQF-Gemüse",
+          "IQF Blumenkohlröschen",
+          "300.00 LB",
+          "136.00 KG",
+          "40",
+          "3",
+          "13"
+        ],
+        [
+          "FA-DE Oil, Olive /Öl, Olivenöl",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "Gemischtes 5 mm Würfelgemüse",
+          "450.00 LB",
+          "204.00 KG",
+          "135",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-NO Tetrazzini med kylling og svampe (FE0386)",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "Gemischtes 10 mm Würfelgemüse",
+          "425.00 LB",
+          "193.00 KG",
+          "125",
+          "3",
+          "41"
+        ],
+        [
+          "FA-DE Hähnchen-Pilz-Tetrazzini (FE0386)",
+          "Protein – Tierisch",
+          "Eier",
+          "900.00 LB",
+          "408.00 KG",
+          "270",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Barramundi Fillet, Skinless, 140g",
+          "Sauce / Flüssigkeit",
+          "Saucen",
+          "900.00 LB",
+          "408.00 KG",
+          "270",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Pistachios, Raw/Pistazien, roh",
+          "Frisches Gemüse",
+          "Geraspelte Rosenkohl",
+          "200.00 LB",
+          "91.00 KG",
+          "60",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Cheese, Cream, 13% Fat (Milk) /Käse, Sahne, 13% Fett",
+          "Frisches Gemüse",
+          "Zucchini-Nudeln",
+          "250.00 LB",
+          "113.00 KG",
+          "70",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Capers, Preserved/Kapern, konserviert",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "Gewürfelter Brokkoli",
+          "400.00 LB",
+          "181.00 KG",
+          "115",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-NO Ice Pack (500 ml)",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "Gewürfelter Blumenkohl",
+          "400.00 LB",
+          "181.00 KG",
+          "115",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Chain Ice Pack (3 x 500 ml)",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "Halbierter Rosenkohl",
+          "200.00 LB",
+          "91.00 KG",
+          "60",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Beans, Black, Low Sodium, Aseptic /Bohnen, schwarz, natriumarm, aseptisch",
+          "Frisches Gemüse",
+          "Kirschtomaten",
+          "500.00 LB",
+          "227.00 KG",
+          "150",
+          "4",
+          "37"
+        ],
+        [
+          "FACTOR - Sleeve Green / Vegetarian",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "10 mm Gewürfelte Zucchini",
+          "450.00 LB",
+          "204.00 KG",
+          "135",
+          "3",
+          "45"
+        ],
+        [
+          "FA-DE Potatoes, Diced 10mm /Kartoffeln, gewürfelt, 10 mm",
+          "Wurzelgemüse",
+          "10 mm Karotten in Scheiben",
+          "350.00 LB",
+          "159.00 KG",
+          "70",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Heavy Cream 35% /Sahne 35%",
+          "Wurzelgemüse",
+          "5 mm Karotten in Scheiben",
+          "375.00 LB",
+          "170.00 KG",
+          "70",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Stock Concentrate, Classic Reduced Brown /Stammkonzentrat, klassisches, reduziertes Braun",
+          "Frisches Gemüse",
+          "Blumenkohlröschen",
+          "300.00 LB",
+          "136.00 KG",
+          "90",
+          "5",
+          "18"
+        ],
+        [
+          "FA-DE Feurig-knuspriger Lachs (FEA008)",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "10 mm Gewürfelter Weißkohl",
+          "325.00 LB",
+          "147.00 KG",
+          "95",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "Factor TZ B2S Spirulina Ginger Lime Ginger Shot (Marketing)",
+          "Frisches Gemüse",
+          "Maiskörner",
+          "300.00 LB",
+          "136.00 KG",
+          "90",
+          "3",
+          "30"
+        ],
+        [
+          "FA-DE Juice, Lemon /Saft, Zitrone",
+          "Pilze",
+          "Geschnittene Cremini-Pilze",
+          "250.00 LB",
+          "113.00 KG",
+          "70",
+          "2",
+          "35"
+        ],
+        [
+          "FA-DE Onion, Pearl, IQF /Zwiebeln, Perlen, IQF",
+          "Pilze",
+          "Geschnittene Champignons",
+          "250.00 LB",
+          "113.00 KG",
+          "70",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Retention Flyer-5",
+          "Pilze",
+          "Geschnittene Portobello-Pilze",
+          "220.00 LB",
+          "100.00 KG",
+          "65",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-NO Large Box (G) - NORDICS",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "Blumenkohlreis",
+          "300.00 LB",
+          "136.00 KG",
+          "90",
+          "6.8",
+          "13"
+        ],
+        [
+          "FA-DE Baking Powder /Backpulver",
+          "Wurzelgemüse",
+          "10 mm Gewürfelte Russet-Kartoffeln",
+          "360.00 LB",
+          "163.00 KG",
+          "105",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Puma Duffel Bag Black",
+          "Wurzelgemüse",
+          "10 mm Gewürfelte Yukon-Kartoffeln",
+          "360.00 LB",
+          "163.00 KG",
+          "105",
+          "3",
+          "35"
+        ],
+        [
+          "FA-DE Gegrilltes Hähnchen mit Knoblauch-Kräutern (FEA006)",
+          "Wurzelgemüse",
+          "10 mm Gewürfelte Süßkartoffeln",
+          "420.00 LB",
+          "191.00 KG",
+          "125",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Rosemary, IQF /Rosmarin, IQF",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "10 mm Gewürfelte Paprika",
+          "420.00 LB",
+          "191.00 KG",
+          "125",
+          "8",
+          "15"
+        ],
+        [
+          "FA-DE Sage, IQF /Salbei, IQF",
+          "Wurzelgemüse",
+          "5 mm Gewürfelte Russet-Kartoffeln",
+          "390.00 LB",
+          "177.00 KG",
+          "115",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Blank Sleeve (OLD)",
+          "Wurzelgemüse",
+          "5 mm Gewürfelte Yukon-Kartoffeln",
+          "390.00 LB",
+          "177.00 KG",
+          "115",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Carrots, Diced 10mm /Karotten, gewürfelt, 10 mm",
+          "Wurzelgemüse",
+          "5 mm Geschnittene Russet-Kartoffeln",
+          "330.00 LB",
+          "150.00 KG",
+          "95",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Green Peas, IQF/Grüne Erbsen, IQF",
+          "Hülsenfrucht",
+          "Edamame-Gemüsemischung",
+          "200.00 LB",
+          "130.00 KG",
+          "85",
+          "2",
+          "42"
+        ],
+        [
+          "FA-DE Sugar, Coconut /Zucker, Kokosnuss",
+          "Hülsenfrucht",
+          "Edamame",
+          "250.00 LB",
+          "",
+          "0",
+          "",
+          "#DIV/0!"
+        ],
+        [
+          "FA-DE Parsley, Chopped /Petersilie, gehackt",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "5 mm Geschnittener Weißkohl",
+          "330.00 LB",
+          "113.00 KG",
+          "70",
+          "5.6",
+          "12"
+        ],
+        [
+          "FA-NO Welcome Booklet (TK)",
+          "Tiefgekühltes IQF-Gemüse",
+          "Viertel Artischocken",
+          "450.00 LB",
+          "150.00 KG",
+          "95",
+          "7.2",
+          "13"
+        ],
+        [
+          "FA-NO Nordics Box Size XS",
+          "Protein – Pflanzlich",
+          "5-Gewürz Geräucherter Tofu",
+          "375.00 LB",
+          "204.00 KG",
+          "135",
+          "8",
+          "16"
+        ],
+        [
+          "FA-DE Pork, Pulled, Sous Vide/Schweinefleisch, Pulled, Sous Vide",
+          "Geschnittenes / Verarbeitetes Gemüse",
+          "5 mm Geschnittene Paprika",
+          "360.00 LB",
+          "170.00 KG",
+          "110",
+          "6",
+          "18"
+        ],
+        [
+          "Factor_ Tray Film TER HB 50 PET EZ PEEL 62 μm - 550lm",
+          "Wurzelgemüse",
+          "Kartoffelspalten",
+          "",
+          "163.00 KG",
+          "90",
+          "4",
+          "22"
+        ],
+        [
+          "FA-DE Aubergine, Diced 20mm/Aubergine, gewürfelt, 20 mm",
+          "Nüsse / Trockenware",
+          "Ofengeröstete Nüsse",
+          "",
+          "",
+          "0",
+          "2",
+          "0"
+        ],
+        [
+          "FA-DE Onion, Red, Diced 10mm/Zwiebeln, rot, gewürfelt, 10 mm",
+          "Tiefgekühltes IQF-Gemüse",
+          "FA-DE Spinach, Frozen Leaf/Spinat, gefrorener Blattspinat",
+          "",
+          "",
+          "0",
+          "",
+          "#DIV/0!"
+        ],
+        [
+          "FA-DE Flour, Almond /Mehl, Mandel",
+          "Blattgemüse / Kräuter",
+          "Frischer Spinat",
+          "",
+          "",
+          "0",
+          "1",
+          "0"
+        ],
+        [
+          "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+          "Allium (Lauchgewächs)",
+          "5 mm Gewürfelter Lauch",
+          "",
+          "",
+          "0",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FA-DE Zucchini, Spiralized Noodles /Zucchini, Spiralnudeln",
+          "Blattgemüse / Kräuter",
+          "Frische Basilikumblätter",
+          "",
+          "",
+          "0",
+          "TBD",
+          "#VALUE!"
+        ],
+        [
+          "FACTOR - Sleeve Red / Pork",
+          "Allium (Lauchgewächs)",
+          "Frühlingszwiebeln",
+          "",
+          "",
+          "0",
+          "2",
+          "0",
+          "40"
+        ],
+        [
+          "FA-DE Peanut Butter /Erdnussbutter",
+          "Allium (Lauchgewächs)",
+          "Frühlingszwiebeln",
+          "",
+          "",
+          "0",
+          "2",
+          "0",
+          "40"
+        ],
+        [
+          "FA-DE Starch, Tapioca /Stärke, Tapioka",
+          "Vorgegart / Verarbeitet",
+          "Gerösteter Knoblauch",
+          "",
+          "",
+          "0",
+          "",
+          "#DIV/0!"
+        ],
+        [
+          "FA-DE Ginger, IQF, Diced 4 mm /Ingwer, IQF, gewürfelt 4 mm"
+        ],
+        [
+          "FA-DE Wine, White/Wein, Weiß"
+        ],
+        [
+          "fa-test"
+        ],
+        [
+          "FA-DE Medium Box"
+        ],
+        [
+          "FA-DE Bell Peppers, Green, Diced 10mm /Paprika, grün, gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Trustpilot Flyer"
+        ],
+        [
+          "FA-DE Cheese, Feta /Käse, Feta"
+        ],
+        [
+          "FA-NO Grillet kylling med hvidlød og urter (FEA006)"
+        ],
+        [
+          "FA-DE Reserved Braising Liquid / Zurückgehaltene Schmorfllüssigkeit"
+        ],
+        [
+          "FA-DE Blank Sleeve - All Black"
+        ],
+        [
+          "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Butter, Unsalted /Butter, ungesalzen"
+        ],
+        [
+          "FA-DE Coconut, Dried Shredded/Kokosnuss, getrocknete Raspeln"
+        ],
+        [
+          "FA-DE Tomatoes, Diced 10mm /Tomaten, gewürfelt, 10 mm"
+        ],
+        [
+          "FA-DE Carrots, Coin Cut 5mm /Karotten, Münzschnitt 5 mm"
+        ],
+        [
+          "FA-DE Vinegar, Rice /Essig, Reis"
+        ],
+        [
+          "FA-DE Hydroflask Black"
+        ],
+        [
+          "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm"
+        ],
+        [
+          "FA-DE Beef, Pulled, Sous Vide/Rindfleisch, Pulled, Sous Vide"
+        ],
+        [
+          "FA-DE Sour Cream /Sauerrahm"
+        ],
+        [
+          "FA-DE Basil, Fresh /Basilikum, frisch"
+        ],
+        [
+          "FA-DE Milk, Whole /Milch, voll"
+        ],
+        [
+          "FA-DE Beans, Kidney, Aseptic /Bohne, Kidnez, aseptisch"
+        ],
+        [
+          "FA-DE Green Beans, Fresh and Trimmed/Grüne Bohnen, frisch und geschnitten"
+        ],
+        [
+          "Factor TZ B2S Ginger Lemon Apple Ginger Shot (Marketing)"
+        ],
+        [
+          "FA-DE Cabbage, White, Shredded 5mm /Weißkohl, geraspelt, 5 mm"
+        ],
+        [
+          "FA-DE Mushroom, Button, Sliced, Washed /Pilz, Knopf, geschnitten, gewaschen"
+        ],
+        [
+          "FA-DE Thyme, IQF /Thymian, IQF"
+        ],
+        [
+          "FA-DE Pasta, Whole Wheat, IQF/Nudeln, vollkorn, IQF"
+        ],
+        [
+          "FA-DE Date Paste/Dattelpaste"
+        ],
+        [
+          "FA-DE Onion, Spanish, Diced 10mm /Zwiebel, Spanisch, gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Onion, Spanish, Sliced 5mm /Zwiebel, spanisch, in Scheiben geschnitten, 5 mm"
+        ],
+        [
+          "FA-DE Maple Syrup/Ahornsirup"
+        ],
+        [
+          "FA-DE Mint, Fresh/Minze, frisch"
+        ],
+        [
+          "FA-DE Dates diced 5-7mm /gehackte Datteln 5-7mm"
+        ],
+        [
+          "FA-DE Cranberries, IQF/Preiselbeere, IQF"
+        ],
+        [
+          "FA-DE Chicken Breast, Chunked, Boneless Skinless /Hähnchenbrust, in Stücken, ohne Knochen und ohne Haut"
+        ],
+        [
+          "FA-DE Sunflower Seeds /Sonnenblumenkerne"
+        ],
+        [
+          "FA-DE Stevia Sweetener"
+        ],
+        [
+          "FA-DE Tahini"
+        ],
+        [
+          "FA-DE Beetroot, Diced 20mm /Rote Bete, gewürfelt, 20 mm"
+        ],
+        [
+          "FA-DE Celery, Diced 5mm /Sellerie, gewürfelt 5 mm"
+        ],
+        [
+          "FA-DE Cheese, Emmentaler, Shredded /Käse, Emmentaler, gerieben"
+        ],
+        [
+          "FA-DE Tomatoes, Sun - Dried Julienned /Tomaten, sonnengetrocknete Julienne"
+        ],
+        [
+          "FA-DE Heavy Cream 20% /Sahne 20%"
+        ],
+        [
+          "FA-NO Medium Box (F) - NORDICS"
+        ],
+        [
+          "FA-DE Diced Apricots, Dried/getrocknete, gewürfelte Aprikosen"
+        ],
+        [
+          "Factor TZ B2S Turmeric Cayenne Pineapple Ginger Shot (Marketing)"
+        ],
+        [
+          "FA-DE Gum, Xanthan /Gummi, Xanthan"
+        ],
+        [
+          "FA-DE Jalapeno Peppers, Nacho Sliced /Jalapeno-Paprikaschoten, Nacho in Scheiben geschnitten"
+        ],
+        [
+          "FA-DE Onion, Red, Sliced 5mm /Zwiebeln, rot, geschnitten 5 mm"
+        ],
+        [
+          "FA-DE Blank Sleeve Black & White Design"
+        ],
+        [
+          "FA-DE Liner L1"
+        ],
+        [
+          "FA-DE Butternut Squash, diced 10 mm/Butternusskürbis, Gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Tomatoes, Diced 5mm /Tomaten, gewürfelt, 5 mm"
+        ],
+        [
+          "FA-DE Milk, Semi-Skimmed /Milch, teilentrahmt"
+        ],
+        [
+          "FA-DE Mushroom, Portobello, Sliced, Washed /Pilze, Portobello, in Scheiben geschnitten, gewaschen"
+        ],
+        [
+          "FA-DE Cheese, Red Cheddar/Käse, Roter Cheddar"
+        ],
+        [
+          "FA-DE Bell Peppers, Green, Sliced 10mm /Paprika, grün, in Scheiben geschnitten, 10 mm"
+        ],
+        [
+          "FA-DE Cheese, Cream 22% Fat /Käse, Sahne 22% Fett"
+        ],
+        [
+          "FA-DE Spinach, Fresh, Stem Off /Spinat, frisch, ohne Stiel"
+        ],
+        [
+          "FA-DE Water / Wasser"
+        ],
+        [
+          "Factor_ Sauce Cup Lid/Deckel für Dressingbecher 60ml"
+        ],
+        [
+          "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert"
+        ],
+        [
+          "FA-DE Retention Flyer-4"
+        ],
+        [
+          "FA-DE Retention Flyer-3"
+        ],
+        [
+          "FA-DE Freebies (TZ)"
+        ],
+        [
+          "FA-DE Spirulina Ginger Lime Ginger Shot"
+        ],
+        [
+          "FA-DE Apples, Diced 10 mm/Apfel, Gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Zucchini, Half Moon /Zucchini, Mondwürfel"
+        ],
+        [
+          "FA-DE Jalapeno Peppers, Diced 5mm /Jalapeno-Paprikaschoten, gewürfelt, 5 mm"
+        ],
+        [
+          "FA-DE Zest, Lemon/Gewürz, Zitronenschale"
+        ],
+        [
+          "FA-NO Freebies (TK)"
+        ],
+        [
+          "FA-DE Yogurt, Greek, Plain /Joghurt, Griechisch, Natur"
+        ],
+        [
+          "FA-DE Zest, Orange/Schale, Orange"
+        ],
+        [
+          "FA-DE Vinegar, Apple Cider /Essig, Apfelwein"
+        ],
+        [
+          "FA-DE Marketing Flyer - David Lloyd"
+        ],
+        [
+          "FA-DE Quinoa, White/Quinoa, weiß"
+        ],
+        [
+          "FA-DE Ofenlachs, verfeinert mit Knoblauch (FEA007)"
+        ],
+        [
+          "FA-DE Rice, Jasmine, Brown/Reis, Jasmin, braun"
+        ],
+        [
+          "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm"
+        ],
+        [
+          "FA-DE Dill, Fresh/Dill, frisch"
+        ],
+        [
+          "FA-DE Cauliflower, Riced, IQF /Blumenkohl, Reis, IQF"
+        ],
+        [
+          "FA-DE Sweetcorn Supersweet Kernels, IQF /Zuckermais-Supersüßkörner, IQF"
+        ],
+        [
+          "FA-DE Cheese, Mozzarella, Shredded /Käse, Mozzarella, gerieben"
+        ],
+        [
+          "FA-DE Bell Peppers, Yellow, Sliced 10mm /Paprika, gelb, in Scheiben geschnitten, 10 mm"
+        ],
+        [
+          "FA-DE Oil, Roasted Garlic / Öl, Gerösteter Knoblauch"
+        ],
+        [
+          "Factor_ 2 Compartment Tray"
+        ],
+        [
+          "FA-DE Welcome Booklet (TZ)"
+        ],
+        [
+          "FA-DE Tomatoes, Concentrated Crushed /Tomaten, konzentriert, zerkleinert"
+        ],
+        [
+          "FA-NO Ice Flyer (TV)"
+        ],
+        [
+          "FA-NO Ginger Lemon Apple Ginger Shot"
+        ],
+        [
+          "FA-DE Liner M2"
+        ],
+        [
+          "FA-DE Retention Flyer-2"
+        ],
+        [
+          "FA-DE Chicken, Breast, B/S - 160g/Hähnchen, Brust, B/S – 160 g"
+        ],
+        [
+          "FA-DE Tomato Paste /Tomatenmark"
+        ],
+        [
+          "FA-DE Shallots, Diced 5mm /Schalotten, gewürfelt, 5 mm"
+        ],
+        [
+          "FA-DE Honey /Honig – Masse"
+        ],
+        [
+          "FA-NO Nordics Box Size M"
+        ],
+        [
+          "FA-DE Retention Flyer-1"
+        ],
+        [
+          "FA-DE Tomatoes, Crushed /Tomaten, zerkleinert"
+        ],
+        [
+          "FA-DE Bacon, Fat / Speck, Fett"
+        ],
+        [
+          "FA-NO Freebies (TV)"
+        ],
+        [
+          "FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben"
+        ],
+        [
+          "FA-DE Grits, Cereal Hot, Quick /Grütze, Müsli, heiß, schnell"
+        ],
+        [
+          "FA-NO Small Half Box (B) - NORDICS"
+        ],
+        [
+          "FA-DE Carrots, Julienne 2-3mm /Karotten, Julienne 2-3 mm"
+        ],
+        [
+          "FA-DE Socks Branded White"
+        ],
+        [
+          "FACTOR - Sleeve Pink / Beef"
+        ],
+        [
+          "FA-DE Vinegar, Red Wine /Essig, Rotwein"
+        ],
+        [
+          "FA-NO Spirulina Ginger Lime Ginger Shot"
+        ],
+        [
+          "FA-DE Cornstarch /Maisstärke (Maisstärke)"
+        ],
+        [
+          "Factor_ 1 Compartment Tray"
+        ],
+        [
+          "FA-DE Juice, Lime /Saft, Limette"
+        ],
+        [
+          "FA-DE Nut, Cashew /Nuss, Cashew"
+        ],
+        [
+          "FA-DK Trust Pilot Flyer"
+        ],
+        [
+          "FACTOR - Sleeve Yellow / Poultry"
+        ],
+        [
+          "FA-DE Turmeric Cayenne Pineapple Ginger Shot"
+        ],
+        [
+          "FA-NO Nordics Box Size L"
+        ],
+        [
+          "FA-DE Mascarpone /Mascarpone"
+        ],
+        [
+          "FA-DE Bell Peppers, Red, Sliced 10mm /Paprika, rot, in Scheiben geschnitten, 10 mm"
+        ],
+        [
+          "FA-DE Spinach, Frozen Leaf/Spinat, gefrorener Blattspinat"
+        ],
+        [
+          "FA-DE Beef, Ground, 80/20 /Rindfleisch, gemahlen, 80/20"
+        ],
+        [
+          "FA-DE Rice, Arborio /Reis, Arborio"
+        ],
+        [
+          "Factor_ 3 Compartment Tray"
+        ],
+        [
+          "FA-DE Rice, Long Grain and Wild Blend /Reis, Langkorn- und Wildreismischung"
+        ],
+        [
+          "FA-DE Coriander, Chopped /Koriander, gehackt"
+        ],
+        [
+          "FA-DE Brussels Sprouts, Shredded 5mm / FA-DE Rosenkohl, geraspelt 5mm"
+        ],
+        [
+          "FA-DE Beans, Chickpeas/Garbanzo, Aseptic /Bohnen, Kichererbsen, aseptisch"
+        ],
+        [
+          "FA-DE Rice, Basmati, White /Reis, Basmati, Weiß"
+        ],
+        [
+          "FA-DE Edamame, Soy /Edamame, Soja"
+        ],
+        [
+          "FA-DE Bacon, Diced /Speck, gewürfelt"
+        ],
+        [
+          "FA-DE Couscous, Dry/Couscous, trocken"
+        ],
+        [
+          "FA-DE Cabbage, Green, Shredded 5mm / Wirsing, geschnitten, 5 mm"
+        ],
+        [
+          "FACTOR - Sleeve Blue / Seafood"
+        ],
+        [
+          "FA-DE Liner S"
+        ],
+        [
+          "FA-DE Ricotta, Fresh 12%"
+        ],
+        [
+          "FA-DE Cheese, Ricotta Salata /Käse, Ricotta Salata"
+        ],
+        [
+          "FA-NO Ice Flyer (TK)"
+        ],
+        [
+          "FA-DE Wine, Red/Wein, rot"
+        ],
+        [
+          "FA-DE Artichoke Hearts , Canned/Artischockenherzen , Dose"
+        ],
+        [
+          "FA-DE Tote Bag Black"
+        ],
+        [
+          "FA-DE Cabbage, Red, Shredded 5mm /Rotkohl, geraspelt, 5 mm"
+        ],
+        [
+          "FA-DE Tomatoes, Cherry/Tomaten, Kirsche"
+        ],
+        [
+          "FA-DE Liner M1"
+        ],
+        [
+          "FA-DE Pork, Tenderloin /Schweinefleisch, Filet"
+        ],
+        [
+          "FA-DE Chicken, Thighs, Boneless Skinless /Hähnchen, Oberschenkel, ohne Knochen und ohne Haut"
+        ],
+        [
+          "FA-DE Fennel, Diced 10mm /Fenchel, gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Milk, Coconut /Milch, Kokosnuss"
+        ],
+        [
+          "FA-DE Broccoli, Florets, /Brokkoli, Röschen"
+        ],
+        [
+          "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben"
+        ],
+        [
+          "FA-NO Nordics Box Size S"
+        ],
+        [
+          "FA-DE Syrup, Date /Sirup, Dattel - Großpackung"
+        ],
+        [
+          "FA-NO Turmeric Cayenne Pineapple Ginger Shot"
+        ],
+        [
+          "FA-DE Prawns 21/25 /Garnelen 21/25 - IQF"
+        ],
+        [
+          "FA-DE Tomatoes, Diced, BiB/Tomaten, gewürfelt, BiB"
+        ],
+        [
+          "FA-DE Large Box"
+        ],
+        [
+          "FA-DE Rice, Basmati, Brown /Reis, Basmati, braun"
+        ],
+        [
+          "FA-DE Zucchini, Diced 10mm /Zucchini, gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Juice, Orange /Saft, Orange"
+        ],
+        [
+          "FA-DE Liner L2"
+        ],
+        [
+          "Ink Bag 1500ml for monojet, ink G3 Black"
+        ],
+        [
+          "FA-DE Stock Concentrate, Mirepoix /Stammkonzentrat, Mirepoix"
+        ],
+        [
+          "FA-DE Onion, Spanish, Diced 5mm /Zwiebel, Spanisch, gewürfelt 5 mm"
+        ],
+        [
+          "FA-DE Cauliflower, Florets /Blumenkohl, Röschen"
+        ],
+        [
+          "FA-NO Welcome Booklet (TV)"
+        ],
+        [
+          "FA-DE Chives, Fresh/Schnittlauch, frisch"
+        ],
+        [
+          "FA-DE Green Beans, Fresh, Cut 40mm /Grüne Bohnen, frisch, geschnitten 40mm"
+        ],
+        [
+          "Factor_ Sauce Cup/Dressingbecher 60 ml"
+        ],
+        [
+          "FA-DE Pork, Ground, Fresh /Schweinefleisch, gemahlen, frisch"
+        ],
+        [
+          "FA-DE Potatoes, Skin On, wedges /Kartoffeln mit Schale, Keile"
+        ],
+        [
+          "FA-DE Yellow Curry Paste/ Gelbe Curry paste"
+        ],
+        [
+          "FA-DE Mustard, Dijon /Senf, Dijon"
+        ],
+        [
+          "FA-DE Salmon, Skinless, Boneless, Filet/Lachs, ohne Haut, ohne Knochen, Filet - IQF"
+        ],
+        [
+          "FA-DE Potatoes, Sweet, Diced 10mm /Kartoffeln, süß, gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Ginger Lemon Apple Ginger Shot"
+        ],
+        [
+          "FA-DE Kale, Shredded 5mm /Grünkohl, geschreddert, 5 mm"
+        ],
+        [
+          "FA-DE Small Box"
+        ],
+        [
+          "FA-DE Vinegar, White Wine /Essig, Weißwein"
+        ],
+        [
+          "FA-DE Leek, Diced 5mm /Lauch, gewürfelt, 5 mm"
+        ],
+        [
+          "FA-DE Onion, Red, Diced 5mm /Zwiebeln, rot, gewürfelt 5 mm"
+        ],
+        [
+          "FA-DE Stainless Steel Tote Bin Cover Dispenser"
+        ],
+        [
+          "FA-DE Metal Detector Calibration Test Piece Kit"
+        ],
+        [
+          "FA-DE Metal Detectable Storage Clipboard"
+        ],
+        [
+          "FA-DE Metal-detectable, stapleless staplers for 5 sheets - Blue"
+        ],
+        [
+          "FA-DE Metal Detectable Retractable Pens"
+        ],
+        [
+          "FA-DE Metal detectable office scissors"
+        ],
+        [
+          "FA-DE Metal detectable keyhole loop labels/adhesive tape"
+        ],
+        [
+          "FA-DE Metal detectable highlighters"
+        ],
+        [
+          "FA-DE Eurobin Covers"
+        ],
+        [
+          "FA-DE Detectable whiteboard markers"
+        ],
+        [
+          "FA-DE Pflege-Tabs Care-Tab"
+        ],
+        [
+          "FA-DE Rational Reiniger-Tabs"
+        ],
+        [
+          "FA-DE Wipe Roll, 500 BAr., 38 x 32 cm / Tücherolle, 500 Blatt, 38 x 32 cm"
+        ],
+        [
+          "FA-DE Cleaning Tissue (228 x 228) / Reinigungstuch (228 x 228)"
+        ],
+        [
+          "FA-DE SICURA Jet G3 Flush, 1 litre / SICURA Jet G3 Flush, 1 Liter"
+        ],
+        [
+          "FA-DE Ink, Flush Medium G3, 1500 ml bag monojet / Tinte, Spülmittel G3, 1500-ml-Beutel für Monojet"
+        ],
+        [
+          "FA-DE SuperEcoPaper55 Brown Supertape, 75mm x 800m / SuperEcoPaper55 Braunes Supertape, 75 mm x 800 m"
+        ],
+        [
+          "FA-DE Spray Bottle, manual cleaning / Spritzflasche, manuellen Reinigung (#61800140)"
+        ],
+        [
+          "FA-DE Cleaning Brush / Reinigungsbürste (#61901053)"
+        ],
+        [
+          "FA-DE Ink, LINX 1069, 500ml square cartridge / Tinte, LINX 1069, 500ml quadratische Kartusche (#40143039)"
+        ],
+        [
+          "DA-DE Solvent, LINX 1505, 500ml round cartridge / Lösungsmittel, LINX 1505, 500 ml Rundkartusche (#61500044)"
+        ],
+        [
+          "FA-DE Solvent, LINX 1505, 1000ml square cartridge / Lösungsmittel, LINX 1505, 1000 ml, quadratische Kartusche (#40026326)"
+        ],
+        [
+          "FA-NO Kylling alla Puttanesca (FE1777)"
+        ],
+        [
+          "FA-DE Hühnchen alla Puttanesca (FE1777)"
+        ],
+        [
+          "FA-DE Würzige Miso-Hähnchen-Bowl (FE1790)"
+        ],
+        [
+          "FA-NO Miso-kyllingebowl (FE1790)"
+        ],
+        [
+          "FA-NO Grillet svinemørbrad med butternutmos (FE1487)"
+        ],
+        [
+          "FA-DE Gegrilltes Schweinefilet mit Butternusskürbispüree (FE1487)"
+        ],
+        [
+          "FA-NO Grilled kylling med tomat-eecabeche (FE1787)"
+        ],
+        [
+          "FA_DE Gegrilltes Hähnchen mit Tomaten-Escabeche (FE1787)"
+        ],
+        [
+          "FA-NO Kylling i svampesauce (FE4088)"
+        ],
+        [
+          "FA-DE Hähnchen & Pilzrahmsoße (FE4088)"
+        ],
+        [
+          "FA-DE Spice, Buttermilk Powder/Gewürz, Buttermilchpulver"
+        ],
+        [
+          "FA-NO Citrus-mojo kyllingebryst (FE1203)"
+        ],
+        [
+          "FA-DE Hähnchenbrust mit Citrus-Mojo-Sauce (FE1203)"
+        ],
+        [
+          "FA-DE Spice, Crushed Red Pepper Flakes /Gewürz, zerkleinerte rote Pfefferflocken"
+        ],
+        [
+          "FA-DE Spice, Fenugreek Powder /Gewürz, Bockshornkleepulver"
+        ],
+        [
+          "FA-NO Pulled beef med cremet svampepasta (FE4079)"
+        ],
+        [
+          "FA-NO Japansk-inspireret BBQ-kylling med kål (FE1458)"
+        ],
+        [
+          "FA-DE Japanisches BBQ-Hähnchen & Kohl (FE1458)"
+        ],
+        [
+          "FA-NO Chicken Biryani (FE1403)"
+        ],
+        [
+          "FA-DE Hähnchen Biryani (FE1403)"
+        ],
+        [
+          "FA-NO Kylling i chermoula-sauce med linser (FE1698)"
+        ],
+        [
+          "FA-DE Chermoula-Hähnchen mit Linsen (FE1698)"
+        ],
+        [
+          "FA-DE Apfelwein- & Dijon-Senf-Hähnchen (FE4069)"
+        ],
+        [
+          "FA-NO Kylling i æblecider-dijonsauce (FE4069)"
+        ],
+        [
+          "FA-NO Kylling med balsamico­sauce (FE4068)"
+        ],
+        [
+          "FA-DE Balsamico-Glasur Hähnchen (FE4068)"
+        ],
+        [
+          "FA-NO Cajun-krydret kylling med tomatsauce og kartoffelmos (FE4081)"
+        ],
+        [
+          "FA-DE Cajun-Hähnchen mit Tomatensauce & Kartoffelpüree (FE4081)"
+        ],
+        [
+          "FA-DE Schweinefilet mit cremigem Pistou (FE0959)"
+        ],
+        [
+          "FA-DE Moussaka-Style Rinderhack mit Aubergine & Béchamel sauce (FE4078)"
+        ],
+        [
+          "FA-DE Hähnchen-Auberginen-Pomodoro mit Mozzarella (FE4072)"
+        ],
+        [
+          "FA-DE Honig-Senf-Lachs (FE4077)"
+        ],
+        [
+          "FA-DE Feuriges Kung-Pao-Hähnchen mit Erdnüssen (FE1712)"
+        ],
+        [
+          "FA-DE Rinderragù mit sonnengetrockneten Tomaten und Pasta (FE4075)"
+        ],
+        [
+          "FA-DE Rind-Tomaten-Eintopf nach tunesischer Art (FE0092)"
+        ],
+        [
+          "FA-DE Gegrilltes Hähnchen mit Kräutern (FE4070)"
+        ],
+        [
+          "FA-NO Moussaka-inspireret oksekød med aubergine og béchamelsauce (FE4078)"
+        ],
+        [
+          "FA-NO Cremet pistou-svinefilet (FE0959)"
+        ],
+        [
+          "FA-NO Pomodoro med kylling, aubergine og mozzarella (FE4072)"
+        ],
+        [
+          "FA-NO Laks med honning og sennep (FE4077)"
+        ],
+        [
+          "FA-NO Pasta med oksekødsragù og soltørrede tomater (FE4075)"
+        ],
+        [
+          "FA-NO Kung pao-kylling med peanuts (FE1712)"
+        ],
+        [
+          "FA-NO Tunisisk-inspireret okse- og tomatgryde (FE0092)"
+        ],
+        [
+          "FA-NO Grillkylling med urter (FE4070)"
+        ],
+        [
+          "FA-NO Laks med tzatziki og citronris (FE1439)"
+        ],
+        [
+          "FA-DE Schweinefilet mit Aprikosen-Glasur (FE0962)"
+        ],
+        [
+          "FA-NO Abrikosglaseret svinemørbrad (FE0962)"
+        ],
+        [
+          "FA-NO Shakshuka-inspireret kylling (FE1829)"
+        ],
+        [
+          "FA-DE Shakshuka-Style Hähnchen (FE1829)"
+        ],
+        [
+          "FA-NO Keema-inspireret oksecurry (FE0689)"
+        ],
+        [
+          "FA-DE Keema-inspiriertes Rindercurry (FE0689)"
+        ],
+        [
+          "FA-DE Pine Nuts /Pinienkerne"
+        ],
+        [
+          "FA-NO Kylling i emmental-fondue med karamelliseret løg (FE0970)"
+        ],
+        [
+          "FA-DE Herzhafter Kartoffel-Rindfleischauflauf (FE0160)"
+        ],
+        [
+          "FA-NO Savoykål i ostesauce med hakket oksekød (FE0713)"
+        ],
+        [
+          "FA-NO Massaman-karry med kylling (FE1399)"
+        ],
+        [
+          "FA-DE Kohl in Hackfleisch-Käsesauce (FE0713)"
+        ],
+        [
+          "FA-DE Würziges Pulled Chicken mit Bohnen (FE4011)"
+        ],
+        [
+          "FA-DE Hähnchen Alfredo (FE0123)"
+        ],
+        [
+          "FA-DE Lachs in Senf-Dill-Sauce (FE4009)"
+        ],
+        [
+          "FA-DE Geschmortes Rindfleisch mit Sesamdressing (FE0277)"
+        ],
+        [
+          "FA-DE Vegetarische Shawarma-Blumenkohlschale (FE4024)"
+        ],
+        [
+          "FA-NO Trottole i soltørret tomatsauce (FE0516)"
+        ],
+        [
+          "FA-NO Grillet kylling og ratatouille (FE4015)"
+        ],
+        [
+          "FA-NO Svinemørbrad i spicy ancho chili sauce (FE1072)"
+        ],
+        [
+          "FA-DE Reis-Bowl \"Mujadara\" (FE0412)"
+        ],
+        [
+          "FA-NO Pulled chicken med pasta, cheddar og rød peberfrugt (FE1351)"
+        ],
+        [
+          "FA-DE Rindfleisch-Paprika-Auflauf (FE0047)"
+        ],
+        [
+          "FA-DE Hähnchenbrustfilet mit Knoblauch und Kräutern (FE0183)"
+        ],
+        [
+          "FA-DE Grünes Curry (FE0432)"
+        ],
+        [
+          "FA-DE Hähnchen à la Florentine (FE0224)"
+        ],
+        [
+          "FA-DE Hähnchen in Pilzsauce (FE4038)"
+        ],
+        [
+          "FA-NO Pulled jerk chicken med ris (FE4071)"
+        ],
+        [
+          "FA-DE Trottole in einer Sauce aus sonnengetrockneten Tomaten (FE0516)"
+        ],
+        [
+          "FA-DE Feuergeröstete Tomaten- und Feta-Garnelen (FE1776)"
+        ],
+        [
+          "FA-NO Kylling i gul karry (FE4013)"
+        ],
+        [
+          "FA-DE Tzatziki-Lachs & Zitronenreis (FE1439)"
+        ],
+        [
+          "FA-DE Lachs-Bowl mit Zitrus-Miso (FE1731)"
+        ],
+        [
+          "FA-NO Kylling med honning og sennep (FE0410)"
+        ],
+        [
+          "FA-DE Hähnchen Vindaloo & Kreuzkümmel-Kartoffeln (FE1408)"
+        ],
+        [
+          "FA-DE Hähnchen nach Athener Art mit Feta (FE1429)"
+        ],
+        [
+          "FA-NO Spicy cajun-kylling (FE4030)"
+        ],
+        [
+          "FA-DE Hähnchenfilet nach peruanischer Art (FE0238)"
+        ],
+        [
+          "FA-NO Svinemørbrad og middelhavsinspireret kartoffelmos (FE4042)"
+        ],
+        [
+          "FA-DE Miso-Pilze (FE4037)"
+        ],
+        [
+          "FA-DE Schweinefilet in Paprika-Sauce (FE0430)"
+        ],
+        [
+          "FA-DE Honig-Senf-Hähnchen (FE0410)"
+        ],
+        [
+          "FA-DE \"Bruschetta\" Shrimp-Risotto (FE0555)"
+        ],
+        [
+          "FA-DE Pulled Chicken mit Ingwer-Soja-Dressing (FE0324)"
+        ],
+        [
+          "FA-NO Laks med aji verde (FE1320)"
+        ],
+        [
+          "FA-DE Huhn „Tagine-Art\" (FE4025)"
+        ],
+        [
+          "FA-NO Abrikos-sennep kylling (FE0517)"
+        ],
+        [
+          "FA-DE Mozzarella-Burger mit geröstete Kartoffeln (FE0601)"
+        ],
+        [
+          "FA-NO Pulled beef & pasta i ostesauce (FE1345)"
+        ],
+        [
+          "FA-DE Pulled Beef mit Pilzrahm-Pasta (FE4079)"
+        ],
+        [
+          "FA-DE Zucchini-Spaghetti Bolognese (FE0849)"
+        ],
+        [
+          "FA-DE Pulled Chicken mit Cheddar und Speck (FE0401)"
+        ],
+        [
+          "FA-NO Kylling i cremet spinat (FE0207)"
+        ],
+        [
+          "FA-NO Braiseret oksekød med sesamdressing (FE0277)"
+        ],
+        [
+          "FA-NO Bowl med oksekød og sorte bønner (FE4050)"
+        ],
+        [
+          "FA-NO Kylling med svampe og ris (FE0628)"
+        ],
+        [
+          "FA-DE Schweinefilet mit cremigem Grünkohl (FE0943)"
+        ],
+        [
+          "FA-DE Knoblauch-Mandel-Lachs mit Grünkohl (FE0652)"
+        ],
+        [
+          "FA-DE Gewürztes Hähnchen mit Wildreis (FE4016)"
+        ],
+        [
+          "FA-NO Kylling med thai-inspireret peanutsauce (FE1367)"
+        ],
+        [
+          "FA-NO Svinemørbrad med artiskok og spinat (FE4060)"
+        ],
+        [
+          "FA-DE Hähnchenbrust in cremiger Basilikumsauce (FE4040)"
+        ],
+        [
+          "FA-DE Hähnchen mit cremigem Brokkoli-Grieß (FE0580)"
+        ],
+        [
+          "FA-DE Quinoa-Süßkartoffel-Erdnuss-Bowl (FE0425)"
+        ],
+        [
+          "FA-DE Schweinefilet auf rauchigem Paprikareis (FE4012)"
+        ],
+        [
+          "FA-NO Vegetarisk gryderet med hvide bønner (FE0935)"
+        ],
+        [
+          "FA-NO Laks og ostegratineret blomkålsris (FE0036)"
+        ],
+        [
+          "FA-DE Peruanische Hähnchenbrust (FE0129)"
+        ],
+        [
+          "FA-NO Laks på tomatrisotto (FE4044)"
+        ],
+        [
+          "FA-DE Kichererbsen-Bowl „Italian Style\" (FE0230)"
+        ],
+        [
+          "FA-DE Hähnchen mit Champignons und Reis (FE0628)"
+        ],
+        [
+          "FA-DE Pulled Beef und Pasta in Käsesauce (FE1345)"
+        ],
+        [
+          "FA-DE Pulled Pork-Chilli-Bow (FE4049)"
+        ],
+        [
+          "FA-NO Peruansk kyllingebryst (FE0129)"
+        ],
+        [
+          "FA-NO BBQ-kikærter og ristet kål (FE0651)"
+        ],
+        [
+          "FA-DE Rinderbraten mit Senf-Dressing (FE0078)"
+        ],
+        [
+          "FA-NO Stærk grøn karry med sød kartoffel (FE0432)"
+        ],
+        [
+          "FA-NO Krydret hakkebøf med jalapenos (FE0746)"
+        ],
+        [
+          "FA-DE Black Bean Bowl – mit Enchiladasauce (FE0131)"
+        ],
+        [
+          "FA-NO Svinemørbrad med sort peber og salvie (FE4022)"
+        ],
+        [
+          "FA-DE Lachs in cremiger Gochugaru-Sauce (FE4039)"
+        ],
+        [
+          "FA-DE Schweinefilet auf mediterranem Püree (FE4042)"
+        ],
+        [
+          "FA-DE Grillhähnchen und Ratatouille (FE4015)"
+        ],
+        [
+          "FA-NO Pulled chicken med bacon (FE0794)"
+        ],
+        [
+          "FA-NO Svinemørbrad med blå ostesauce (FE0777)"
+        ],
+        [
+          "FA-DE Rindfleisch mit BBQ-Sauce (FE4027)"
+        ],
+        [
+          "FA-NO Pulled beef med cremet parmesan og hvidløg (FE1346)"
+        ],
+        [
+          "FA-NO Kyllingestrimler med rosmarin og tomat (FE0485)"
+        ],
+        [
+          "FA-DE Scharfes Hähnchen mit Jalapeño, Limette und Cheddar (FE0198)"
+        ],
+        [
+          "FA-NO Rejer med grillede tomater og feta (FE1776)"
+        ],
+        [
+          "FA-NO Cremet græskarrisotto (FE4046)"
+        ],
+        [
+          "FA-NO Grøntsagstagine med feta (FE4002)"
+        ],
+        [
+          "FA-DE Schweinefilet in Sauce aus sonnengetrockneten Tomaten (FE4006)"
+        ],
+        [
+          "FA-NO Marokkansk kikærtekage og couscous (FE4021)"
+        ],
+        [
+          "FA-DE Würziger Zitronenlachs (FE0281)"
+        ],
+        [
+          "FA-DE Schweinefilet mit Apfel-Senf-Soße (FE0890)"
+        ],
+        [
+          "FA-DE Indisches Hähnchen-Curry (FE1398)"
+        ],
+        [
+          "FA-NO Grøn karry med oksekød (FE4005)"
+        ],
+        [
+          "FA-DE Herzhafte Kichererbsenpfanne mit Couscous (FE4021)"
+        ],
+        [
+          "FA-NO Kyllingebryst i cremet basilikumsauce (FE4040)"
+        ],
+        [
+          "FA-NO Laks med korianderris (FE0928)"
+        ],
+        [
+          "FA-NO Fajita-inspireret pulled beef & queso (FE1506)"
+        ],
+        [
+          "FA-NO Hvidløgs- og parmesan kylling (FE4029)"
+        ],
+        [
+          "FA-DE Cranberry-Hähnchen (FE0271)"
+        ],
+        [
+          "FA-DE Pulled Chicken in rauchiger Tomatensauce (FE4034)"
+        ],
+        [
+          "FA-NO Pulled chicken i ingefær-sojadressing (FE0324)"
+        ],
+        [
+          "FA-NO Kylling i purløg-flødesauce (FE4023)"
+        ],
+        [
+          "FA-NO Laks Piccata (FE0972)"
+        ],
+        [
+          "FA-DE Mexikanische Mais-Bowl (FE0121)"
+        ],
+        [
+          "FA-DE Kichererbsencurry mit Kokosmilch (FE0478)"
+        ],
+        [
+          "FA-NO Oksekød med BBQ sauce (FE4027)"
+        ],
+        [
+          "FA-NO Quinoabowl med sød kartoffel og peanutsauce (FE0425)"
+        ],
+        [
+          "FA-DE Veganes Risotto mit Pilze in Rotweinsauce (FE0243)"
+        ],
+        [
+          "FA-NO Grillet kyllingefilet og kartoffel-porremos (FE0426)"
+        ],
+        [
+          "FA-DE Westafrikanisches Hähnchen-Erdnuss-Curry (FE1451)"
+        ],
+        [
+          "FA-NO Oksekød i tomatragout (FE4043)"
+        ],
+        [
+          "FA-NO Svinemørbrad med cremet porre (FE4048)"
+        ],
+        [
+          "FA-NO Pulled pork i rød chilisauce (FE4049)"
+        ],
+        [
+          "FA-NO Svinemørbrad i soltørret tomatsauce (FE4006)"
+        ],
+        [
+          "FA-NO Svinemørbrad med karamelliseret løg (FE0565)"
+        ],
+        [
+          "FA-DE Rosmarin-Tomaten-Hähnchen (FE0485)"
+        ],
+        [
+          "FA-DE Polenta mit Rinderragout (FE4018)"
+        ],
+        [
+          "FA-NO Kokos- og limekylling (FE4047)"
+        ],
+        [
+          "FA-DE Pulled Jerk Chicken mit Reis (FE4071)"
+        ],
+        [
+          "FA-DE Vegetarisches Biryani (FE0444)"
+        ],
+        [
+          "FA-DE Grünes Chili-Hähnchen mit Quinoa-Salsa (FE1636)"
+        ],
+        [
+          "FA-DE Hähnchen mit Honig-Senf-Sauce (FE1512)"
+        ],
+        [
+          "FA-DE Fajita-Rindfleischstreifen mit Käse-Sauce (FE1506)"
+        ],
+        [
+          "FA-DE Huhn in italienischen Kräutern und Parmesan (FE0232)"
+        ],
+        [
+          "FA-NO Nordafrikansk-inspireret kyllingefilet (FE0332)"
+        ],
+        [
+          "FA-DE Pasta mit Hähnchen, Cheddar und roter Paprika (FE1351)"
+        ],
+        [
+          "FA-DE Vegetarischer Bohnen-Eintopf (FE0935)"
+        ],
+        [
+          "FA-DE Hähnchenbrust mit Schnittlauch und Knoblauch (FE0384)"
+        ],
+        [
+          "FA-DE Massaman-Curry-Hähnchenbrust (FE1399)"
+        ],
+        [
+          "FA-DE Schweinefilet in cremiger Knoblauch-Senf-Sauce (FE0169)"
+        ],
+        [
+          "FA-DE Rindereintopf mit Rotkohl (FE4007)"
+        ],
+        [
+          "FA-DE Rote-Bete-Quinoa mit Ziegenkäse (FE4033)"
+        ],
+        [
+          "FA-NO Italiensk kikærtebowl (FE0230)"
+        ],
+        [
+          "FA-NO Kylling i tranebærsauce (FE0271)"
+        ],
+        [
+          "FA-DE Gegrilltes Hähnchen in Ingwer-Knoblauch-Marinade (FE4064)"
+        ],
+        [
+          "FA-DE Pulled-Beef-Bowl mit Cheddar und Paprika (FE1348)"
+        ],
+        [
+          "FA-DE Zitronen-Knoblauch-Hähnchen (FE4055)"
+        ],
+        [
+          "FA-DE Schweinefilet in Blauschimmelkäsesauce (FE0777)"
+        ],
+        [
+          "FA-DE Hähnchen in Spinat-Creme (FE0207)"
+        ],
+        [
+          "FA-NO Kylling i svampesauce (FE4038)"
+        ],
+        [
+          "FA-NO Svinemørbrad med æble-sennepssauce (FE0890)"
+        ],
+        [
+          "FA-DE Pulled chicken cacciatore (FE1077)"
+        ],
+        [
+          "FA-NO Kyllingevindaloo med spidskommenkrydrede kartofler (FE1408)"
+        ],
+        [
+          "FA-DE Lachs mit Korianderreis (FE0928)"
+        ],
+        [
+          "FA-NO Kylling i citron-kapers sauce (FE0025)"
+        ],
+        [
+          "FA-DE Spicy Cajun Hähnchen (FE4030)"
+        ],
+        [
+          "FA-NO Indisk karry med blomkål (FE4008)"
+        ],
+        [
+          "FA-NO Tabbouleh-ris & grillet kylling (FE0833)"
+        ],
+        [
+          "FA-NO Pulled beef med cheddar (FE4063)"
+        ],
+        [
+          "FA-NO Vegetarisk biryani (FE0444)"
+        ],
+        [
+          "FA-NO Kylling med honning-sennepssauce (FE1512)"
+        ],
+        [
+          "FA-NO Pulled chicken i røget tomatsauce (FE4034)"
+        ],
+        [
+          "FA-DE Marokkanisches Hähnchen in Tomatensauce (FE1068)"
+        ],
+        [
+          "FA-DE Trottole Bolognese (FE0780)"
+        ],
+        [
+          "FA-NO Hakket oksekødsret med ostesauce (FE0612)"
+        ],
+        [
+          "FA-NO Krydret kylling med vilde ris (FE4016)"
+        ],
+        [
+          "FA-DE Ofengerösteter Lachs & Dill-Joghurt (FE1145)"
+        ],
+        [
+          "FA-DE Hähnchen in Zitronen-Kapern-Sauce (FE0025)"
+        ],
+        [
+          "FA-DE Hähnchen mit Sauerrahm und Schnittlauch (FE0322)"
+        ],
+        [
+          "FA-DE Gegrilltes Schweinefilet mit Tomatenbutter (FE4010)"
+        ],
+        [
+          "FA-NO Kylling med cremefraiche og purløg (FE0322)"
+        ],
+        [
+          "FA-DE Hähnchen in Basilikum-Paprika-Sauce (FE4004)"
+        ],
+        [
+          "FA-DE Schweinefilet mit karamellisierten Zwiebeln (FE0565)"
+        ],
+        [
+          "FA-DE Gegrilltes Hähnchenfilet mit Pesto (FE4001)"
+        ],
+        [
+          "FA-NO Svinemørbrad og røget paprikaris (FE4012)"
+        ],
+        [
+          "FA-DE Lachs auf Tomatenrisotto (FE4044)"
+        ],
+        [
+          "FA-DE Würziges Rindfleisch-Bohnen-Chili (FE4065)"
+        ],
+        [
+          "FA-NO Pulled chicken cacciatore (FE1077)"
+        ],
+        [
+          "FA-DE Rindfleisch in Paprikasauce (FE0745)"
+        ],
+        [
+          "FA-NO Bulgogi Bowl med strimlet oksekød (FE1404)"
+        ],
+        [
+          "FA-NO Hvidløgs- & krydderurtekyllingebryst (FE0183)"
+        ],
+        [
+          "FA-DE Lachs mit grünem Pesto (FE0035)"
+        ],
+        [
+          "FA-DE Indisches Curry mit Blumenkohl (FE4008)"
+        ],
+        [
+          "FA-NO Svinemørbrad i cremet hvidløg-sennepssauce (FE0169)"
+        ],
+        [
+          "FA-DE Schweinefilet mit Chimichurri (FE0286)"
+        ],
+        [
+          "FA-NO Pulled chicken med cheddar og bacon (FE0401)"
+        ],
+        [
+          "FA-DE Hähnchenfilet nach nordafrikanischer Art (FE0332)"
+        ],
+        [
+          "FA-DE Rindfleisch & Schwarze Bohnen Bowl (FE4050)"
+        ],
+        [
+          "FA-NO Chili- og hvidløgsmarineret svinemørbrad (FE0573)"
+        ],
+        [
+          "FA-NO Grillet svinemørbrad med broccoli i pebersauce (FE4020)"
+        ],
+        [
+          "FA-DE Santa Fe Pulled Chicken mit Queso (FE0899)"
+        ],
+        [
+          "FA-DE Chili-Knoblauch-Schweinefilet (FE0573)"
+        ],
+        [
+          "FA-NO Vestfrikansk-inspireret peanut-kyllingecurry (FE1451)"
+        ],
+        [
+          "FA-NO Ris-bowl med pulled chicken og tacokrydderier (FE0130)"
+        ],
+        [
+          "FA-DE Pulled Beef in Parmesan-Knoblauch-Creme (FE1346)"
+        ],
+        [
+          "FA-NO Laks i dild- og sennepssauce (FE4009)"
+        ],
+        [
+          "FA-DE Cremiges Basilikum-Risotto (FE4014)"
+        ],
+        [
+          "FA-DE Schweineragout mit Tomaten-Risotto (FE4032)"
+        ],
+        [
+          "FA-DE Huhn mit Pilze in Rotweinsauce (FE0002)"
+        ],
+        [
+          "FA-DE Gegrilltes Hähnchenfilet mit Kartoffel-Lauch-Püree (FE0426)"
+        ],
+        [
+          "FA-NO Kylling og grønkål i ostesauce (FE4019)"
+        ],
+        [
+          "FA-DE Lachs auf Blumenkohlreis in Käsecreme (FE0036)"
+        ],
+        [
+          "FA-DE Tabbouleh-Reis & Gegrilltes Hähnchen (FE0833)"
+        ],
+        [
+          "FA-DE Ají Verde Lachs (FE1320)"
+        ],
+        [
+          "FA-NO Krydret citruslaks (FE0281)"
+        ],
+        [
+          "FA-NO Marokkansk-inspirerede kyllingeoverlår i tomatsauce (FE1068)"
+        ],
+        [
+          "FA-NO Thai-inspireret kylling med peanutsauce (FE0673)"
+        ],
+        [
+          "FA-DE Curry mit Fenchel und Maiskuchen (FE4031)"
+        ],
+        [
+          "FA-DE Gegrilltes Schweinefilet mit Brokkoli in Paprikasauce (FE4020)"
+        ],
+        [
+          "FA-DE Pulled Chicken mit Bacon (FE0794)"
+        ],
+        [
+          "FA-DE Zucchini-Paprika-Ratatouille (FE0090)"
+        ],
+        [
+          "FA-NO Braiseret oksekød i urtesauce (FE0413)"
+        ],
+        [
+          "FA-NO Ovnbagt laks med dild-yoghurt (FE1145)"
+        ],
+        [
+          "FA-DE Big Dill Chicken (FE0446)"
+        ],
+        [
+          "FA-DE Hähnchen in Tomatencreme (FE0024)"
+        ],
+        [
+          "FA-DE Tex-Mex Hähnchen-Tinga (FE1131)"
+        ],
+        [
+          "FA-NO Indisk-inspireret butter chicken (FE0472)"
+        ],
+        [
+          "FA-DE Ricotta-Fleischbällchen (FE0006)"
+        ],
+        [
+          "FA-DE Grünes Curry mit Rindfleisch (FE4005)"
+        ],
+        [
+          "FA-NO Cremet grønkål og svinemørbrad (FE0943)"
+        ],
+        [
+          "FA-DE Hähnchen in Schnittlauchcreme (FE4023)"
+        ],
+        [
+          "FA-DE Lachs Piccata (FE0972)"
+        ],
+        [
+          "FA-NO Citron- og hvidløgskylling (FE4055)"
+        ],
+        [
+          "FA-DE Cremige Pesto-Pasta (FE0778)"
+        ],
+        [
+          "FA-DE Huhn mit Parmesan-Knoblauch-Dressing (FE4029)"
+        ],
+        [
+          "FA-NO Laks i grøn thai-curry (FE4066)"
+        ],
+        [
+          "FA-NO Miso-svampe (FE4037)"
+        ],
+        [
+          "FA-NO Grillet kyllingefilet og pesto (FE4001)"
+        ],
+        [
+          "FA-DE Lachs mit süßem Sojadressing (FE1169)"
+        ],
+        [
+          "FA-NO Græsk-inspireret hakket oksekød og feta (FE0257)"
+        ],
+        [
+          "FA-DE Hähnchen mit Erdnusssauce „Thai-Style\" (FE0673)"
+        ],
+        [
+          "FA-DE Hähnchenbrust mit Grünkohl in Käsesauce (FE4019)"
+        ],
+        [
+          "FA-NO Chicken Alfredo (FE0123)"
+        ],
+        [
+          "FA-DE Cheddar Pulled Beef (FE4063)"
+        ],
+        [
+          "FA-NO Mujadara ris bowl (FE0412)"
+        ],
+        [
+          "FA-DE Lachs in grünem Thai Style Curry (FE4066)"
+        ],
+        [
+          "FA-NO Chili med oksekød og sorte bønner (FE4065)"
+        ],
+        [
+          "FA-NO Tomat- og mozzarella kylling (FE4051)"
+        ],
+        [
+          "FA-NO Kyllingetagine (FE4025)"
+        ],
+        [
+          "FA-DE Honig-Miso-Hähnchen mit Frühlingszwiebelreis (FE4067)"
+        ],
+        [
+          "FA-NO Spicy pulled chicken og bønner (FE4011)"
+        ],
+        [
+          "FA-DE Schweinefilet mit schwarzem Pfeffer und Salbei (FE4022)"
+        ],
+        [
+          "FA-NO Grillet svinemørbrad og tomatsmør (FE4010)"
+        ],
+        [
+          "FA-DE Rindhackfleisch mit Käsesauce (FE0612)"
+        ],
+        [
+          "FA-NO Cremet basilikumrisotto med kylling (FE4014)"
+        ],
+        [
+          "FA-NO Svinemørbrad i rød peberfrugtsauce (FE0430)"
+        ],
+        [
+          "FA-DE Cremiges Tomaten-Risotto (FE0031)"
+        ],
+        [
+          "FA-DE Cremiges Kürbisrisotto (FE4046)"
+        ],
+        [
+          "FA-NO Indisk-inspireret kyllingecurry (FE1398)"
+        ],
+        [
+          "FA-DE Mediterranes Gemüse mit Auberginen (FE4026)"
+        ],
+        [
+          "FA-DE Indisches Butterhuhn (FE0472)"
+        ],
+        [
+          "FA-NO Mac and Cheese med langtidsstegt oksekød og peberfrugt (FE0262)"
+        ],
+        [
+          "FA-DE Mexikanische Reis-Bowl mit Hähnchen (FE0130)"
+        ],
+        [
+          "FA-NO Mexicansk majskage (FE0121)"
+        ],
+        [
+          "FA-NO Laks i cremet gochugaru sauce (FE4039)"
+        ],
+        [
+          "FA-NO Kylling i italienske krydderurter og parmesanost (FE0232)"
+        ],
+        [
+          "FA-DE Schweinefilet in Lauchcreme (FE4048)"
+        ],
+        [
+          "FA-NO Pulled beef bowl med cheddar og peberfrugt (FE1348)"
+        ],
+        [
+          "FA-NO Laks med dijonnaise (FE1031)"
+        ],
+        [
+          "FA-NO Spicy kylling med jalapeño, lime og cheddar (FE0198)"
+        ],
+        [
+          "FA-NO Trottole bolognese (FE0780)"
+        ],
+        [
+          "FA-NO Græsk-inspireret kylling med feta (FE1429)"
+        ],
+        [
+          "FA-NO Santa Fe-inspireret pulled kylling med queso-os (FE0899)"
+        ],
+        [
+          "FA-NO Laks med pesto (FE0035)"
+        ],
+        [
+          "FA-DE Huhn in gelbem Curry (FE4013)"
+        ],
+        [
+          "FA-DE Gemüse-Tagine mit Feta (FE4002)"
+        ],
+        [
+          "FA-DE Hähnchen mit karamellisierten Zwiebeln & Emmentaler-Fondue (FE0970)"
+        ],
+        [
+          "FA-NO Gochugaru-kylling (FE4053)"
+        ],
+        [
+          "FA-DE Karibischer Lachs mit Mangosalsa (FE1465)"
+        ],
+        [
+          "FA-DE Scharfes Rinderhack mit Jalapeños (FE0746)"
+        ],
+        [
+          "FA-DE Lachs Dijonnaise (FE1031)"
+        ],
+        [
+          "FA-NO Oksekøds- og pebergryde (FE0047)"
+        ],
+        [
+          "FA-NO Squash-spaghetti bolognese (FE0849)"
+        ],
+        [
+          "FA-NO Middelhavsgrøntsagsret med aubergine (FE4026)"
+        ],
+        [
+          "FA-NO Oksekød i paprikasauce (FE0745)"
+        ],
+        [
+          "FA-DE Aprikosen-Senf-Hähnchen (FE0517)"
+        ],
+        [
+          "FA-DE Geschmortes Rindfleisch in Kräuterjus (FE0413)"
+        ],
+        [
+          "FA-NO Kylling med purløg og hvidløg (FE0384)"
+        ],
+        [
+          "FA-NO Kylling & cremet broccoli grits (FE0580)"
+        ],
+        [
+          "FA-NO Tinga-style Tex-Mex-kyllingelår (FE1131)"
+        ],
+        [
+          "FA-NO Kylling à la Florentine (FE0224)"
+        ],
+        [
+          "FA-NO Honning-miso kylling med ris og forårsløg (FE4067)"
+        ],
+        [
+          "FA-NO Kylling i peberfrugt- og basilikumauce (FE4004)"
+        ],
+        [
+          "FA-DE Tomate-Mozzarella-Hähnchen (FE4051)"
+        ],
+        [
+          "FA-NO Cremet tomatrisotto (FE0031)"
+        ],
+        [
+          "FA-DE Rindfleisch in Tomaten-Ragout (FE4043)"
+        ],
+        [
+          "FA-DE Gochugaru-Hähnchen (FE4053)"
+        ],
+        [
+          "FA-NO Laks og sød sojadressing (FE1169)"
+        ],
+        [
+          "FA-NO Mexikansk-inspireret bønnebowl (FE0131)"
+        ],
+        [
+          "FA-DE Bulgogi-Bowl mit geschmortem Rindfleisch (FE1404)"
+        ],
+        [
+          "FA-NO Kartoffelmos og oksekødsgryde (FE0160)"
+        ],
+        [
+          "FA-NO Grillet kylling med ingefær og hvidløg (FE4064)"
+        ],
+        [
+          "FA-DE Hackfleisch \"Griechischer Art\" – mit Feta (FE0257)"
+        ],
+        [
+          "FA-DE Pulled Pork in würziger Zitrusmarinade (FE0076)"
+        ],
+        [
+          "FA-DE BBQ-Kichererbsen und Röst-Kohl (FE0651)"
+        ],
+        [
+          "FA-DE Schweinefilet mit Artischocken und Spinat (FE4060)"
+        ],
+        [
+          "FA-DE Kokos-Limetten-Hähnchen (FE4047)"
+        ],
+        [
+          "FA-DE Hähnchen mit Thai-Style-Erdnusssauce (FE1367)"
+        ],
+        [
+          "FA-NO Kylling i cremet tomatsauce (FE0024)"
+        ],
+        [
+          "FA-DE Geschmortes Rind & Pasta mit gerösteter roter Paprika (FE0262)"
+        ],
+        [
+          "FA-DE Schweinefilet in scharfer Ancho-Chili-Sauce (FE1072)"
+        ],
+        [
+          "FA-DE Thai Curry Hähnchen mit Ingwerreis (FE1422)"
+        ],
+        [
+          "FA-NO Kylling i gul thai-curry med ingefærris (FE1422)"
+        ],
+        [
+          "FA-NO Cremet pesto pasta (FE0778)"
+        ],
+        [
+          "FA-NO Laksebowl med citrus-miso (FE1731)"
+        ],
+        [
+          "FA-NO Chilensk inspireret kylling med salsa-quinoa (FE1636)"
+        ],
+        [
+          "FA-NO Squash- og peberfrugtsratatouille (FE0090)"
+        ],
+        [
+          "FA-NO Vegetarisk shawarma-inspireret bowl (FE4024)"
+        ],
+        [
+          "FA-NO Laks med mangosalsa i caribisk stil (FE1465)"
+        ],
+        [
+          "FA-DE Almond, Sliced, Blanched /Mandeln, geschnitten, blanchiert"
+        ],
+        [
+          "FA-DE Spice, Ginger Ground /Gewürze, gemahlener Ingwer"
+        ],
+        [
+          "FA-DE Spice, Chili Powder /Gewürz, Chilipulver"
+        ],
+        [
+          "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert"
+        ],
+        [
+          "FA-DE Spice, Thyme Dry /Gewürz, Thymian trocken"
+        ],
+        [
+          "FA-DE Spice, Green Onion Granulated /Gewürz, grüne Zwiebel granuliert"
+        ],
+        [
+          "FA-DE Dried Rosemary/Rosmarin getrocknet"
+        ],
+        [
+          "FA-DE Celery Root, Peeled, Diced 10mm /Selleriewurzel, geschält, gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Spice, Porcini Mushroom Powder /Gewürz, Steinpilzpulver"
+        ],
+        [
+          "FA-DE Spice, White Pepper /Gewürz, weißer Pfeffer"
+        ],
+        [
+          "FA-DE Spice, Mustard Seed Ground, Dry /Gewürz, Senfkörner gemahlen, Trockenmasse"
+        ],
+        [
+          "FA-DE Spice, Aji Amarillo Chili Powder /Gewürz, Aji Amarillo Chilipulver"
+        ],
+        [
+          "FA-DE Spice, Cayenne Pepper /Gewürz, Cayennepfeffer"
+        ],
+        [
+          "FA-DE Spice, Jalapeno Powder /Gewürz, Jalapeno-Pulver"
+        ],
+        [
+          "FA-DE Spice, Bay Leaf Powder /Gewürz, Lorbeerblattpulver"
+        ],
+        [
+          "FA-DE Spice, Mustard Seed, Whole/Gewürz, Senfkörner, ganz"
+        ],
+        [
+          "FA-DE Peanuts, Halves, Unsalted /Erdnüsse, halbiert, ungesalzen"
+        ],
+        [
+          "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken"
+        ],
+        [
+          "FA-DE Spice, Paprika /Gewürze, Paprika"
+        ],
+        [
+          "FA-DE Miso Paste, White, Soy /Misopaste, weiß, Soja"
+        ],
+        [
+          "FA-DE Spice, Lemongrass Powder /Gewürz, Zitronengraspulver"
+        ],
+        [
+          "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken"
+        ],
+        [
+          "FA-DE Spice, Cumin Seed /Gewürz, Kreuzkümmel"
+        ],
+        [
+          "FA-DE Spice, Brown Chipotle Chile Powder /Gewürz, braunes Chipotle-Chili-Pulver"
+        ],
+        [
+          "FA-DE Spice, Leek Powder /Gewürz, Lauchpulver"
+        ],
+        [
+          "FA-DE Spice, Allspice/Gewürz, Piment"
+        ],
+        [
+          "FA-DE Spice, Cardamom Ground /Gewürz, Kardamom, gemahlen"
+        ],
+        [
+          "FA-DE Spice, Turmeric /Gewürz, Kurkuma"
+        ],
+        [
+          "FA-DE Spice, Minced Garlic, Toasted, Dry /Gewürz, gehackter Knoblauch, geröstet, trocken"
+        ],
+        [
+          "FA-DE Spice, Dried Onion Flakes /Gewürze, getrocknete Zwiebelflocken"
+        ],
+        [
+          "FA-DE Spice, Dill Dried /Gewürz, Dill getrocknet"
+        ],
+        [
+          "FA-DE Spice, Apple Pectin /Gewürz, Apfelpektin"
+        ],
+        [
+          "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie"
+        ],
+        [
+          "FA-DE Spice, Five Spice /Gewürz, fünf Gewürze"
+        ],
+        [
+          "FA-DE Spice, Sesame Seed, Roasted /Gewürz, Sesamsamen, geröstet"
+        ],
+        [
+          "FA-DE Spice, Marjoram Dried /Gewürz, Majoran getrocknet"
+        ],
+        [
+          "FA-DE Spice, Smoked Paprika /Gewürz, geräucherter Paprika"
+        ],
+        [
+          "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert"
+        ],
+        [
+          "FA-DE Spice, Garlic Powder, Toasted /Gewürz, Knoblauchpulver, geröstet"
+        ],
+        [
+          "FA-DE Spice, Coriander Ground /Gewürz, gemahlener Koriander"
+        ],
+        [
+          "FA-DE Spice, Cinnamon Ground /Gewürz, gemahlener Zimt"
+        ],
+        [
+          "FA-DE Spice, Curry Powder /Gewürze, Currypulver"
+        ],
+        [
+          "FA-DE Spice, Sesame Seeds, Black /Gewürz, Sesamsamen, Schwarz"
+        ],
+        [
+          "FA-DE Spice, Basil, Dried /Gewürz, Basilikum, getrocknet"
+        ],
+        [
+          "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel"
+        ],
+        [
+          "FA-DE Spice, Sea Salt /Gewürze, Meersalz"
+        ],
+        [
+          "FA-DE Spice, Italian Seasoning /Gewürze, italienische Gewürze"
+        ],
+        [
+          "FA-DE Spice, Tarragon, Dry /Gewürze, Estragon, Trockenmasse"
+        ],
+        [
+          "FA-DE Spice, Harissa Powder /Gewürz, Harissa-Pulver"
+        ],
+        [
+          "FA-DE Chives, Dried /Schnittlauch, getrocknet"
+        ],
+        [
+          "FA-DE Spice, Guajillo Peppers, Ground /Gewürze, Guajillo-Paprikaschoten, gemahlen"
+        ],
+        [
+          "FA-DE Spice, Sesame Seed, White /Gewürz, Sesam, Weiß"
+        ],
+        [
+          "FA-DE Spice, Caraway Seed/Gewürz, Kümmelsamen"
+        ],
+        [
+          "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet"
+        ],
+        [
+          "FA-DE Spice, Lemon Powder /Gewürz, Zitronenpulver"
+        ],
+        [
+          "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen"
+        ],
+        [
+          "FA-DE Apples, Diced 10 mm/Apfel, Gewürfelt 10 mm"
+        ],
+        [
+          "FA-DE Walnuts/Walnüsse"
+        ],
+        [
+          "FA-DE Spice, Nutmeg Ground /Gewürz, gemahlene Muskatnuss"
+        ],
+        [
+          "FA-DE Spice, Rosemary, Powder /Gewürz, Rosmarin, Pulver"
+        ],
+        [
+          "FA-DE Spice, Tomato Powder /Gewürz, Tomatenpulver"
+        ],
+        [
+          "FA-DE Spice, Fennel Ground /Gewürz, Fenchel gemahlen"
+        ],
+        [
+          "FA-DE Spice, Black Pepper, Cracked /Gewürz, schwarzer Pfeffer, gebrochen"
+        ],
+        [
+          "FA-DE Spice, Cloves Ground /Gewürze, gemahlene Nelken"
+        ],
+        [
+          "FA-DE Spice, Sage, Rubbed /Gewürz, Salbei, gerieben"
+        ],
+        [
+          "FA-DE Spice, Ancho Chili Powder /Gewürz, Ancho-Chili-Pulver"
+        ],
+        [
+          "FA-DE Test (FE0124)"
+        ],
+        [
+          "Endless Print VAC foil Amcor, top web 100µm, 417mm, 2 colours (white / black)"
+        ],
+        [
+          "Endless Print VAC foil Amcor, top web 100µm, 557mm, 2 colours (white / black)"
+        ],
+        [
+          "FA-DE Green Beans, Haricot Vert, IQF/Grüne Bohnen, Haricot Vert, IQF"
+        ],
+        [
+          "FA-DE Cheese, Asiago, Shredded /Käse, Asiago, gerieben"
+        ],
+        [
+          "FA-DE Kale, Baby /Grünkohl, Baby"
+        ],
+        [
+          "FA-DE Tomatoes, Fire Roasted, Diced, Canned /Tomaten, feuergeröstet, gewürfelt, in Dosen"
+        ],
+        [
+          "FA-DE Cheese, Queso Fresco /Käse, Queso Fresco"
+        ],
+        [
+          "FA-DE Potatoes, Yukon Gold, Diced 3/4\" /Kartoffeln, Yukon Gold, gewürfelt 3/4\""
+        ],
+        [
+          "FA-DE Coconut Aminos /Kokos-Aminos"
+        ]
+      ]
+    },
+    {
+      "title": "GASTRONORM MATRIX (Editing)",
+      "sheetId": 1122002604,
+      "values": [
+        [],
+        [],
+        [
+          "",
+          "GASTRONORM TRAY OVEN CAPACITY MATRIX_"
+        ],
+        [
+          "",
+          "Gastronorm Tray",
+          " Volume (L)",
+          "Height/Depth (mm)",
+          "Weight (KG)",
+          "Oven Tray Capacity (Units)",
+          "Oven Volume Capacity (L)",
+          "Function (Flexible)"
+        ],
+        [
+          "",
+          "GN 1:1 20 mm NP",
+          "2.55",
+          "20",
+          "Not found",
+          "36",
+          "91.8",
+          "Tap/Lid / Always for blast chiller"
+        ],
+        [
+          "",
+          "GN 1:1 65 mm NP",
+          "9",
+          "65",
+          "0.93 KG",
+          "36",
+          "324",
+          "Grains / Sauces / Always for blast chiller"
+        ],
+        [
+          "",
+          "GN 1:1 100 mm NP",
+          "13.3",
+          "100",
+          "1.16 KG",
+          "18",
+          "239.4",
+          "Spices (to organize)"
+        ],
+        [
+          "",
+          "GN 1:1 200 mm NP",
+          "26.5",
+          "200",
+          "1.92 KG",
+          "9",
+          "238.5",
+          "Complementary"
+        ],
+        [
+          "",
+          "GN 2:1 20 mm NP",
+          "8",
+          "20",
+          "2.02 KG",
+          "18",
+          "144",
+          "General / All"
+        ],
+        [
+          "",
+          "GN 1:1 100 mm P",
+          "-",
+          "100",
+          "1.20 KG",
+          "18",
+          "#VALUE!",
+          "Frozen / IQF"
+        ],
+        [
+          "",
+          "GN 1:1 150 mm P",
+          "-",
+          "150",
+          "1.28 KG",
+          "12",
+          "-",
+          "Production / Decant excess liquid-fat-etc"
+        ],
+        [
+          "",
+          "GN 1:3 190 mm",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "For \"cutlery/tools\""
+        ]
+      ]
+    },
+    {
+      "title": "Copy of BRAISER Bible_DE (Provisional)",
+      "sheetId": 1492994295,
+      "values": [
+        [],
+        [],
+        [],
+        [
+          "",
+          "",
+          "BRAISER"
+        ],
+        [
+          "",
+          "",
+          "KATEGORIE_",
+          "SUBREZEPT SKU_",
+          "MAX ROH_ (KG)",
+          "GEKOCHTE ERTRAG (KG)",
+          "ERTRAG_ (%)",
+          "WASSER ZUGEGEBEN_ (KG)",
+          "ABFLUSS_",
+          "QA TEMP_ (ºC)",
+          "KOMMENTARE"
+        ],
+        [
+          "",
+          "",
+          "SAUCES",
+          "-",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "BODENPROTEINE",
+          "Rinderhackfleisch",
+          "72.00 KG",
+          "TBD",
+          "#VALUE!",
+          "5.00 KG"
+        ],
+        [
+          "",
+          "",
+          "BODENPROTEINE",
+          "Putenhackfleisch",
+          "72.00 KG",
+          "TBD",
+          "#VALUE!",
+          "5.00 KG"
+        ],
+        [
+          "",
+          "",
+          "BODENPROTEINE",
+          "Chorizo-Hackfleisch",
+          "72.00 KG",
+          "TBD",
+          "#VALUE!",
+          "5.00 KG"
+        ],
+        [
+          "",
+          "",
+          "BODENPROTEINE",
+          "Schweinehackfleisch",
+          "72.00 KG",
+          "TBD",
+          "#VALUE!",
+          "5.00 KG"
+        ],
+        [
+          "",
+          "",
+          "RISOTTOS",
+          "-",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "BLUMENKOHL/ GRATIN / REIS",
+          "Blumenkohlgrütze",
+          "TBD",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "BLUMENKOHL/ GRATIN / REIS",
+          "Blumenkohlgratin",
+          "TBD",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "BLUMENKOHL/ GRATIN / REIS",
+          "Blumenkohlreis",
+          "TBD",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "MASHES",
+          "Selleriepüree",
+          "90.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "MASHES",
+          "Süßkartoffelpüree",
+          "90.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "MASHES",
+          "Blumenkohlpüree",
+          "90.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "SAUTIERT",
+          "Karamellisierte Zwiebeln",
+          "68.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "SAUTIERT",
+          "Gebratener Mais",
+          "TBD",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "GESCHMORT",
+          "Geschmorte Pilze",
+          "68.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CHILIS",
+          "Sloppy Joes",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CHILIS",
+          "Puten-Chili",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CHILIS",
+          "Chorizo-Chili",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ]
+      ]
+    },
+    {
+      "title": "BRAISER Bible_EN (Provisional)",
+      "sheetId": 1665120961,
+      "values": [
+        [
+          "1"
+        ],
+        [],
+        [],
+        [
+          "",
+          "",
+          "BRAISER"
+        ],
+        [
+          "",
+          "",
+          "CATEGORY_",
+          "SUBRECIPE SKU_",
+          "MAX RAW_ (KG)",
+          "COOKED YIELD_ (KG)",
+          "YIELD_ (%)",
+          "WATTER ADDED_ (KG)",
+          "DRAIN_",
+          "QA TEMP_ (ºC)",
+          "COMMENTS"
+        ],
+        [
+          "",
+          "",
+          "SAUCES",
+          "-",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "GROUND PROTEINS",
+          "GROUND BEEF",
+          "72.00 KG",
+          "TBD",
+          "#VALUE!",
+          "5.00 KG"
+        ],
+        [
+          "",
+          "",
+          "GROUND PROTEINS",
+          "GROUND TURKEY",
+          "72.00 KG",
+          "TBD",
+          "#VALUE!",
+          "5.00 KG"
+        ],
+        [
+          "",
+          "",
+          "GROUND PROTEINS",
+          "GROUND CHORIZO",
+          "72.00 KG",
+          "TBD",
+          "#VALUE!",
+          "5.00 KG"
+        ],
+        [
+          "",
+          "",
+          "GROUND PROTEINS",
+          "GROUND PORK",
+          "72.00 KG",
+          "TBD",
+          "#VALUE!",
+          "5.00 KG"
+        ],
+        [
+          "",
+          "",
+          "RISOTTOS",
+          "-",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CAULIF.GRITS / GRATIN / RICES",
+          "CAULIFLOWER GRITS",
+          "TBD",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CAULIF.GRITS / GRATIN / RICES",
+          "CAULIFLOWER GRATIN",
+          "TBD",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CAULIF.GRITS / GRATIN / RICES",
+          "CAULIFLOWER RICE",
+          "TBD",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "MASHES",
+          "CELERY ROOT MASH",
+          "90.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "MASHES",
+          "SWEET POTATO MASH",
+          "90.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "MASHES",
+          "CAULIFLOWER MASH",
+          "90.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "SAUTEED",
+          "CARAMELIZED ONIONS",
+          "68.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "SAUTEED",
+          "SAUTEED CORNS",
+          "TBD",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "BRAISED",
+          "BRAISED MUSHROOMS",
+          "68.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CHILIS",
+          "SLOOPY JOES",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CHILIS",
+          "TURKEY CHILI",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ],
+        [
+          "",
+          "",
+          "CHILIS",
+          "CHORIZO CHILI",
+          "100.00 KG",
+          "TBD",
+          "#VALUE!",
+          "-"
+        ]
+      ]
+    },
+    {
+      "title": "Copy of MIDDLE-KITCHEN Bible_DE (Provisional)",
+      "sheetId": 1058658328,
+      "values": [
+        [],
+        [],
+        [],
+        [
+          "",
+          "MIDDLE-KITCHEN"
+        ],
+        [
+          "",
+          "MASCHINEN_",
+          "SKU-UNTERREZEPTE_",
+          "MAXIMALE BELASTBARKEIT (KG)",
+          "STANDARD-EINSTELLUNGEN_",
+          "WICHTIGE REGELN_",
+          "QA NOTES_"
+        ],
+        [
+          "",
+          "Verimixer Ergo 140\r\n\r\n\r\n",
+          "BUTTER",
+          "70.00 KG",
+          "",
+          "Wenn die Butter zu hart ist, gehen Sie langsam vor. Wenn die Butter gegen die „Varimixer-Tür“ stößt und diese öffnet, stoppt das Gerät."
+        ],
+        [
+          "",
+          "",
+          "HACKFLEISCH",
+          "105.00 KG",
+          "",
+          "Die Burger-Mischung sollte\n4–5 Minuten in den Hobart-Standmixern \nund 10 Minuten im Vertikalmischer gemischt werden.“"
+        ],
+        [
+          "",
+          "",
+          "FRISCHKÄSE",
+          "105.00 KG"
+        ],
+        [
+          "",
+          "",
+          "PÜREE",
+          "95.00 KG"
+        ],
+        [],
+        [
+          "",
+          "Verimixer Ergo 140",
+          "GEZUPFTES SCHWEINEFLEISCH",
+          "50.00 KG",
+          "1:30 MIN - GESCHWINDIGKEIT 1",
+          "Keine flüssige Brühe hinzugefügt. In 4 Stücke quer schneiden."
+        ],
+        [
+          "",
+          "",
+          "GEZUPFTES RINDFLEISCH",
+          "50.00 KG",
+          "2:00 MIN - GESCHWINDIGKEIT 3",
+          "Zu Beginn 1 l Flüssigbrühe hinzufügen. Sobald\nzerkleinert ist, mit 9 l Flüssigbrühe vermischen. Sollte in 1 cm dicke Scheiben geschnitten werden.\nDie Fettstreifen entfernen."
+        ],
+        [],
+        [
+          "",
+          "Verimixer Ergo 140",
+          "HACKFLEISCH ",
+          "80KG",
+          "",
+          "Die Burger-Mischung sollte\n4–5 Minuten in den Hobart-Standmixern \nund 10 Minuten im Vertikalmischer gemischt werden."
+        ],
+        [],
+        [
+          "",
+          "PORTIONIEREN_"
+        ],
+        [
+          "",
+          "VEMAG BUTTERFORMER STANDARD-EINSTELLUNGEN"
+        ],
+        [
+          "",
+          "PROGRAMM",
+          "PORTIONSGRÖSSE (KG)"
+        ],
+        [
+          "",
+          "1",
+          "0.007 KG"
+        ],
+        [
+          "",
+          "2",
+          "0.013 KG"
+        ],
+        [
+          "",
+          "3",
+          "0.025 KG"
+        ],
+        [
+          "",
+          "HANDKELLER"
+        ],
+        [
+          "",
+          "SCOOP-FARBE",
+          "PORTIONSGRÖSSE (KG)"
+        ],
+        [
+          "",
+          "SILBER",
+          "0.010 KG"
+        ],
+        [
+          "",
+          "LILA",
+          "0.025 KG"
+        ],
+        [
+          "",
+          "SCHWARZ",
+          "0.028 KG"
+        ],
+        [
+          "",
+          "ROT",
+          "0.040 KG"
+        ],
+        [
+          "",
+          "GELB",
+          "0.050 KG"
+        ],
+        [
+          "",
+          "BLAU",
+          "0.060 KG"
+        ],
+        [
+          "",
+          "GRÜN",
+          "0.080 KG"
+        ],
+        [
+          "",
+          "BEIGE",
+          "0.090 KG"
+        ],
+        [
+          "",
+          "GRAU",
+          "0.100 KG"
+        ],
+        [
+          "",
+          "WEISS",
+          "0.135 KG"
+        ]
+      ]
+    },
+    {
+      "title": "MIDDLE-KITCHEN Bible_EN (Provisional)",
+      "sheetId": 611359522,
+      "values": [
+        [],
+        [],
+        [],
+        [
+          "",
+          "MIDDLE-KITCHEN"
+        ],
+        [
+          "",
+          "MACHINERY_",
+          "SKU SUBRECIPES_",
+          "MAX CAPACITY_ (KG)",
+          "STANDARD SETTINGS_",
+          "CRITICAL RULES_",
+          "QA NOTES_"
+        ],
+        [
+          "",
+          "Verimixer Ergo 140",
+          "BUTTER",
+          "70.00 KG",
+          "",
+          "If butter is too hard, go slowly. If the butter hits the \"varimixer door\" and opens it the machine stop working."
+        ],
+        [
+          "",
+          "",
+          "GROUND MEAT",
+          "105.00 KG",
+          "",
+          "Burger blend should be mixed\nfor 4-5 minutes in the Hobart stand mixers \nand 10 minutes in the vertical mixer."
+        ],
+        [
+          "",
+          "",
+          "CREAM CHEESE",
+          "105.00 KG"
+        ],
+        [
+          "",
+          "",
+          "MASH",
+          "95.00 KG"
+        ],
+        [],
+        [
+          "",
+          "Verimixer Ergo 140",
+          "SHREDDED PORK",
+          "50.00 KG",
+          "1:30 MIN - SPEED 1",
+          "No added liquid-broth. Cross-cut into 4 pieces."
+        ],
+        [
+          "",
+          "",
+          "SHREDDED BEEF",
+          "50.00 KG",
+          "2:00 MIN - SPEED 3",
+          "Add 1L liquid-broth at the beggining. Once\nis shredded mix with 9L liquid-broth. Should be sliced in pieces of 1cm thickness.\nRemove the fat-streak ."
+        ],
+        [],
+        [
+          "",
+          "Verimixer Ergo 140",
+          "GROUND MEAT ",
+          " 80KG",
+          "",
+          "Burger blend should be mixed\nfor 4-5 minutes in the Hobart stand mixers \nand 10 minutes in the vertical mixer."
+        ],
+        [],
+        [
+          "",
+          "PORTIONING_"
+        ],
+        [
+          "",
+          "VEMAG BUTTER FORMER DEFAULT SETTINGS"
+        ],
+        [
+          "",
+          "PROGRAM",
+          "PORTION SIZE (KG)"
+        ],
+        [
+          "",
+          "1",
+          "0.007 KG"
+        ],
+        [
+          "",
+          "2",
+          "0.013 KG"
+        ],
+        [
+          "",
+          "3",
+          "0.025 KG"
+        ],
+        [
+          "",
+          "HAND SCOOPS"
+        ],
+        [
+          "",
+          "SCOOP COLOR",
+          "PORTION SIZE (KG)"
+        ],
+        [
+          "",
+          "SILVER",
+          "0.010 KG"
+        ],
+        [
+          "",
+          "PURPLE",
+          "0.025 KG"
+        ],
+        [
+          "",
+          "BLACK",
+          "0.028 KG"
+        ],
+        [
+          "",
+          "RED",
+          "0.040 KG"
+        ],
+        [
+          "",
+          "YELLOW",
+          "0.050 KG"
+        ],
+        [
+          "",
+          "BLUE",
+          "0.060 KG"
+        ],
+        [
+          "",
+          "GREEN",
+          "0.080 KG"
+        ],
+        [
+          "",
+          "TAN",
+          "0.090 KG"
+        ],
+        [
+          "",
+          "GREY",
+          "0.100 KG"
+        ],
+        [
+          "",
+          "WHITE",
+          "0.135 KG"
+        ]
+      ]
+    }
+  ]
+}

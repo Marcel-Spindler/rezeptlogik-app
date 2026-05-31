@@ -287,12 +287,13 @@ function buildPlatingLineSchedule(platingPlan: PlatingEntry[], targetRun: 1 | 2)
 function statusTone(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized.includes("not started")) return "bg-rose-100 text-rose-700 ring-rose-200";
-  if (normalized.includes("pre blast")) return "bg-amber-100 text-amber-800 ring-amber-200";
-  if (normalized.includes("post blast")) return "bg-emerald-100 text-emerald-700 ring-emerald-200";
-  if (normalized.includes("open")) return "bg-orange-100 text-orange-700 ring-orange-200";
-  if (normalized.includes("picking")) return "bg-sky-100 text-sky-700 ring-sky-200";
-  if (normalized.includes("staged")) return "bg-violet-100 text-violet-700 ring-violet-200";
-  return "bg-slate-100 text-slate-700 ring-slate-200";
+  if (normalized.includes("pre blast"))   return "bg-amber-100 text-amber-800 ring-amber-200";
+  if (normalized.includes("post blast"))  return "bg-emerald-100 text-emerald-700 ring-emerald-200";
+  if (normalized.includes("open"))        return "bg-orange-100 text-orange-700 ring-orange-200";
+  if (normalized.includes("picking"))     return "bg-sky-100 text-sky-700 ring-sky-200";
+  if (normalized.includes("staged"))      return "bg-violet-100 text-violet-700 ring-violet-200";
+  if (normalized.includes("allocation"))  return "bg-pink-100 text-pink-700 ring-pink-200";
+  return "bg-slate-200 text-slate-700 ring-slate-300";
 }
 
 function buildRun1Mail(run1Rows: RundmailRow[]): string {
@@ -381,6 +382,20 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
   const allDays = Array.from(new Set(allRows.filter(r => isTargetRun(r.dateNeeded)).map((row) => row.dateNeeded))).sort((a, b) => daySortValue(a) - daySortValue(b));
   const platingPlan = buildPlatingPlan(allRows);
 
+  const timelineCards = allDays.map(day => {
+    const dayRows = allRows.filter(r => r.dateNeeded === day);
+    const seen = new Map<string, RundmailRow>();
+    dayRows.forEach(row => {
+      const prev = seen.get(row.recipeId);
+      if (!prev || row.targetPortions > prev.targetPortions) seen.set(row.recipeId, row);
+    });
+    const deduped = Array.from(seen.values());
+    const target = deduped.reduce((s, r) => s + r.targetPortions, 0);
+    const cooked = deduped.reduce((s, r) => s + r.woCookedPortions, 0);
+    const open = deduped.reduce((s, r) => s + toSlack(r.targetPortions - r.woCookedPortions), 0);
+    return { day, count: dayRows.length, target, cooked, open };
+  });
+
   // Deduplizierung: Portionen nur einmal pro Rezept zählen
   const dedupedRun = Array.from(
     new Map(targetRunRows.map(r => [r.recipeId, r])).values()
@@ -447,7 +462,7 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
               <td>
                 <span style="font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:800;color:#0f172a;">${escapeHtml(firstRow.recipeName.replace(/\s*\[.*?\]/g, ""))}</span>
-                <span style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;margin-left:8px;">${escapeHtml(firstRow.recipeId)} &middot; ${fmtInt(recipe.target)} Portionen &middot; ${recipe.rows.length} Sub-Rezepte</span>
+                <span style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;margin-left:8px;">${escapeHtml(firstRow.recipeId)} &middot; ${fmtInt(recipe.target)} Portionen &middot; ${recipe.rows.length} Sub-Rezepte &middot; <strong style="color:#0f172a;">${recipe.rows.length + 1} MA</strong></span>
                 ${hasFish ? `<span style="color:#dc2626;font-weight:800;margin-left:4px;">&#9888;</span>` : ""}
               </td>
               <td align="right" style="white-space:nowrap;">${allergenBadges}</td>
@@ -467,7 +482,7 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
             <td>
               <span style="font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:700;color:#ffffff;">${escapeHtml(date)} &mdash; Run&nbsp;${run}</span>
-              <span style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#94a3b8;margin-left:12px;">${uniqueRecipeCount} Rezepte &middot; ${totalSubCount} WOs &middot; ${fmtInt(dayTarget)} Portionen</span>
+              <span style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#94a3b8;margin-left:12px;">${uniqueRecipeCount} Rezepte &middot; ${totalSubCount} WOs &middot; ${fmtInt(dayTarget)} Portionen &middot; <strong style="color:#fbbf24;">${totalSubCount + 1} MA</strong></span>
             </td>
             <td align="right" style="white-space:nowrap;">
               <span style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#7dd3fc;">&#128197; Plating ab: ${escapeHtml(platingDate)}</span>
@@ -505,6 +520,9 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
           <div style="font-size:10px;color:${C.slate};margin-top:2px;">
             ${escapeHtml(entry.recipeId)} &middot; <strong style="color:${C.navy};">${fmtInt(entry.targetPortions)}</strong> Portionen &middot; ${entry.subRecipes.length} Sub-Rezepte &middot; <strong style="color:${lineColor};">${hours} h</strong>
           </div>
+          <div style="margin-top:4px;">
+            <span style="display:inline-block;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:800;">&#128101; ${entry.subRecipes.length + 1} MA ben&ouml;tigt</span>
+          </div>
           <div style="margin-top:4px;">${badges}</div>
         </td></tr>
       </table>`;
@@ -518,6 +536,8 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
     const parallelHours = Math.round((totalPortions / (2 * PLATING_RATE)) * 10) / 10;
     const activeLinesCount = (slot.line1.length > 0 ? 1 : 0) + (slot.line2.length > 0 ? 1 : 0);
     const recommendedStaff = activeLinesCount * PLATING_STAFF_PER_LINE;
+    // MA-Bedarf nach Sub-Rezept-Formel: jedes Rezept braucht (sub_rezepte + 1) MA
+    const maBySubRecipe = [...slot.line1, ...slot.line2].reduce((s, e) => s + e.subRecipes.length + 1, 0);
 
     // Reinigungsmarker zwischen Rezepten mit unterschiedlichem Allergen-Profil
     function renderLineWithMarkers(entries: PlatingEntry[], lineColor: string): string {
@@ -562,7 +582,7 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
             <td>
               <div style="font-size:13px;font-weight:800;color:${C.white};">&#128197; Plating ab ${escapeHtml(platingDate)} &mdash; Run ${run}</div>
               <div style="font-size:11px;color:#93c5fd;margin-top:2px;">
-                Fertigstellung: ${escapeHtml(completionDate)} &middot; ${slot.line1.length + slot.line2.length} Rezepte &middot; ${fmtInt(totalPortions)} Portionen &middot; <strong style="color:#fbbf24;">~${recommendedStaff} MA empfohlen</strong> (${activeLinesCount} Linie${activeLinesCount > 1 ? "n" : ""} &times; ${PLATING_STAFF_PER_LINE} MA) &middot; ${totalSwitches > 0 ? `<span style="color:#fcd34d;">&#9888; ${totalSwitches} Allergen-Wechsel</span>` : `<span style="color:#6ee7b7;">&#10003; keine Allergen-Wechsel</span>`}
+                Fertigstellung: ${escapeHtml(completionDate)} &middot; ${slot.line1.length + slot.line2.length} Rezepte &middot; ${fmtInt(totalPortions)} Portionen &middot; <strong style="color:#fbbf24;">&#128101; ${maBySubRecipe} MA (Sub-Rezept-Formel)</strong> &middot; Plating-Linien: ~${recommendedStaff} MA (${activeLinesCount}&times;${PLATING_STAFF_PER_LINE}) &middot; ${totalSwitches > 0 ? `<span style="color:#fcd34d;">&#9888; ${totalSwitches} Allergen-Wechsel</span>` : `<span style="color:#6ee7b7;">&#10003; keine Allergen-Wechsel</span>`}
               </div>
               ${totalSwitches > 0 ? `<div style="margin-top:6px;padding:5px 10px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);border-radius:6px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#fef3c7;font-weight:600;">&#9888;&nbsp;ALLERGEN-SICHERHEIT: Bei jedem Meal-Wechsel mit anderen Allergenen Linie vollst&auml;ndig reinigen. Gleiche Allergene wurden gebündelt um Wechsel zu minimieren.</div>` : ""}
             </td>
@@ -631,12 +651,8 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
       const allEarly = team?.allStaffEarly ?? 0;
       const allLate = team?.allStaffLate ?? 0;
 
-      const linesNeeded = bd.boxes > 0 ? Math.ceil(bd.boxes / bpls2) : 0;
       const isOk = bd.boxes === 0 || maxCap >= bd.boxes;
       const isTight = !isOk && maxCap > 0 && maxCap >= bd.boxes * 0.75;
-      const statusBg = bd.boxes === 0 ? "#f8fafc" : isOk ? "#f0fdf4" : isTight ? "#fffbeb" : "#fef2f2";
-      const statusText = bd.boxes === 0 ? "#94a3b8" : isOk ? "#166534" : isTight ? "#92400e" : "#991b1b";
-      const statusLabel = bd.boxes === 0 ? "–" : isOk ? "✓ OK" : isTight ? "⚠ Eng" : "✗ Kritisch";
 
       // Area breakdown for tooltip-like details
       const areaDetails = team
@@ -651,44 +667,101 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
             .join(" &middot; ")
         : "";
 
+      const utilPct = maxCap > 0 && bd.boxes > 0 ? Math.min(100, Math.round((bd.boxes / maxCap) * 100)) : 0;
+      const accentColor = bd.boxes === 0 ? "#94a3b8" : isOk ? "#10b981" : isTight ? "#f59e0b" : "#ef4444";
+      const statusBadgeBg = bd.boxes === 0 ? "#f1f5f9" : isOk ? "#dcfce7" : isTight ? "#fef3c7" : "#fee2e2";
+      const statusBadgeText = bd.boxes === 0 ? "#64748b" : isOk ? "#166534" : isTight ? "#92400e" : "#991b1b";
+      const statusEmoji = bd.boxes === 0 ? "–" : isOk ? "✓ OK" : isTight ? "⚠ Eng" : "✗ Kritisch";
+      const rowBg = bd.boxes === 0 ? C.white : isOk ? "#f0fdf4" : isTight ? "#fffbeb" : "#fef2f2";
+
       return `
-      <tr style="background:${statusBg};">
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:700;color:#0f172a;white-space:nowrap;">${escapeHtml(bd.dayLabel)}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#334155;text-align:right;">${bd.boxes ? fmtInt(bd.boxes) : "–"}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#475569;text-align:right;">${bd.meals ? fmtInt(bd.meals) : "–"}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#334155;text-align:center;">${linesEarly}F / ${linesLate}S</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#334155;text-align:right;">${phEarly + phLate > 0 ? (phEarly + phLate).toFixed(1) : "–"}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#334155;text-align:right;">${kEarly + kLate > 0 ? (kEarly + kLate).toFixed(1) : "–"}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#334155;text-align:right;">${allEarly + allLate > 0 ? (allEarly + allLate).toFixed(0) : "–"}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#334155;text-align:right;">${maxCap ? fmtInt(maxCap) : "–"}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#334155;text-align:center;">${linesNeeded || "–"}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:700;color:${statusText};text-align:center;">${statusLabel}</td>
+      <tr style="background:${rowBg};border-left:3px solid ${accentColor};">
+        <td style="padding:9px 12px;border-bottom:1px solid ${C.border};font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:800;color:${C.navy};white-space:nowrap;border-left:3px solid ${accentColor};">${escapeHtml(bd.dayLabel)}</td>
+        <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:700;color:${C.navy};text-align:right;">${bd.boxes ? fmtInt(bd.boxes) : "<span style='color:#cbd5e1'>–</span>"}</td>
+        <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:${C.slate};text-align:right;">${bd.meals ? fmtInt(bd.meals) : "<span style='color:#cbd5e1'>–</span>"}</td>
+        <td style="padding:9px 10px;border-bottom:1px solid ${C.border};text-align:center;">
+          ${linesEarly > 0 || linesLate > 0 ? `
+          <span style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;color:#0369a1;background:#dbeafe;border-radius:4px;padding:2px 6px;">${linesEarly}F</span>
+          <span style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#94a3b8;margin:0 2px;">/</span>
+          <span style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;color:#6d28d9;background:#ede9fe;border-radius:4px;padding:2px 6px;">${linesLate}S</span>
+          ` : `<span style="color:#cbd5e1">–</span>`}
+        </td>
+        <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:600;color:#0369a1;text-align:right;">${phEarly + phLate > 0 ? (phEarly + phLate).toFixed(0) : "<span style='color:#cbd5e1'>–</span>"}</td>
+        <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:600;color:${C.emeraldDark};text-align:right;">${kEarly + kLate > 0 ? (kEarly + kLate).toFixed(0) : "<span style='color:#cbd5e1'>–</span>"}</td>
+        <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:900;color:${C.navy};text-align:right;">${allEarly + allLate > 0 ? (allEarly + allLate).toFixed(0) : "<span style='font-weight:400;color:#cbd5e1'>–</span>"}</td>
+        <td style="padding:9px 10px;border-bottom:1px solid ${C.border};font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:${C.emeraldDark};font-weight:600;text-align:right;">${maxCap ? fmtInt(maxCap) : "<span style='color:#cbd5e1'>–</span>"}</td>
+        <td style="padding:9px 10px;border-bottom:1px solid ${C.border};text-align:center;min-width:80px;">
+          ${utilPct > 0 ? `
+          <div style="background:#e2e8f0;border-radius:99px;height:6px;overflow:hidden;margin:0 4px 3px 4px;">
+            <div style="background:${accentColor};height:6px;width:${utilPct}%;border-radius:99px;"></div>
+          </div>
+          <span style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;font-weight:700;color:${accentColor};">${utilPct}%</span>
+          ` : `<span style="color:#cbd5e1;font-family:Segoe UI,Arial,sans-serif;font-size:11px;">–</span>`}
+        </td>
+        <td style="padding:9px 12px;border-bottom:1px solid ${C.border};text-align:center;">
+          <span style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;font-weight:800;color:${statusBadgeText};background:${statusBadgeBg};border-radius:99px;padding:3px 10px;white-space:nowrap;">${statusEmoji}</span>
+        </td>
       </tr>
-      ${areaDetails ? `<tr style="background:#f8fafc;"><td colspan="10" style="padding:3px 10px 6px 10px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;border-bottom:1px solid #e2e8f0;">${areaDetails}</td></tr>` : ""}`;
+      ${areaDetails ? `<tr style="background:#f8fafc;"><td colspan="10" style="padding:3px 12px 7px 15px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;border-bottom:1px solid ${C.border};border-left:3px solid ${accentColor};">${areaDetails}</td></tr>` : ""}`;
     }).join("");
 
+    // KPI-Zusammenfassung
+    const totalBoxes = boxSched.reduce((s, b) => s + b.boxes, 0);
+    const peakDay = boxSched.reduce((best, b) => b.boxes > best.boxes ? b : best, boxSched[0] ?? { dayLabel: "–", boxes: 0, meals: 0 });
+    const totalMA = teamByDay.reduce((s, t) => s + t.allStaffEarly + t.allStaffLate, 0);
+
     return `
-    <tr><td style="padding:20px 24px 8px 24px;border-top:2px solid #e2e8f0;">
-      <div style="font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:800;color:#0f172a;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:3px;">Kapazitäts- &amp; Personalplan</div>
-      <div style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#64748b;margin-bottom:14px;">
-        Referenz: ${escapeHtml(refNote)} &middot; 1 Plating-Linie = 1.000 Boxen/Std &middot; ${fmtInt(bpls2)} Boxen/Linie/Schicht
-      </div>
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+    <tr><td style="padding:20px 24px 8px 24px;border-left:1px solid ${C.border};border-right:1px solid ${C.border};border-top:2px solid ${C.border};">
+      ${sectionHeader("Kapazit&auml;ts- &amp; Personalplan", `Referenz ${escapeHtml(refNote)} &middot; ${fmtInt(bpls2)}&thinsp;Boxen/Linie/Schicht &middot; 1&thinsp;Linie&thinsp;=&thinsp;1.000 Boxen/h`, C.emerald)}
+
+      <!-- KPI-Band -->
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:14px;">
         <tr>
-          <th align="left" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:0.08em;">Tag</th>
-          <th align="right" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:0.08em;">Boxen</th>
-          <th align="right" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:0.08em;">Mahlzeiten</th>
-          <th align="center" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#0ea5e9;text-transform:uppercase;letter-spacing:0.08em;">Plating-Linien (F/S)</th>
-          <th align="right" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#0ea5e9;text-transform:uppercase;letter-spacing:0.08em;">Plating-MA</th>
-          <th align="right" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:0.08em;">Küchen-MA</th>
-          <th align="right" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:0.08em;">Gesamt-MA</th>
-          <th align="right" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#166534;text-transform:uppercase;letter-spacing:0.08em;">Max Kapazität</th>
-          <th align="center" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:0.08em;">Linien nötig</th>
-          <th align="center" style="padding:6px 10px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:0.08em;">Status</th>
+          <td width="25%" style="padding:0 6px 0 0;">
+            <div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:10px;padding:12px 14px;">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:4px;">Boxen gesamt</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:22px;font-weight:900;color:#ffffff;line-height:1;">${fmtInt(totalBoxes)}</div>
+            </div>
+          </td>
+          <td width="25%" style="padding:0 6px;">
+            <div style="background:linear-gradient(135deg,#0c4a6e,#0369a1);border-radius:10px;padding:12px 14px;">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:9px;color:#bae6fd;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:4px;">Peak-Tag</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:18px;font-weight:900;color:#ffffff;line-height:1;">${escapeHtml(peakDay.dayLabel)}</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#7dd3fc;margin-top:2px;">${fmtInt(peakDay.boxes)} Boxen</div>
+            </div>
+          </td>
+          <td width="25%" style="padding:0 6px;">
+            <div style="background:linear-gradient(135deg,#064e3b,#065f46);border-radius:10px;padding:12px 14px;">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:9px;color:#6ee7b7;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:4px;">Ø MA / Tag</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:22px;font-weight:900;color:#ffffff;line-height:1;">${teamByDay.length > 0 ? Math.round(totalMA / teamByDay.length) : "–"}</div>
+            </div>
+          </td>
+          <td width="25%" style="padding:0 0 0 6px;">
+            <div style="background:linear-gradient(135deg,#1e3a5f,#0f172a);border-radius:10px;padding:12px 14px;">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:9px;color:#c7d2fe;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:4px;">Mahlzeiten</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:22px;font-weight:900;color:#ffffff;line-height:1;">${fmtInt(boxSched.reduce((s, b) => s + b.meals, 0))}</div>
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Haupttabelle -->
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid ${C.border};border-radius:12px;overflow:hidden;">
+        <tr>
+          <th align="left"   style="padding:8px 12px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#93c5fd;text-transform:uppercase;letter-spacing:0.1em;white-space:nowrap;">Tag</th>
+          <th align="right"  style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#93c5fd;text-transform:uppercase;letter-spacing:0.1em;">Boxen</th>
+          <th align="right"  style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#7dd3fc;text-transform:uppercase;letter-spacing:0.1em;">Mahlzeiten</th>
+          <th align="center" style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#7dd3fc;text-transform:uppercase;letter-spacing:0.1em;">Linien&nbsp;F/S</th>
+          <th align="right"  style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#93c5fd;text-transform:uppercase;letter-spacing:0.1em;">Plating-MA</th>
+          <th align="right"  style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#6ee7b7;text-transform:uppercase;letter-spacing:0.1em;">Küchen-MA</th>
+          <th align="right"  style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#ffffff;text-transform:uppercase;letter-spacing:0.1em;font-weight:900;">Ges.-MA</th>
+          <th align="right"  style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#6ee7b7;text-transform:uppercase;letter-spacing:0.1em;">Max&nbsp;Kap.</th>
+          <th align="center" style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#93c5fd;text-transform:uppercase;letter-spacing:0.1em;">Auslastung</th>
+          <th align="center" style="padding:8px 12px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#f8fafc;text-transform:uppercase;letter-spacing:0.1em;">Status</th>
         </tr>
         ${rows}
       </table>
-      <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#94a3b8;margin-top:6px;">F = Frühschicht · S = Spätschicht</div>
+      <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:${C.slateLight};margin-top:6px;">F = Fr&uuml;hschicht &middot; S = Sp&auml;tschicht &middot; MA = Mitarbeiter (FTE)</div>
     </td></tr>`;
   })() : "";
 
@@ -825,34 +898,6 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
       "Sonstige": allAreas.filter(a => !/plating|^k\d|^ffm|^w\d/i.test(a)),
     };
 
-    const headerCols = days.map(d =>
-      `<th style="padding:6px 8px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#93c5fd;text-align:center;letter-spacing:0.05em;">${d.dayLabel.substring(0,3)}</th>`
-    ).join("");
-
-    const totalRow = `<tr style="background:${C.navy};">
-      <td style="padding:7px 10px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:800;color:#ffffff;">GESAMT</td>
-      ${days.map(d => {
-        const total = (d.allStaffEarly + d.allStaffLate);
-        return `<td style="padding:7px 8px;font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:800;color:#ffffff;text-align:center;">${total.toFixed(0)}</td>`;
-      }).join("")}
-    </tr>`;
-
-    const platingRow = `<tr style="background:#eff6ff;">
-      <td style="padding:6px 10px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;color:${C.skyDark};">&#10145; Plating gesamt</td>
-      ${days.map(d => {
-        const ph = d.platingHeadcountEarly + d.platingHeadcountLate;
-        const lines = d.platingLinesEarly + d.platingLinesLate;
-        return `<td style="padding:6px 8px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;color:${C.skyDark};text-align:center;">${ph > 0 ? ph.toFixed(1) : "–"}<br/><span style="font-size:9px;color:${C.slate};">${lines > 0 ? `${lines}L` : ""}</span></td>`;
-      }).join("")}
-    </tr>`;
-
-    const kitchenRow = `<tr style="background:#f0fdf4;">
-      <td style="padding:6px 10px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;color:${C.emeraldDark};">&#10145; Küche gesamt</td>
-      ${days.map(d => {
-        const kh = d.kitchenHeadcountEarly + d.kitchenHeadcountLate;
-        return `<td style="padding:6px 8px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;color:${C.emeraldDark};text-align:center;">${kh > 0 ? kh.toFixed(1) : "–"}</td>`;
-      }).join("")}
-    </tr>`;
 
     const groupRows = Object.entries(areaGroups).filter(([, areas]) => areas.length > 0).map(([groupName, areas]) => {
       const groupHeader = `<tr><td colspan="${days.length + 1}" style="padding:5px 10px 2px 10px;background:${C.slateBg};font-family:Segoe UI,Arial,sans-serif;font-size:9px;font-weight:800;color:${C.slate};text-transform:uppercase;letter-spacing:0.12em;border-top:1px solid ${C.border};">${groupName}</td></tr>`;
@@ -879,19 +924,65 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
       return groupHeader + areaRows;
     }).join("");
 
-    return `<tr><td style="padding:20px 24px 8px 24px;border-top:2px solid ${C.border};">
+    return `<tr><td style="padding:20px 24px 8px 24px;border-left:1px solid ${C.border};border-right:1px solid ${C.border};border-top:2px solid ${C.border};">
       ${sectionHeader("Mitarbeiter-Matrix", `Besetzung je Bereich und Tag &mdash; Referenz ${escapeHtml(weeklyPlanning.referenceNote)}`, C.sky)}
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid ${C.border};border-radius:10px;overflow:hidden;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid ${C.border};border-radius:12px;overflow:hidden;">
+
+        <!-- Spalten-Header: Bereich + ein Tag pro Spalte -->
         <tr>
-          <th align="left" style="padding:6px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#93c5fd;white-space:nowrap;">Bereich</th>
-          ${headerCols}
+          <th align="left" style="padding:8px 14px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#93c5fd;text-transform:uppercase;letter-spacing:0.12em;white-space:nowrap;min-width:130px;">Bereich</th>
+          ${days.map(d => `<th style="padding:8px 10px;background:${C.navyMid};font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#e2e8f0;text-align:center;letter-spacing:0.06em;font-weight:700;">${d.dayLabel.substring(0,3).toUpperCase()}<br/><span style="font-size:8px;color:#64748b;font-weight:400;">${d.date ? d.date.slice(5) : ""}</span></th>`).join("")}
         </tr>
-        ${totalRow}
-        ${platingRow}
-        ${kitchenRow}
+
+        <!-- GESAMT-Zeile -->
+        <tr style="background:linear-gradient(90deg,${C.navy} 0%,${C.navyMid} 100%);">
+          <td style="padding:10px 14px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:900;color:#ffffff;letter-spacing:0.08em;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.1);">&#128101; GESAMT</td>
+          ${days.map(d => {
+            const total = d.allStaffEarly + d.allStaffLate;
+            const heat = total > 150 ? "#f97316" : total > 100 ? "#fbbf24" : total > 50 ? "#34d399" : "#93c5fd";
+            return `<td style="padding:10px 8px;text-align:center;border-right:1px solid rgba(255,255,255,0.06);">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:16px;font-weight:900;color:${heat};line-height:1;">${total > 0 ? Math.round(total) : "–"}</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:8px;color:#475569;margin-top:2px;">${d.allStaffEarly > 0 ? `F${Math.round(d.allStaffEarly)}` : ""}${d.allStaffLate > 0 ? ` S${Math.round(d.allStaffLate)}` : ""}</div>
+            </td>`;
+          }).join("")}
+        </tr>
+
+        <!-- Plating-Zeile -->
+        <tr style="background:#eff6ff;">
+          <td style="padding:8px 14px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;color:${C.skyDark};border-left:3px solid ${C.sky};border-right:1px solid ${C.border};">
+            &#9654; Plating
+          </td>
+          ${days.map(d => {
+            const ph = d.platingHeadcountEarly + d.platingHeadcountLate;
+            const lines = d.platingLinesEarly + d.platingLinesLate;
+            return `<td style="padding:8px 6px;text-align:center;border-right:1px solid ${C.border};">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:800;color:${C.skyDark};">${ph > 0 ? Math.round(ph) : "–"}</div>
+              ${lines > 0 ? `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:9px;color:${C.sky};margin-top:1px;">${lines} Linie${lines > 1 ? "n" : ""}</div>` : ""}
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:8px;color:#94a3b8;">${d.platingHeadcountEarly > 0 ? `F${Math.round(d.platingHeadcountEarly)}` : ""}${d.platingHeadcountLate > 0 ? ` S${Math.round(d.platingHeadcountLate)}` : ""}</div>
+            </td>`;
+          }).join("")}
+        </tr>
+
+        <!-- Küche-Zeile -->
+        <tr style="background:#f0fdf4;">
+          <td style="padding:8px 14px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:700;color:${C.emeraldDark};border-left:3px solid ${C.emerald};border-right:1px solid ${C.border};">
+            &#9654; K&uuml;che
+          </td>
+          ${days.map(d => {
+            const kh = d.kitchenHeadcountEarly + d.kitchenHeadcountLate;
+            return `<td style="padding:8px 6px;text-align:center;border-right:1px solid ${C.border};">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:800;color:${C.emeraldDark};">${kh > 0 ? Math.round(kh) : "–"}</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:8px;color:#94a3b8;margin-top:2px;">${d.kitchenHeadcountEarly > 0 ? `F${Math.round(d.kitchenHeadcountEarly)}` : ""}${d.kitchenHeadcountLate > 0 ? ` S${Math.round(d.kitchenHeadcountLate)}` : ""}</div>
+            </td>`;
+          }).join("")}
+        </tr>
+
+        <!-- Bereichs-Gruppen -->
         ${groupRows}
       </table>
-      <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:${C.slateLight};margin-top:6px;">F = Fr&uuml;hschicht &middot; S = Sp&auml;tschicht &middot; Zahlen = Mitarbeiter (FTE)</div>
+      <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:${C.slateLight};margin-top:6px;">
+        F = Fr&uuml;hschicht &middot; S = Sp&auml;tschicht &middot; Zahlen = Mitarbeiter (FTE)
+      </div>
     </td></tr>`;
   })() : "";
 
@@ -960,6 +1051,30 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
         <a href="${WHAT_IF_URL}" style="display:inline-block;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 16px;font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:700;color:#1d4ed8;text-decoration:none;margin-left:8px;">&#128200;&nbsp;What-if Rechner</a>
         <a href="${BREAKDOWN_URL}" style="display:inline-block;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 16px;font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:700;color:#166534;text-decoration:none;margin-left:8px;">&#128203;&nbsp;Breakdown Rechner</a>
       </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- ═══════════════════ RUN TIMELINE ═══════════════════ -->
+  <tr><td style="background:#f8fafc;padding:16px 24px;border-left:1px solid ${C.border};border-right:1px solid ${C.border};border-top:2px solid ${C.border};">
+    ${sectionHeader(`${runLabel} Timeline`, `Offene Portionen je Fertigstellungstag`)}
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
+      ${timelineCards.map(card => {
+        const { date, run } = parseDateNeeded(card.day);
+        const isAllDone = card.open === 0;
+        return `
+        <td style="padding:0 6px 0 0;vertical-align:top;width:${Math.round(100 / timelineCards.length)}%;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid ${isAllDone ? '#bbf7d0' : C.border};border-radius:10px;overflow:hidden;background:${isAllDone ? '#f0fdf4' : C.white};">
+            <tr><td style="background:${isAllDone ? '#166534' : C.navyMid};padding:7px 12px;">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;font-weight:700;color:#cbd5e1;text-transform:uppercase;letter-spacing:0.08em;">${escapeHtml(date)} &mdash; Run ${run}</div>
+            </td></tr>
+            <tr><td style="padding:10px 12px;">
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:24px;font-weight:900;color:${isAllDone ? '#166534' : card.open > 5000 ? C.red : C.amber};line-height:1;">${fmtInt(card.open)}</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:${C.slate};margin-top:2px;">${isAllDone ? '&#10003; Fertig' : 'Offen'}</div>
+              <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:${C.slateLight};margin-top:6px;">${card.count} ${runLabel} WOs &middot; Target ${fmtInt(card.target)}</div>
+            </td></tr>
+          </table>
+        </td>`;
+      }).join("")}
     </tr></table>
   </td></tr>
 
@@ -1080,7 +1195,10 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
         const parsedRows = parseSeedCsv(csvText);
         setRows(parsedRows);
       } catch {
-        if (!cancelled) setRows([]);
+        if (!cancelled) {
+          setRows([]);
+          setSourceLabel("⚠ Seed-CSV konnte nicht geladen werden — bitte CSV manuell hochladen.");
+        }
       }
     })();
 
@@ -1293,99 +1411,80 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
   return (
     <div className="space-y-4 rundmail-page">
       <section className="card p-4 rundmail-hero">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.16em] text-orange-700">Daily Rundmail Builder</div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Taegliche Produktions-Rundmail Cockpit</h2>
-            <p className="text-xs text-slate-600 mt-1">{sourceLabel}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="rundmail-chip">AUTO: RUN1 Mail</span>
-              <span className="rundmail-chip-soft">RUN1 Work Orders: {run1Rows.length}</span>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          {/* ── Titel & Status-Chips ── */}
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-[0.16em] text-orange-700">Factor OPS · Verden · Produktionsplanung</div>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">Tägliche Produktions-Rundmail</h2>
+            <p className={`text-xs mt-1 ${sourceLabel.startsWith("⚠") ? "text-red-600 font-semibold" : "text-slate-500"}`}>{sourceLabel}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="rundmail-chip">RUN1: {run1Rows.length} WOs</span>
               <span className="rundmail-chip-soft">Completion: {completionRate}%</span>
               {weeklyPlanning ? (
                 <span className="rundmail-chip-soft" title={weeklyPlanning.referenceNote}>
-                  {weeklyPlanning.isReference ? "⚠ " : ""}Wochenplanung KW{weeklyPlanning.cw} geladen
+                  {weeklyPlanning.isReference ? "⚠ " : "✓ "}KW{weeklyPlanning.cw} geladen
                 </span>
               ) : (
-                <span className="rundmail-chip-soft" style={{ opacity: 0.5 }}>Wochenplanung: nicht geladen (npm run import:weekly-planning)</span>
+                <span className="rundmail-chip-soft text-slate-400">Wochenplan fehlt</span>
               )}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button className="btn" onClick={() => fileInputRef.current?.click()}>CSV auswaehlen</button>
-            {/* ─── Tool-Navigation ─── */}
-            <button
-              className="btn"
-              style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}
-              onClick={() => onNavigate?.("whatif")}
-              title="What-If Rechner öffnen"
-            >
-              📈 What-If Rechner
-            </button>
-            <button
-              className="btn"
-              style={{ background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0" }}
-              onClick={() => onNavigate?.("breakdown")}
-              title="Breakdown-Rechner öffnen"
-            >
-              📋 Breakdown-Rechner
-            </button>
-            <button className="btn" onClick={copyCurrentMail} disabled={!mailText}>Markdown kopieren</button>
 
-            {/* ─── Run 1 Mail ─── */}
-            <button
-              className="btn"
-              onClick={() => downloadFile("Run1_Rundmail.html", run1HtmlMail, "text/html;charset=utf-8")}
-              disabled={!run1Rows.length}
-            >
-              Run 1 HTML
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                if (!run1Rows.length) return;
-                const blob = new Blob(["﻿", run1HtmlMail], { type: "text/html;charset=utf-8" });
-                const url = URL.createObjectURL(blob);
-                window.open(url, "_blank");
-                setTimeout(() => URL.revokeObjectURL(url), 10000);
-              }}
-              disabled={!run1Rows.length}
-              title="Run 1 Mail im Browser → Strg+A → Strg+C → in Gmail einfügen"
-            >
-              Run 1 → Gmail
-            </button>
-
-            {/* ─── Run 2 Mail ─── */}
-            <button
-              className="btn"
-              onClick={() => downloadFile("Run2_Rundmail.html", run2HtmlMail, "text/html;charset=utf-8")}
-              disabled={!rows.length}
-            >
-              Run 2 HTML
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                if (!rows.length) return;
-                const blob = new Blob(["﻿", run2HtmlMail], { type: "text/html;charset=utf-8" });
-                const url = URL.createObjectURL(blob);
-                window.open(url, "_blank");
-                setTimeout(() => URL.revokeObjectURL(url), 10000);
-              }}
-              disabled={!rows.length}
-              title="Run 2 Mail im Browser → Strg+A → Strg+C → in Gmail einfügen"
-            >
-              Run 2 → Gmail
-            </button>
-            <input
-              ref={fileInputRef}
-              className="hidden"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)}
-            />
+          {/* ── Button-Gruppen ── */}
+          <div className="flex flex-col gap-2 shrink-0">
+            {/* Gruppe 1: Daten */}
+            <div className="flex flex-wrap gap-1.5">
+              <button className="btn" onClick={() => fileInputRef.current?.click()}>
+                📂 CSV auswählen
+              </button>
+              <button className="btn" onClick={copyCurrentMail} disabled={!mailText}>
+                📋 Markdown
+              </button>
+            </div>
+            {/* Gruppe 2: Tools */}
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                className="btn text-blue-700 bg-blue-50 border-blue-200"
+                onClick={() => onNavigate?.("whatif")}
+              >
+                📈 What-If
+              </button>
+              <button
+                className="btn text-emerald-700 bg-emerald-50 border-emerald-200"
+                onClick={() => onNavigate?.("breakdown")}
+              >
+                🔢 Breakdown
+              </button>
+            </div>
+            {/* Gruppe 3: Mail-Export */}
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">Export:</span>
+              <button className="btn" onClick={() => downloadFile("Run1_Rundmail.html", run1HtmlMail, "text/html;charset=utf-8")} disabled={!run1Rows.length}>
+                R1 HTML
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => { if (!run1Rows.length) return; const blob = new Blob(["﻿", run1HtmlMail], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10000); }}
+                disabled={!run1Rows.length}
+                title="Im Browser öffnen → Strg+A → Strg+C → in Gmail"
+              >
+                R1 → Gmail
+              </button>
+              <button className="btn" onClick={() => downloadFile("Run2_Rundmail.html", run2HtmlMail, "text/html;charset=utf-8")} disabled={!rows.length}>
+                R2 HTML
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => { if (!rows.length) return; const blob = new Blob(["﻿", run2HtmlMail], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10000); }}
+                disabled={!rows.length}
+                title="Im Browser öffnen → Strg+A → Strg+C → in Gmail"
+              >
+                R2 → Gmail
+              </button>
+            </div>
           </div>
         </div>
+        <input ref={fileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)} />
 
         <div
           className={`mt-3 rounded-xl border-2 border-dashed p-4 text-sm transition-colors ${

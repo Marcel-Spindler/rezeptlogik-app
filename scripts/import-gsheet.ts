@@ -838,7 +838,12 @@ async function main() {
 
   const recipes = loadRecipesFromCsv();
   loadGrossFromCsv(recipes);
-  const cookSchedules = loadCookSchedulesVF();
+  let cookSchedules: Record<string, any> = {};
+  try {
+    cookSchedules = loadCookSchedulesVF();
+  } catch (e: any) {
+    console.warn(`  Cook Schedules CSV fehlt — übersprungen: ${e?.message}`);
+  }
 
   console.log("Lese PFEI (Equipment- & Batch-Daten) live …");
   const processSpecs = await readPfei();

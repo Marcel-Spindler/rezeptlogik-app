@@ -30,7 +30,12 @@
       "WebFetch(domain:docs.google.com)",
       "Bash(findstr /N \"equipmentHint\\\\|capacityKgHint\" src/BreakdownEquipmentView.tsx)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k: d[k] for k in ['scripts','name'] if k in d}, indent=2\\)\\)\")",
-      "Bash(findstr /i \"build\\\\|deploy\\\\|firebase\\\\|preview\\\\|host\")"
+      "Bash(findstr /i \"build\\\\|deploy\\\\|firebase\\\\|preview\\\\|host\")",
+      "Bash(GOOGLE_APPLICATION_CREDENTIALS=secrets/service-account.json npx tsx --eval ' *)",
+      "Bash(node --loader tsx/esm --experimental-specifier-resolution=node -e ' *)",
+      "Bash(node -e \"const d = JSON.parse\\(require\\('fs'\\).readFileSync\\('public/data/weekly-planning.json','utf8'\\)\\); console.log\\('CW:', d.cw, '| isRef:', d.isReference\\); console.log\\('BoxDays:', d.boxSchedule.length\\); d.boxSchedule.forEach\\(b => console.log\\(' ', b.dayLabel, b.boxes, 'boxes,', b.meals, 'meals'\\)\\); console.log\\('TeamDays:', d.teamByDay.length\\); d.teamByDay.forEach\\(t => console.log\\(' ', t.dayLabel, '| Plating:', t.platingLinesEarly+'F/'+t.platingLinesLate+'S', '\\('+\\( t.platingHeadcountEarly+t.platingHeadcountLate\\).toFixed\\(1\\)+' MA\\) | Küche:', \\(t.kitchenHeadcountEarly+t.kitchenHeadcountLate\\).toFixed\\(1\\), 'MA | Total:', \\(t.allStaffEarly+t.allStaffLate\\).toFixed\\(0\\), 'MA'\\)\\);\")",
+      "Bash(powershell -NoProfile -Command ' *)",
+      "Bash(python3)"
     ]
   }
 }

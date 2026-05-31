@@ -233,17 +233,8 @@ export function PlanningOasisView({
   }, [section]);
 
   // Delivery week for Manufacturing Calendar + Linienplanung.
-  // If productionPlan is already available and ahead of selected week → use it.
-  // Otherwise: next ISO week from selected.
-  const mfgWeek = useMemo<string>(() => {
-    const pPlanWeek = data.productionPlan?.week ?? "";
-    if (pPlanWeek && pPlanWeek > week) return pPlanWeek;
-    const m = /^(\d{4})-W(\d{2})$/.exec(week);
-    if (!m) return week;
-    const y = parseInt(m[1]), kw = parseInt(m[2]);
-    if (kw < 52) return `${y}-W${String(kw + 1).padStart(2, "0")}`;
-    return `${y + 1}-W01`;
-  }, [data.productionPlan, week]);
+  // Use the selected week directly — the user has already chosen the correct KW.
+  const mfgWeek = week;
 
   const { data: oasisData } = usePlanningOasisData();
   const sourceHealth = useOasisSourceHealth();
@@ -399,17 +390,6 @@ export function PlanningOasisView({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-9">
-          <OasisStat label="Meals in KW" value={fmtNum(weekMeals.length)} tone="amber" />
-          <OasisStat label="Rezepte im Sheet" value={fmtNum(weekIntel?.recipes.length ?? 0)} tone="sky" />
-          <OasisStat label="WO Target Portions" value={fmtNum(weekIntel?.totalTargetPortions ?? 0)} tone="emerald" />
-          <OasisStat label="LinePlating Σ" value={fmtNum(weekIntel?.platingTotal ?? 0)} tone="violet" />
-          <OasisStat label="Forecast Σ" value={fmtNum(weekIntel?.forecastTotal ?? weekForecastFallback)} tone="sky" />
-          <OasisStat label="PDL Portionen" value={fmtNum(weekIntel?.pdlPortions ?? 0)} tone="emerald" />
-          <OasisStat label="Eigene PDL" value={fmtNum(weekIntel?.factoryPdlPortions ?? 0)} tone="emerald" />
-          <OasisStat label="Hybrid PDL" value={fmtNum(weekIntel?.hybridPdlPortions ?? 0)} tone="sky" />
-          <OasisStat label="Zulieferung" value={fmtNum(weekIntel?.suppliedPdlPortions ?? 0)} tone="amber" />
-        </div>
 
         <div className="mt-4 flex flex-wrap gap-2 items-center justify-between">
           <div className="flex flex-wrap gap-2">
