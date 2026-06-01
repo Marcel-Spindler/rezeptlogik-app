@@ -23,7 +23,7 @@ export function numOpt(v: unknown): number | undefined {
 // ─── CSV-Parsing ──────────────────────────────────────────────────────────
 
 export function readCsv<T = Record<string, string>>(path: string): T[] {
-  const text = readFileSync(path, "utf8").replace(/^﻿/, "").replace(/^﻿/, "");
+  const text = readFileSync(path, "utf8").replace(/^\uFEFF/, "").replace(/^\uFEFF/, "");
   const res = Papa.parse<T>(text, { header: true, skipEmptyLines: true });
   if (res.errors.length) console.warn(`CSV warnings ${path}:`, res.errors.slice(0, 3));
   return res.data as T[];

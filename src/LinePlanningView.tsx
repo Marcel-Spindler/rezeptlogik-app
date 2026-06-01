@@ -721,6 +721,7 @@ function RecipePill({
   volumeDelta?: number;
   volumeSnapshots?: RampUpSnapshot[];
 }) {
+  const [hovered, setHovered] = useState(false);
   if (recipe.isBreak) {
     return (
       <div
@@ -745,7 +746,6 @@ function RecipePill({
   const fullyPlanned = pct >= 1;
   const overPlanned = pct > 1.02;
   const worstCollision = collisions.find((item) => item.severity === "error") ?? collisions[0];
-  const [hovered, setHovered] = useState(false);
   return (
     <div className="relative" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <div

@@ -210,11 +210,11 @@ function parseForecastRows(rows: string[][], recipes: Map<string, TruthRecipeAcc
 
   const header = rows[headerIndex].map((cell) => normalizeCell(cell));
   let weekIdx = header.findIndex((cell) => cell.toLowerCase() === "week.value" || cell.toLowerCase() === "week");
-  let slotIdx = header.findIndex((cell) => cell.toLowerCase() === "slot" || cell.toLowerCase() === "slot bnl");
+  const slotIdx = header.findIndex((cell) => cell.toLowerCase() === "slot" || cell.toLowerCase() === "slot bnl");
   let recipeIdx = header.findIndex((cell) => cell.toLowerCase() === "recipe code");
-  let bnlIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize bnl" || cell.toLowerCase() === "bnl count w/ buffer");
-  let norIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize nor" || cell.toLowerCase() === "nor count w/ buffer");
-  let deIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize de" || cell.toLowerCase() === "de count w/ buffer");
+  const bnlIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize bnl" || cell.toLowerCase() === "bnl count w/ buffer");
+  const norIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize nor" || cell.toLowerCase() === "nor count w/ buffer");
+  const deIdx = header.findIndex((cell) => cell.toLowerCase() === "ordersize de" || cell.toLowerCase() === "de count w/ buffer");
 
   // Fallbacks if columns change names
   if (weekIdx < 0) weekIdx = header.findIndex((cell) => cell.toLowerCase().includes("week"));

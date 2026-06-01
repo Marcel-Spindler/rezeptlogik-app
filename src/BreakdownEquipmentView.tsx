@@ -1257,7 +1257,7 @@ function equipmentColorScheme(eq: string | null): {
 }
 
 // @ts-expect-error unused
-function wrHasSubName(value: string): boolean {
+function _wrHasSubName(value: string): boolean {
   return !!value && value !== "—" && value !== "Ohne Sub-Rezept";
 }
 
@@ -3128,9 +3128,7 @@ export function BreakdownEquipmentView({
 }
 
   // ─── Legacy-Implementierung (nicht mehr aktiv, bleibt zur Referenz) ───────────
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // @ts-expect-error unused legacy component
-  function _BreakdownEquipmentViewLegacy({
+  function BreakdownEquipmentViewLegacy({
   data,
   week,
   upliftPercent,
@@ -3913,6 +3911,8 @@ export function BreakdownEquipmentView({
     </div>
   );
 }
+
+void BreakdownEquipmentViewLegacy;
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (

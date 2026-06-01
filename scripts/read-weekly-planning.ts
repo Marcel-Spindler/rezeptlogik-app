@@ -76,7 +76,6 @@ function currentISOWeek(): number {
 function excelSerialToISO(serial: number): string {
   if (!serial || serial < 1) return "";
   // Excel epoch: Jan 0, 1900 = serial 0 (with Lotus leap year bug: serial 60 = Feb 29, 1900)
-  const msFromEpoch = (serial - 1) * 86400000;
   // Adjust: serial 1 = Jan 1, 1900 → Unix: 1900-01-01T00:00:00Z
   const excelEpoch = Date.UTC(1900, 0, 1); // Jan 1 1900 = serial 1
   // Subtract 1 from serial for the off-by-one with serial 1 = Jan 1

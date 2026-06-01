@@ -14,10 +14,9 @@
 
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" }); loadEnv();   // .env.local hat Vorrang, .env als Fallback
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { google } from "googleapis";
-import Papa from "papaparse";
 import type {
   DataBundle, Market, WeekRecipe, Recipe, GrossIngredient, CookSchedule,
   ProductionPlan, WorkOrderEntry, PrintOrderRow, KitchenPriorityRow,
@@ -112,7 +111,7 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
     return !existedBefore;
   };
 
-  const extractHfWeekFromTitle = (title: string): string | undefined => {
+  const _extractHfWeekFromTitle = (title: string): string | undefined => {
     const direct = /(20\d{2})[-_ ]?W(\d{1,2})/i.exec(title);
     if (direct) return `${direct[1]}-W${String(parseInt(direct[2], 10)).padStart(2, "0")}`;
     const kw = /KW\s*(\d{1,2})/i.exec(title);
@@ -204,7 +203,7 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
     return added;
   };
 
-  const parseMskuInputRows = (rows: any[][], hfWeek: string): number => {
+  const _parseMskuInputRows = (rows: any[][], hfWeek: string): number => {
     if (!rows.length) return 0;
     const header = rows[0].map((c: unknown) => (c ?? "").toString().trim().toLowerCase());
     const recipeIdx = header.findIndex(h => h === "recipe name" || h.includes("recipe name"));
@@ -228,7 +227,7 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
     return added;
   };
 
-  const parseWTabRows = (rows: any[][], hfWeek: string): number => {
+  const _parseWTabRows = (rows: any[][], hfWeek: string): number => {
     const marketToken = (v: string): "BENL" | "DKSE" | "DE" | undefined => {
       const t = v.trim().toUpperCase().replace(/\s+/g, "");
       if (t === "BNL" || t === "BENL") return "BENL";
@@ -282,13 +281,13 @@ async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[
   for (const SHEET_ID of SHEET_IDS) {
     console.log(`  → Sheet ${SHEET_ID}`);
 
-    let titles: string[] = [];
+    let _titles: string[] = [];
     try {
       const meta = await sheets.spreadsheets.get({
         spreadsheetId: SHEET_ID,
         fields: "sheets(properties(title))"
       });
-      titles = (meta.data.sheets ?? [])
+      _titles = (meta.data.sheets ?? [])
         .map(s => s.properties?.title ?? "")
         .filter(Boolean);
     } catch (e: any) {
@@ -500,7 +499,7 @@ async function readProductionPlan(spreadsheetId: string): Promise<ProductionPlan
     if (!woCell || !/^\d{2}-\d{3,}/.test(woCell)) continue; // must look like "23-175"
 
     const fullRecipe = recipeIdx >= 0 ? String(row[recipeIdx] ?? "").trim() : "";
-    const { code: recipeCode, base: recipeName } = parseRecipeName(fullRecipe);
+    const { code: recipeCode, base: _recipeName } = parseRecipeName(fullRecipe);
 
     const yieldRaw = String(row[yieldIdx >= 0 ? yieldIdx : 9] ?? "").replace("%", "").trim();
     const yieldPct = parseFloat(yieldRaw.replace(",", ".")) || 0;

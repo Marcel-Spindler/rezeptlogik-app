@@ -442,7 +442,7 @@ function isSupportSku(sku: string, category = ""): boolean {
 }
 
 // @ts-expect-error unused
-function isMassUom(uom: string): boolean {
+function _isMassUom(uom: string): boolean {
   return ["g", "gr", "gram", "grams", "gramm", "kg", "kilogram", "kilograms"].includes(uom.trim().toLowerCase());
 }
 
@@ -1923,7 +1923,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
   }, [deboxSearch, postblastSummaryRows]);
 
   // @ts-expect-error unused
-  const filteredProcessRecipeRows = useMemo(() => {
+  const _filteredProcessRecipeRows = useMemo(() => {
     const needle = deboxSearch.trim().toUpperCase();
     if (!needle) return processRecipeRows;
     return processRecipeRows.filter((row) => [
@@ -3981,7 +3981,7 @@ export function WmsLiveView({ data, week }: Props): JSX.Element {
           <div className="divide-y divide-slate-100">
             {workordersByMeal.slice(0, 30).map((group) => {
               // @ts-expect-error unused
-              const plhRows = group.submeals
+              const _plhRows = group.submeals
                 .map((s) => {
                   const plhMatches = (workordersIndex.get(s.submealItemNumber) ?? []);
                   return plhMatches;

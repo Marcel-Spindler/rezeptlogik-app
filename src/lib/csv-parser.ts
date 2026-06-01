@@ -7,7 +7,7 @@ import type { Market, Recipe, RecipeStructure, DetailedSubRecipe } from "../type
 
 function parseCsv(text: string): Record<string, string>[] {
   const res = Papa.parse<Record<string, string>>(
-    text.replace(/^﻿/, ""), // BOM entfernen
+    text.replace(/^\uFEFF/, ""), // BOM entfernen
     { header: true, skipEmptyLines: true }
   );
   return res.data;

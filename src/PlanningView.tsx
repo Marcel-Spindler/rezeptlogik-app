@@ -637,14 +637,14 @@ function getWeekSplit(data: DataBundle, week: string) {
 }
 
 // @ts-expect-error unused
-function planningRoleTone(role: "factory" | "hybrid" | "supplied" | undefined): string {
+function _planningRoleTone(role: "factory" | "hybrid" | "supplied" | undefined): string {
   if (role === "hybrid") return "bg-sky-50 text-sky-800 ring-sky-200";
   if (role === "supplied") return "bg-amber-50 text-amber-800 ring-amber-200";
   return "bg-emerald-50 text-emerald-800 ring-emerald-200";
 }
 
 // @ts-expect-error unused
-function planningRoleLabel(role: "factory" | "hybrid" | "supplied" | undefined): string {
+function _planningRoleLabel(role: "factory" | "hybrid" | "supplied" | undefined): string {
   if (role === "hybrid") return "Hybrid";
   if (role === "supplied") return "Zulieferung";
   return "Eigene Produktion";
@@ -1207,7 +1207,7 @@ export function PlanningView(
   const [uiSettings, setUiSettings] = useState<PlannerUiSettings>(() => loadPlannerUiSettings());
   const [draggingCode, setDraggingCode] = useState<string | null>(null);
   // @ts-expect-error unused
-  const [draggingSubId, setDraggingSubId] = useState<string | null>(null);
+  const [_draggingSubId, setDraggingSubId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   // Refs für synchronen Zugriff in dragover-Handlern (State wäre stale wegen Closure)
   const draggingCodeRef = useRef<string | null>(null);
@@ -1215,7 +1215,7 @@ export function PlanningView(
   const draggingSuggestKeyRef = useRef<string | null>(null);
   const [dragOverUnplanned, setDragOverUnplanned] = useState(false);
   // @ts-expect-error unused
-  const [expandedRecipes, setExpandedRecipes] = useState<Set<string>>(new Set());
+  const [_expandedRecipes, _setExpandedRecipes] = useState<Set<string>>(new Set());
   const [expandedBoardRecipes, setExpandedBoardRecipes] = useState<Set<string>>(new Set());
   const [boardEditor, setBoardEditor] = useState<WeekBoardEditorState | null>(null);
   const [singleRunMode, setSingleRunMode] = useState(false);
@@ -1243,7 +1243,7 @@ export function PlanningView(
   /** Manuelle Verschiebungen der Ghost-Pillen per Drag & Drop: tileKey → neuer Produktionstag */
   const [suggestOverrides, setSuggestOverrides] = useState<Record<string, PlannerDay>>({});
   // @ts-expect-error unused
-  const [draggingSuggestKey, setDraggingSuggestKey] = useState<string | null>(null);
+  const [_draggingSuggestKey, setDraggingSuggestKey] = useState<string | null>(null);
   const [rampUpHistoryMap, setRampUpHistoryMap] = useState<Map<string, RampUpSnapshot[]>>(new Map());
   const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);
   const [rampUpBannerDismissed, setRampUpBannerDismissed] = useState(false);
@@ -1488,7 +1488,7 @@ export function PlanningView(
     return map;
   }, [batchSplitPlan]);
   // @ts-expect-error unused
-  const weekIntel = planningOasis?.weeks[week] ?? null;
+  const _weekIntel = planningOasis?.weeks[week] ?? null;
   const shelfRisk = useMemo(() => {
     const seen = new Set<string>();
     const rows: ShelfLifeInfo[] = [];
@@ -1589,7 +1589,7 @@ export function PlanningView(
   }, [data, subRecipeInfoRequest, infoHints]);
 
   // @ts-expect-error unused
-  const assignmentsBySlot = useMemo(() => {
+  const _assignmentsBySlot = useMemo(() => {
     const buckets: Record<string, Array<{ code: string; name: string; activeMin: number }>> = {};
     for (const recipe of analysis.recipes) {
       if (!recipe.assigned) continue;
@@ -1769,7 +1769,7 @@ export function PlanningView(
   }, [analysis.recipes, batchSplitPlan, activeShifts, suggestOverrides, recipeLookup, portionMultiplier]);
 
   // @ts-expect-error unused
-  const stationsBySlot = useMemo(() => {
+  const _stationsBySlot = useMemo(() => {
     return Object.fromEntries(
       Object.entries(analysis.stationLoadBySlot).map(([slot, loads]) => [
         slot,
@@ -1983,7 +1983,7 @@ export function PlanningView(
   }
 
   // @ts-expect-error unused
-  function handleAutoplanRecipe(targetCode: string) {
+  function _handleAutoplanRecipe(targetCode: string) {
     setStorage((prev) => {
       const planningShifts = activeShifts.length > 0 ? activeShifts : PLANNER_SHIFTS;
       const isShiftActive = (shift: PlannerShift | undefined): boolean => {
@@ -3289,7 +3289,7 @@ export function PlanningView(
                           ? []
                           : rows.filter((row) => row.code === recipe.recipeCode && row.kind === "main");
                         // @ts-expect-error unused
-                        const subTiles = rows.filter((row) => row.code === recipe.recipeCode && row.kind === "sub");
+                        const _subTiles = rows.filter((row) => row.code === recipe.recipeCode && row.kind === "sub");
                         const hasReal = mainTiles.some(t => !t.suggested);
                         const hasAny = mainTiles.length > 0;
                         const isDragOverThis = dragOverSlot === slot;

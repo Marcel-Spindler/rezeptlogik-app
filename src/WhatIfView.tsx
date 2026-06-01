@@ -333,7 +333,7 @@ export function WhatIfView({
 }): JSX.Element {
 
   // @ts-expect-error unused
-  const { data: oasisData } = usePlanningOasisData();
+  const { data: _oasisData } = usePlanningOasisData();
 
   const weekMeals = useMemo(() => {
     const activeWeekRecipes = data.weekRecipes
@@ -493,7 +493,6 @@ export function WhatIfView({
     setUnderweightTargetMeals(upliftedPortions || 1000);
     setUnderweightAvailableUnits(upliftedPortions || 0);
     setUnderweightActualUnitWeight(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [upliftedPortions, selectedCode]);
 
   const selectedSubRecipeIngredients = useMemo(
