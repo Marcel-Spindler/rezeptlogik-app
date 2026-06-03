@@ -5,6 +5,11 @@ dist/
 .env.local
 secrets/
 *.tsbuildinfo
+*.log
+logs/
+scratch/
+test-results/
+test_before_search.png
 # data.json und CSV-Quelldaten werden versioniert – sie sind Deployment-Artefakte
 # !public/data/data.json  (bewusst NICHT ignoriert)
 # !imports/*.csv          (bewusst NICHT ignoriert)

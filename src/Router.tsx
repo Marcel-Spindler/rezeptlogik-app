@@ -19,7 +19,6 @@ const NAV_TABS: { view: AppView; label: string }[] = [
   { view: "recipe",    label: "Rezept" },
   { view: "planning",  label: "Planning OASE" },
   { view: "packing",   label: "Packing" },
-  { view: "breakdown", label: "Breakdown-Rechner" },
   { view: "wo",        label: "WO Ausdruck" },
   { view: "whatif",    label: "What-If Rechner" },
   { view: "rundmail",  label: "Rundmail" },
@@ -222,10 +221,6 @@ export function Router() {
                 </div>
           )}
 
-          {view === "breakdown" && (
-            <BreakdownEquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale="de" />
-          )}
-
           {view === "wo" && (
             <BreakdownEquipmentView
               data={data}
@@ -259,7 +254,6 @@ export function Router() {
         <div className="text-slate-300 flex flex-wrap justify-center items-center gap-x-3 gap-y-1">
           <a href="/?surface=rundmail" className="hover:text-slate-500 underline">🔗 Rundmail</a>
           <a href="/?view=whatif" className="hover:text-slate-500 underline">What-If</a>
-          <a href="/?view=breakdown" className="hover:text-slate-500 underline">Breakdown</a>
           <a href="/?view=wo" className="hover:text-slate-500 underline">WO Ausdruck</a>
           <button
             type="button"
