@@ -1206,7 +1206,6 @@ export function PlanningView(
   const [stationPools] = useState(() => loadStationPools());
   const [uiSettings, setUiSettings] = useState<PlannerUiSettings>(() => loadPlannerUiSettings());
   const [draggingCode, setDraggingCode] = useState<string | null>(null);
-  // @ts-expect-error unused
   const [_draggingSubId, setDraggingSubId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
   // Refs für synchronen Zugriff in dragover-Handlern (State wäre stale wegen Closure)
@@ -1214,7 +1213,6 @@ export function PlanningView(
   const draggingSubIdRef = useRef<string | null>(null);
   const draggingSuggestKeyRef = useRef<string | null>(null);
   const [dragOverUnplanned, setDragOverUnplanned] = useState(false);
-  // @ts-expect-error unused
   const [_expandedRecipes, _setExpandedRecipes] = useState<Set<string>>(new Set());
   const [expandedBoardRecipes, setExpandedBoardRecipes] = useState<Set<string>>(new Set());
   const [boardEditor, setBoardEditor] = useState<WeekBoardEditorState | null>(null);
@@ -1242,7 +1240,6 @@ export function PlanningView(
   const [savePlanStamp, setSavePlanStamp] = useState<string | null>(null);
   /** Manuelle Verschiebungen der Ghost-Pillen per Drag & Drop: tileKey → neuer Produktionstag */
   const [suggestOverrides, setSuggestOverrides] = useState<Record<string, PlannerDay>>({});
-  // @ts-expect-error unused
   const [_draggingSuggestKey, setDraggingSuggestKey] = useState<string | null>(null);
   const [rampUpHistoryMap, setRampUpHistoryMap] = useState<Map<string, RampUpSnapshot[]>>(new Map());
   const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);

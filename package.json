@@ -23,12 +23,12 @@
     "rackfile:plan": "tsx scripts/rackfile-tool.ts plan",
     "rackfile:generate": "tsx scripts/rackfile-tool.ts generate",
     "test:smoke:oase": "playwright test Test/planning-oase-smoke.spec.ts --browser=chromium",
-    "deploy": "tsx scripts/import-sub-recipes.ts && npm run build && npx firebase-tools deploy --only hosting",
+    "deploy": "npm run build && npx firebase-tools deploy --only hosting",
     "deploy:functions": "cd functions && npm install && npx firebase-tools deploy --only functions",
     "deploy:all": "npm run build && npx firebase-tools deploy --only hosting,functions",
     "import:weekly-planning": "tsx scripts/read-weekly-planning.ts",
     "dump:kpl": "tsx scripts/dump-gsheet.ts 13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U",
-    "sync:all": "npm run import:gsheet && npm run import:rampup && npm run import:pfei && npm run import:weekly-planning && npm run push:firestore",
+    "sync:all": "npm run import:local && npm run import:rampup && npm run import:weekly-planning && npm run push:firestore",
     "sync:all:deploy": "npm run sync:all && npm run build && npx firebase-tools deploy --only hosting"
   },
   "dependencies": {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
+import type { DataBundle, ProcessSpec, WorkOrderEntry } from "./types";
 
 type RundmailRow = {
   id: string;
@@ -18,6 +19,13 @@ type RundmailRow = {
   kitchenStatus: string;
   unlockedEta: string;
   workOrderComment: string;
+  kitchenKg?: number | null;
+  batchSizeKg?: number | null;
+  batchesNeeded?: number | null;
+};
+
+type BatchHint = {
+  capacityKg: number;
 };
 
 type StatusFilter = "all" | "Not Started" | "Pre Blast" | "Post Blast";
@@ -25,6 +33,31 @@ type StatusFilter = "all" | "Not Started" | "Pre Blast" | "Post Blast";
 type DeficitItem = {
   row: RundmailRow;
   deficit: number;
+};
+
+type PetRow = {
+  id: string;
+  type: string;
+  productionShift: string;
+  totalTarget: number;
+  totalMapped: number;
+  recipeWo: string;
+  recipeName: string;
+  recipeWoMapped: number;
+  recipeWoTarget: number;
+  recipePlatingStatus: string;
+  recipeManualPlatingStatus: string;
+  totalWeekUnlockedVolume: number;
+  totalWeekMapped: number;
+  productionMinNeeds: number;
+  expiringDatetime: string;
+  expiringSubRecipeName: string;
+  expiringPortions: number;
+  expiringLicensePlate: string;
+  comment: string;
+  rolloverAmount: number;
+  actualBestByDate: string;
+  bestBySubRecipeName: string;
 };
 
 function parseDateNeeded(value: string): { date: string; run: number } {
@@ -81,6 +114,78 @@ function parseSeedCsv(csvText: string): RundmailRow[] {
   return rows;
 }
 
+function parsePetCsv(csvText: string): PetRow[] {
+  const parsed = Papa.parse<Record<string, string>>(csvText, {
+    header: true,
+    skipEmptyLines: true,
+  });
+
+  const rows: PetRow[] = [];
+  parsed.data.forEach((raw, idx) => {
+    const productionShift = (raw["Production Shift"] ?? "").trim();
+    const recipeWo = (raw["Recipe WO #"] ?? "").trim();
+    const recipeName = (raw["Recipe Name"] ?? "").trim();
+    if (!productionShift || !recipeWo || !recipeName) return;
+
+    rows.push({
+      id: `${recipeWo}-${idx}`,
+      type: (raw["Type"] ?? "").trim(),
+      productionShift,
+      totalTarget: toNumber(raw["Total Target"] ?? ""),
+      totalMapped: toNumber(raw["Total Mapped"] ?? ""),
+      recipeWo,
+      recipeName,
+      recipeWoMapped: toNumber(raw["Recipe WO Mapped"] ?? ""),
+      recipeWoTarget: toNumber(raw["Recipe WO Target"] ?? ""),
+      recipePlatingStatus: (raw["Recipe Plating Status"] ?? "").trim(),
+      recipeManualPlatingStatus: (raw["Recipe Manual Plating Status"] ?? "").trim(),
+      totalWeekUnlockedVolume: toNumber(raw["Total Week Unlocked Volume"] ?? ""),
+      totalWeekMapped: toNumber(raw["Total Week Mapped"] ?? ""),
+      productionMinNeeds: toNumber(raw["Production Min Needs"] ?? ""),
+      expiringDatetime: (raw["Expiring Datetime"] ?? "").trim(),
+      expiringSubRecipeName: (raw["Expiring SubRecipe Name"] ?? "").trim(),
+      expiringPortions: toNumber(raw["Expiring Portions"] ?? ""),
+      expiringLicensePlate: (raw["Expiring License Plate #"] ?? "").trim(),
+      comment: (raw["Comment"] ?? "").trim(),
+      rolloverAmount: toNumber(raw["Rollover Amount"] ?? ""),
+      actualBestByDate: (raw["Actual Best By Date"] ?? "").trim(),
+      bestBySubRecipeName: (raw["Best By SubRecipe Name"] ?? "").trim(),
+    });
+  });
+
+  return rows;
+}
+
+function detectCsvType(csvText: string): "ket" | "pet" | "unknown" {
+  const parsed = Papa.parse<Record<string, string>>(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    preview: 3,
+  });
+  const first = parsed.data?.[0] ?? {};
+  const keys = new Set(Object.keys(first));
+  if (keys.has("Date Needed") && keys.has("Work Order Number")) return "ket";
+  if (keys.has("Production Shift") && keys.has("Recipe WO #")) return "pet";
+  return "unknown";
+}
+
+function parseBestByTimestamp(value: string): number | null {
+  const raw = (value ?? "").trim();
+  if (!raw) return null;
+
+  const iso = Date.parse(raw);
+  if (Number.isFinite(iso)) return iso;
+
+  const m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (!day || !month || !year) return null;
+  const ts = Date.UTC(year, month - 1, day);
+  return Number.isFinite(ts) ? ts : null;
+}
+
 function daySortValue(day: string): number {
   const [rawDate, rawSlot] = day.split(" - ");
   const ts = Date.parse(`${rawDate}T00:00:00Z`);
@@ -103,6 +208,168 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function normalizeText(value: string): string {
+  return (value ?? "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function tokenize(value: string): string[] {
+  return normalizeText(value).split(" ").filter((token) => token.length > 1);
+}
+
+function overlapScore(a: string, b: string): number {
+  const aTokens = new Set(tokenize(a));
+  const bTokens = new Set(tokenize(b));
+  if (aTokens.size === 0 || bTokens.size === 0) return 0;
+  let overlap = 0;
+  for (const token of aTokens) {
+    if (bTokens.has(token)) overlap += 1;
+  }
+  return overlap / Math.max(aTokens.size, bTokens.size);
+}
+
+function parseFloatSafe(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toCells(rowValues: unknown): string[] {
+  if (!Array.isArray(rowValues)) return [];
+  return rowValues.map((cell) => String(cell ?? "").trim());
+}
+
+function detectHeaderRow(rows: string[][], expected: RegExp[]): number {
+  let bestIndex = -1;
+  let bestScore = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const nonEmpty = row.filter((cell) => cell.length > 0).length;
+    if (nonEmpty < 2) continue;
+    const text = row.join(" | ").toLowerCase();
+    const hitScore = expected.reduce((sum, pattern) => sum + (pattern.test(text) ? 1 : 0), 0);
+    const score = hitScore * 10 + nonEmpty;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+function findHeaderIndex(headers: string[], candidates: RegExp[]): number {
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i].toLowerCase();
+    if (candidates.some((regex) => regex.test(header))) return i;
+  }
+  return -1;
+}
+
+function parseBibleBatchHints(master: unknown, bibles: unknown): Map<string, BatchHint> {
+  const map = new Map<string, BatchHint>();
+
+  const consider = (subRecipeName: string, capacityKg: number | null): void => {
+    if (!subRecipeName || !capacityKg || capacityKg <= 0) return;
+    const key = normalizeText(subRecipeName);
+    if (!key) return;
+    if (!map.has(key)) map.set(key, { capacityKg });
+  };
+
+  const collectFromRows = (rows: string[][]): void => {
+    if (!rows.length) return;
+    const headerIdx = detectHeaderRow(rows.slice(0, 40), [/sub\s*recipe/i, /kg|batch|capacit/i]);
+    if (headerIdx < 0) return;
+    const headers = rows[headerIdx] ?? [];
+    const nameIdx = findHeaderIndex(headers, [/sub\s*recipe/i, /component/i, /name/i]);
+    const capacityIdx = findHeaderIndex(headers, [/batch\s*breakdown.*kg/i, /capacity/i, /max.*kg/i, /kg/i]);
+    if (nameIdx < 0 || capacityIdx < 0) return;
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const cells = rows[i] ?? [];
+      const name = cells[nameIdx] ?? "";
+      const capacityKg = parseFloatSafe(cells[capacityIdx]);
+      consider(name, capacityKg);
+    }
+  };
+
+  const masterSheets = Array.isArray((master as { sheets?: unknown[] })?.sheets)
+    ? ((master as { sheets: Array<{ values?: unknown[] }> }).sheets)
+    : [];
+  for (const sheet of masterSheets) {
+    const rawRows = Array.isArray(sheet?.values) ? sheet.values : [];
+    const rows = rawRows.map(toCells).filter((row) => row.some((cell) => cell.length > 0));
+    collectFromRows(rows);
+  }
+
+  const bibleSheets = Array.isArray((bibles as { sheets?: unknown[] })?.sheets)
+    ? ((bibles as { sheets: Array<{ values?: unknown[] }> }).sheets)
+    : [];
+  for (const sheet of bibleSheets) {
+    const rawRows = Array.isArray(sheet?.values) ? sheet.values : [];
+    const rows = rawRows.map(toCells).filter((row) => row.some((cell) => cell.length > 0));
+    collectFromRows(rows);
+  }
+
+  return map;
+}
+
+function resolveBatchSizeKg(
+  subRecipeName: string,
+  processSpecsByName: Map<string, ProcessSpec>,
+  bibleHints: Map<string, BatchHint>,
+): number | null {
+  const normalized = normalizeText(subRecipeName);
+  if (!normalized) return null;
+
+  const exactSpec = processSpecsByName.get(normalized);
+  if (exactSpec?.batchSizeKg && exactSpec.batchSizeKg > 0) return exactSpec.batchSizeKg;
+
+  let bestSpec: ProcessSpec | null = null;
+  let bestScore = 0;
+  for (const [key, spec] of processSpecsByName.entries()) {
+    if (!spec.batchSizeKg || spec.batchSizeKg <= 0) continue;
+    const score = overlapScore(normalized, key);
+    if (score > bestScore) {
+      bestScore = score;
+      bestSpec = spec;
+    }
+  }
+  if (bestSpec && bestSpec.batchSizeKg && bestScore >= 0.6) return bestSpec.batchSizeKg;
+
+  const bibleHint = bibleHints.get(normalized);
+  return bibleHint?.capacityKg ?? null;
+}
+
+function resolveKitchenKgForRow(
+  row: RundmailRow,
+  productionByWorkOrder: Map<string, WorkOrderEntry[]>,
+): number | null {
+  const candidates = productionByWorkOrder.get(row.workOrderNumber) ?? [];
+  if (!candidates.length) return null;
+
+  const rowSub = normalizeText(row.subRecipeName);
+  if (!rowSub) return null;
+
+  const exact = candidates.find((candidate) => normalizeText(candidate.subRecipe) === rowSub);
+  if (exact && exact.kitchenKg > 0) return exact.kitchenKg;
+
+  let best: WorkOrderEntry | null = null;
+  let bestScore = 0;
+  for (const candidate of candidates) {
+    const score = overlapScore(rowSub, candidate.subRecipe);
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  }
+  if (best && best.kitchenKg > 0 && bestScore >= 0.5) return best.kitchenKg;
+
+  return null;
 }
 
 // ── Weekly Planning (from Google Drive via import:weekly-planning) ──────────
@@ -170,120 +437,6 @@ function detectAllergens(texts: string[]): AllergenDef[] {
   return ALLERGEN_DEFS.filter(({ keywords }) => keywords.some((kw) => combined.includes(kw)));
 }
 
-const PLATING_RATE = 1000;          // Portionen pro Linie pro Stunde
-const PLATING_STAFF_PER_LINE = 8;   // Empfohlene MA pro aktiver Plating-Linie
-
-// Plating-Startdatum = Fertigstellungsdatum + 1 Produktionstag
-function addOneDay(dateNeeded: string): string {
-  const { date, run } = parseDateNeeded(dateNeeded);
-  const d = new Date(date + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + 1);
-  return `${d.toISOString().slice(0, 10)} - ${run}`;
-}
-
-type PlatingEntry = {
-  recipeId: string;
-  recipeName: string;
-  platingAfter: string;       // letztes Sub-Rezept gesamt
-  platingAfterRun1: string;   // letzter Run-1-Abschluss → Plating-Trigger
-  subRecipes: string[];
-  targetPortions: number;
-  allergens: AllergenDef[];
-};
-
-type PlatingLineSlot = {
-  startDate: string;
-  line1: PlatingEntry[];
-  line2: PlatingEntry[];
-  line1Portions: number;
-  line2Portions: number;
-  line1Hours: number;
-  line2Hours: number;
-};
-
-function buildPlatingPlan(allRows: RundmailRow[]): PlatingEntry[] {
-  const recipeMap = new Map<string, PlatingEntry>();
-
-  allRows.forEach((row) => {
-    const { run } = parseDateNeeded(row.dateNeeded);
-    const entry = recipeMap.get(row.recipeId);
-    if (!entry) {
-      recipeMap.set(row.recipeId, {
-        recipeId: row.recipeId,
-        recipeName: row.recipeName,
-        platingAfter: row.dateNeeded,
-        platingAfterRun1: run === 1 ? row.dateNeeded : "",
-        subRecipes: [row.subRecipeName],
-        targetPortions: row.targetPortions,
-        allergens: [],
-      });
-    } else {
-      if (daySortValue(row.dateNeeded) > daySortValue(entry.platingAfter)) {
-        entry.platingAfter = row.dateNeeded;
-      }
-      if (run === 1 && (entry.platingAfterRun1 === "" || daySortValue(row.dateNeeded) > daySortValue(entry.platingAfterRun1))) {
-        entry.platingAfterRun1 = row.dateNeeded;
-      }
-      if (!entry.subRecipes.includes(row.subRecipeName)) {
-        entry.subRecipes.push(row.subRecipeName);
-      }
-      entry.targetPortions = Math.max(entry.targetPortions, row.targetPortions);
-    }
-  });
-
-  recipeMap.forEach((entry) => {
-    entry.allergens = detectAllergens([entry.recipeName, ...entry.subRecipes]);
-    if (!entry.platingAfterRun1) entry.platingAfterRun1 = entry.platingAfter;
-  });
-
-  return Array.from(recipeMap.values()).sort((a, b) => daySortValue(a.platingAfterRun1) - daySortValue(b.platingAfterRun1));
-}
-
-/** Verteilt Rezepte auf 2 Plating-Linien je Run-1-Abschluss-Datum (Load-Balancing) */
-/**
- * Gruppiert Rezepte nach Plating-Startdatum für einen bestimmten Run.
- * Ein Rezept kommt in Run-N-Mail wenn sein letztes Sub-Rezept in Run N liegt.
- */
-function buildPlatingLineSchedule(platingPlan: PlatingEntry[], targetRun: 1 | 2): PlatingLineSlot[] {
-  const byDate = new Map<string, PlatingEntry[]>();
-  for (const entry of platingPlan) {
-    const { run } = parseDateNeeded(entry.platingAfter);
-    if (run !== targetRun) continue;
-    const key = entry.platingAfter;
-    const list = byDate.get(key) ?? [];
-    list.push(entry);
-    byDate.set(key, list);
-  }
-
-  // Sortiert Einträge nach Allergen-Profil, um Wechsel zu minimieren
-  const sortByAllergen = (arr: PlatingEntry[]) =>
-    [...arr].sort((a, b) =>
-      a.allergens.map(x => x.label).sort().join("|")
-        .localeCompare(b.allergens.map(x => x.label).sort().join("|"))
-    );
-
-  const result: PlatingLineSlot[] = [];
-  for (const [date, entries] of byDate) {
-    const sorted = [...entries].sort((a, b) => b.targetPortions - a.targetPortions);
-    const line1: PlatingEntry[] = [], line2: PlatingEntry[] = [];
-    let p1 = 0, p2 = 0;
-    for (const e of sorted) {
-      if (p1 <= p2) { line1.push(e); p1 += e.targetPortions; }
-      else { line2.push(e); p2 += e.targetPortions; }
-    }
-    result.push({
-      startDate: date,
-      line1: sortByAllergen(line1),
-      line2: sortByAllergen(line2),
-      line1Portions: p1, line2Portions: p2,
-      line1Hours: Math.round((p1 / PLATING_RATE) * 10) / 10,
-      line2Hours: Math.round((p2 / PLATING_RATE) * 10) / 10,
-    });
-  }
-
-  return result.sort((a, b) => daySortValue(a.startDate) - daySortValue(b.startDate));
-}
-
 function statusTone(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized.includes("not started")) return "bg-rose-100 text-rose-700 ring-rose-200";
@@ -296,11 +449,337 @@ function statusTone(status: string): string {
   return "bg-slate-200 text-slate-700 ring-slate-300";
 }
 
+function petStatusTone(status: string): { bg: string; text: string; border: string } {
+  const normalized = status.toLowerCase();
+  if (normalized.includes("in progress")) return { bg: "#fef3c7", text: "#92400e", border: "#fcd34d" };
+  if (normalized.includes("not started")) return { bg: "#fee2e2", text: "#991b1b", border: "#fca5a5" };
+  if (normalized.includes("done") || normalized.includes("complete")) return { bg: "#dcfce7", text: "#166534", border: "#86efac" };
+  return { bg: "#e2e8f0", text: "#334155", border: "#cbd5e1" };
+}
+
+const PET_PORTIONS_PER_LINE_PER_SHIFT = 1000;
+const PET_LINE_START_HOUR = 7;
+
+function formatClock(totalMinutes: number): string {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  const hh = Math.floor(safe / 60).toString().padStart(2, "0");
+  const mm = (safe % 60).toString().padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function extractMealCode(recipeName: string): string {
+  const match = recipeName.match(/(FV\d{4}[A-Z])/i);
+  if (match) return match[1].toUpperCase();
+  return recipeName.split(/\s+/).slice(0, 1).join("");
+}
+
+function oneDayBefore(isoDate: string): string {
+  const ts = Date.parse(`${isoDate}T00:00:00Z`);
+  if (!Number.isFinite(ts)) return isoDate;
+  return new Date(ts - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function buildPetHtmlMail(allPetRows: PetRow[], sourceLabel: string, targetRun: 1 | 2): string {
+  type EnrichedPetRow = PetRow & {
+    status: string;
+    bestByText: string;
+    bestByTs: number | null;
+    open: number;
+    ratio: number;
+    allergens: AllergenDef[];
+  };
+
+  const runRows: EnrichedPetRow[] = allPetRows
+    .filter((row) => parseDateNeeded(row.productionShift).run === targetRun)
+    .map((row) => {
+      const status = row.recipeManualPlatingStatus || row.recipePlatingStatus || "Not Started";
+      const bestByText = row.actualBestByDate || row.expiringDatetime || "";
+      const bestByTs = parseBestByTimestamp(bestByText);
+      const open = toSlack(row.recipeWoTarget - row.recipeWoMapped);
+      const ratio = row.recipeWoTarget > 0
+        ? Math.max(0, Math.min(100, Math.round((row.recipeWoMapped / row.recipeWoTarget) * 100)))
+        : 0;
+      const allergens = detectAllergens([
+        row.recipeName,
+        row.bestBySubRecipeName,
+        row.expiringSubRecipeName,
+        row.comment,
+      ]);
+      return {
+        ...row,
+        status,
+        bestByText,
+        bestByTs,
+        open,
+        ratio,
+        allergens,
+      };
+    });
+
+  const shifts = Array.from(new Set(runRows.map((row) => row.productionShift)))
+    .sort((a, b) => daySortValue(a) - daySortValue(b));
+  const runLabel = `Run ${targetRun}`;
+  const nowTs = Date.now();
+  const soonLimit = nowTs + 48 * 60 * 60 * 1000;
+
+  const totalTarget = runRows.reduce((sum, row) => sum + row.recipeWoTarget, 0);
+  const totalMapped = runRows.reduce((sum, row) => sum + row.recipeWoMapped, 0);
+  const totalOpen = runRows.reduce((sum, row) => sum + row.open, 0);
+  const completion = totalTarget > 0 ? Math.max(0, Math.min(100, Math.round((totalMapped / totalTarget) * 100))) : 0;
+  const doneCount = runRows.filter((row) => row.status.toLowerCase().includes("done") || row.status.toLowerCase().includes("complete")).length;
+  const inProgress = runRows.filter((row) => row.status.toLowerCase().includes("in progress")).length;
+  const notStarted = runRows.filter((row) => row.status.toLowerCase().includes("not started")).length;
+  const urgentBestBy = runRows.filter((row) => row.bestByTs != null && row.bestByTs <= soonLimit).length;
+  const globalAllergens = new Set(runRows.flatMap((row) => row.allergens.map((a) => a.label)));
+  const generatedAt = new Date().toLocaleString("de-DE");
+  const firstShiftDate = shifts.length ? parseDateNeeded(shifts[0]).date : "-";
+  const totalSingleLineHours = totalTarget / PET_PORTIONS_PER_LINE_PER_SHIFT;
+
+  const shiftLineNeeds = shifts.map((shift) => {
+    const shiftTarget = runRows
+      .filter((row) => row.productionShift === shift)
+      .reduce((sum, row) => sum + row.recipeWoTarget, 0);
+    return shiftTarget > 0 ? Math.ceil(shiftTarget / PET_PORTIONS_PER_LINE_PER_SHIFT) : 0;
+  });
+  const peakLinesNeeded = shiftLineNeeds.length ? Math.max(...shiftLineNeeds) : 0;
+  const peakStaffNeeded = shifts.length
+    ? Math.max(...shifts.map((shift) => {
+      const shiftRows = runRows.filter((row) => row.productionShift === shift).length;
+      const shiftTarget = runRows
+        .filter((row) => row.productionShift === shift)
+        .reduce((sum, row) => sum + row.recipeWoTarget, 0);
+      const neededLines = shiftTarget > 0 ? Math.ceil(shiftTarget / PET_PORTIONS_PER_LINE_PER_SHIFT) : 0;
+      const lineCount = neededLines > 2 ? 3 : 2;
+      return shiftRows + lineCount;
+    }))
+    : 0;
+
+  function allergenSignature(row: EnrichedPetRow): string {
+    return row.allergens.map((a) => a.label).sort().join("|") || "none";
+  }
+
+  function linePlacementScore(
+    lineRows: EnrichedPetRow[],
+    allLineTargets: number[],
+    lineIndex: number,
+    candidate: EnrichedPetRow
+  ): number {
+    const last = lineRows.at(-1);
+    const currentSig = last ? allergenSignature(last) : "";
+    const nextSig = allergenSignature(candidate);
+    const allergenSwitchPenalty = last && currentSig !== nextSig ? 3 : 0;
+
+    const projectedTargets = allLineTargets.map((value, idx) =>
+      idx === lineIndex ? value + candidate.recipeWoTarget : value
+    );
+    const projectedTarget = projectedTargets[lineIndex];
+    const projectedGap = Math.max(...projectedTargets) - Math.min(...projectedTargets);
+    const balancePenalty = projectedGap / PET_PORTIONS_PER_LINE_PER_SHIFT;
+
+    const overflow = Math.max(0, projectedTarget - PET_PORTIONS_PER_LINE_PER_SHIFT);
+    const overflowPenalty = (overflow / PET_PORTIONS_PER_LINE_PER_SHIFT) * 2;
+
+    return allergenSwitchPenalty + balancePenalty + overflowPenalty;
+  }
+
+  function renderAllergenBadges(row: EnrichedPetRow): string {
+    return row.allergens.map((a) =>
+      `<span style="display:inline-block;background:${a.bg};color:${a.text};border:1px solid ${a.border};border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin:1px 2px;">${escapeHtml(a.label)}</span>`
+    ).join("") || `<span style="font-size:10px;color:#94a3b8;">–</span>`;
+  }
+
+  function renderLineWithCleaning(lineRows: EnrichedPetRow[], color: string): { html: string; cleaningCount: number; totalMinutes: number } {
+    let cleaningCount = 0;
+    let cursorMinutes = PET_LINE_START_HOUR * 60;
+    const html = lineRows.map((row, idx) => {
+      const open = row.open;
+      const tone = petStatusTone(row.status);
+      const bestByUrgent = row.bestByTs != null && row.bestByTs <= soonLimit;
+      const bestBy = row.bestByText || "-";
+      const bestByName = row.bestBySubRecipeName || row.expiringSubRecipeName || "-";
+      const mealCode = extractMealCode(row.recipeName);
+      const mealTitle = row.recipeName.replace(/\s*\[.*?\]/g, "").replace(/^FV\d{4}[A-Z]\s*-\s*/i, "").trim();
+      const durationHours = row.recipeWoTarget / PET_PORTIONS_PER_LINE_PER_SHIFT;
+      const durationMinutes = Math.max(10, Math.round(durationHours * 60));
+      const timeStart = cursorMinutes;
+      const timeEnd = cursorMinutes + durationMinutes;
+      cursorMinutes = timeEnd;
+      const card = `
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-left:3px solid ${color};border-radius:0 8px 8px 0;background:#ffffff;margin-bottom:6px;">
+        <tr>
+          <td width="84" style="padding:8px 6px 8px 8px;border-right:1px dashed #e2e8f0;vertical-align:top;background:#f8fafc;">
+            <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;font-weight:800;color:#0f172a;text-align:center;">${formatClock(timeStart)}</div>
+            <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;text-align:center;">bis ${formatClock(timeEnd)}</div>
+            <div style="margin-top:4px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;font-weight:700;color:#0369a1;text-align:center;">${durationHours.toFixed(1)} h</div>
+          </td>
+          <td style="padding:8px 10px;vertical-align:top;">
+            <div style="font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:800;color:#0f172a;">${escapeHtml(mealCode)} &middot; ${escapeHtml(mealTitle || row.recipeName)}</div>
+            <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#475569;margin-top:3px;">WO ${escapeHtml(row.recipeWo)} &middot; SOLL ${fmtInt(row.recipeWoTarget)} &middot; IST ${fmtInt(row.recipeWoMapped)} &middot; Gap <strong style="color:${open > 0 ? "#92400e" : "#166534"};">${fmtInt(open)}</strong> &middot; Fill ${row.ratio}%</div>
+            <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;margin-top:3px;">Best By: <span style="color:${bestByUrgent ? "#991b1b" : "#334155"};font-weight:${bestByUrgent ? "800" : "600"};">${bestByUrgent ? "⚠ " : ""}${escapeHtml(bestBy)}</span> &middot; Sub: ${escapeHtml(bestByName)}</div>
+            <div style="margin-top:4px;">${renderAllergenBadges(row)}</div>
+            <div style="margin-top:4px;"><span style="display:inline-block;background:${tone.bg};color:${tone.text};border:1px solid ${tone.border};border-radius:999px;padding:2px 8px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;font-weight:800;white-space:nowrap;">${escapeHtml(row.status)}</span></div>
+          </td>
+        </tr>
+      </table>`;
+
+      if (idx >= lineRows.length - 1) return card;
+
+      const cur = new Set(row.allergens.map((a) => a.label));
+      const nxt = new Set(lineRows[idx + 1].allergens.map((a) => a.label));
+      const removed = [...cur].filter((label) => !nxt.has(label));
+      const added = [...nxt].filter((label) => !cur.has(label));
+      const hasChange = removed.length > 0 || added.length > 0;
+      if (!hasChange) return card;
+
+      cleaningCount += 1;
+      const changeText = [
+        removed.length ? `entfernt: <strong>${removed.join(", ")}</strong>` : "",
+        added.length ? `neu: <strong>${added.join(", ")}</strong>` : "",
+      ].filter(Boolean).join(" &middot; ");
+
+      return card + `<div style="margin:3px 0 7px 0;padding:6px 10px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:6px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#78350f;font-weight:700;">⚠ LINIE REINIGEN &mdash; Allergen-Wechsel: ${changeText}</div>`;
+    }).join("");
+
+    return { html, cleaningCount, totalMinutes: Math.max(0, cursorMinutes - PET_LINE_START_HOUR * 60) };
+  }
+
+  const shiftTables = shifts.map((shift) => {
+    const rows = runRows
+      .filter((row) => row.productionShift === shift)
+      .sort((a, b) => {
+        if (a.bestByTs != null && b.bestByTs != null && a.bestByTs !== b.bestByTs) return a.bestByTs - b.bestByTs;
+        if (a.bestByTs != null && b.bestByTs == null) return -1;
+        if (a.bestByTs == null && b.bestByTs != null) return 1;
+        return b.open - a.open;
+      });
+
+    const shiftTarget = rows.reduce((sum, row) => sum + row.recipeWoTarget, 0);
+    const shiftMapped = rows.reduce((sum, row) => sum + row.recipeWoMapped, 0);
+    const shiftOpen = rows.reduce((sum, row) => sum + row.open, 0);
+    const shiftLinesNeeded = shiftTarget > 0 ? Math.ceil(shiftTarget / PET_PORTIONS_PER_LINE_PER_SHIFT) : 0;
+    const lineCount = shiftLinesNeeded > 2 ? 3 : 2;
+    const lines: EnrichedPetRow[][] = Array.from({ length: lineCount }, () => []);
+    const lineTargets = Array.from({ length: lineCount }, () => 0);
+
+    for (const row of rows) {
+      let bestLine = 0;
+      let bestScore = Number.POSITIVE_INFINITY;
+      for (let idx = 0; idx < lineCount; idx += 1) {
+        const score = linePlacementScore(lines[idx], lineTargets, idx, row);
+        const tieBreaker = lineTargets[idx] / PET_PORTIONS_PER_LINE_PER_SHIFT;
+        const weightedScore = score + tieBreaker * 0.001;
+        if (weightedScore < bestScore) {
+          bestScore = weightedScore;
+          bestLine = idx;
+        }
+      }
+      lines[bestLine].push(row);
+      lineTargets[bestLine] += row.recipeWoTarget;
+    }
+    const shiftStaffNeeded = rows.length + lineCount;
+    const shiftAllergenSet = new Set(rows.flatMap((row) => row.allergens.map((a) => a.label)));
+    const shiftUrgent = rows.filter((row) => row.bestByTs != null && row.bestByTs <= soonLimit).length;
+    const shiftUtil = shiftLinesNeeded > 0
+      ? Math.min(100, Math.round((shiftTarget / (shiftLinesNeeded * PET_PORTIONS_PER_LINE_PER_SHIFT)) * 100))
+      : 0;
+
+    const lineColors = ["#0ea5e9", "#10b981", "#f59e0b"];
+    const renderedLines = lines.map((lineRows, idx) => ({
+      rendered: renderLineWithCleaning(lineRows, lineColors[idx]),
+      staffNeeded: lineRows.length + 1,
+      target: lineTargets[idx],
+    }));
+    const cleaningTotal = renderedLines.reduce((sum, item) => sum + item.rendered.cleaningCount, 0);
+    const parallelHours = renderedLines.length
+      ? Math.max(...renderedLines.map((item) => item.rendered.totalMinutes)) / 60
+      : 0;
+    const avgLineHours = lineCount > 0 ? shiftTarget / (lineCount * PET_PORTIONS_PER_LINE_PER_SHIFT) : 0;
+    const completedOn = oneDayBefore(parseDateNeeded(shift).date);
+    const lineWidth = `${(100 / lineCount).toFixed(2)}%`;
+    const lineColumns = renderedLines.map((item, idx) => `
+                <td width="${lineWidth}" style="vertical-align:top;${idx < lineCount - 1 ? "padding-right:8px;border-right:1px solid #e2e8f0;" : "padding-left:8px;"}">
+                  <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;font-weight:800;color:${lineColors[idx]};letter-spacing:0.08em;text-transform:uppercase;margin-bottom:2px;">Linie ${idx + 1} &mdash; ${fmtInt(item.target)} Portionen &mdash; ${(item.rendered.totalMinutes / 60).toFixed(1)} h &mdash; ~${fmtInt(item.staffNeeded)} MA</div>
+                  <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;margin-bottom:6px;">Start ${formatClock(PET_LINE_START_HOUR * 60)} &middot; Ende ${formatClock(PET_LINE_START_HOUR * 60 + item.rendered.totalMinutes)}</div>
+                  ${item.rendered.html || `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#94a3b8;">–</div>`}
+                  <div style="margin-top:6px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;">Linie ${idx + 1} Auslastung</div>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:2px;"><tr><td width="${Math.max(0, Math.min(100, Math.round((item.target / PET_PORTIONS_PER_LINE_PER_SHIFT) * 100)))}%" style="height:5px;background:#10b981;border-radius:4px;"></td><td style="height:5px;background:#e2e8f0;"></td></tr></table>
+                </td>`).join("");
+
+    return `
+    <tr><td style="padding:0 0 14px 0;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#ffffff;">
+        <tr><td style="background:#1e293b;padding:10px 12px;">
+          <div style="font-family:Segoe UI,Arial,sans-serif;font-size:15px;font-weight:900;color:#f8fafc;">Plating ab ${escapeHtml(parseDateNeeded(shift).date)} &mdash; ${runLabel}</div>
+          <div style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#fde68a;margin-top:3px;">Fertigstellung: ${escapeHtml(completedOn)} &middot; ${rows.length} Rezepte &middot; ${fmtInt(shiftTarget)} Portionen &middot; ~${fmtInt(shiftStaffNeeded)} MA empfohlen (${lineCount} Linien)</div>
+          <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#93c5fd;margin-top:3px;">Meal-WOs: ${rows.length} &middot; SOLL ${fmtInt(shiftTarget)} &middot; IST ${fmtInt(shiftMapped)} &middot; Gap ${fmtInt(shiftOpen)} &middot; Auslastung ${shiftUtil}% &middot; Parallel ${parallelHours.toFixed(1)} h statt ${avgLineHours.toFixed(1)} h / Linie</div>
+          <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#c7d2fe;margin-top:3px;">Linien n&ouml;tig: <strong style="color:#ffffff;">${shiftLinesNeeded}</strong> (${fmtInt(PET_PORTIONS_PER_LINE_PER_SHIFT)} Meals/Linie) &middot; Geplante Linien: <strong style="color:#ffffff;">${lineCount}</strong> (2 Standard, optional 3) &middot; MA-Bedarf Shift: <strong style="color:#ffffff;">${shiftStaffNeeded}</strong> (Submeals + 1 je Linie) &middot; Kritische Best-By: <strong style="color:${shiftUrgent > 0 ? "#fca5a5" : "#86efac"};">${shiftUrgent}</strong></div>
+          ${shiftAllergenSet.size ? `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#e2e8f0;margin-top:3px;">Allergene im Shift: ${Array.from(shiftAllergenSet).join(", ")}</div>` : ""}
+          <div style="margin-top:8px;padding:8px 10px;background:#fef3c7;border:1px solid #d97706;border-radius:8px;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#78350f;font-weight:700;">⚠ ALLERGEN-SICHERHEIT: Bei jedem Meal-Wechsel mit anderen Allergenen Linie vollst&auml;ndig reinigen. Gleiche Allergene wurden geb&uuml;ndelt, um Wechsel zu minimieren.</div>
+          <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:${cleaningTotal > 0 ? "#fcd34d" : "#86efac"};margin-top:3px;">${cleaningTotal > 0 ? `⚠ ${cleaningTotal} Reinigungswechsel eingeplant` : "✓ Keine Reinigungswechsel erforderlich"}</div>
+        </td></tr>
+        <tr>
+          <td style="padding:10px 12px;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+              <tr>
+                ${lineColumns}
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td></tr>`;
+  }).join("");
+
+  return `<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>PET-Plating Plan ${runLabel}</title></head>
+<body style="margin:0;padding:16px;background:#cbd5e1;font-family:Segoe UI,Arial,sans-serif;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:980px;margin:0 auto;">
+  <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0369a1 100%);border-radius:16px 16px 0 0;padding:28px 28px 22px 28px;">
+    <div style="font-size:10px;letter-spacing:0.2em;color:#7dd3fc;text-transform:uppercase;margin-bottom:8px;">Factor OPS &middot; Verden &middot; PET</div>
+    <div style="font-size:30px;font-weight:900;color:#ffffff;line-height:1.05;letter-spacing:-0.02em;">Plating ab ${escapeHtml(firstShiftDate)} &mdash; ${runLabel}</div>
+    <div style="font-size:15px;color:#bae6fd;margin-top:6px;">${fmtInt(runRows.length)} Rezepte &middot; ${fmtInt(totalTarget)} Portionen &middot; Parallel ~${(totalSingleLineHours / Math.max(1, peakLinesNeeded || 2)).toFixed(1)} h ab ${formatClock(PET_LINE_START_HOUR * 60)}</div>
+    <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.2);font-size:11px;color:#cbd5e1;">Erstellt: ${escapeHtml(generatedAt)} &nbsp;&middot;&nbsp; Quelle: ${escapeHtml(sourceLabel)}</div>
+  </td></tr>
+
+  <tr><td style="background:#ffffff;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td style="padding:14px 16px;text-align:center;border-right:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Meal-WOs</div><div style="font-size:26px;font-weight:900;color:#0f172a;">${runRows.length}</div></td>
+        <td style="padding:14px 16px;text-align:center;border-right:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">SOLL</div><div style="font-size:26px;font-weight:900;color:#0f172a;">${fmtInt(totalTarget)}</div></td>
+        <td style="padding:14px 16px;text-align:center;border-right:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">IST</div><div style="font-size:26px;font-weight:900;color:#0369a1;">${fmtInt(totalMapped)}</div></td>
+        <td style="padding:14px 16px;text-align:center;border-right:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Gap</div><div style="font-size:26px;font-weight:900;color:${totalOpen > 0 ? "#92400e" : "#166534"};">${fmtInt(totalOpen)}</div></td>
+        <td style="padding:14px 16px;text-align:center;border-right:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Done</div><div style="font-size:26px;font-weight:900;color:#166534;">${fmtInt(doneCount)}</div></td>
+        <td style="padding:14px 16px;text-align:center;border-right:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">In Progress</div><div style="font-size:26px;font-weight:900;color:#92400e;">${fmtInt(inProgress)}</div></td>
+        <td style="padding:14px 16px;text-align:center;border-right:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Not Started</div><div style="font-size:26px;font-weight:900;color:#991b1b;">${fmtInt(notStarted)}</div></td>
+        <td style="padding:14px 16px;text-align:center;border-right:1px solid #e2e8f0;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Best-By &lt;48h</div><div style="font-size:26px;font-weight:900;color:${urgentBestBy > 0 ? "#b91c1c" : "#166534"};">${fmtInt(urgentBestBy)}</div></td>
+        <td style="padding:14px 16px;text-align:center;"><div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;">Peak Linien / MA</div><div style="font-size:20px;font-weight:900;color:#0f172a;">${fmtInt(peakLinesNeeded)} / ${fmtInt(peakStaffNeeded)}</div></td>
+      </tr>
+    </table>
+    <div style="padding:0;"><table width="100%" cellspacing="0" cellpadding="0"><tr><td width="${completion}%" style="height:5px;background:linear-gradient(90deg,#0ea5e9,#10b981);"></td>${completion < 100 ? `<td style="height:5px;background:#e2e8f0;"></td>` : ""}</tr></table></div>
+    <div style="padding:8px 16px 10px 16px;border-top:1px solid #e2e8f0;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;">Priorisierung: 1) fr&uuml;hestes Best By, 2) h&ouml;chster Gap &middot; Kapazit&auml;t je Linie: ${fmtInt(PET_PORTIONS_PER_LINE_PER_SHIFT)} Meals &middot; MA-Formel: Submeals + 1 &middot; Reinigungswechsel zwischen allergen-kritischen Meals automatisch markiert</div>
+    ${globalAllergens.size ? `<div style="padding:0 16px 10px 16px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#334155;">Allergene (Run gesamt): <strong>${Array.from(globalAllergens).join(", ")}</strong></div>` : ""}
+  </td></tr>
+
+  <tr><td style="background:#ffffff;padding:18px 24px 8px 24px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-top:2px solid #e2e8f0;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:14px;"><tr><td style="border-left:4px solid #0ea5e9;padding-left:10px;"><div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;font-weight:800;color:#0f172a;text-transform:uppercase;letter-spacing:0.1em;">PET Plating Linienplan</div><div style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#64748b;margin-top:2px;">Wie im KET-Plating: Linien, Allergene, Reinigungen, MA</div></td></tr></table>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${shiftTables || `<tr><td style="padding:16px 12px;border:1px dashed #cbd5e1;border-radius:10px;font-family:Segoe UI,Arial,sans-serif;font-size:12px;color:#64748b;">Keine PET-Daten f&uuml;r ${runLabel} gefunden.</td></tr>`}</table>
+  </td></tr>
+
+  <tr><td style="background:#f1f5f9;border-radius:0 0 16px 16px;padding:16px 24px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td style="font-size:11px;color:#64748b;"><strong style="color:#0f172a;">Factor OPS Planner</strong> &middot; PET Plating Report</td><td align="right" style="font-size:10px;color:#94a3b8;white-space:nowrap;">${escapeHtml(sourceLabel)}</td></tr></table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+}
+
 function buildRun1Mail(run1Rows: RundmailRow[]): string {
   const run1Days = Array.from(new Set(run1Rows.map((row) => row.dateNeeded))).sort((a, b) => daySortValue(a) - daySortValue(b));
   const totalTarget = run1Rows.reduce((sum, row) => sum + row.targetPortions, 0);
   const totalCooked = run1Rows.reduce((sum, row) => sum + row.woCookedPortions, 0);
   const totalOpen = run1Rows.reduce((sum, row) => sum + toSlack(row.targetPortions - row.woCookedPortions), 0);
+  const totalBatches = run1Rows.reduce((sum, row) => sum + (row.batchesNeeded ?? 0), 0);
 
   const lines: string[] = [];
   lines.push("# RUN1 Rundmail Produktion");
@@ -310,6 +789,7 @@ function buildRun1Mail(run1Rows: RundmailRow[]): string {
   lines.push(`- RUN1 Ziel gesamt: ${fmtInt(totalTarget)}`);
   lines.push(`- RUN1 Gekocht gesamt: ${fmtInt(totalCooked)}`);
   lines.push(`- RUN1 Offener Bedarf: ${fmtInt(totalOpen)}`);
+  lines.push(`- RUN1 Batches gesamt: ${fmtInt(totalBatches)}`);
   lines.push("");
 
   run1Days.forEach((day) => {
@@ -317,6 +797,7 @@ function buildRun1Mail(run1Rows: RundmailRow[]): string {
     const target = rows.reduce((sum, row) => sum + row.targetPortions, 0);
     const cooked = rows.reduce((sum, row) => sum + row.woCookedPortions, 0);
     const open = rows.reduce((sum, row) => sum + toSlack(row.targetPortions - row.woCookedPortions), 0);
+    const dayBatches = rows.reduce((sum, row) => sum + (row.batchesNeeded ?? 0), 0);
 
     const critical = rows
       .map((row) => ({ row, deficit: toSlack(row.targetPortions - row.woCookedPortions) }))
@@ -332,13 +813,15 @@ function buildRun1Mail(run1Rows: RundmailRow[]): string {
     lines.push(`## ${day}`);
     lines.push(`- Work Orders: ${rows.length}`);
     lines.push(`- Ziel: ${fmtInt(target)} | Gekocht: ${fmtInt(cooked)} | Offen: ${fmtInt(open)}`);
+    lines.push(`- Batches: ${fmtInt(dayBatches)}`);
     lines.push(`- Blocked/Open Positionen: ${blocked.length}`);
 
     if (critical.length) {
       lines.push("- Kritische Defizite:");
       critical.forEach(({ row, deficit }) => {
         const hint = row.workOrderComment ? ` | Hinweis: ${row.workOrderComment}` : "";
-        lines.push(`  - WO ${row.workOrderNumber} | ${row.subRecipeName} | Fehlmenge ${fmtInt(deficit)}${hint}`);
+        const batchesText = row.batchesNeeded != null ? ` | Batches ${fmtInt(row.batchesNeeded)}` : "";
+        lines.push(`  - WO ${row.workOrderNumber} | ${row.subRecipeName} | Fehlmenge ${fmtInt(deficit)}${batchesText}${hint}`);
       });
     } else {
       lines.push("- Kritische Defizite: keine");
@@ -346,18 +829,6 @@ function buildRun1Mail(run1Rows: RundmailRow[]): string {
 
     lines.push("");
   });
-
-  const platingPlan = buildPlatingPlan(run1Rows);
-  if (platingPlan.length) {
-    lines.push("## Plating-Plan");
-    lines.push("(Fruehester Plating-Start je Rezept — nach letztem Sub-Rezept)");
-    lines.push("");
-    platingPlan.forEach((entry) => {
-      const allergenText = entry.allergens.map((a) => a.label).join(", ") || "keine bekannten";
-      lines.push(`- **${entry.recipeName}** → Plating ab: ${entry.platingAfter} | Allergene: ${allergenText}`);
-    });
-    lines.push("");
-  }
 
   lines.push(`_${new Date().toLocaleString("de-DE")}_`);
 
@@ -380,7 +851,6 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
   const targetRunRows = allRows.filter((row) => isTargetRun(row.dateNeeded));
   // Küchen-Plan nur für diesen Run; alle Tage/Runs für den kompletten Plan-Kontext
   const allDays = Array.from(new Set(allRows.filter(r => isTargetRun(r.dateNeeded)).map((row) => row.dateNeeded))).sort((a, b) => daySortValue(a) - daySortValue(b));
-  const platingPlan = buildPlatingPlan(allRows);
 
   const timelineCards = allDays.map(day => {
     const dayRows = allRows.filter(r => r.dateNeeded === day);
@@ -403,6 +873,7 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
   const totalTarget = dedupedRun.reduce((sum, row) => sum + row.targetPortions, 0);
   const totalCooked = dedupedRun.reduce((sum, row) => sum + row.woCookedPortions, 0);
   const totalOpen = dedupedRun.reduce((sum, row) => sum + toSlack(row.targetPortions - row.woCookedPortions), 0);
+  const totalBatches = targetRunRows.reduce((sum, row) => sum + (row.batchesNeeded ?? 0), 0);
   const completion = totalTarget > 0 ? Math.max(0, Math.min(100, Math.round((totalCooked / totalTarget) * 100))) : 0;
   const generatedAt = new Date().toLocaleString("de-DE");
   const runLabel = `Run ${targetRun}`;
@@ -436,6 +907,7 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
     });
 
     const dayTarget = Array.from(recipeMap.values()).reduce((s, e) => s + e.target, 0);
+    const dayBatches = dayRows.reduce((sum, row) => sum + (row.batchesNeeded ?? 0), 0);
     const uniqueRecipeCount = recipeMap.size;
     const totalSubCount = dayRows.length;
 
@@ -452,13 +924,15 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
           <td style="padding:5px 8px 5px 20px;border-bottom:1px solid #f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#334155;white-space:nowrap;">WO&nbsp;${escapeHtml(row.workOrderNumber)}</td>
           <td style="padding:5px 8px;border-bottom:1px solid #f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#0f172a;">${escapeHtml(row.subRecipeName)}</td>
           <td style="padding:5px 8px;border-bottom:1px solid #f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#334155;text-align:right;white-space:nowrap;">${fmtInt(row.targetPortions)}</td>
+          <td style="padding:5px 8px;border-bottom:1px solid #f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#334155;text-align:right;white-space:nowrap;">${row.kitchenKg != null ? fmtInt(row.kitchenKg) : "–"}</td>
+          <td style="padding:5px 8px;border-bottom:1px solid #f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#4338ca;font-weight:700;text-align:right;white-space:nowrap;">${row.batchesNeeded != null ? fmtInt(row.batchesNeeded) : "–"}</td>
           <td style="padding:5px 8px;border-bottom:1px solid #f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#64748b;">${escapeHtml(row.cookMethods || "–")}</td>
           <td style="padding:5px 8px;border-bottom:1px solid #f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:${row.kitchenStatus?.toLowerCase().includes("not started") ? "#991b1b" : row.kitchenStatus?.toLowerCase().includes("post blast") ? "#166534" : "#334155"};white-space:nowrap;">${escapeHtml(row.kitchenStatus || "–")}</td>
         </tr>`).join("");
 
       return `
         <tr style="background:${recipeHeaderBg};">
-          <td colspan="5" style="padding:7px 10px 5px 10px;border-top:1px solid #e2e8f0;">
+          <td colspan="7" style="padding:7px 10px 5px 10px;border-top:1px solid #e2e8f0;">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
               <td>
                 <span style="font-family:Segoe UI,Arial,sans-serif;font-size:12px;font-weight:800;color:#0f172a;">${escapeHtml(firstRow.recipeName.replace(/\s*\[.*?\]/g, ""))}</span>
@@ -472,9 +946,6 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
         ${subRows}`;
     }).join("");
 
-    const platingFrom = addOneDay(day);
-    const { date: platingDate } = parseDateNeeded(platingFrom);
-
     return `
     <tr><td style="padding:0 0 14px 0;">
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#ffffff;">
@@ -482,10 +953,7 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
             <td>
               <span style="font-family:Segoe UI,Arial,sans-serif;font-size:13px;font-weight:700;color:#ffffff;">${escapeHtml(date)} &mdash; Run&nbsp;${run}</span>
-              <span style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#94a3b8;margin-left:12px;">${uniqueRecipeCount} Rezepte &middot; ${totalSubCount} WOs &middot; ${fmtInt(dayTarget)} Portionen &middot; <strong style="color:#fbbf24;">${totalSubCount + 1} MA</strong></span>
-            </td>
-            <td align="right" style="white-space:nowrap;">
-              <span style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#7dd3fc;">&#128197; Plating ab: ${escapeHtml(platingDate)}</span>
+              <span style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#94a3b8;margin-left:12px;">${uniqueRecipeCount} Rezepte &middot; ${totalSubCount} WOs &middot; ${fmtInt(dayTarget)} Portionen &middot; ${fmtInt(dayBatches)} Batches &middot; <strong style="color:#fbbf24;">${totalSubCount + 1} MA</strong></span>
             </td>
           </tr></table>
         </td></tr>
@@ -495,134 +963,12 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
               <th align="left" style="padding:5px 8px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">WO</th>
               <th align="left" style="padding:5px 8px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Sub-Rezept</th>
               <th align="right" style="padding:5px 8px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Target</th>
+              <th align="right" style="padding:5px 8px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Kitchen kg</th>
+              <th align="right" style="padding:5px 8px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#4338ca;text-transform:uppercase;letter-spacing:0.08em;">Batches</th>
               <th align="left" style="padding:5px 8px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Cook-Methoden</th>
               <th align="left" style="padding:5px 8px;background:#f8fafc;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;">Status</th>
             </tr>
             ${recipeSections}
-          </table>
-        </td></tr>
-      </table>
-    </td></tr>`;
-  }).join("");
-
-  // Section B: Plating-Plan — 2 Linien, je 1.000 Portionen/h, verteilt nach Run-1-Abschluss
-  const platingSchedule = buildPlatingLineSchedule(platingPlan, targetRun);
-
-  function recipeCard(entry: PlatingEntry, lineColor: string) {
-    const badges = entry.allergens.map((a) =>
-      `<span style="display:inline-block;background:${a.bg};color:${a.text};border:1px solid ${a.border};border-radius:3px;padding:1px 5px;font-size:10px;font-weight:700;margin:1px 2px;">${escapeHtml(a.label)}</span>`
-    ).join("") || `<span style="font-size:10px;color:${C.slateLight};">–</span>`;
-    const hours = (entry.targetPortions / PLATING_RATE).toFixed(1);
-    return `
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid ${C.border};border-left:3px solid ${lineColor};border-radius:0 8px 8px 0;background:${C.white};margin-bottom:6px;">
-        <tr><td style="padding:8px 10px;">
-          <div style="font-size:12px;font-weight:700;color:${C.navy};">${escapeHtml(entry.recipeName.replace(/\s*\[.*?\]/g, ""))}</div>
-          <div style="font-size:10px;color:${C.slate};margin-top:2px;">
-            ${escapeHtml(entry.recipeId)} &middot; <strong style="color:${C.navy};">${fmtInt(entry.targetPortions)}</strong> Portionen &middot; ${entry.subRecipes.length} Sub-Rezepte &middot; <strong style="color:${lineColor};">${hours} h</strong>
-          </div>
-          <div style="margin-top:4px;">
-            <span style="display:inline-block;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:800;">&#128101; ${entry.subRecipes.length + 1} MA ben&ouml;tigt</span>
-          </div>
-          <div style="margin-top:4px;">${badges}</div>
-        </td></tr>
-      </table>`;
-  }
-
-  const platingPlanHtml = platingSchedule.map((slot) => {
-    const { date: completionDate, run } = parseDateNeeded(slot.startDate);
-    const platingDate = parseDateNeeded(addOneDay(slot.startDate)).date;
-    const totalPortions = slot.line1Portions + slot.line2Portions;
-    const maxHours = Math.max(slot.line1Hours, slot.line2Hours);
-    const parallelHours = Math.round((totalPortions / (2 * PLATING_RATE)) * 10) / 10;
-    const activeLinesCount = (slot.line1.length > 0 ? 1 : 0) + (slot.line2.length > 0 ? 1 : 0);
-    const recommendedStaff = activeLinesCount * PLATING_STAFF_PER_LINE;
-    // MA-Bedarf nach Sub-Rezept-Formel: jedes Rezept braucht (sub_rezepte + 1) MA
-    const maBySubRecipe = [...slot.line1, ...slot.line2].reduce((s, e) => s + e.subRecipes.length + 1, 0);
-
-    // Reinigungsmarker zwischen Rezepten mit unterschiedlichem Allergen-Profil
-    function renderLineWithMarkers(entries: PlatingEntry[], lineColor: string): string {
-      return entries.map((entry, idx) => {
-        const card = recipeCard(entry, lineColor);
-        if (idx >= entries.length - 1) return card;
-        const next = entries[idx + 1];
-        const cur = new Set(entry.allergens.map(a => a.label));
-        const nxt = new Set(next.allergens.map(a => a.label));
-        const removed = [...cur].filter(l => !nxt.has(l));
-        const added = [...nxt].filter(l => !cur.has(l));
-        if (removed.length === 0 && added.length === 0) return card;
-        const details = [
-          removed.length > 0 ? `entfernt: <strong>${removed.join(", ")}</strong>` : "",
-          added.length > 0 ? `kommt: <strong>${added.join(", ")}</strong>` : "",
-        ].filter(Boolean).join(" &middot; ");
-        return card + `<div style="margin:3px 0 5px 0;padding:5px 10px;background:#fef9c3;border:1px dashed #f59e0b;border-radius:6px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#78350f;font-weight:600;">
-          &#9888;&nbsp;<strong>LINIE REINIGEN</strong> — Allergen-Wechsel: ${details}
-        </div>`;
-      }).join("");
-    }
-
-    // Zähle Allergen-Wechsel pro Linie für den Header
-    const countSwitches = (entries: PlatingEntry[]) => entries.reduce((n, e, i) => {
-      if (i === 0) return n;
-      const prev = new Set(entries[i-1].allergens.map(a => a.label));
-      const cur = new Set(e.allergens.map(a => a.label));
-      return n + ([...cur].some(l => !prev.has(l)) || [...prev].some(l => !cur.has(l)) ? 1 : 0);
-    }, 0);
-    const switches1 = countSwitches(slot.line1);
-    const switches2 = countSwitches(slot.line2);
-    const totalSwitches = switches1 + switches2;
-
-    const line1Cards = renderLineWithMarkers(slot.line1, C.sky);
-    const line2Cards = renderLineWithMarkers(slot.line2, C.emerald);
-    return `
-    <tr><td style="padding:0 0 16px 0;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid ${C.border};border-radius:10px;overflow:hidden;background:${C.slateBg};">
-        <!-- Slot Header -->
-        <tr><td colspan="2" style="background:${C.navy};padding:10px 14px;">
-          <table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr>
-            <td>
-              <div style="font-size:13px;font-weight:800;color:${C.white};">&#128197; Plating ab ${escapeHtml(platingDate)} &mdash; Run ${run}</div>
-              <div style="font-size:11px;color:#93c5fd;margin-top:2px;">
-                Fertigstellung: ${escapeHtml(completionDate)} &middot; ${slot.line1.length + slot.line2.length} Rezepte &middot; ${fmtInt(totalPortions)} Portionen &middot; <strong style="color:#fbbf24;">&#128101; ${maBySubRecipe} MA (Sub-Rezept-Formel)</strong> &middot; Plating-Linien: ~${recommendedStaff} MA (${activeLinesCount}&times;${PLATING_STAFF_PER_LINE}) &middot; ${totalSwitches > 0 ? `<span style="color:#fcd34d;">&#9888; ${totalSwitches} Allergen-Wechsel</span>` : `<span style="color:#6ee7b7;">&#10003; keine Allergen-Wechsel</span>`}
-              </div>
-              ${totalSwitches > 0 ? `<div style="margin-top:6px;padding:5px 10px;background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.4);border-radius:6px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#fef3c7;font-weight:600;">&#9888;&nbsp;ALLERGEN-SICHERHEIT: Bei jedem Meal-Wechsel mit anderen Allergenen Linie vollst&auml;ndig reinigen. Gleiche Allergene wurden gebündelt um Wechsel zu minimieren.</div>` : ""}
-            </td>
-            <td align="right" style="white-space:nowrap;vertical-align:middle;">
-              <div style="display:inline-block;background:rgba(255,255,255,0.12);border-radius:8px;padding:6px 12px;text-align:center;">
-                <div style="font-size:9px;color:#93c5fd;letter-spacing:0.1em;text-transform:uppercase;">Parallel (${activeLinesCount} Linien)</div>
-                <div style="font-size:18px;font-weight:900;color:${C.white};">${parallelHours} h</div>
-                <div style="font-size:9px;color:#93c5fd;">statt ${maxHours} h / Linie</div>
-              </div>
-            </td>
-          </tr></table>
-        </td></tr>
-        <!-- Two Lines -->
-        <tr>
-          <td width="50%" style="padding:10px 10px 10px 14px;vertical-align:top;border-right:1px solid ${C.border};">
-            <div style="font-size:10px;font-weight:800;color:${C.sky};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
-              Linie 1 &mdash; ${fmtInt(slot.line1Portions)} Portionen &mdash; ${slot.line1Hours} h &mdash; ~${slot.line1.length > 0 ? PLATING_STAFF_PER_LINE : 0} MA
-            </div>
-            ${line1Cards || `<div style="font-size:11px;color:${C.slateLight};padding:8px 0;">–</div>`}
-          </td>
-          <td width="50%" style="padding:10px 14px 10px 10px;vertical-align:top;">
-            <div style="font-size:10px;font-weight:800;color:${C.emerald};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">
-              Linie 2 &mdash; ${fmtInt(slot.line2Portions)} Portionen &mdash; ${slot.line2Hours} h &mdash; ~${slot.line2.length > 0 ? PLATING_STAFF_PER_LINE : 0} MA
-            </div>
-            ${line2Cards || `<div style="font-size:11px;color:${C.slateLight};padding:8px 0;">–</div>`}
-          </td>
-        </tr>
-        <!-- Progress bars -->
-        <tr><td colspan="2" style="padding:8px 14px 10px 14px;">
-          <table width="100%" cellspacing="0" cellpadding="0">
-            <tr>
-              <td width="50%" style="padding-right:6px;">
-                <div style="font-size:9px;color:${C.slate};margin-bottom:2px;">Linie 1 Auslastung</div>
-                ${capBar(slot.line1Portions, totalPortions, 5)}
-              </td>
-              <td width="50%" style="padding-left:6px;">
-                <div style="font-size:9px;color:${C.slate};margin-bottom:2px;">Linie 2 Auslastung</div>
-                ${capBar(slot.line2Portions, totalPortions, 5)}
-              </td>
-            </tr>
           </table>
         </td></tr>
       </table>
@@ -765,24 +1111,10 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
     </td></tr>`;
   })() : "";
 
-  // Section D: Allergen summary table
-  // @ts-expect-error unused
-  const _allergenTableHtml = platingPlan.map((entry) => {
-    const allergenText = entry.allergens.map((a) => a.label).join(", ") || "–";
-    const hasHighRisk = entry.allergens.some((a) => a.label === "Fisch");
-    return `
-    <tr>
-      <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#0f172a;">${escapeHtml(entry.recipeName.split(" - ")[0] ?? entry.recipeName)}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:11px;text-align:right;color:#334155;">${fmtInt(entry.targetPortions)}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #f1f5f9;font-family:Segoe UI,Arial,sans-serif;font-size:11px;font-weight:600;color:${hasHighRisk ? "#991b1b" : "#334155"};">${escapeHtml(allergenText)}</td>
-    </tr>`;
-  }).join("");
-
   // ── Extra KPIs from weekly planning ─────────────────────────────────────────
   const uniqueRecipes   = new Set(allRows.map(r => r.recipeId)).size;
   const totalSubRecipes = allRows.length;
   const totalKetPortions = dedupedRun.reduce((s, r) => s + r.targetPortions, 0);
-  const uniqueAllergens = new Set(platingPlan.flatMap(p => p.allergens.map(a => a.label))).size;
   const maxDayStaff     = weeklyPlanning ? Math.max(...weeklyPlanning.teamByDay.map(d => d.allStaffEarly + d.allStaffLate), 0) : 0;
   const bpls = weeklyPlanning?.boxesPerLinePerShift ?? 6608;
   const refLabel = weeklyPlanning
@@ -999,7 +1331,7 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
       <td>
         <div style="font-size:10px;letter-spacing:0.2em;color:#7dd3fc;text-transform:uppercase;margin-bottom:8px;">Factor OPS &middot; Standort Verden &middot; Produktion</div>
         <div style="font-size:28px;font-weight:900;color:#ffffff;line-height:1.1;letter-spacing:-0.02em;">Produktions-Rundmail &mdash; ${runLabel}</div>
-        <div style="font-size:16px;font-weight:400;color:#93c5fd;margin-top:4px;">K&uuml;chen-Plan &middot; Plating (2 Linien) &middot; Kapazit&auml;t &middot; Allergene</div>
+        <div style="font-size:16px;font-weight:400;color:#93c5fd;margin-top:4px;">K&uuml;chen-Plan &middot; Kapazit&auml;t &middot; Personal</div>
       </td>
       <td align="right" style="vertical-align:top;white-space:nowrap;">
         <div style="display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:10px;padding:8px 16px;text-align:center;">
@@ -1022,10 +1354,11 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
         ${kpiCell(`${runLabel} Work Orders`, String(targetRunRows.length), C.navy, `von ${allRows.length} gesamt`)}
         ${kpiCell("Ziel-Portionen", fmtInt(totalTarget), C.sky, runLabel)}
         ${kpiCell("Completion", completion + "%", completion >= 80 ? C.emerald : completion >= 50 ? C.amber : C.red, `${fmtInt(totalCooked)} gekocht`)}
-        ${kpiCell("Nächstes Plating", platingPlan.length > 0 ? escapeHtml(parseDateNeeded(addOneDay(platingPlan[0].platingAfterRun1)).date) : "–", C.skyDark, platingPlan.length > 0 ? `${platingPlan.length} Rezepte ab diesem Tag` : "kein Plating")}
-        ${kpiCell("Allergene erkannt", String(uniqueAllergens), uniqueAllergens > 0 ? C.red : C.emeraldDark, uniqueAllergens > 0 ? `${platingPlan.filter(p => p.allergens.length > 0).length} betroffene Rezepte` : "keine Allergene")}
+        ${kpiCell("KET Tage", String(allDays.length), C.skyDark, `${runLabel} Produktionstage`) }
+        ${kpiCell("WOs gesamt", String(targetRunRows.length), C.navyLight, "inkl. Sub-Rezepte")}
         ${kpiCell("Peak-Personal", maxDayStaff > 0 ? maxDayStaff.toFixed(0) : "–", C.navy, refLabel)}
         ${kpiCell("Rezepte / Sub-Rezepte", `${uniqueRecipes} / ${totalSubRecipes}`, C.navyLight, `${fmtInt(totalKetPortions)} Portionen Küche`)}
+        ${kpiCell("Batches", fmtInt(totalBatches), "#4338ca", runLabel)}
         <td style="padding:14px 16px;text-align:center;">
           <div style="font-size:10px;color:${C.slate};text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Offen</div>
           <div style="font-size:26px;font-weight:900;color:${totalOpen > 0 ? C.amber : C.emerald};line-height:1;">${fmtInt(totalOpen)}</div>
@@ -1087,41 +1420,6 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
     </table>
   </td></tr>
 
-  <!-- ═══════════════════ PLATING-PLAN ═══════════════════ -->
-  <tr><td style="background:#ffffff;padding:20px 24px 8px 24px;border-left:1px solid ${C.border};border-right:1px solid ${C.border};border-top:2px solid ${C.border};">
-    ${sectionHeader(`Plating-Plan &mdash; ${runLabel} &mdash; 2 Linien`, `Plating startet immer am n&auml;chsten Produktionstag nach Fertigstellung &middot; ${PLATING_RATE.toLocaleString()} Portionen/Linie/h &middot; ~${PLATING_STAFF_PER_LINE} MA/Linie`, C.sky)}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      ${platingPlanHtml}
-    </table>
-  </td></tr>
-
-  <!-- ═══════════════════ ALLERGEN-ÜBERSICHT ═══════════════════ -->
-  <tr><td style="background:#ffffff;padding:20px 24px 20px 24px;border-left:1px solid ${C.border};border-right:1px solid ${C.border};border-top:2px solid ${C.border};">
-    ${sectionHeader("Allergen-&Uuml;bersicht", "Automatisch erkannte Hauptallergene je Rezept (EU-Verordnung 1169/2011)", C.red)}
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #fecaca;border-radius:10px;overflow:hidden;">
-      <tr>
-        <th align="left" style="padding:8px 12px;background:#fef2f2;font-size:10px;color:${C.redDark};text-transform:uppercase;letter-spacing:0.08em;">Rezept</th>
-        <th align="left" style="padding:8px 12px;background:#fef2f2;font-size:10px;color:${C.redDark};text-transform:uppercase;letter-spacing:0.08em;">Plating ab (n&auml;chster Tag)</th>
-        <th align="right" style="padding:8px 12px;background:#fef2f2;font-size:10px;color:${C.redDark};text-transform:uppercase;letter-spacing:0.08em;">Portionen</th>
-        <th align="left" style="padding:8px 12px;background:#fef2f2;font-size:10px;color:${C.redDark};text-transform:uppercase;letter-spacing:0.08em;">Allergene</th>
-      </tr>
-      ${platingPlan.map((entry, idx) => {
-        const hasFish = entry.allergens.some(a => a.label === "Fisch");
-        const badges = entry.allergens.map(a =>
-          `<span style="display:inline-block;background:${a.bg};color:${a.text};border:1px solid ${a.border};border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;margin:1px 2px;">${a.label}</span>`
-        ).join("") || `<span style="font-size:10px;color:${C.slateLight};">–</span>`;
-        const bg = idx % 2 === 0 ? C.white : C.slateBg;
-        const platingDate = parseDateNeeded(addOneDay(entry.platingAfterRun1)).date;
-        return `<tr style="background:${bg};">
-          <td style="padding:8px 12px;font-size:11px;font-weight:600;color:${C.navy};">${escapeHtml(entry.recipeName.split(" - ")[0] ?? entry.recipeName)}</td>
-          <td style="padding:8px 12px;font-size:11px;color:${C.sky};font-weight:700;white-space:nowrap;">&#128197; ${escapeHtml(platingDate)}</td>
-          <td style="padding:8px 12px;font-size:11px;color:${C.navyLight};text-align:right;">${fmtInt(entry.targetPortions)}</td>
-          <td style="padding:8px 12px;">${hasFish ? `<span style="color:${C.red};font-size:11px;font-weight:800;margin-right:4px;">&#9888;</span>` : ""}${badges}</td>
-        </tr>`;
-      }).join("")}
-    </table>
-  </td></tr>
-
   <!-- ═══════════════════ WOCHENKALENDER ═══════════════════ -->
   ${weeklyPlanning ? `<tr><td style="background:#ffffff;padding:20px 20px 16px 20px;border-left:1px solid ${C.border};border-right:1px solid ${C.border};border-top:2px solid ${C.border};">
     ${sectionHeader("Wochenkalender &amp; Kapazit&auml;t", `Boxen-Ziel je Tag vs. Plating-Kapazit&auml;t &middot; 1 Linie = ${fmtInt(bpls)} Boxen/Schicht &middot; ${fmtInt(bpls * 2)} bei 2 Linien`, C.sky)}
@@ -1169,20 +1467,24 @@ function downloadFile(name: string, content: string, mime = "text/plain;charset=
   URL.revokeObjectURL(url);
 }
 
-export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => void } = {}) {
+export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNavigate?: (view: string) => void } = {}) {
   const [rows, setRows] = useState<RundmailRow[]>([]);
+  const [petRows, setPetRows] = useState<PetRow[]>([]);
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [isDragging, setIsDragging] = useState(false);
   const [sourceLabel, setSourceLabel] = useState("Seed: public/data/rundmail-seed.csv");
+  const [petSourceLabel, setPetSourceLabel] = useState("PET CSV noch nicht geladen");
   const [mailText, setMailText] = useState("");
   const [weeklyPlanning, setWeeklyPlanning] = useState<WeeklyPlanningData | null>(null);
+  const [bibleHints, setBibleHints] = useState<Map<string, BatchHint>>(new Map());
   // Basis-URL für interne Tool-Links im HTML-Export.
   // Im Build: VITE_APP_URL setzen (z.B. https://myapp.example.com). Fallback: aktuelle Origin.
   const appOrigin = ((import.meta.env.VITE_APP_URL as string) || "").replace(/\/$/, "") ||
     (typeof window !== "undefined" ? window.location.origin : "");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const petFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1219,15 +1521,78 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [masterRes, biblesRes] = await Promise.all([
+          fetch("/data/gsheet-dump-NEW_MASTER_SUPERVISORS_WORKLOAD_PLANNING.json"),
+          fetch("/data/gsheet-dump-Bibles_K_Operations_Manager_Supervisors.json"),
+        ]);
+        if (!masterRes.ok || !biblesRes.ok) return;
+        const [masterDump, biblesDump] = await Promise.all([masterRes.json(), biblesRes.json()]);
+        if (!active) return;
+        setBibleHints(parseBibleBatchHints(masterDump, biblesDump));
+      } catch {
+        // Optional fallback source for capacities.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const processSpecsByName = useMemo(() => {
+    const map = new Map<string, ProcessSpec>();
+    for (const spec of Object.values((data?.processSpecs ?? {}) as Record<string, ProcessSpec>)) {
+      if (!spec?.name) continue;
+      const key = normalizeText(spec.name);
+      if (!key || map.has(key)) continue;
+      map.set(key, spec);
+    }
+    return map;
+  }, [data]);
+
+  const productionByWorkOrder = useMemo(() => {
+    const map = new Map<string, WorkOrderEntry[]>();
+    const productionRows = data?.productionPlan?.rows ?? [];
+    for (const row of productionRows) {
+      const workOrder = (row.workOrder ?? "").trim();
+      if (!workOrder) continue;
+      const list = map.get(workOrder) ?? [];
+      list.push(row);
+      map.set(workOrder, list);
+    }
+    return map;
+  }, [data]);
+
+  const enrichedRows = useMemo(() => {
+    return rows.map((row) => {
+      const kitchenKg = resolveKitchenKgForRow(row, productionByWorkOrder) ?? null;
+      const fallbackMinimumKg = row.minimumNeeds > 0 ? row.minimumNeeds : null;
+      const demandKg = kitchenKg ?? fallbackMinimumKg;
+      const batchSizeKg = resolveBatchSizeKg(row.subRecipeName, processSpecsByName, bibleHints);
+      const batchesNeeded = demandKg && batchSizeKg && batchSizeKg > 0
+        ? Math.ceil(demandKg / batchSizeKg)
+        : null;
+      return {
+        ...row,
+        kitchenKg,
+        batchSizeKg,
+        batchesNeeded,
+      };
+    });
+  }, [rows, productionByWorkOrder, processSpecsByName, bibleHints]);
+
   const days = useMemo(() => {
-    const run1Days = Array.from(new Set(rows.filter((row) => isRun1(row.dateNeeded)).map((row) => row.dateNeeded))).sort(
+    const run1Days = Array.from(new Set(enrichedRows.filter((row) => isRun1(row.dateNeeded)).map((row) => row.dateNeeded))).sort(
       (a, b) => daySortValue(a) - daySortValue(b)
     );
     if (run1Days.length) return run1Days;
-    return Array.from(new Set(rows.map((row) => row.dateNeeded))).sort((a, b) => daySortValue(a) - daySortValue(b));
-  }, [rows]);
+    return Array.from(new Set(enrichedRows.map((row) => row.dateNeeded))).sort((a, b) => daySortValue(a) - daySortValue(b));
+  }, [enrichedRows]);
 
-  const run1Rows = useMemo(() => rows.filter((row) => isRun1(row.dateNeeded)), [rows]);
+  const run1Rows = useMemo(() => enrichedRows.filter((row) => isRun1(row.dateNeeded)), [enrichedRows]);
 
   useEffect(() => {
     if (!days.length) {
@@ -1244,16 +1609,16 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
 
   const rowsByDay = useMemo(() => {
     const map = new Map<string, RundmailRow[]>();
-    rows.forEach((row) => {
+    enrichedRows.forEach((row) => {
       const list = map.get(row.dateNeeded) ?? [];
       list.push(row);
       map.set(row.dateNeeded, list);
     });
     return map;
-  }, [rows]);
+  }, [enrichedRows]);
 
   const visibleRows = useMemo(() => {
-    const base = selectedDays.size > 0 ? rows.filter((row) => selectedDays.has(row.dateNeeded)) : rows;
+    const base = selectedDays.size > 0 ? enrichedRows.filter((row) => selectedDays.has(row.dateNeeded)) : enrichedRows;
 
     return base.filter((row) => {
       const haystack = [
@@ -1272,7 +1637,7 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
       const statusPass = statusFilter === "all" || row.kitchenStatus === statusFilter;
       return searchPass && statusPass;
     });
-  }, [rows, searchText, selectedDays, statusFilter]);
+  }, [enrichedRows, searchText, selectedDays, statusFilter]);
 
   const summary = useMemo(() => {
     // Deduplizierung: Target und Cooked nur einmal pro Rezept zählen,
@@ -1313,8 +1678,8 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
 
   const selectedDayRows = useMemo(() => {
     if (!selectedDays.size) return [];
-    return rows.filter((row) => selectedDays.has(row.dateNeeded));
-  }, [rows, selectedDays]);
+    return enrichedRows.filter((row) => selectedDays.has(row.dateNeeded));
+  }, [enrichedRows, selectedDays]);
 
   const selectedDayStatus = useMemo(() => {
     return selectedDayRows.reduce<Record<string, number>>((acc, row) => {
@@ -1367,13 +1732,43 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
     setSourceLabel(label);
   }
 
+  function applyPetCsvText(csvText: string, label: string) {
+    const parsedRows = parsePetCsv(csvText);
+    setPetRows(parsedRows);
+    setPetSourceLabel(label);
+  }
+
   function onFileSelected(file: File | null) {
     if (!file) return;
     file
       .text()
-      .then((csvText) => applyCsvText(csvText, `Upload: ${file.name}`))
+      .then((csvText) => {
+        const detected = detectCsvType(csvText);
+        if (detected === "pet") {
+          applyPetCsvText(csvText, `PET Upload (auto erkannt): ${file.name}`);
+          return;
+        }
+        applyCsvText(csvText, `Upload: ${file.name}`);
+      })
       .catch(() => {
         setSourceLabel(`Upload fehlgeschlagen: ${file.name}`);
+      });
+  }
+
+  function onPetFileSelected(file: File | null) {
+    if (!file) return;
+    file
+      .text()
+      .then((csvText) => {
+        const detected = detectCsvType(csvText);
+        if (detected === "ket") {
+          applyCsvText(csvText, `KET Upload (auto erkannt): ${file.name}`);
+          return;
+        }
+        applyPetCsvText(csvText, `PET Upload: ${file.name}`);
+      })
+      .catch(() => {
+        setPetSourceLabel(`PET Upload fehlgeschlagen: ${file.name}`);
       });
   }
 
@@ -1381,7 +1776,20 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
     event.preventDefault();
     setIsDragging(false);
     const file = event.dataTransfer.files?.[0] ?? null;
-    onFileSelected(file);
+    if (!file) return;
+    file
+      .text()
+      .then((csvText) => {
+        const detected = detectCsvType(csvText);
+        if (detected === "pet") {
+          applyPetCsvText(csvText, `PET Drag&Drop: ${file.name}`);
+          return;
+        }
+        applyCsvText(csvText, `Drag&Drop: ${file.name}`);
+      })
+      .catch(() => {
+        setSourceLabel(`Upload fehlgeschlagen: ${file.name}`);
+      });
   }
 
   function updateRow(id: string, patch: Partial<Pick<RundmailRow, "kitchenStatus" | "stagingStatus" | "workOrderComment" | "stagingComment">>) {
@@ -1399,16 +1807,20 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
     whatIf: appOrigin + "?view=whatif",
     breakdown: appOrigin + "?view=breakdown",
   }), [appOrigin]);
-  const run1HtmlMail = useMemo(() => buildRunHtmlMail(rows, sourceLabel, weeklyPlanning, 1, toolLinks), [rows, sourceLabel, weeklyPlanning, toolLinks]);
-  const run2HtmlMail = useMemo(() => buildRunHtmlMail(rows, sourceLabel, weeklyPlanning, 2, toolLinks), [rows, sourceLabel, weeklyPlanning, toolLinks]);
+  const run1HtmlMail = useMemo(() => buildRunHtmlMail(enrichedRows, sourceLabel, weeklyPlanning, 1, toolLinks), [enrichedRows, sourceLabel, weeklyPlanning, toolLinks]);
+  const run2HtmlMail = useMemo(() => buildRunHtmlMail(enrichedRows, sourceLabel, weeklyPlanning, 2, toolLinks), [enrichedRows, sourceLabel, weeklyPlanning, toolLinks]);
+  const petRun1Rows = useMemo(() => petRows.filter((row) => parseDateNeeded(row.productionShift).run === 1), [petRows]);
+  const petRun2Rows = useMemo(() => petRows.filter((row) => parseDateNeeded(row.productionShift).run === 2), [petRows]);
+  const petRun1HtmlMail = useMemo(() => buildPetHtmlMail(petRows, petSourceLabel, 1), [petRows, petSourceLabel]);
+  const petRun2HtmlMail = useMemo(() => buildPetHtmlMail(petRows, petSourceLabel, 2), [petRows, petSourceLabel]);
 
   const kitchenStatuses = useMemo(() => {
     const set = new Set<string>();
-    rows.forEach((row) => {
+    enrichedRows.forEach((row) => {
       if (row.kitchenStatus) set.add(row.kitchenStatus);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [rows]);
+  }, [enrichedRows]);
 
   return (
     <div className="space-y-4 rundmail-page">
@@ -1439,6 +1851,9 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
               <button className="btn" onClick={() => fileInputRef.current?.click()}>
                 📂 CSV auswählen
               </button>
+              <button className="btn" onClick={() => petFileInputRef.current?.click()}>
+                📂 PET CSV auswählen
+              </button>
               <button className="btn" onClick={copyCurrentMail} disabled={!mailText}>
                 📋 Markdown
               </button>
@@ -1462,7 +1877,7 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
             <div className="flex flex-wrap gap-1.5">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">Export:</span>
               <button className="btn" onClick={() => downloadFile("Run1_Rundmail.html", run1HtmlMail, "text/html;charset=utf-8")} disabled={!run1Rows.length}>
-                R1 HTML
+                KET R1 HTML
               </button>
               <button
                 className="btn btn-primary"
@@ -1470,10 +1885,10 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
                 disabled={!run1Rows.length}
                 title="Im Browser öffnen → Strg+A → Strg+C → in Gmail"
               >
-                R1 → Gmail
+                KET R1 → Gmail
               </button>
               <button className="btn" onClick={() => downloadFile("Run2_Rundmail.html", run2HtmlMail, "text/html;charset=utf-8")} disabled={!rows.length}>
-                R2 HTML
+                KET R2 HTML
               </button>
               <button
                 className="btn btn-primary"
@@ -1481,12 +1896,35 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
                 disabled={!rows.length}
                 title="Im Browser öffnen → Strg+A → Strg+C → in Gmail"
               >
-                R2 → Gmail
+                KET R2 → Gmail
+              </button>
+              <button className="btn" onClick={() => downloadFile("PET_Run1_Plan.html", petRun1HtmlMail, "text/html;charset=utf-8")} disabled={!petRun1Rows.length}>
+                PET R1 HTML
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => { if (!petRun1Rows.length) return; const blob = new Blob(["﻿", petRun1HtmlMail], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10000); }}
+                disabled={!petRun1Rows.length}
+                title="PET Plan im Browser öffnen → Strg+A → Strg+C → in Gmail"
+              >
+                PET R1 → Gmail
+              </button>
+              <button className="btn" onClick={() => downloadFile("PET_Run2_Plan.html", petRun2HtmlMail, "text/html;charset=utf-8")} disabled={!petRun2Rows.length}>
+                PET R2 HTML
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => { if (!petRun2Rows.length) return; const blob = new Blob(["﻿", petRun2HtmlMail], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10000); }}
+                disabled={!petRun2Rows.length}
+                title="PET Plan im Browser öffnen → Strg+A → Strg+C → in Gmail"
+              >
+                PET R2 → Gmail
               </button>
             </div>
           </div>
         </div>
         <input ref={fileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)} />
+        <input ref={petFileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onPetFileSelected(event.target.files?.[0] ?? null)} />
 
         <div
           className={`mt-3 rounded-xl border-2 border-dashed p-4 text-sm transition-colors ${
@@ -1500,6 +1938,10 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
           onDrop={onDrop}
         >
           CSV per Drag-and-Drop hier ablegen. Danach wird die RUN1 Rundmail automatisch erzeugt.
+        </div>
+
+        <div className="mt-2 text-xs text-slate-500">
+          PET-Quelle: <span className="font-semibold text-slate-700">{petSourceLabel}</span>
         </div>
 
         <div className="mt-4">
@@ -1620,6 +2062,13 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
           </div>
         </div>
 
+        <div className="mt-3 rounded-xl bg-gradient-to-br from-indigo-50 to-white ring-1 ring-indigo-200 p-3">
+          <div className="text-xs text-indigo-700">Batches gesamt (sichtbare Zeilen)</div>
+          <div className="text-2xl font-bold text-indigo-800">
+            {fmtInt(visibleRows.reduce((sum, row) => sum + (row.batchesNeeded ?? 0), 0))}
+          </div>
+        </div>
+
         <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-3">
           <div className="rounded-xl bg-slate-50 ring-1 ring-slate-200 p-3">
             <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-2">Status-Verteilung</div>
@@ -1662,6 +2111,9 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
                 <th className="px-2 py-2 text-right">Target</th>
                 <th className="px-2 py-2 text-right">Cooked</th>
                 <th className="px-2 py-2 text-right">Delta</th>
+                <th className="px-2 py-2 text-right">Kitchen kg</th>
+                <th className="px-2 py-2 text-right">Batch kg</th>
+                <th className="px-2 py-2 text-right">Batches</th>
                 <th className="px-2 py-2 text-left">Kitchen</th>
                 <th className="px-2 py-2 text-left">Staging</th>
                 <th className="px-2 py-2 text-left">ETA</th>
@@ -1681,6 +2133,9 @@ export function RundmailView({ onNavigate }: { onNavigate?: (view: string) => vo
                     <td className={`px-2 py-2 text-right font-semibold ${delta < 0 ? "text-amber-700" : "text-emerald-700"}`}>
                       {fmtInt(delta)}
                     </td>
+                    <td className="px-2 py-2 text-right text-slate-700">{row.kitchenKg != null ? fmtInt(row.kitchenKg) : "-"}</td>
+                    <td className="px-2 py-2 text-right text-slate-700">{row.batchSizeKg != null ? fmtInt(row.batchSizeKg) : "-"}</td>
+                    <td className="px-2 py-2 text-right font-semibold text-indigo-700">{row.batchesNeeded != null ? fmtInt(row.batchesNeeded) : "-"}</td>
                     <td className="px-2 py-2 min-w-[10rem]">
                       <input
                         className="w-full rounded border border-slate-300 px-2 py-1"

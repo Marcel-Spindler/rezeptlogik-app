@@ -6,8 +6,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import admin from "firebase-admin";
 import type { DataBundle } from "../src/types.ts";
+import { configureFirestoreWriterAuth } from "./lib/firestore-auth.ts";
 
 const bundle: DataBundle = JSON.parse(readFileSync(resolve("public", "data", "data.json"), "utf8"));
+configureFirestoreWriterAuth();
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
 const db = admin.firestore();

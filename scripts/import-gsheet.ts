@@ -24,6 +24,7 @@ import type {
 } from "../src/types.ts";
 import { readPfei } from "./import-pfei.ts";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
+import { readCookSchedulesFromGSheet } from "./read-cook-schedules.ts";
 import { num, readCsv, parseRecipeName, resolveSourceDir } from "./lib/helpers.ts";
 import { getAuthClient, getAllTabNames, findCurrentWeekTab } from "./lib/gsheet-helpers.ts";
 
@@ -52,6 +53,7 @@ const GROSS_CSVS: Record<Market, string> = {
   DE:   "export-gross-ingredients-and-sub-recipes-by-recipe (2).csv",
   DKSE: "export-gross-ingredients-and-sub-recipes-by-recipe (3).csv"
 };
+const COOK_CSV = "Cook Schedules Per DC - Cook Shifts per DC.csv";
 
 async function readMealSelectionFromGSheet(): Promise<{ weekRecipes: WeekRecipe[]; weeks: string[] }> {
   const auth = new google.auth.GoogleAuth({
@@ -496,7 +498,7 @@ async function readProductionPlan(spreadsheetId: string): Promise<ProductionPlan
     const row = rows[i];
     if (!row?.length) continue;
     const woCell = woIdx >= 0 ? String(row[woIdx] ?? "").trim() : "";
-    if (!woCell || !/^\d{2}-\d{3,}/.test(woCell)) continue; // must look like "23-175"
+    if (!woCell || !/^\d{2}-\d{1,4}$/.test(woCell)) continue; // allow "24-2" .. "24-130"
 
     const fullRecipe = recipeIdx >= 0 ? String(row[recipeIdx] ?? "").trim() : "";
     const { code: recipeCode, base: _recipeName } = parseRecipeName(fullRecipe);
@@ -624,7 +626,7 @@ async function readKitchenPriority(spreadsheetId: string): Promise<KitchenPriori
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     const wo = woIdx >= 0 ? String(row[woIdx] ?? "").trim() : "";
-    if (!wo || !/^\d{2}-\d{3,}/.test(wo)) continue; // must look like "23-175"
+    if (!wo || !/^\d{2}-\d{1,4}$/.test(wo)) continue; // allow "24-2" .. "24-130"
 
     const readyRaw = readyIdx >= 0 ? String(row[readyIdx] ?? "").trim().toUpperCase() : "";
     result.push({
@@ -757,7 +759,14 @@ async function main() {
   try {
     cookSchedules = loadCookSchedulesVF();
   } catch (e: any) {
-    console.warn(`  Cook Schedules CSV fehlt — übersprungen: ${e?.message}`);
+    console.warn(`  Cook Schedules CSV fehlt — fallback auf GSheet: ${e?.message}`);
+  }
+  if (Object.keys(cookSchedules).length === 0) {
+    try {
+      cookSchedules = await readCookSchedulesFromGSheet();
+    } catch (e: any) {
+      console.warn(`  Cook Schedules GSheet fehlgeschlagen — übersprungen: ${e?.message}`);
+    }
   }
 
   console.log("Lese PFEI (Equipment- & Batch-Daten) live …");

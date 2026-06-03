@@ -47,11 +47,11 @@ firebase use --add                # Projekt auswählen, alias "default"
 1. **Google Cloud Console** (`console.cloud.google.com`) → gleiches Projekt wählen
    (oder ein eigenes für Service Accounts).
 2. **APIs & Dienste → Bibliothek**: *Google Sheets API* aktivieren.
-3. **IAM → Dienstkonten → Erstellen** (z. B. `sheet-reader`), Rolle `Viewer` reicht.
+3. **IAM → Dienstkonten → Erstellen** (empfohlen: `planningmsku`), Rolle `Viewer` reicht.
 4. Beim Konto: **Schlüssel hinzufügen → JSON** → herunterladen nach
    `C:\rezeptlogik-app\secrets\service-account.json` (Ordner ist in `.gitignore`).
 5. Im Google Sheet (`F_EU - 2026 Ramp Up Planning V2.0`) den Service-Account
-   per **Teilen → Lesen** freigeben (E-Mail steht im JSON: `client_email`).
+   per **Teilen → Lesen** freigeben (hier: `planningmsku@hellofresh-de-problem-solve.iam.gserviceaccount.com`).
 6. Sheet-ID aus URL kopieren (`/d/<ID>/edit`) und in `.env.local` als `GSHEET_ID` setzen.
 
 Live-Import laufen lassen:
@@ -63,6 +63,27 @@ npm run import:gsheet
 ```
 
 → holt **Meal Selection** live aus dem Sheet, kombiniert mit lokalen Recipe/Cook-CSVs.
+
+### Service-Accounts (empfohlen)
+
+- **Reader-Account (Sheets/Drive):** nur Leserechte auf Google Sheets/Drive
+- **Writer-Account (Firestore):** Schreibrechte fuer `apps/rezeptlogik/*`
+
+Empfohlene Env-Konfiguration in `.env.local`:
+
+```powershell
+# Reader fuer Sheets (Service Account: planningmsku@hellofresh-de-problem-solve.iam.gserviceaccount.com)
+GOOGLE_APPLICATION_CREDENTIALS=./secrets/service-account.json
+
+# Writer fuer Firestore (hat Prioritaet in Write-Skripten)
+FIRESTORE_WRITER_CREDENTIALS=./secrets/rezeptlogik-writer.json
+
+# Optionaler lokaler Fallback auf gcloud ADC
+FIRESTORE_USE_GCLOUD_ADC=1
+
+# Sicherheits-Guard (default): blockiert Reader-Accounts als Writer
+FIRESTORE_ALLOW_READER_AS_WRITER=0
+```
 
 ### Weekly-WMS-Input nach Google Sheets pushen
 
@@ -91,6 +112,12 @@ Optional:
 ```powershell
 npm run push:firestore     # nutzt firebase-admin + dieselben service-account-Credentials
 ```
+
+Die Write-Skripte nutzen Credentials in folgender Reihenfolge:
+
+1. `FIRESTORE_WRITER_CREDENTIALS`
+2. `GOOGLE_APPLICATION_CREDENTIALS`
+3. gcloud ADC (wenn `FIRESTORE_USE_GCLOUD_ADC=1`)
 
 In `.env.local`: `VITE_DATA_SOURCE=firestore` setzen — die App liest dann live
 aus Firestore. Achtung: Dieses Repo haengt an einem geteilten Firebase-Projekt;

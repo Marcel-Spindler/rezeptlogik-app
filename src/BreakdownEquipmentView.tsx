@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_SHIFT_MIN, getSubRecipeMassProfile, tokenToStation } from "./equipment";
 import { getActiveScenario, getWeekState, loadPlannerStorage } from "./planner";
 import { isProducedInVerden } from "./helpers";
-import type { DataBundle, DetailedSubRecipe, GrossIngredient, Market, Recipe, RecipeStructure, Station, SubRecipe, WeekRecipe, ProcessSpec, CookSchedule, ShelfLifeInfo } from "./types";
+import type { DataBundle, DetailedSubRecipe, GrossIngredient, Market, Recipe, RecipeStructure, Station, SubRecipe, WeekRecipe, ProcessSpec, CookSchedule, ShelfLifeInfo, WorkOrderEntry } from "./types";
 import { STATIONS } from "./types";
 import type { UiLocale } from "./i18n";
 
@@ -138,10 +138,55 @@ function norm(value: string | null | undefined) {
     .trim();
 }
 
-function parseFloatSafe(value: unknown): number | null {
+function parseLocaleNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  const parsed = Number(String(value ?? "").replace(",", "."));
+
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  const cleaned = raw.replace(/\s+/g, "").replace(/[^0-9,.-]/g, "");
+  if (!cleaned || cleaned === "-" || cleaned === "." || cleaned === ",") return null;
+
+  const hasDot = cleaned.includes(".");
+  const hasComma = cleaned.includes(",");
+
+  const normalizeSeparators = (text: string): string => {
+    if (hasDot && hasComma) {
+      const lastDot = text.lastIndexOf(".");
+      const lastComma = text.lastIndexOf(",");
+      // Last separator is assumed to be the decimal separator.
+      if (lastComma > lastDot) {
+        return text.replace(/\./g, "").replace(",", ".");
+      }
+      return text.replace(/,/g, "");
+    }
+
+    if (hasComma) {
+      const parts = text.split(",");
+      if (parts.length > 2) return text.replace(/,/g, "");
+      return text.replace(",", ".");
+    }
+
+    if (hasDot) {
+      const parts = text.split(".");
+      if (parts.length > 2) return text.replace(/\./g, "");
+      const decimals = parts[1] ?? "";
+      // Treat "1.234" as thousands separator, but keep "60.0" / "12.50" as decimals.
+      if (decimals.length === 3 && parts[0].length >= 1) {
+        return text.replace(/\./g, "");
+      }
+    }
+
+    return text;
+  };
+
+  const normalized = normalizeSeparators(cleaned);
+  const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseFloatSafe(value: unknown): number | null {
+  return parseLocaleNumber(value);
 }
 
 function clampPercent(value: number | null | undefined, fallback = 100): number {
@@ -738,10 +783,13 @@ const MARKET_PRIO_NEW: Market[] = ["DE", "BENL", "DKSE"];
 const BREAKDOWN_OVERRIDE_STORAGE_KEY = "rezeptlogik_v1_breakdown_item_overrides";
 
 interface WR_RecipeEntry {
+  key: string;
   code: string;
   name: string;
   portions: number;
   mode: "fertig" | "roh";
+  workOrder?: string;
+  kitchenDay?: string;
 }
 
 interface WR_IngRow {
@@ -770,19 +818,46 @@ interface WR_PathAgg {
   capacityKgHint: number | null;
   equipmentHint: string | null;
   isBrining: boolean;        // 1:1 Wasserzugabe beim Brinen → Wannenvolumen verdoppelt sich
+  cookingMethod: string;     // primäre Cooking-Methode des Sub-Meals (tiefste Ebene)
   cookCategories: string;    // kombinierte Sub-Rezept-Kategorien
 }
 
+interface WRBreakdownPlan {
+  briningFactor: number;
+  effectiveTubKg: number;
+  capacityKg: number | null;
+  count: number | null;
+  woSizeKg: number | null;
+}
+
+interface WRMatchedWorkOrder {
+  workOrder: string;
+  kitchenDay: string;
+  targetPortions: number | null;
+  woCookedPortions: number | null;
+  cookedPortionsExcess: number | null;
+  cookMethods: string;
+  kitchenStatus: string;
+  stagingStatus: string;
+  unlockedEta: string;
+  workOrderComment: string;
+}
+
 interface WR_MealAgg {
+  key: string;
   code: string;
   name: string;
   mode: "fertig" | "roh";
+  workOrder?: string;
+  kitchenDay?: string;
   portionsInput: number;
   portionsEffective: number;
   paths: WR_PathAgg[];
   totalKg: number;
   totalLossKg: number;       // Gesamtverlust über alle Pfade
 }
+
+type WREntryMode = "recipe" | "wo";
 
 interface WRCapacityHint {
   subRecipeKey: string;
@@ -860,6 +935,85 @@ function wrFmtQty(qty: number, uom: string): string {
   return Number(qty.toFixed(1)).toLocaleString("de-DE") + " " + uom;
 }
 
+function wrCalcBreakdownPlan(path: WR_PathAgg): WRBreakdownPlan {
+  const briningFactor = path.isBrining ? 2 : 1;
+  const effectiveTubKg = path.totalKg * briningFactor;
+  const capacityKg = path.capacityKgHint && path.capacityKgHint > 0 ? path.capacityKgHint : null;
+  const count = capacityKg && effectiveTubKg > 0
+    ? Math.max(1, Math.ceil(effectiveTubKg / capacityKg))
+    : null;
+  const woSizeKg = count && count > 0 ? path.totalKg / count : null;
+  return { briningFactor, effectiveTubKg, capacityKg, count, woSizeKg };
+}
+
+function wrFmtRowTotalSize(row: WR_IngRow): string {
+  return row.totalKg != null ? wrFmtKg(row.totalKg) : wrFmtQty(row.totalQty, row.uom);
+}
+
+function wrFmtRowWoSize(row: WR_IngRow, breakdownCount: number | null): string {
+  if (!breakdownCount || breakdownCount <= 0) return "—";
+  if (row.totalKg != null) return wrFmtKg(row.totalKg / breakdownCount);
+  return wrFmtQty(row.totalQty / breakdownCount, row.uom);
+}
+
+function wrResolvePathInstructions(recipe: Recipe, sub1: string, sub2: string, sub3: string): string | null {
+  const names = [sub3, sub2, sub1].filter((value) => value && value !== "—" && value !== "Ohne Sub-Rezept");
+  if (names.length === 0) return null;
+  for (const needleRaw of names) {
+    const needle = norm(needleRaw);
+    for (const market of Object.values(recipe.markets)) {
+      if (!market) continue;
+      const match = market.subRecipes.find((sub) => norm(sub.name) === needle || norm(sub.id) === needle);
+      if (match?.instructions) return match.instructions.trim();
+    }
+  }
+  return null;
+}
+
+function wrResolveWorkOrderForPath(
+  rows: WorkOrderEntry[] | undefined,
+  recipeCode: string,
+  subRecipeName: string,
+  portionsInput: number,
+  preferredWorkOrder?: string,
+): WRMatchedWorkOrder | null {
+  if (!rows?.length) return null;
+  const recipeKey = recipeCode.trim().toUpperCase();
+  const subKey = norm(subRecipeName);
+  if (!recipeKey || !subKey) return null;
+
+  let best: { row: WorkOrderEntry; score: number; portionDelta: number } | null = null;
+  for (const row of rows) {
+    const rowRecipe = (row.recipeCode ?? "").trim().toUpperCase();
+    if (!rowRecipe || rowRecipe !== recipeKey) continue;
+    if (preferredWorkOrder && (row.workOrder ?? "").trim() !== preferredWorkOrder.trim()) continue;
+    const rowSub = norm(row.subRecipe);
+    if (!rowSub) continue;
+    const score = overlapScore(subKey, rowSub);
+    if (score < 0.45) continue;
+    const rowTarget = row.targetPortions ?? row.plannedMeals ?? 0;
+    const portionDelta = Math.abs(rowTarget - portionsInput);
+    if (!best || score > best.score || (score === best.score && portionDelta < best.portionDelta)) {
+      best = { row, score, portionDelta };
+    }
+  }
+
+  if (!best) return null;
+  const row = best.row;
+  return {
+    workOrder: row.workOrder,
+    kitchenDay: row.kitchenDay,
+    targetPortions: row.targetPortions ?? row.plannedMeals ?? null,
+    woCookedPortions: row.woCookedPortions ?? null,
+    cookedPortionsExcess: row.cookedPortionsExcess ?? null,
+    cookMethods: row.cookMethods ?? "",
+    kitchenStatus: row.kitchenStatus ?? "",
+    stagingStatus: row.stagingStatus ?? "",
+    unlockedEta: row.unlockedEta ?? "",
+    workOrderComment: row.workOrderComment ?? "",
+  };
+}
+
 /** Entfernt Market-Tags wie [BNL], [BENL], [DE], [DKSE], [NORD] aus Rezept-Namen. */
 function wrStripMarketTag(name: string): string {
   return name.replace(/\s*\[(?:BNL|BENL|DE|DKSE|NORD)\]\s*/gi, "").trim();
@@ -877,6 +1031,15 @@ function wrSafeFilePart(value: string): string {
 
 function wrTsvSafe(value: unknown): string {
   return String(value ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
+}
+
+function wrHtmlSafe(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // ── Brining-Erkennung ────────────────────────────────────────────────────────
@@ -903,13 +1066,41 @@ function wrPathCookCategories(recipe: Recipe, sub1: string, sub2: string, sub3: 
     .join(" / ");
 }
 
+function wrPathPrimaryCookingMethod(recipe: Recipe, sub1: string, sub2: string, sub3: string): string {
+  const candidates = [sub3, sub2, sub1];
+  for (const subName of candidates) {
+    const category = wrSubRecipeCategory(recipe, subName);
+    if (category) return category;
+  }
+  return "";
+}
+
+function wrNormalizeCookingMethod(value: string): string {
+  const token = String(value || "")
+    .split(/[,+/|;→»·]+/)
+    .map((part) => part.trim())
+    .find(Boolean);
+  return token ?? "";
+}
+
+function wrEffectiveCookingMethod(path: WR_PathAgg, matchedWo?: WRMatchedWorkOrder | null): string {
+  return path.cookingMethod || wrNormalizeCookingMethod(matchedWo?.cookMethods ?? "");
+}
+
+function wrCookingMethodBadgeClass(method: string): string {
+  const key = norm(method);
+  if (!key) return "bg-slate-100 text-slate-500 ring-slate-200";
+  if (/(brine|pickle|marin)/.test(key)) return "bg-cyan-100 text-cyan-800 ring-cyan-200";
+  if (/(steam|dampf|boil|koch|sousvide|poach)/.test(key)) return "bg-sky-100 text-sky-800 ring-sky-200";
+  if (/(bake|oven|roast|grill|bbq)/.test(key)) return "bg-amber-100 text-amber-800 ring-amber-200";
+  if (/(fry|saute|pan|sear)/.test(key)) return "bg-rose-100 text-rose-800 ring-rose-200";
+  if (/(mix|mixer|blend|stir)/.test(key)) return "bg-emerald-100 text-emerald-800 ring-emerald-200";
+  if (/(chill|cool|blast)/.test(key)) return "bg-teal-100 text-teal-800 ring-teal-200";
+  return "bg-indigo-100 text-indigo-800 ring-indigo-200";
+}
+
 function wrParseNumberLoose(value: unknown): number | null {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-  const m = text.replace(/\./g, "").replace(",", ".").match(/-?\d+(?:\.\d+)?/);
-  if (!m) return null;
-  const n = Number(m[0]);
-  return Number.isFinite(n) ? n : null;
+  return parseLocaleNumber(value);
 }
 
 function wrParseKgLoose(value: unknown): number | null {
@@ -1186,12 +1377,89 @@ function wrResolveCapacityHint(map: Map<string, WRCapacityHint>, sub1: string, s
     const direct = map.get(key);
     if (direct) return direct;
   }
+
+  let bestHint: WRCapacityHint | null = null;
+  let bestScore = 0;
   for (const key of keys) {
     for (const hint of map.values()) {
-      if (hint.subRecipeKey.includes(key) || key.includes(hint.subRecipeKey)) return hint;
+      const score = overlapScore(key, hint.subRecipeKey);
+      if (score > bestScore) {
+        bestScore = score;
+        bestHint = hint;
+      }
     }
   }
-  return null;
+
+  return bestHint && bestScore >= 0.45 ? bestHint : null;
+}
+
+function wrResolveProcessSpecHint(
+  processSpecs: Record<string, ProcessSpec> | undefined,
+  sub1: string,
+  sub2: string,
+  sub3: string,
+): { batchSizeKg: number | null; equipment: string | null } {
+  if (!processSpecs) return { batchSizeKg: null, equipment: null };
+  const keys = [norm(sub3), norm(sub2), norm(sub1)].filter(Boolean);
+  if (keys.length === 0) return { batchSizeKg: null, equipment: null };
+
+  for (const key of keys) {
+    for (const spec of Object.values(processSpecs)) {
+      if (!spec?.name) continue;
+      if (norm(spec.name) !== key) continue;
+      const batchSizeKg = spec.batchSizeKg && spec.batchSizeKg > 0 ? spec.batchSizeKg : null;
+      return { batchSizeKg, equipment: spec.primaryStation ?? null };
+    }
+  }
+
+  let bestSpec: ProcessSpec | null = null;
+  let bestScore = 0;
+  for (const spec of Object.values(processSpecs)) {
+    if (!spec?.name) continue;
+    const specKey = norm(spec.name);
+    if (!specKey) continue;
+    for (const key of keys) {
+      const score = overlapScore(key, specKey);
+      if (score > bestScore) {
+        bestScore = score;
+        bestSpec = spec;
+      }
+    }
+  }
+
+  if (!bestSpec || bestScore < 0.5) return { batchSizeKg: null, equipment: null };
+  return {
+    batchSizeKg: bestSpec.batchSizeKg && bestSpec.batchSizeKg > 0 ? bestSpec.batchSizeKg : null,
+    equipment: bestSpec.primaryStation ?? null,
+  };
+}
+
+function wrResolveKetPlanForPath(
+  lookup: Map<string, { kitchenKg: number; batchSizeKg: number; batches: number }>,
+  recipeCode: string,
+  subRecipeName: string,
+): { kitchenKg: number; batchSizeKg: number; batches: number } | null {
+  const recipeKey = recipeCode.trim().toUpperCase();
+  const subKey = norm(subRecipeName);
+  if (!recipeKey || !subKey) return null;
+
+  const exact = lookup.get(`${recipeKey}::${subKey}`);
+  if (exact) return exact;
+
+  let best: { kitchenKg: number; batchSizeKg: number; batches: number } | null = null;
+  let bestScore = 0;
+  const prefix = `${recipeKey}::`;
+  for (const [key, value] of lookup.entries()) {
+    if (!key.startsWith(prefix)) continue;
+    const lookupSub = key.substring(prefix.length);
+    const score = overlapScore(subKey, lookupSub);
+    if (score > bestScore) {
+      bestScore = score;
+      best = value;
+    }
+  }
+
+  return best && bestScore >= 0.45 ? best : null;
 }
 
 function wrLookupPieceKg(pieceMap: Map<string, number>, ingredientName: string, ingredientId: string): number | null {
@@ -1304,13 +1572,16 @@ export function BreakdownEquipmentView({
   week,
   upliftPercent,
   locale: _locale,
+  entryMode = "recipe",
 }: {
   data: DataBundle;
   week: string;
   upliftPercent: number;
   locale: UiLocale;
+  entryMode?: WREntryMode;
 }) {
   const [search, setSearch] = useState("");
+  const [woSearch, setWoSearch] = useState("");
   const [entries, setEntries] = useState<WR_RecipeEntry[]>([]);
   const [_panelOpen, _setPanelOpen] = useState(true);
   const [overrides, setOverrides] = useState<Record<string, WROverride>>(() => {
@@ -1348,7 +1619,7 @@ export function BreakdownEquipmentView({
   }
 
   // Sidebar: welches Meal gerade rechts angezeigt wird
-  const [selectedMealCode, setSelectedMealCode] = useState<string | null>(null);
+  const [selectedMealKey, setSelectedMealKey] = useState<string | null>(null);
   // Welche Path-Cards aufgeklappt sind (Zutaten-Tabelle sichtbar)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   // Slide-in zum Hinzufügen von Meals
@@ -1410,8 +1681,64 @@ export function BreakdownEquipmentView({
     [data.weekRecipes, week],
   );
 
+  const workOrderEntries = useMemo<WR_RecipeEntry[]>(() => {
+    const rows = data.productionPlan?.rows ?? [];
+    const grouped = new Map<string, WorkOrderEntry[]>();
+    for (const row of rows) {
+      const recipeCode = (row.recipeCode ?? "").trim().toUpperCase();
+      const workOrder = (row.workOrder ?? "").trim();
+      const kitchenDay = (row.kitchenDay ?? "").trim();
+      if (!recipeCode || !workOrder) continue;
+      const key = `${kitchenDay}::${recipeCode}::${workOrder}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(row);
+    }
+
+    const parseKitchenDay = (value?: string): number => {
+      if (!value) return Number.MAX_SAFE_INTEGER;
+      const raw = value.trim();
+      const dotMatch = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);
+      if (dotMatch) {
+        const day = Number(dotMatch[1]);
+        const month = Number(dotMatch[2]);
+        let year = Number(dotMatch[3]);
+        if (year < 100) year += 2000;
+        const ts = new Date(year, month - 1, day).getTime();
+        if (Number.isFinite(ts)) return ts;
+      }
+      const ts = Date.parse(raw);
+      return Number.isFinite(ts) ? ts : Number.MAX_SAFE_INTEGER;
+    };
+
+    return [...grouped.entries()]
+      .map(([key, group]) => {
+        const first = group[0];
+        const target = group.find((row) => (row.targetPortions ?? 0) > 0)?.targetPortions
+          ?? group.find((row) => (row.plannedMeals ?? 0) > 0)?.plannedMeals
+          ?? 0;
+        return {
+          key,
+          code: first.recipeCode,
+          name: wrStripMarketTag(first.recipeName.replace(/^([A-Z]{2}\d{4}[A-Z0-9]+)\s+-\s+/, "")),
+          portions: target > 0 ? target : 500,
+          mode: "roh" as const,
+          workOrder: first.workOrder,
+          kitchenDay: first.kitchenDay,
+        };
+      })
+      .sort((a, b) => {
+        const dayCmp = parseKitchenDay(a.kitchenDay) - parseKitchenDay(b.kitchenDay);
+        if (dayCmp !== 0) return dayCmp;
+        return String(a.workOrder ?? "").localeCompare(String(b.workOrder ?? ""), undefined, { numeric: true });
+      });
+  }, [data.productionPlan?.rows]);
+
   // Pre-fill entries with all Verden produced recipes of the selected week by default
   useEffect(() => {
+    if (entryMode === "wo") {
+      setEntries(workOrderEntries);
+      return;
+    }
     const uniqueRecipes: WeekRecipe[] = [];
     const seen = new Set<string>();
     for (const r of weekRecipes) {
@@ -1422,13 +1749,29 @@ export function BreakdownEquipmentView({
     }
     setEntries(
       uniqueRecipes.map((wr) => ({
+        key: wr.code,
         code: wr.code,
         name: wrStripMarketTag(wr.recipeName),
         portions: wr.totalVerdenVolume > 0 ? wr.totalVerdenVolume : 500,
         mode: "roh",
       }))
     );
-  }, [weekRecipes]);
+  }, [entryMode, weekRecipes, workOrderEntries]);
+
+  const woNeedle = woSearch.trim().toLowerCase();
+  const woEntries = useMemo(() => {
+    if (entryMode !== "wo") return entries;
+    if (!woNeedle) return entries;
+    return entries.filter((entry) => {
+      const haystack = [
+        entry.workOrder ?? "",
+        entry.code,
+        entry.name,
+        entry.kitchenDay ?? "",
+      ].join(" ").toLowerCase();
+      return haystack.includes(woNeedle);
+    });
+  }, [entries, entryMode, woNeedle]);
 
   const selectedCodes = useMemo(() => new Set(entries.map((e) => e.code)), [entries]);
 
@@ -1450,6 +1793,7 @@ export function BreakdownEquipmentView({
     setEntries((prev) => [
       ...prev,
       {
+        key: wr.code,
         code: wr.code,
         name: wrStripMarketTag(wr.recipeName),
         portions: wr.totalVerdenVolume > 0 ? wr.totalVerdenVolume : 500,
@@ -1459,12 +1803,12 @@ export function BreakdownEquipmentView({
     setSearch("");
   }
 
-  function removeRecipe(code: string) {
-    setEntries((prev) => prev.filter((e) => e.code !== code));
+  function removeRecipe(entryKey: string) {
+    setEntries((prev) => prev.filter((e) => e.key !== entryKey));
   }
 
-  function patchEntry(code: string, patch: Partial<WR_RecipeEntry>) {
-    setEntries((prev) => prev.map((e) => (e.code === code ? { ...e, ...patch } : e)));
+  function patchEntry(entryKey: string, patch: Partial<WR_RecipeEntry>) {
+    setEntries((prev) => prev.map((e) => (e.key === entryKey ? { ...e, ...patch } : e)));
   }
 
   function patchOverride(overrideKey: string, patch: Partial<WROverride>) {
@@ -1559,6 +1903,9 @@ export function BreakdownEquipmentView({
     const rows: Array<Record<string, string | number>> = [];
     for (const path of meal.paths) {
       const { spec } = wrFindSubRecipeSpec(path.sub1);
+      const breakdownPlan = wrCalcBreakdownPlan(path);
+      const matchedWo = wrResolveWorkOrderForPath(data.productionPlan?.rows, meal.code, path.sub1, meal.portionsInput, meal.workOrder);
+      const effectiveCookingMethod = wrEffectiveCookingMethod(path, matchedWo);
       for (const row of path.rows) {
         const shelfLife = wrFindShelfLife(row.name);
         const out: Record<string, string | number> = {
@@ -1572,13 +1919,19 @@ export function BreakdownEquipmentView({
           sub1: path.sub1,
           sub2: path.sub2,
           sub3: path.sub3,
+          cookingMethod: effectiveCookingMethod,
+          cookingPath: path.cookCategories,
           pathTotalKg: Number(path.totalKg.toFixed(3)),
           bibleCapacityKg: path.capacityKgHint ?? "",
+          breakdownCount: breakdownPlan.count ?? "",
+          woPathSizeKg: breakdownPlan.woSizeKg == null ? "" : Number(breakdownPlan.woSizeKg.toFixed(3)),
           equipmentHint: path.equipmentHint ?? "",
           ingredientId: row.ingredientId,
           ingredientName: row.name,
           category: row.category,
           uom: row.uom,
+          woSizeQty: Number((row.totalQty / Math.max(1, breakdownPlan.count ?? 1)).toFixed(3)),
+          woSizeKg: row.totalKg == null || !breakdownPlan.count ? "" : Number((row.totalKg / breakdownPlan.count).toFixed(3)),
           totalQty: Number(row.totalQty.toFixed(3)),
           totalKg: row.totalKg == null ? "" : Number(row.totalKg.toFixed(3)),
           pcsPerTray: row.inferredPcsPerTray ?? "",
@@ -1653,7 +2006,7 @@ export function BreakdownEquipmentView({
 
   function mealExportPayload(meal: WR_MealAgg) {
     const mealOverrides = Object.fromEntries(
-      Object.entries(overrides).filter(([key]) => key.startsWith(`${meal.code}::`)),
+      Object.entries(overrides).filter(([key]) => key.startsWith(`${meal.key}::`)),
     );
 
     return {
@@ -1674,31 +2027,36 @@ export function BreakdownEquipmentView({
       },
       overrides: mealOverrides,
       rows: mealExportRows(meal),
-      paths: meal.paths.map((path) => ({
-        sub1: path.sub1,
-        sub2: path.sub2,
-        sub3: path.sub3,
-        totalKg: path.totalKg,
-        capacityKgHint: path.capacityKgHint,
-        equipmentHint: path.equipmentHint,
-        rows: path.rows.map((row) => ({
-          ingredientId: row.ingredientId,
-          name: row.name,
-          category: row.category,
-          uom: row.uom,
-          overrideKey: row.overrideKey,
-          totalQty: row.totalQty,
-          totalKg: row.totalKg,
-          pcsPerTray: row.inferredPcsPerTray,
-          trayCount: rowTrayCount(row),
-          tubsBySize: Object.fromEntries(
-            WANNEN.map((w) => [
-              w.label,
-              rowTubCountByWanne(row, w.kg),
-            ]),
-          ),
-        })),
-      })),
+      paths: meal.paths.map((path) => {
+        const matchedWo = wrResolveWorkOrderForPath(data.productionPlan?.rows, meal.code, path.sub1, meal.portionsInput, meal.workOrder);
+        return {
+          sub1: path.sub1,
+          sub2: path.sub2,
+          sub3: path.sub3,
+          cookingMethod: wrEffectiveCookingMethod(path, matchedWo),
+          cookingPath: path.cookCategories,
+          totalKg: path.totalKg,
+          capacityKgHint: path.capacityKgHint,
+          equipmentHint: path.equipmentHint,
+          rows: path.rows.map((row) => ({
+            ingredientId: row.ingredientId,
+            name: row.name,
+            category: row.category,
+            uom: row.uom,
+            overrideKey: row.overrideKey,
+            totalQty: row.totalQty,
+            totalKg: row.totalKg,
+            pcsPerTray: row.inferredPcsPerTray,
+            trayCount: rowTrayCount(row),
+            tubsBySize: Object.fromEntries(
+              WANNEN.map((w) => [
+                w.label,
+                rowTubCountByWanne(row, w.kg),
+              ]),
+            ),
+          })),
+        };
+      }),
     };
   }
 
@@ -1732,13 +2090,19 @@ export function BreakdownEquipmentView({
       "Sub1",
       "Sub2",
       "Sub3",
+      "Cooking Method",
+      "Cooking Path",
       "Path Total Kg",
       "Bible Capacity Kg",
+      "Breakdown Count",
+      "WO Size Path (Kg)",
       "Equipment",
       "Ingredient ID",
       "Ingredient",
       "Category",
       "UOM",
+      "WO Size Qty",
+      "WO Size Kg",
       "Total Qty",
       "Total Kg",
       "PCS/Tray",
@@ -1766,13 +2130,19 @@ export function BreakdownEquipmentView({
           wrTsvSafe(row.sub1),
           wrTsvSafe(row.sub2),
           wrTsvSafe(row.sub3),
+          wrTsvSafe(row.cookingMethod),
+          wrTsvSafe(row.cookingPath),
           wrTsvSafe(row.pathTotalKg),
           wrTsvSafe(row.bibleCapacityKg),
+          wrTsvSafe(row.breakdownCount),
+          wrTsvSafe(row.woPathSizeKg),
           wrTsvSafe(row.equipmentHint),
           wrTsvSafe(row.ingredientId),
           wrTsvSafe(row.ingredientName),
           wrTsvSafe(row.category),
           wrTsvSafe(row.uom),
+          wrTsvSafe(row.woSizeQty),
+          wrTsvSafe(row.woSizeKg),
           wrTsvSafe(row.totalQty),
           wrTsvSafe(row.totalKg),
           wrTsvSafe(row.pcsPerTray),
@@ -1812,13 +2182,19 @@ export function BreakdownEquipmentView({
       "Sub1",
       "Sub2",
       "Sub3",
+      "Cooking Method",
+      "Cooking Path",
       "Path Total Kg",
       "Bible Capacity Kg",
+      "Breakdown Count",
+      "WO Size Path (Kg)",
       "Equipment",
       "Ingredient ID",
       "Ingredient",
       "Category",
       "UOM",
+      "WO Size Qty",
+      "WO Size Kg",
       "Total Qty",
       "Total Kg",
       "PCS/Tray",
@@ -1847,13 +2223,19 @@ export function BreakdownEquipmentView({
           row.sub1,
           row.sub2,
           row.sub3,
+          row.cookingMethod,
+          row.cookingPath,
           row.pathTotalKg,
           row.bibleCapacityKg,
+          row.breakdownCount,
+          row.woPathSizeKg,
           row.equipmentHint,
           row.ingredientId,
           row.ingredientName,
           row.category,
           row.uom,
+          row.woSizeQty,
+          row.woSizeKg,
           row.totalQty,
           row.totalKg,
           row.pcsPerTray,
@@ -1887,47 +2269,35 @@ export function BreakdownEquipmentView({
   function exportMealsPdf(meals: WR_MealAgg[], title: string, printMode: "all" | "per-meal" | "per-sub" = "all"): void {
     // Build sections: one card per Sub-Rezept (path) sorted by meal
     const buildPathSection = (meal: WR_MealAgg, path: WR_PathAgg, pathIdx: number): string => {
-      const briningFactor = path.isBrining ? 2 : 1;
-      const effectiveTubKg = path.totalKg * briningFactor;
-      const batchCount = path.capacityKgHint && path.capacityKgHint > 0
-        ? Math.ceil(effectiveTubKg / path.capacityKgHint)
-        : null;
+      const breakdownPlan = wrCalcBreakdownPlan(path);
+      const effectiveTubKg = breakdownPlan.effectiveTubKg;
+      const batchCount = breakdownPlan.count;
+      const recipe = data.recipes[meal.code];
+      const matchedWo = wrResolveWorkOrderForPath(data.productionPlan?.rows, meal.code, path.sub1, meal.portionsInput, meal.workOrder);
+      const instructions = recipe ? wrResolvePathInstructions(recipe, path.sub1, path.sub2, path.sub3) : null;
 
       const crumbs = [path.sub1, path.sub2, path.sub3]
         .filter((s) => s && s !== "—" && s !== "Ohne Sub-Rezept");
       const subTitle = crumbs[crumbs.length - 1] || path.sub1 || "Sub-Rezept";
       const processPath = path.cookCategories || path.equipmentHint || "—";
-
-      const activeWannenList = WANNEN.filter((w) => activeWannen.has(w.kg));
+      const cookingMethod = wrEffectiveCookingMethod(path, matchedWo) || "—";
 
       const ingRows = path.rows.map((row) => {
-        const gnCount = rowTrayCount(row);
-        const wannenCells = activeWannenList.map((w) => {
-          const c = rowTubCountByWanne(row, w.kg, briningFactor);
-          return `<td class="tub-cell" style="text-align:center">${c != null ? `×${c}` : "—"}</td>`;
-        }).join("");
-
         const isFish = wrFindShelfLife(row.name)?.skuName?.toLowerCase().includes("fisch") ?? false;
         const rowBg = isFish ? "background:#fef9c3;" : "";
-        const kgDisplay = row.totalKg != null ? `${row.totalKg.toFixed(2)} kg` : `${row.totalQty.toFixed(2)} ${row.uom}`;
+        const woSizeDisplay = wrFmtRowWoSize(row, batchCount);
+        const totalSizeDisplay = wrFmtRowTotalSize(row);
         const lossCell = (row.lossKg != null && row.lossKg > 0)
           ? `<td class="loss-cell">\u2212${row.lossKg.toFixed(2)} kg<br><span class="loss-pct">${Math.round((1 - (row.yieldPct ?? 1)) * 100)}%</span></td>`
           : `<td class="loss-cell" style="color:#cbd5e1">\u2014</td>`;
-        const gnCell = gnCount != null
-          ? `<td colspan="${activeWannenList.length}" style="text-align:center">🍽️ ×${gnCount} GN (${row.inferredPcsPerTray ?? "?"} pcs/Blech)</td>`
-          : wannenCells;
 
         return `<tr style="${rowBg}">
           <td><span class="cat-badge cat-${(row.category || "").toLowerCase()}">${row.category || "—"}</span> ${wrTsvSafe(row.name)}<br><span class="id-small">${row.ingredientId !== "-" ? row.ingredientId : ""}</span></td>
-          <td style="text-align:right;white-space:nowrap">${kgDisplay}</td>
+          <td style="text-align:right;white-space:nowrap">${woSizeDisplay}</td>
+          <td style="text-align:right;white-space:nowrap">${totalSizeDisplay}</td>
           ${lossCell}
-          ${gnCell}
         </tr>`;
       }).join("");
-
-      const wannenHeaders = activeWannenList
-        .map((w) => `<th style="text-align:center">${w.label}</th>`)
-        .join("");
 
       const briningNote = path.isBrining ? `
         <div class="brining-box">
@@ -1952,29 +2322,36 @@ export function BreakdownEquipmentView({
         <div class="card-sub-header">
           <h2 class="sub-name">${wrTsvSafe(subTitle)}</h2>
           <div class="meta-row">
+            ${matchedWo?.workOrder ? `<div class="meta-item"><span class="meta-label">WO</span><span class="meta-value">${wrTsvSafe(matchedWo.workOrder)}</span></div>` : ""}
             <div class="meta-item"><span class="meta-label">Portionen</span><span class="meta-value">${Math.round(meal.portionsEffective).toLocaleString("de-DE")}</span></div>
             <div class="meta-item"><span class="meta-label">Total (${meal.mode === "fertig" ? "Fertig" : "Roh"})</span><span class="meta-value">${path.totalKg.toFixed(2)} kg</span></div>
             ${path.capacityKgHint ? `<div class="meta-item"><span class="meta-label">Kapazität/Batch</span><span class="meta-value">${path.capacityKgHint} kg</span></div>` : ""}
-            ${batchCount ? `<div class="meta-item"><span class="meta-label">Batches</span><span class="meta-value batch-count">${batchCount}</span></div>` : ""}
+            ${batchCount ? `<div class="meta-item"><span class="meta-label">Breakdowns</span><span class="meta-value batch-count">${batchCount}</span></div>` : ""}
+            ${breakdownPlan.woSizeKg != null ? `<div class="meta-item"><span class="meta-label">WO Size</span><span class="meta-value">${breakdownPlan.woSizeKg.toFixed(2)} kg</span></div>` : ""}
+            <div class="meta-item"><span class="meta-label">Cooking Method</span><span class="meta-value">${wrTsvSafe(cookingMethod)}</span></div>
             <div class="meta-item"><span class="meta-label">Prozess</span><span class="meta-value">${wrTsvSafe(processPath)}</span></div>
             ${path.equipmentHint ? `<div class="meta-item"><span class="meta-label">Equipment</span><span class="meta-value">${wrTsvSafe(path.equipmentHint)}</span></div>` : ""}
+            ${matchedWo?.kitchenDay ? `<div class="meta-item"><span class="meta-label">Date Needed</span><span class="meta-value">${wrTsvSafe(matchedWo.kitchenDay)}</span></div>` : ""}
+            ${matchedWo?.cookMethods ? `<div class="meta-item"><span class="meta-label">Cooking Method (WO)</span><span class="meta-value">${wrTsvSafe(matchedWo.cookMethods)}</span></div>` : ""}
           </div>
           ${crumbs.length > 1 ? `<div class="breadcrumbs">${crumbs.join(" › ")}</div>` : ""}
         </div>
+        ${instructions ? `<div class="card-sub-header" style="padding-top:6px"><div class="meta-label">Instructions</div><div class="meta-value" style="font-size:11px;white-space:pre-wrap">${wrHtmlSafe(instructions)}</div></div>` : ""}
         ${briningNote}
         <table class="ing-table">
           <thead>
             <tr>
               <th>Zutat</th>
-              <th style="text-align:right">Total Roh</th>
+              <th style="text-align:right">WO Size</th>
+              <th style="text-align:right">Total Size</th>
               <th style="text-align:right;color:#d97706">Verlust</th>
-              ${wannenHeaders}
             </tr>
           </thead>
           <tbody>${ingRows}</tbody>
           <tfoot>
             <tr class="total-row">
               <td><strong>GESAMT</strong></td>
+              <td style="text-align:right"><strong>${breakdownPlan.woSizeKg != null ? `${breakdownPlan.woSizeKg.toFixed(2)} kg` : "—"}</strong></td>
               <td style="text-align:right"><strong>${path.totalKg.toFixed(2)} kg${path.isBrining ? ` + ${path.totalKg.toFixed(2)} kg H₂O` : ""}</strong></td>
               <td style="text-align:right">
                 ${path.totalLossKg > 0
@@ -1982,10 +2359,6 @@ export function BreakdownEquipmentView({
                   : `<span style="color:#cbd5e1">\u2014</span>`
                 }
               </td>
-              ${activeWannenList.map((w) => {
-                const c = path.totalKg > 0 ? Math.ceil(effectiveTubKg / w.kg) : 0;
-                return `<td style="text-align:center"><strong>${c > 0 ? `×${c}` : "—"}</strong></td>`;
-              }).join("")}
             </tr>
           </tfoot>
         </table>
@@ -2123,9 +2496,12 @@ export function BreakdownEquipmentView({
       }
       if (!grossList) {
         result.push({
+          key: entry.key,
           code: entry.code,
           name: wrStripMarketTag(entry.name),
           mode: entry.mode,
+          workOrder: entry.workOrder,
+          kitchenDay: entry.kitchenDay,
           portionsInput: entry.portions,
           portionsEffective,
           paths: [],
@@ -2148,7 +2524,7 @@ export function BreakdownEquipmentView({
 
         const ingMap = pathMap.get(pathKey)!;
         const ingKey = `${item.ingredientId || item.ingredient}||${item.uom}`;
-        const overrideKey = `${entry.code}::${pathKey}::${ingKey}`;
+        const overrideKey = `${entry.key}::${pathKey}::${ingKey}`;
         const addQ = (item.grossQuantityPerPortion || 0) * portionsEffective;
         const baseKg = wrToKg(addQ, item.uom);
         // Piece weight for EA items (to derive kg)
@@ -2227,6 +2603,7 @@ export function BreakdownEquipmentView({
         const totalKg = rows.reduce((sum, row) => sum + (row.totalKg ?? 0), 0);
         const totalLossKg = rows.reduce((sum, row) => sum + (row.lossKg ?? 0), 0);
         const hint = wrResolveCapacityHint(capacityHints, sub1, sub2, sub3);
+        const processSpecHint = wrResolveProcessSpecHint(data.processSpecs, sub1, sub2, sub3);
         paths.push({
           sub1,
           sub2,
@@ -2234,9 +2611,10 @@ export function BreakdownEquipmentView({
           rows,
           totalKg,
           totalLossKg,
-          capacityKgHint: hint?.capacityKg ?? null,
-          equipmentHint: hint?.equipment ?? null,
+          capacityKgHint: hint?.capacityKg ?? processSpecHint.batchSizeKg ?? null,
+          equipmentHint: hint?.equipment ?? processSpecHint.equipment ?? null,
           isBrining: wrPathIsBrining(recipe, sub1, sub2, sub3),
+          cookingMethod: wrPathPrimaryCookingMethod(recipe, sub1, sub2, sub3),
           cookCategories: wrPathCookCategories(recipe, sub1, sub2, sub3),
         });
       }
@@ -2245,9 +2623,12 @@ export function BreakdownEquipmentView({
       const totalKg = paths.reduce((sum, p) => sum + p.totalKg, 0);
       const totalLossKg = paths.reduce((sum, p) => sum + p.totalLossKg, 0);
       result.push({
+        key: entry.key,
         code: entry.code,
         name: wrStripMarketTag(entry.name),
         mode: entry.mode,
+        workOrder: entry.workOrder,
+        kitchenDay: entry.kitchenDay,
         portionsInput: entry.portions,
         portionsEffective,
         paths,
@@ -2257,25 +2638,69 @@ export function BreakdownEquipmentView({
     }
 
     return result.sort((a, b) => b.totalKg - a.totalKg);
-  }, [entries, data.recipes, data.structures, upliftPercent, capacityHints, pieceWeightKg, trayHints, overrides]);
+  }, [entries, data.recipes, data.structures, data.processSpecs, upliftPercent, capacityHints, pieceWeightKg, trayHints, overrides]);
 
   const totalKgAll = mealAggs.reduce((sum, meal) => sum + meal.totalKg, 0);
   const totalPathCount = mealAggs.reduce((sum, meal) => sum + meal.paths.length, 0);
 
   // Auto-select erstes Meal wenn mealAggs sich ändert
   useEffect(() => {
-    if (mealAggs.length > 0 && (selectedMealCode === null || !mealAggs.find((m) => m.code === selectedMealCode))) {
-      setSelectedMealCode(mealAggs[0].code);
+    if (mealAggs.length > 0 && (selectedMealKey === null || !mealAggs.find((m) => m.key === selectedMealKey))) {
+      setSelectedMealKey(mealAggs[0].key);
     }
-  }, [mealAggs, selectedMealCode]);
+  }, [mealAggs, selectedMealKey]);
 
-  const selectedMeal = mealAggs.find((m) => m.code === selectedMealCode) ?? null;
+  const selectedMeal = mealAggs.find((m) => m.key === selectedMealKey) ?? null;
+
+  const ketBatchLookup = useMemo(() => {
+    const out = new Map<string, { kitchenKg: number; batchSizeKg: number; batches: number }>();
+    const totals = new Map<string, number>();
+
+    const processBatchSizeBySub = new Map<string, number>();
+    for (const spec of Object.values(data.processSpecs ?? {})) {
+      if (!spec?.name || !spec.batchSizeKg || spec.batchSizeKg <= 0) continue;
+      const key = norm(spec.name);
+      if (!key || processBatchSizeBySub.has(key)) continue;
+      processBatchSizeBySub.set(key, spec.batchSizeKg);
+    }
+
+    const bibleBatchSizeBySub = new Map<string, number>();
+    for (const hint of capacityHints.values()) {
+      if (!hint?.subRecipeName || !hint.capacityKg || hint.capacityKg <= 0) continue;
+      const key = norm(hint.subRecipeName);
+      if (!key || bibleBatchSizeBySub.has(key)) continue;
+      bibleBatchSizeBySub.set(key, hint.capacityKg);
+    }
+
+    const rows = data.productionPlan?.rows ?? [];
+    for (const row of rows) {
+      const recipeCode = (row.recipeCode ?? "").trim().toUpperCase();
+      const subKey = norm(row.subRecipe);
+      if (!recipeCode || !subKey) continue;
+      if (!Number.isFinite(row.kitchenKg) || row.kitchenKg <= 0) continue;
+      const key = `${recipeCode}::${subKey}`;
+      totals.set(key, (totals.get(key) ?? 0) + row.kitchenKg);
+    }
+
+    for (const [key, kitchenKg] of totals.entries()) {
+      const [, subKey = ""] = key.split("::");
+      const batchSizeKg = processBatchSizeBySub.get(subKey) ?? bibleBatchSizeBySub.get(subKey) ?? 0;
+      if (!batchSizeKg || batchSizeKg <= 0) continue;
+      out.set(key, {
+        kitchenKg,
+        batchSizeKg,
+        batches: Math.max(1, Math.ceil(kitchenKg / batchSizeKg)),
+      });
+    }
+
+    return out;
+  }, [data.processSpecs, data.productionPlan?.rows, capacityHints]);
 
   const noIngredientData = !data.structures || Object.keys(data.structures).length === 0;
 
   return (
     // Escape the Shell's px-4 py-4 padding so the sidebar goes edge-to-edge
-    <div className="-mx-4 -mt-4 flex flex-col overflow-hidden bg-slate-100" style={{ height: "calc(100vh - 64px)" }}>
+    <div className="-mx-4 -mt-4 flex flex-col overflow-hidden bg-slate-100 h-[calc(100vh-64px)]">
       {noIngredientData && (
         <div className="shrink-0 mx-4 mt-2 p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 flex items-center gap-2 text-sm shadow z-50">
           <span>⚠</span>
@@ -2291,32 +2716,83 @@ export function BreakdownEquipmentView({
 
         {/* Sidebar-Header */}
         <div className="px-4 py-3.5 bg-gradient-to-br from-slate-900 to-slate-800 border-b border-slate-700/50">
-          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Breakdown Rechner</div>
+          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{entryMode === "wo" ? "WO Ausdruck" : "Breakdown Rechner"}</div>
           <div className="flex items-baseline gap-2 mt-0.5">
             <span className="text-xl font-black text-white tabular-nums">{wrFmtKg(totalKgAll)}</span>
-            <span className="text-xs text-slate-400">{mealAggs.length} Meals · {totalPathCount} Pfade</span>
+            <span className="text-xs text-slate-400">{mealAggs.length} {entryMode === "wo" ? "WOs" : "Meals"} · {totalPathCount} Pfade</span>
           </div>
         </div>
 
         {/* Meal-Liste */}
         <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+          {entryMode === "wo" && entries.length > 0 && (
+            <div className="px-1 pb-1">
+              <input
+                type="search"
+                value={woSearch}
+                onChange={(e) => setWoSearch(e.target.value)}
+                placeholder="WO, Code oder Name suchen"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:outline-none"
+              />
+            </div>
+          )}
           {entries.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <div className="text-3xl mb-3">📋</div>
-              <p className="text-xs font-semibold text-slate-500">Noch kein Meal ausgewählt</p>
-              <p className="text-[10px] text-slate-400 mt-1">Klicke "+ Mahlzeit" um zu starten</p>
+              <p className="text-xs font-semibold text-slate-500">Noch kein {entryMode === "wo" ? "Work Order" : "Meal"} ausgewählt</p>
+              <p className="text-[10px] text-slate-400 mt-1">{entryMode === "wo" ? "KET-Plan importieren oder Woche wechseln" : "Klicke \"+ Mahlzeit\" um zu starten"}</p>
             </div>
+          ) : entryMode === "wo" && woEntries.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="text-3xl mb-3">🔎</div>
+              <p className="text-xs font-semibold text-slate-500">Keine WO gefunden</p>
+              <p className="text-[10px] text-slate-400 mt-1">Filter anpassen</p>
+            </div>
+          ) : entryMode === "wo" ? (
+            woEntries.map((entry) => {
+              const meal = mealAggs.find((m) => m.key === entry.key);
+              const isSelected = selectedMealKey === entry.key;
+              return (
+                <button
+                  key={entry.key}
+                  type="button"
+                  onClick={() => setSelectedMealKey(entry.key)}
+                  className={`w-full rounded-xl border px-3 py-2 text-left transition-all ${
+                    isSelected
+                      ? "border-indigo-300 bg-indigo-50 ring-1 ring-indigo-200 shadow-sm"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">WO {entry.workOrder ?? "-"}</div>
+                    <div className="text-[10px] font-mono text-slate-400">{entry.code}</div>
+                  </div>
+                  <div className={`mt-1 text-xs font-bold leading-snug ${isSelected ? "text-indigo-900" : "text-slate-800"}`}>{entry.name}</div>
+                  <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-500 tabular-nums flex-wrap">
+                    {entry.kitchenDay && <span>{entry.kitchenDay}</span>}
+                    {meal && (
+                      <>
+                        <span>·</span>
+                        <span>{wrFmtKg(meal.totalKg)}</span>
+                        <span>·</span>
+                        <span>{meal.paths.length} Pfade</span>
+                      </>
+                    )}
+                  </div>
+                </button>
+              );
+            })
           ) : (
             entries.map((entry) => {
-              const meal = mealAggs.find((m) => m.code === entry.code);
-              const isSelected = selectedMealCode === entry.code;
+              const meal = mealAggs.find((m) => m.key === entry.key);
+              const isSelected = selectedMealKey === entry.key;
               const effective = entry.mode === "fertig"
                 ? Math.round(entry.portions * (1 + upliftPercent / 100))
                 : entry.portions;
               return (
                 <div
-                  key={entry.code}
-                  onClick={() => setSelectedMealCode(entry.code)}
+                  key={entry.key}
+                  onClick={() => setSelectedMealKey(entry.key)}
                   className={`relative rounded-xl border cursor-pointer transition-all select-none ${
                     isSelected
                       ? "border-indigo-300 bg-indigo-50 ring-1 ring-indigo-200 shadow-sm"
@@ -2332,12 +2808,14 @@ export function BreakdownEquipmentView({
                     <div className="flex items-start justify-between gap-1">
                       <div className="min-w-0 flex-1">
                         <div className="text-[9px] font-mono text-slate-400 leading-none">{entry.code}</div>
+                        {entry.workOrder && <div className="text-[9px] font-black uppercase tracking-widest text-slate-500 mt-0.5">WO {entry.workOrder}</div>}
                         <div className={`text-sm font-bold leading-snug mt-0.5 break-words ${isSelected ? "text-indigo-900" : "text-slate-800"}`}>
                           {entry.name}
                         </div>
+                        {entry.kitchenDay && <div className="text-[10px] text-slate-400 mt-0.5">{entry.kitchenDay}</div>}
                       </div>
                       <button
-                        onClick={(e) => { e.stopPropagation(); removeRecipe(entry.code); }}
+                        onClick={(e) => { e.stopPropagation(); removeRecipe(entry.key); }}
                         className="text-slate-300 hover:text-rose-400 text-xl leading-none shrink-0 transition-colors mt-0.5 ml-1"
                       >×</button>
                     </div>
@@ -2367,7 +2845,7 @@ export function BreakdownEquipmentView({
                         {[100, 200, 500, 1000, 2000].map((preset) => (
                           <button
                             key={preset}
-                            onClick={() => patchEntry(entry.code, { portions: preset })}
+                            onClick={() => patchEntry(entry.key, { portions: preset })}
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all ${
                               entry.portions === preset
                                 ? "bg-indigo-600 text-white border-indigo-600"
@@ -2381,7 +2859,7 @@ export function BreakdownEquipmentView({
                       {/* +/- Stepper */}
                       <div className="flex items-center rounded-lg ring-1 ring-slate-200 overflow-hidden w-full">
                         <button
-                          onClick={() => patchEntry(entry.code, { portions: Math.max(0, entry.portions - 100) })}
+                          onClick={() => patchEntry(entry.key, { portions: Math.max(0, entry.portions - 100) })}
                           className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 text-sm font-bold transition-colors shrink-0 border-r border-slate-200"
                         >−</button>
                         <input
@@ -2389,22 +2867,24 @@ export function BreakdownEquipmentView({
                           min={0}
                           step={100}
                           value={entry.portions}
-                          onChange={(e) => patchEntry(entry.code, { portions: Math.max(0, Number(e.target.value)) })}
+                          onChange={(e) => patchEntry(entry.key, { portions: Math.max(0, Number(e.target.value)) })}
+                          aria-label={`Portions for ${entry.name}`}
+                          title="Portions"
                           className="flex-1 text-center text-sm font-semibold tabular-nums bg-white py-1.5 focus:outline-none focus:ring-inset focus:ring-1 focus:ring-indigo-300 min-w-0 w-full"
                         />
                         <button
-                          onClick={() => patchEntry(entry.code, { portions: entry.portions + 100 })}
+                          onClick={() => patchEntry(entry.key, { portions: entry.portions + 100 })}
                           className="px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 text-sm font-bold transition-colors shrink-0 border-l border-slate-200"
                         >+</button>
                       </div>
                       {/* Modus-Toggle */}
                       <div className="flex mt-1.5 rounded-lg ring-1 ring-slate-200 overflow-hidden text-xs">
                         <button
-                          onClick={() => patchEntry(entry.code, { mode: "fertig" })}
+                          onClick={() => patchEntry(entry.key, { mode: "fertig" })}
                           className={`flex-1 py-1 transition-colors ${entry.mode === "fertig" ? "bg-indigo-600 text-white font-semibold" : "bg-white text-slate-500 hover:bg-slate-50"}`}
                         >Fertigware</button>
                         <button
-                          onClick={() => patchEntry(entry.code, { mode: "roh" })}
+                          onClick={() => patchEntry(entry.key, { mode: "roh" })}
                           className={`flex-1 py-1 border-l border-slate-200 transition-colors ${entry.mode === "roh" ? "bg-indigo-600 text-white font-semibold" : "bg-white text-slate-500 hover:bg-slate-50"}`}
                         >Rohware</button>
                       </div>
@@ -2417,23 +2897,42 @@ export function BreakdownEquipmentView({
         </div>
 
         {/* "+ Mahlzeit hinzufügen"-Button */}
-        <div className="px-3 pt-2 pb-1 border-t border-slate-100">
-          <button
-            onClick={() => setAddMealOpen(true)}
-            className="w-full rounded-xl bg-indigo-600 text-white text-sm font-bold py-2.5 hover:bg-indigo-700 active:bg-indigo-800 transition-colors flex items-center justify-center gap-2"
-          >
-            <span className="text-base leading-none">+</span>
-            Mahlzeit hinzufügen
-          </button>
-        </div>
+        {entryMode !== "wo" && (
+          <div className="px-3 pt-2 pb-1 border-t border-slate-100">
+            <button
+              onClick={() => setAddMealOpen(true)}
+              className="w-full rounded-xl bg-indigo-600 text-white text-sm font-bold py-2.5 hover:bg-indigo-700 active:bg-indigo-800 transition-colors flex items-center justify-center gap-2"
+            >
+              <span className="text-base leading-none">+</span>
+              Mahlzeit hinzufügen
+            </button>
+          </div>
+        )}
 
         {/* Export-Strip */}
         <div className="px-3 py-2.5 flex gap-1.5 flex-wrap">
-          <button onClick={exportAllMealsSettings} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">JSON</button>
-          <button onClick={() => { void exportAllMealsExcel(); }} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">Excel</button>
-          <button onClick={exportAllMealsGsheet} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">GSheet</button>
-          <button onClick={exportAllMealsPdf} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">PDF alle</button>
-          <button onClick={handleImportJsonClick} className="text-[10px] bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-1 rounded-lg border border-emerald-200 transition-colors font-medium">↑ Import</button>
+          {entryMode === "wo" ? (
+            <>
+              <button
+                onClick={() => selectedMeal && exportMealPdf(selectedMeal)}
+                disabled={!selectedMeal}
+                className="text-[10px] bg-indigo-100 hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-700 px-2 py-1 rounded-lg border border-indigo-200 transition-colors font-medium"
+              >
+                PDF ausgewählte WO
+              </button>
+              <button onClick={exportAllMealsPdf} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">PDF alle WOs</button>
+              <button onClick={() => selectedMeal && exportMealGsheet(selectedMeal)} disabled={!selectedMeal} className="text-[10px] bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">GSheet WO</button>
+              <button onClick={() => { if (selectedMeal) void exportMealExcel(selectedMeal); }} disabled={!selectedMeal} className="text-[10px] bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">Excel WO</button>
+            </>
+          ) : (
+            <>
+              <button onClick={exportAllMealsSettings} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">JSON</button>
+              <button onClick={() => { void exportAllMealsExcel(); }} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">Excel</button>
+              <button onClick={exportAllMealsGsheet} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">GSheet</button>
+              <button onClick={exportAllMealsPdf} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">PDF alle</button>
+              <button onClick={handleImportJsonClick} className="text-[10px] bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-2 py-1 rounded-lg border border-emerald-200 transition-colors font-medium">↑ Import</button>
+            </>
+          )}
         </div>
       </aside>
 
@@ -2445,8 +2944,8 @@ export function BreakdownEquipmentView({
           <div className="flex items-center justify-center h-full text-center p-8">
             <div>
               <div className="text-5xl mb-4">👈</div>
-              <p className="text-sm font-semibold text-slate-600">Meal aus der linken Leiste wählen</p>
-              <p className="text-xs text-slate-400 mt-1">oder "+ Mahlzeit hinzufügen" klicken</p>
+              <p className="text-sm font-semibold text-slate-600">{entryMode === "wo" ? "Work Order aus der linken Liste wählen" : "Meal aus der linken Leiste wählen"}</p>
+              <p className="text-xs text-slate-400 mt-1">{entryMode === "wo" ? "oder KET-Plan/Woche prüfen" : "oder \"+ Mahlzeit hinzufügen\" klicken"}</p>
             </div>
           </div>
         ) : !selectedMeal ? (
@@ -2463,6 +2962,9 @@ export function BreakdownEquipmentView({
             <div className="sticky top-0 z-10 px-6 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 flex flex-wrap items-start gap-4 justify-between shadow-lg">
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] font-mono text-slate-400 tracking-widest">{selectedMeal.code}</div>
+                {entryMode === "wo" && selectedMeal.workOrder && (
+                  <div className="text-[10px] font-black uppercase tracking-widest text-indigo-300 mt-0.5">WO {selectedMeal.workOrder}{selectedMeal.kitchenDay ? ` · ${selectedMeal.kitchenDay}` : ""}</div>
+                )}
                 <div className="text-xl font-black text-white leading-tight break-words">{selectedMeal.name}</div>
                 <div className="text-xs text-slate-400 mt-1 tabular-nums">
                   {selectedMeal.mode === "fertig" ? "Fertigware" : "Rohware"}
@@ -2516,16 +3018,22 @@ export function BreakdownEquipmentView({
               <div className="p-4 space-y-3">
                 {selectedMeal.paths.map((path, idx) => {
                   const visibleWannen = WANNEN.filter((w) => activeWannen.has(w.kg));
-                  const briningFactor = path.isBrining ? 2 : 1;
-                  const bibleKg = path.capacityKgHint;
-                  const effectiveTubKg = path.totalKg * briningFactor;
-                  const batchCount = bibleKg && bibleKg > 0 && path.totalKg > 0
-                    ? Math.ceil(effectiveTubKg / bibleKg)
-                    : null;
+                  const breakdownPlan = wrCalcBreakdownPlan(path);
+                  const briningFactor = breakdownPlan.briningFactor;
+                  const bibleKg = breakdownPlan.capacityKg;
+                  const ketPlan = wrResolveKetPlanForPath(ketBatchLookup, selectedMeal.code, path.sub1);
+                  const effectiveTubKg = breakdownPlan.effectiveTubKg;
+                  const batchCount = breakdownPlan.count;
+                  const woPathSizeKg = breakdownPlan.woSizeKg;
+                  const recipe = data.recipes[selectedMeal.code];
+                  const matchedWo = wrResolveWorkOrderForPath(data.productionPlan?.rows, selectedMeal.code, path.sub1, selectedMeal.portionsInput, selectedMeal.workOrder);
+                  const effectiveCookingMethod = wrEffectiveCookingMethod(path, matchedWo);
+                  const cookingBadgeCls = wrCookingMethodBadgeClass(effectiveCookingMethod);
+                  const pathInstructions = recipe ? wrResolvePathInstructions(recipe, path.sub1, path.sub2, path.sub3) : null;
                   const crumbs = [path.sub1, path.sub2, path.sub3]
                     .filter((s) => s && s !== "—" && s !== "Ohne Sub-Rezept")
                     .filter(Boolean);
-                  const pathKey = `${selectedMeal.code}-path-${idx}`;
+                  const pathKey = `${selectedMeal.key}-path-${idx}`;
                   const rawStr = pathRawInputs[pathKey] ?? "";
                   const rawKg = rawStr !== "" ? (wrParseNumberLoose(rawStr) ?? null) : null;
                   const rawCoverage = rawKg != null && path.totalKg > 0 ? rawKg / path.totalKg : null;
@@ -2571,6 +3079,14 @@ export function BreakdownEquipmentView({
                                   <div className={`text-xs font-black uppercase tracking-widest ${colors.text}`}>
                                     {eq ?? "Equipment unbekannt"}
                                   </div>
+                                  {effectiveCookingMethod && (
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                      <span className="text-[10px] text-slate-500 font-semibold">Cooking Method:</span>
+                                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ring-1 ${cookingBadgeCls}`}>
+                                        {effectiveCookingMethod}
+                                      </span>
+                                    </div>
+                                  )}
                                   {path.cookCategories && (
                                     <div className="text-[10px] text-slate-500 font-semibold">{path.cookCategories}</div>
                                   )}
@@ -2581,6 +3097,11 @@ export function BreakdownEquipmentView({
                                   </span>
                                 )}
                                 <div className="flex items-center gap-1.5 ml-auto">
+                                  {matchedWo?.workOrder && (
+                                    <span className="rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-widest bg-white/80 text-slate-700 ring-1 ring-white/80">
+                                      WO {matchedWo.workOrder}
+                                    </span>
+                                  )}
                                   <span className={`rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-widest ${scenarioTone.badge} ring-1`}>
                                     {scenarioTone.label}
                                   </span>
@@ -2622,6 +3143,16 @@ export function BreakdownEquipmentView({
                                   {batchCount}× à {bibleKg} kg
                                 </div>
                               )}
+                              {woPathSizeKg != null && (
+                                <div className="text-[11px] font-semibold text-slate-500 tabular-nums">
+                                  WO Size: {wrFmtKg(woPathSizeKg)}
+                                </div>
+                              )}
+                              {ketPlan && (
+                                <div className="text-xs font-semibold text-sky-600 tabular-nums">
+                                  KET: {ketPlan.batches}× à {wrFmtKg(ketPlan.batchSizeKg)} kg
+                                </div>
+                              )}
                               {path.totalLossKg > 0 && (
                                 <div className="text-xs font-bold text-amber-600 tabular-nums">
                                   −{wrFmtKg(path.totalLossKg)} ({pathLossPct}%)
@@ -2649,6 +3180,13 @@ export function BreakdownEquipmentView({
                             <strong>{wrFmtKg(effectiveTubKg)} Wannenvolumen</strong>
                             {bibleKg ? ` → ${batchCount} Wannen à ${bibleKg} kg` : ""}
                           </span>
+                        </div>
+                      )}
+
+                      {pathInstructions && (
+                        <div className="px-5 py-2.5 bg-slate-50 border-b border-slate-100">
+                          <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Instructions</div>
+                          <div className="text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">{pathInstructions}</div>
                         </div>
                       )}
 
@@ -2680,7 +3218,7 @@ export function BreakdownEquipmentView({
                           }, 0),
                         })).filter((ws) => ws.total > 0);
 
-                        const hasEquipment = batchCount != null || wannenSums.length > 0 || totalGnTrays > 0;
+                        const hasEquipment = batchCount != null || ketPlan != null || wannenSums.length > 0 || totalGnTrays > 0;
                         if (!hasEquipment) return null;
 
                         return (
@@ -2703,6 +3241,23 @@ export function BreakdownEquipmentView({
                                     </div>
                                     <div className="text-[10px] font-semibold text-slate-500 mt-0.5 tabular-nums">
                                       à {wrFmtKg(bibleKg!)} Batch
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {ketPlan && (
+                                <div className="flex items-center gap-3 rounded-xl border px-4 py-3 bg-sky-50 shadow-sm ring-1 ring-sky-200 border-sky-200 min-w-[160px]">
+                                  <span className="text-3xl leading-none">🗓️</span>
+                                  <div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-sky-500 leading-none">
+                                      KET-Plan
+                                    </div>
+                                    <div className="text-3xl font-black tabular-nums leading-none mt-0.5 text-sky-700">
+                                      {ketPlan.batches}×
+                                    </div>
+                                    <div className="text-[10px] font-semibold text-sky-600 mt-0.5 tabular-nums">
+                                      à {wrFmtKg(ketPlan.batchSizeKg)} Batch
                                     </div>
                                   </div>
                                 </div>
@@ -2755,6 +3310,8 @@ export function BreakdownEquipmentView({
                                 <select
                                   value={directMode}
                                   onChange={e => setPathDirectKg(prev => ({ ...prev, [pathKey]: { mode: e.target.value as "fertig" | "roh", kg: directKgStr } }))}
+                                  aria-label="Direktberechnung Modus"
+                                  title="Direktberechnung Modus"
                                   className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-300"
                                 >
                                   <option value="fertig">Fertigware (kg)</option>
@@ -2813,11 +3370,17 @@ export function BreakdownEquipmentView({
                       })()}
 
                       {/* Stats-Grid */}
-                      <div className="grid gap-2 border-b border-slate-100 bg-white px-4 py-3 sm:grid-cols-3 xl:grid-cols-6">
+                      <div className="grid gap-2 border-b border-slate-100 bg-white px-4 py-3 sm:grid-cols-3 xl:grid-cols-7">
                         {([
+                          { label: "WO", value: matchedWo?.workOrder ? `WO ${matchedWo.workOrder}` : "offen", tone: matchedWo?.workOrder ? "text-slate-900" : "text-slate-400" },
+                          { label: "Cooking Method", value: effectiveCookingMethod || "open", tone: effectiveCookingMethod ? "text-indigo-700" : "text-slate-400" },
+                          { label: "Breakdowns", value: batchCount != null ? `${batchCount}×` : "offen", tone: batchCount != null ? "text-indigo-700" : "text-slate-400" },
+                          { label: "WO Size", value: woPathSizeKg != null ? wrFmtKg(woPathSizeKg) : "offen", tone: woPathSizeKg != null ? "text-indigo-700" : "text-slate-400" },
                           { label: "Ziel-Rohware", value: wrFmtKg(path.totalKg), tone: "text-slate-900" },
                           { label: "Wannenvolumen", value: wrFmtKg(effectiveTubKg), tone: path.isBrining ? "text-sky-700" : "text-slate-900" },
                           { label: "Bible / Batch", value: bibleKg ? `${wrFmtKg(bibleKg)} / ${batchCount ?? 0}×` : "offen", tone: bibleKg ? "text-indigo-700" : "text-slate-400" },
+                          { label: "KET / Batch", value: ketPlan ? `${wrFmtKg(ketPlan.batchSizeKg)} / ${ketPlan.batches}×` : "kein KET", tone: ketPlan ? "text-sky-700" : "text-slate-400" },
+                          { label: "KET Target", value: matchedWo?.targetPortions ? fmtNum(matchedWo.targetPortions, 0) : "offen", tone: matchedWo?.targetPortions ? "text-slate-900" : "text-slate-400" },
                           { label: "Yield Netto", value: wrFmtKg(pathNetKg), tone: "text-emerald-700" },
                           { label: "Verlust", value: path.totalLossKg > 0 ? `${wrFmtKg(path.totalLossKg)} (${pathLossPct}%)` : "kein Verlust", tone: path.totalLossKg > 0 ? "text-amber-700" : "text-emerald-700" },
                           { label: "Roh-Szenario", value: rawCoveragePct != null ? `${rawCoveragePct}% Deckung` : "noch kein Ist", tone: rawCoverage != null && rawCoverage < 1 ? "text-rose-700" : "text-slate-900" },
@@ -2921,7 +3484,8 @@ export function BreakdownEquipmentView({
                             <thead>
                               <tr className="border-b border-slate-100">
                                 <th className="text-left px-4 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">Zutat</th>
-                                <th className="text-right px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">Total Roh</th>
+                                <th className="text-right px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">WO Size</th>
+                                <th className="text-right px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">Total Size</th>
                                 <th className="text-right px-3 py-2 text-[9px] font-bold uppercase tracking-widest text-amber-500 whitespace-nowrap">Verlust</th>
                                 {visibleWannen.map((w) => (
                                   <th key={w.kg} className={`text-center px-2 py-2 text-[9px] font-bold uppercase tracking-widest whitespace-nowrap ${path.isBrining ? "text-sky-500" : "text-slate-400"}`}>
@@ -2972,7 +3536,10 @@ export function BreakdownEquipmentView({
                                       )}
                                     </td>
                                     <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
-                                      {row.totalKg !== null ? wrFmtKg(row.totalKg) : wrFmtQty(row.totalQty, row.uom)}
+                                      {wrFmtRowWoSize(row, batchCount)}
+                                    </td>
+                                    <td className="px-3 py-2.5 text-right tabular-nums font-semibold text-slate-700 whitespace-nowrap">
+                                      {wrFmtRowTotalSize(row)}
                                     </td>
                                     <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
                                       {row.lossKg != null && row.lossKg > 0 ? (
@@ -3038,6 +3605,7 @@ export function BreakdownEquipmentView({
                             <tfoot>
                               <tr className="border-t-2 border-slate-200 bg-slate-50">
                                 <td className="px-4 py-2 text-[10px] font-bold text-slate-600 uppercase tracking-wide">Gesamt</td>
+                                <td className="px-3 py-2 text-right tabular-nums font-bold text-slate-800 whitespace-nowrap">{woPathSizeKg != null ? wrFmtKg(woPathSizeKg) : "—"}</td>
                                 <td className="px-3 py-2 text-right tabular-nums font-bold text-slate-800 whitespace-nowrap">{wrFmtKg(path.totalKg)}</td>
                                 <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
                                   {path.totalLossKg > 0 ? (
@@ -3818,6 +4386,8 @@ export function BreakdownEquipmentView({
                         const value = clampPercent(parseFloatSafe(event.target.value), 100);
                         setSubSplitPctByKey((prev) => ({ ...prev, [key]: value }));
                       }}
+                      aria-label={`Split percent for ${row.subRecipeName}`}
+                      title="Split percent"
                       className="w-16 rounded border-slate-300 ring-1 ring-slate-300 px-1 py-0.5 text-right text-[11px]"
                     />
                   </td>

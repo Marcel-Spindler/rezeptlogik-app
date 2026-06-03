@@ -10,14 +10,16 @@
 | Web-App-Name | `Rezeptlogik Verden Planer` |
 | Hosting-Site | `rezeptlogik-verden-factor` → https://rezeptlogik-verden-factor.web.app |
 | App-ID | `1:853119829386:web:528af3a484863bbe437473` |
-| Service-Account | `planningmsku@hellofresh-de-problem-solve.iam.gserviceaccount.com` |
-| Service-Account-Key | `secrets/service-account.json` (lokal, nicht committen) |
+| Reader Service-Account (Sheets/Drive) | `planningmsku@hellofresh-de-problem-solve.iam.gserviceaccount.com` |
+| Writer Service-Account (Firestore) | empfohlen: dediziert, z. B. `rezeptlogik-writer@hellofresh-de-problem-solve.iam.gserviceaccount.com` |
+| Reader-Key | `GOOGLE_APPLICATION_CREDENTIALS` (lokal, nicht committen) |
+| Writer-Key | `FIRESTORE_WRITER_CREDENTIALS` (lokal, nicht committen) |
 | Firestore-Pfad dieser App | `apps/rezeptlogik/{weekRecipes|recipes|cookSchedules|processSpecs}` |
 
 ## 2. Google Sheets (live)
 
 Konfiguriert über `.env.local` und den Dump-/Registry-Sync.
-Der Service-Account muss bei jedem Sheet als **Viewer** geteilt sein.
+Der **Reader-Service-Account** muss bei jedem Sheet als **Viewer** geteilt sein.
 
 | # | Name | Spreadsheet-ID | Zweck | Env / Sync |
 |---|---|---|---|---|
@@ -28,7 +30,8 @@ Der Service-Account muss bei jedem Sheet als **Viewer** geteilt sein.
 | 5 | Kitchen Priority List-Verden-2026 | `13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U` | KPL-Dump fuer Planning OASE, Rack und Linienplanung | `npm run sync:gsheet:registry` |
 | 6 | [NEW] MASTER+SUPERVISORS WORKLOAD PLANNING | `1vwTeKDkQcSrWtFLioOBlkcQrbbDzMxbra-f-AbXgO1Q` | Supervisor-/Workload-Dump fuer Breakdown und Manufacturing-Hinweise | Registry / Dump |
 | 7 | Bibles_K_Operations_Manager_Supervisors | `1jZXgFcnDhmALSbIlyDbzL-uKpDyLycwdxcVnFNPn32c` | Bible-/Supervisor-Hinweise fuer Breakdown und Manufacturing | Registry / Dump |
-| 8 | OUTPUT - [F_ x HF] Weekly Fulfillment Report | `1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE` | Maitre-Ramp-up (DE/Nordics je KW), Produktionsvorbereitung DE+Nordics, FCMS-Inbound, Logistik | `npm run sync:fulfillment:report` → Firestore: `maitreRampup`, `produktionsplanung`, `fcmsInbound` |
+| 8 | Cook Schedules Per DC | `1jUN_IxCT4nodV21gwb1N_RKdxDrVilH00rC8khBEll8` | Cook-Methoden und Shift-Timings je Site (in der App auf `Site == VF` gefiltert) | `SHEET_COOK_SCHEDULES` |
+| 9 | OUTPUT - [F_ x HF] Weekly Fulfillment Report | `1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE` | Maitre-Ramp-up (DE/Nordics je KW), Produktionsvorbereitung DE+Nordics, FCMS-Inbound, Logistik | `npm run sync:fulfillment:report` → Firestore: `maitreRampup`, `produktionsplanung`, `fcmsInbound` |
 
 > Live-Inventar fuer die UI: `public/data/gsheet-sources.json`
 > Vollstaendige Dumps: `public/data/gsheet-dump-*.json`

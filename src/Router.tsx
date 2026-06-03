@@ -20,6 +20,7 @@ const NAV_TABS: { view: AppView; label: string }[] = [
   { view: "planning",  label: "Planning OASE" },
   { view: "packing",   label: "Packing" },
   { view: "breakdown", label: "Breakdown-Rechner" },
+  { view: "wo",        label: "WO Ausdruck" },
   { view: "whatif",    label: "What-If Rechner" },
   { view: "rundmail",  label: "Rundmail" },
   { view: "import",    label: "CSV Import" },
@@ -82,7 +83,7 @@ export function Router() {
   );
 
   if (rundmailMode) return (
-    <Shell><RundmailView /></Shell>
+    <Shell><RundmailView data={data} /></Shell>
   );
 
   if (kitchenMode) return (
@@ -225,12 +226,22 @@ export function Router() {
             <BreakdownEquipmentView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale="de" />
           )}
 
+          {view === "wo" && (
+            <BreakdownEquipmentView
+              data={data}
+              week={selectedWeek}
+              upliftPercent={upliftPercent}
+              locale="de"
+              entryMode="wo"
+            />
+          )}
+
           {view === "whatif" && (
             <WhatIfView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale="de" />
           )}
 
           {view === "rundmail" && (
-            <RundmailView onNavigate={v => {
+            <RundmailView data={data} onNavigate={v => {
               if ((ALL_VIEWS as readonly string[]).includes(v)) setView(v as AppView);
             }} />
           )}
@@ -249,6 +260,7 @@ export function Router() {
           <a href="/?surface=rundmail" className="hover:text-slate-500 underline">🔗 Rundmail</a>
           <a href="/?view=whatif" className="hover:text-slate-500 underline">What-If</a>
           <a href="/?view=breakdown" className="hover:text-slate-500 underline">Breakdown</a>
+          <a href="/?view=wo" className="hover:text-slate-500 underline">WO Ausdruck</a>
           <button
             type="button"
             className="hover:text-slate-600 underline"

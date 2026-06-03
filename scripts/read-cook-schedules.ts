@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import type { CookSchedule } from "../src/types.ts";
 import { num } from "./lib/helpers.ts";
 
-const DEFAULT_COOK_SCHEDULES_GSHEET_ID = "1jZXgFcnDhmALSbIlyDbzL-uKpDyLycwdxcVnFNPn32c";
+const DEFAULT_COOK_SCHEDULES_GSHEET_ID = "1jUN_IxCT4nodV21gwb1N_RKdxDrVilH00rC8khBEll8";
 
 export async function readCookSchedulesFromGSheet(): Promise<Record<string, CookSchedule>> {
   const spreadsheetId = process.env.SHEET_COOK_SCHEDULES ?? DEFAULT_COOK_SCHEDULES_GSHEET_ID;

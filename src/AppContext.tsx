@@ -6,10 +6,10 @@ import { adjustedPortions, isProducedInVerden, lsGet, usePersistent } from "./he
 import { getBaseVerdenVolume } from "./equipment";
 import type { DataBundle, WeekRecipe, Recipe } from "./types";
 
-export type AppView = "recipe" | "planning" | "packing" | "breakdown" | "whatif" | "rundmail" | "import";
+export type AppView = "recipe" | "planning" | "packing" | "breakdown" | "wo" | "whatif" | "rundmail" | "import";
 export type AppSurface = "full" | "kitchen" | "rundmail";
 
-export const ALL_VIEWS: readonly AppView[] = ["recipe", "planning", "packing", "breakdown", "whatif", "rundmail", "import"];
+export const ALL_VIEWS: readonly AppView[] = ["recipe", "planning", "packing", "breakdown", "wo", "whatif", "rundmail", "import"];
 
 export interface WeekDelta {
   deltaPortions: number;

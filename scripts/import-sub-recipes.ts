@@ -39,8 +39,10 @@ import admin from "firebase-admin";
 import type { Market, RecipeStructure, DetailedSubRecipe, DetailedIngredient } from "../src/types.ts";
 import { readCsv, resolveSourceDir, detectMarket, parseRecipeName as parseRecipeCode, num as numStr } from "./lib/helpers.ts";
 import { loadRecipeDb, mergeIntoDb, saveRecipeDb } from "./lib/recipe-db.ts";
+import { configureFirestoreWriterAuth } from "./lib/firestore-auth.ts";
 
 const SOURCE_DIR = resolveSourceDir();
+configureFirestoreWriterAuth();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 

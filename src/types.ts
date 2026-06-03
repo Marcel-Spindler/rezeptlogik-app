@@ -181,14 +181,24 @@ export interface WorkOrderEntry {
   run: number;
   kitchenDay: string;         // "2026-05-24"
   workOrder: string;          // "23-175"
+  recipeId?: string;
   recipeCode: string;         // "FV0035A"
   recipeName: string;         // "Salmon with pesto [BNL]"
   subRecipe: string;          // "Salmon - garlic seasoning"
   plannedMeals: number;
+  targetPortions?: number;
+  woCookedPortions?: number;
+  cookedPortionsExcess?: number;
   stagingKg: number;
   kitchenKg: number;
   postKg: number;
   yieldPct: number;           // 40.9 (not 0.409)
+  cookMethods?: string;
+  stagingStatus?: string;
+  stagingComment?: string;
+  kitchenStatus?: string;
+  unlockedEta?: string;
+  workOrderComment?: string;
   logisticTarget?: number;
 }
 

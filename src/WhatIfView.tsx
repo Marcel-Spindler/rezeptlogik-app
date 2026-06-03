@@ -73,6 +73,18 @@ interface SubRecipeIngredientNeed {
   lossTotal: number;
 }
 
+interface FullIngredientNeed {
+  key: string;
+  ingredientId: string;
+  ingredientName: string;
+  uom: string;
+  grossPerPortion: number;
+  netPerPortion: number;
+  grossTotal: number;
+  netTotal: number;
+  lossTotal: number;
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // HELPERS
 // ════════════════════════════════════════════════════════════════════════════
@@ -259,6 +271,33 @@ function aggregateSubRecipeIngredientNeeds(ingredients: FlatIngredient[], portio
   return [...grouped.values()].sort((a, b) => b.grossPerPortion - a.grossPerPortion);
 }
 
+function aggregateRecipeIngredientNeeds(ingredients: FlatIngredient[], portions: number): FullIngredientNeed[] {
+  const grouped = new Map<string, FullIngredientNeed>();
+  for (const ing of ingredients) {
+    const key = `${ing.ingredientId}__${ing.uom}`;
+    const grossPerPortion = ing.grossQty;
+    const netPerPortion = ing.grossQty * ing.effectiveYield;
+    const current = grouped.get(key) ?? {
+      key,
+      ingredientId: ing.ingredientId,
+      ingredientName: ing.ingredientName,
+      uom: ing.uom,
+      grossPerPortion: 0,
+      netPerPortion: 0,
+      grossTotal: 0,
+      netTotal: 0,
+      lossTotal: 0
+    };
+    current.grossPerPortion += grossPerPortion;
+    current.netPerPortion += netPerPortion;
+    current.grossTotal += grossPerPortion * portions;
+    current.netTotal += netPerPortion * portions;
+    current.lossTotal = current.grossTotal - current.netTotal;
+    grouped.set(key, current);
+  }
+  return [...grouped.values()].sort((a, b) => b.grossPerPortion - a.grossPerPortion);
+}
+
 // ────────────────────────────────────────────────────────────
 // GLOBAL INGREDIENT INDEX (über alle Meals der KW)
 // ────────────────────────────────────────────────────────────
@@ -332,7 +371,6 @@ export function WhatIfView({
   locale: UiLocale;
 }): JSX.Element {
 
-  // @ts-expect-error unused
   const { data: _oasisData } = usePlanningOasisData();
 
   const weekMeals = useMemo(() => {
@@ -485,6 +523,7 @@ export function WhatIfView({
   const [underweightActualUnitWeight, setUnderweightActualUnitWeight] = useState<number>(0);
   const [underweightAvailableUnits, setUnderweightAvailableUnits] = useState<number>(upliftedPortions || 0);
   const [subRecipeExportLoading, setSubRecipeExportLoading] = useState(false);
+  const [recipeExportLoading, setRecipeExportLoading] = useState(false);
   useEffect(() => {
     setTargetPortions(upliftedPortions || 1000);
     setSubRecipeMissingMeals(upliftedPortions || 1000);
@@ -503,6 +542,11 @@ export function WhatIfView({
   const selectedSubRecipeNeeds = useMemo(
     () => aggregateSubRecipeIngredientNeeds(selectedSubRecipeIngredients, subRecipeMissingMeals),
     [selectedSubRecipeIngredients, subRecipeMissingMeals]
+  );
+
+  const fullRecipeNeeds = useMemo(
+    () => aggregateRecipeIngredientNeeds(allIngredients, targetPortions),
+    [allIngredients, targetPortions]
   );
 
   useEffect(() => {
@@ -803,6 +847,241 @@ export function WhatIfView({
     }
   }
 
+  async function exportFullRecipeCalculation(): Promise<void> {
+    if (!selectedMeal || !selectedCode) return;
+    setRecipeExportLoading(true);
+    try {
+      const exceljs = await import("exceljs");
+      const WorkbookClass = exceljs.Workbook || (exceljs as any).default?.Workbook;
+      const workbook = new WorkbookClass();
+      workbook.creator = "Rezeptlogik Verden";
+      workbook.created = new Date();
+
+      const border = {
+        top: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+        bottom: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+        left: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+        right: { style: "thin" as const, color: { argb: "FFCBD5E1" } },
+      };
+
+      const overview = workbook.addWorksheet("Uebersicht", { views: [{ showGridLines: false }] });
+      overview.columns = [{ width: 28 }, { width: 24 }, { width: 22 }, { width: 22 }];
+
+      overview.mergeCells("A1:D1");
+      const title = overview.getCell("A1");
+      title.value = `What-if Gesamt-Export · ${selectedCode}`;
+      title.font = { name: "Calibri", size: 16, bold: true, color: { argb: "FFFFFFFF" } };
+      title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+      title.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      overview.getRow(1).height = 28;
+
+      const metaRows: Array<[string, string | number, string, string | number]> = [
+        ["Woche", week, "Meal", selectedCode],
+        ["Rezept", selectedMeal.recipeName, "Portionen Ziel", targetPortions],
+        ["Basis Verden", Math.round(basePortions), "Uplift", `${upliftPercent}%`],
+        ["Portionen mit Uplift", upliftedPortions, "Yield Overrides", overrideCount],
+        ["Sub-Rezepte", allSubs.length, "Zutaten Positionen", allIngredients.length],
+      ];
+
+      for (const rowData of metaRows) {
+        const row = overview.addRow(rowData);
+        row.eachCell((cell, col) => {
+          cell.border = border;
+          cell.alignment = { vertical: "middle", horizontal: col % 2 === 1 ? "left" : "right" };
+          if (col === 1 || col === 3) {
+            cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FF475569" } };
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+          }
+        });
+      }
+
+      overview.addRow([]);
+      const totalsHeader = overview.addRow(["Bereich", "Kennzahl", "Wert", "Einheit"]);
+      totalsHeader.eachCell(cell => {
+        cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF334155" } };
+        cell.border = border;
+      });
+
+      const totalsRows: Array<[string, string, number, string]> = [
+        ["Gesamt", "Rohware (Brutto)", Number(forwardTotals.totalGross.toFixed(2)), "g"],
+        ["Gesamt", "Fertigware (Netto)", Number(forwardTotals.totalNet.toFixed(2)), "g"],
+        ["Gesamt", "Yield-Verlust", Number(forwardTotals.lossGrams.toFixed(2)), "g"],
+        ["Gesamt", "Verlustquote", Number(forwardTotals.lossPercent.toFixed(2)), "%"],
+      ];
+      totalsRows.forEach(rowData => {
+        const row = overview.addRow(rowData);
+        row.eachCell(cell => {
+          cell.border = border;
+          cell.alignment = { vertical: "middle", horizontal: "left" };
+        });
+      });
+
+      const subSheet = workbook.addWorksheet("Subrezepte", { views: [{ state: "frozen", ySplit: 1 }] });
+      subSheet.columns = [
+        { width: 8 },
+        { width: 32 },
+        { width: 60 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 12 },
+      ];
+
+      const subHeader = subSheet.addRow([
+        "Ebene",
+        "Sub-Rezept",
+        "Pfad",
+        "Brutto/Meal",
+        "Netto/Meal",
+        "Rohware gesamt",
+        "Fertigware gesamt",
+        "Verlust gesamt",
+        "Avg Yield %",
+      ]);
+      subHeader.eachCell(cell => {
+        cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0369A1" } };
+        cell.border = border;
+      });
+
+      allSubs.forEach(sub => {
+        const grossTotal = sub.subtreeGrossPerPortion * targetPortions;
+        const netTotal = sub.subtreeNetPerPortion * targetPortions;
+        const row = subSheet.addRow([
+          sub.depth,
+          sub.name,
+          sub.path.join(" -> "),
+          Number(sub.subtreeGrossPerPortion.toFixed(2)),
+          Number(sub.subtreeNetPerPortion.toFixed(2)),
+          Number(grossTotal.toFixed(2)),
+          Number(netTotal.toFixed(2)),
+          Number((grossTotal - netTotal).toFixed(2)),
+          sub.avgYield ? Number((sub.avgYield * 100).toFixed(2)) : "",
+        ]);
+        row.eachCell((cell, col) => {
+          cell.border = border;
+          cell.alignment = { vertical: "middle", horizontal: col >= 4 ? "right" : "left" };
+        });
+      });
+
+      const ingredientsSheet = workbook.addWorksheet("Rohware Gesamt", { views: [{ state: "frozen", ySplit: 1 }] });
+      ingredientsSheet.columns = [
+        { width: 36 },
+        { width: 24 },
+        { width: 16 },
+        { width: 16 },
+        { width: 18 },
+        { width: 18 },
+        { width: 16 },
+        { width: 12 },
+      ];
+
+      const ingredientHeader = ingredientsSheet.addRow([
+        "Zutat",
+        "SKU",
+        "Brutto/Meal",
+        "Netto/Meal",
+        "Rohware gesamt",
+        "Fertigware gesamt",
+        "Verlust gesamt",
+        "Einheit",
+      ]);
+      ingredientHeader.eachCell(cell => {
+        cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F766E" } };
+        cell.border = border;
+      });
+
+      fullRecipeNeeds.forEach(need => {
+        const row = ingredientsSheet.addRow([
+          need.ingredientName,
+          need.ingredientId,
+          Number(need.grossPerPortion.toFixed(2)),
+          Number(need.netPerPortion.toFixed(2)),
+          Number(need.grossTotal.toFixed(2)),
+          Number(need.netTotal.toFixed(2)),
+          Number(need.lossTotal.toFixed(2)),
+          need.uom,
+        ]);
+        row.eachCell((cell, col) => {
+          cell.border = border;
+          cell.alignment = { vertical: "middle", horizontal: col >= 3 && col <= 7 ? "right" : "left" };
+        });
+      });
+
+      const bySubSheet = workbook.addWorksheet("Rohware nach Subrezept", { views: [{ state: "frozen", ySplit: 1 }] });
+      bySubSheet.columns = [
+        { width: 32 },
+        { width: 60 },
+        { width: 34 },
+        { width: 24 },
+        { width: 16 },
+        { width: 16 },
+        { width: 18 },
+        { width: 18 },
+        { width: 16 },
+        { width: 12 },
+      ];
+
+      const bySubHeader = bySubSheet.addRow([
+        "Sub-Rezept",
+        "Pfad",
+        "Zutat",
+        "SKU",
+        "Brutto/Meal",
+        "Netto/Meal",
+        "Rohware gesamt",
+        "Fertigware gesamt",
+        "Verlust gesamt",
+        "Einheit",
+      ]);
+      bySubHeader.eachCell(cell => {
+        cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1D4ED8" } };
+        cell.border = border;
+      });
+
+      allSubs.forEach(sub => {
+        sub.ingredients.forEach(ing => {
+          const grossPerPortion = ing.grossQty;
+          const netPerPortion = ing.grossQty * ing.effectiveYield;
+          const grossTotal = grossPerPortion * targetPortions;
+          const netTotal = netPerPortion * targetPortions;
+          const row = bySubSheet.addRow([
+            sub.name,
+            sub.path.join(" -> "),
+            ing.ingredientName,
+            ing.ingredientId,
+            Number(grossPerPortion.toFixed(2)),
+            Number(netPerPortion.toFixed(2)),
+            Number(grossTotal.toFixed(2)),
+            Number(netTotal.toFixed(2)),
+            Number((grossTotal - netTotal).toFixed(2)),
+            ing.uom,
+          ]);
+          row.eachCell((cell, col) => {
+            cell.border = border;
+            cell.alignment = { vertical: "middle", horizontal: col >= 5 && col <= 9 ? "right" : "left" };
+          });
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${week}_${selectedCode}_what_if_gesamt.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setRecipeExportLoading(false);
+    }
+  }
+
   const overrideCount = overrides.size;
 
   if (!selectedRecipe) {
@@ -1046,6 +1325,13 @@ export function WhatIfView({
                   className="btn btn-primary text-xs"
                 >
                   Uplift ({fmt(upliftedPortions)})
+                </button>
+                <button
+                  onClick={() => void exportFullRecipeCalculation()}
+                  disabled={recipeExportLoading || targetPortions <= 0 || allSubs.length === 0}
+                  className="btn text-xs disabled:opacity-60"
+                >
+                  {recipeExportLoading ? "Exportiert ..." : "Gesamt-Export Excel"}
                 </button>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

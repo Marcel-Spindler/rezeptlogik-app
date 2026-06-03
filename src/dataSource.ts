@@ -155,11 +155,33 @@ async function loadFromFirestore(): Promise<DataBundle> {
     if (row?.skuCode) shelfLifeBySku[row.skuCode] = row;
   });
 
-  // Production plan: docs sorted by week, take the latest
+  // Production plan: merge rows from all available week docs so WO views can see all upcoming work orders
   let productionPlan: DataBundle["productionPlan"] = undefined;
   if (pkgSnap && !pkgSnap.empty) {
     const sorted = pkgSnap.docs.sort((a, b) => b.id.localeCompare(a.id));
-    productionPlan = sorted[0].data() as any;
+    const latest = sorted[0].data() as any;
+    const mergedRows: any[] = [];
+    const seen = new Set<string>();
+    for (const docSnap of sorted) {
+      const plan = docSnap.data() as any;
+      const rows = Array.isArray(plan?.rows) ? plan.rows : [];
+      for (const row of rows) {
+        const key = [
+          String(row?.kitchenDay ?? ""),
+          String(row?.workOrder ?? ""),
+          String(row?.recipeCode ?? ""),
+          String(row?.subRecipe ?? ""),
+        ].join("||");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        mergedRows.push(row);
+      }
+    }
+    productionPlan = {
+      ...latest,
+      rows: mergedRows,
+      generatedAt: latest?.generatedAt ?? meta.generatedAt ?? "",
+    } as any;
   }
 
   const printOrders: DataBundle["printOrders"] = [];

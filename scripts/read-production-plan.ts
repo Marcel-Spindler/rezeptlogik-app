@@ -34,7 +34,9 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rows.length, 5); i++) {
     const r = rows[i].map((c: unknown) => String(c ?? "").trim().toLowerCase());
-    if (r.some(c => c.includes("work order")) && r.some(c => c === "recipe")) {
+    const hasLegacyRecipe = r.some(c => c === "recipe");
+    const hasKetRecipe = r.some(c => c.includes("recipe name"));
+    if (r.some(c => c.includes("work order")) && (hasLegacyRecipe || hasKetRecipe)) {
       headerIdx = i;
       break;
     }
@@ -47,14 +49,24 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
   const header = rows[headerIdx].map((c: unknown) => String(c ?? "").trim().toLowerCase());
   const runIdx     = header.findIndex(c => c === "run");
   const dayIdx     = header.findIndex(c => c.includes("kitchen day") || c.includes("planned kitchen"));
-  const woIdx      = header.findIndex(c => c === "work order");
-  const recipeIdx  = header.findIndex(c => c === "recipe");
-  const subIdx     = header.findIndex(c => c.includes("sub recipe") || c === "sub recipe");
+  const woIdx      = header.findIndex(c => c === "work order" || c.includes("work order number"));
+  const recipeIdIdx = header.findIndex(c => c === "recipe id");
+  const recipeIdx  = header.findIndex(c => c === "recipe" || c.includes("recipe name"));
+  const subIdx     = header.findIndex(c => c.includes("sub recipe") || c === "sub recipe" || c.includes("sub recipe name"));
   const mealsIdx   = header.findIndex(c => c.includes("planned meals") || c === "planned meals");
+  const targetPortionsIdx = header.findIndex(c => c === "target portions" || c.includes("target portion"));
+  const woCookedIdx = header.findIndex(c => c.includes("wo cooked portions") || c.includes("cooked portions"));
+  const excessIdx = header.findIndex(c => c.includes("cooked portions excess"));
   const stagingIdx = header.findIndex(c => c.includes("staging"));
   const kitchenIdx = header.findIndex(c => c.includes("kitchen") && c.includes("kg"));
   const postIdx    = header.findIndex(c => c.includes("post"));
   const yieldIdx   = header.findIndex(c => c === "yield");
+  const cookMethodsIdx = header.findIndex(c => c.includes("cook methods"));
+  const stagingStatusIdx = header.findIndex(c => c === "staging status");
+  const stagingCommentIdx = header.findIndex(c => c === "staging comment");
+  const kitchenStatusIdx = header.findIndex(c => c === "kitchen status");
+  const unlockedEtaIdx = header.findIndex(c => c.includes("unlocked eta"));
+  const workOrderCommentIdx = header.findIndex(c => c.includes("work order comment"));
   const logTgtIdx  = header.findLastIndex(c => c === "target");
 
   const entries: WorkOrderEntry[] = [];
@@ -62,7 +74,7 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
     const row = rows[i];
     if (!row?.length) continue;
     const woCell = woIdx >= 0 ? String(row[woIdx] ?? "").trim() : "";
-    if (!woCell || !/^\d{2}-\d{3,}/.test(woCell)) continue;
+    if (!woCell || !/^\d{2}-\d{1,4}$/.test(woCell)) continue;
 
     const fullRecipe = recipeIdx >= 0 ? String(row[recipeIdx] ?? "").trim() : "";
     const { code: recipeCode } = parseRecipeName(fullRecipe);
@@ -73,14 +85,24 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
       run:            runIdx >= 0 ? (parseInt(String(row[runIdx] ?? ""), 10) || 0) : 0,
       kitchenDay:     dayIdx >= 0 ? String(row[dayIdx] ?? "").trim() : "",
       workOrder:      woCell,
+      recipeId:       recipeIdIdx >= 0 ? String(row[recipeIdIdx] ?? "").trim() : "",
       recipeCode,
       recipeName:     fullRecipe,
       subRecipe:      subIdx >= 0 ? String(row[subIdx] ?? "").trim() : "",
       plannedMeals:   mealsIdx >= 0 ? num(row[mealsIdx]) : 0,
+      targetPortions: targetPortionsIdx >= 0 ? num(row[targetPortionsIdx]) || undefined : undefined,
+      woCookedPortions: woCookedIdx >= 0 ? num(row[woCookedIdx]) || undefined : undefined,
+      cookedPortionsExcess: excessIdx >= 0 ? num(row[excessIdx]) || undefined : undefined,
       stagingKg:      stagingIdx >= 0 ? num(row[stagingIdx]) : 0,
       kitchenKg:      kitchenIdx >= 0 ? num(row[kitchenIdx]) : 0,
       postKg:         postIdx >= 0 ? num(row[postIdx]) : 0,
       yieldPct,
+      cookMethods:    cookMethodsIdx >= 0 ? String(row[cookMethodsIdx] ?? "").trim() : "",
+      stagingStatus:  stagingStatusIdx >= 0 ? String(row[stagingStatusIdx] ?? "").trim() : "",
+      stagingComment: stagingCommentIdx >= 0 ? String(row[stagingCommentIdx] ?? "").trim() : "",
+      kitchenStatus:  kitchenStatusIdx >= 0 ? String(row[kitchenStatusIdx] ?? "").trim() : "",
+      unlockedEta:    unlockedEtaIdx >= 0 ? String(row[unlockedEtaIdx] ?? "").trim() : "",
+      workOrderComment: workOrderCommentIdx >= 0 ? String(row[workOrderCommentIdx] ?? "").trim() : "",
       logisticTarget: logTgtIdx >= 0 ? (num(row[logTgtIdx]) || undefined) : undefined,
     });
   }
