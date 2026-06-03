@@ -5,7 +5,7 @@
   "referenceNote": "KW24 Daten",
   "spreadsheetName": "Weekly planning F_ 2026 CW24",
   "spreadsheetId": "1GNc4MpsHDg8kz03Hmdhkw9t-KKiBWU2cFJDbOZNIO6w",
-  "generatedAt": "2026-06-02T12:36:12.719Z",
+  "generatedAt": "2026-06-03T16:01:27.405Z",
   "boxesPerLinePerShift": 6608,
   "boxSchedule": [
     {
@@ -235,7 +235,7 @@
       "platingHeadcountLate": 7.2,
       "kitchenHeadcountEarly": 19.6,
       "kitchenHeadcountLate": 13.3,
-      "allStaffEarly": 112.2,
+      "allStaffEarly": 114.2,
       "allStaffLate": 29.4,
       "areas": {
         "FFM1": {
@@ -255,7 +255,7 @@
           "late": 0
         },
         "Adecco": {
-          "early": 5,
+          "early": 7,
           "late": 0
         },
         "Plating1": {
@@ -331,7 +331,7 @@
           "late": 2
         },
         "Agency Cost": {
-          "early": 1059.2,
+          "early": 1482.88,
           "late": 0
         },
         "Date": {
@@ -553,7 +553,7 @@
       "platingHeadcountLate": 0,
       "kitchenHeadcountEarly": 0,
       "kitchenHeadcountLate": 0,
-      "allStaffEarly": 39.7,
+      "allStaffEarly": 54.7,
       "allStaffLate": 2,
       "areas": {
         "FFM1": {
@@ -562,6 +562,10 @@
         },
         "FFM4": {
           "early": 9.35,
+          "late": 0
+        },
+        "Adecco": {
+          "early": 15,
           "late": 0
         },
         "Plating1": {
@@ -579,6 +583,10 @@
         "Quality4": {
           "early": 0,
           "late": 2
+        },
+        "Agency Cost": {
+          "early": 3177.6,
+          "late": 0
         }
       }
     },
