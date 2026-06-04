@@ -5,6 +5,7 @@ import { CsvImportView } from "./CsvImportView";
 import { PlanningOasisView } from "./planning-oasis/PlanningOasisView";
 import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
 import { KetBreakdownView } from "./KetBreakdownView";
+import { PetPlanView } from "./PetPlanView";
 import { WhatIfView } from "./WhatIfView";
 import { RundmailView } from "./RundmailView";
 import { WeekSelector } from "./components/WeekSelector";
@@ -19,6 +20,7 @@ const NAV_TABS: { view: AppView; label: string }[] = [
   { view: "recipe",    label: "Rezept" },
   { view: "planning",  label: "Planning OASE" },
   { view: "wo",        label: "KET Plan / WO" },
+  { view: "pet",       label: "PET Plan / Plating" },
   { view: "whatif",    label: "What-If Rechner" },
   { view: "rundmail",  label: "Rundmail" },
   { view: "import",    label: "CSV Import" },
@@ -208,6 +210,10 @@ export function Router() {
             <KetBreakdownView data={data} />
           )}
 
+          {view === "pet" && (
+            <PetPlanView />
+          )}
+
           {view === "whatif" && (
             <WhatIfView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale="de" />
           )}
@@ -232,6 +238,7 @@ export function Router() {
           <a href="/?surface=rundmail" className="hover:text-slate-500 underline">🔗 Rundmail</a>
           <a href="/?view=whatif" className="hover:text-slate-500 underline">What-If</a>
           <a href="/?view=wo" className="hover:text-slate-500 underline">KET Plan / WO</a>
+          <a href="/?view=pet" className="hover:text-slate-500 underline">PET Plan / Plating</a>
           <button
             type="button"
             className="hover:text-slate-600 underline"
