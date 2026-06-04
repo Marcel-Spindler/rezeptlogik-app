@@ -2,9 +2,9 @@
 import { useAppState, ALL_VIEWS, type AppView } from "./AppContext";
 import { RecipeDetail } from "./RecipeDetailView";
 import { CsvImportView } from "./CsvImportView";
-import { PackingScheduleView } from "./PackingScheduleView";
 import { PlanningOasisView } from "./planning-oasis/PlanningOasisView";
 import { BreakdownEquipmentView } from "./BreakdownEquipmentView";
+import { KetBreakdownView } from "./KetBreakdownView";
 import { WhatIfView } from "./WhatIfView";
 import { RundmailView } from "./RundmailView";
 import { WeekSelector } from "./components/WeekSelector";
@@ -18,8 +18,7 @@ import { exportWeeklyCookPlanPDF } from "./planExport";
 const NAV_TABS: { view: AppView; label: string }[] = [
   { view: "recipe",    label: "Rezept" },
   { view: "planning",  label: "Planning OASE" },
-  { view: "packing",   label: "Packing" },
-  { view: "wo",        label: "WO Ausdruck" },
+  { view: "wo",        label: "KET Plan / WO" },
   { view: "whatif",    label: "What-If Rechner" },
   { view: "rundmail",  label: "Rundmail" },
   { view: "import",    label: "CSV Import" },
@@ -205,30 +204,8 @@ export function Router() {
             />
           )}
 
-          {view === "packing" && (
-            data.productionPlan
-              ? <PackingScheduleView
-                  plan={data.productionPlan}
-                  selectedWeek={selectedWeek}
-                  onRecipeClick={code => { setSelectedRecipe(code); setView("recipe"); }}
-                />
-              : <div className="card p-8 text-center text-slate-400">
-                  <div className="text-lg font-medium">Kein Fertigstellungszeitplan</div>
-                  <div className="text-sm mt-1">
-                    Sheet 6 noch nicht importiert —{" "}
-                    <code className="bg-slate-100 px-1 rounded">npm run import:gsheet</code>
-                  </div>
-                </div>
-          )}
-
-          {view === "wo" && (
-            <BreakdownEquipmentView
-              data={data}
-              week={selectedWeek}
-              upliftPercent={upliftPercent}
-              locale="de"
-              entryMode="wo"
-            />
+{view === "wo" && (
+            <KetBreakdownView data={data} />
           )}
 
           {view === "whatif" && (
@@ -254,7 +231,7 @@ export function Router() {
         <div className="text-slate-300 flex flex-wrap justify-center items-center gap-x-3 gap-y-1">
           <a href="/?surface=rundmail" className="hover:text-slate-500 underline">🔗 Rundmail</a>
           <a href="/?view=whatif" className="hover:text-slate-500 underline">What-If</a>
-          <a href="/?view=wo" className="hover:text-slate-500 underline">WO Ausdruck</a>
+          <a href="/?view=wo" className="hover:text-slate-500 underline">KET Plan / WO</a>
           <button
             type="button"
             className="hover:text-slate-600 underline"

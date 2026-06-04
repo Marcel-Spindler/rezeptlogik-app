@@ -60,6 +60,28 @@ type PetRow = {
   bestBySubRecipeName: string;
 };
 
+type PlatingNote = {
+  instruction: string;
+  packSchemaImageDataUrl?: string;
+};
+
+const PLATING_NOTES_KEY = "rezeptlogik-plating-notes-v1";
+
+function loadPlatingNotes(): Record<string, PlatingNote> {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(PLATING_NOTES_KEY) : null;
+    return raw ? (JSON.parse(raw) as Record<string, PlatingNote>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function savePlatingNotes(notes: Record<string, PlatingNote>): void {
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(PLATING_NOTES_KEY, JSON.stringify(notes));
+  } catch { /* quota exceeded – silent */ }
+}
+
 function parseDateNeeded(value: string): { date: string; run: number } {
   const [rawDate, rawRun] = (value ?? "").split(" - ");
   return {
@@ -479,7 +501,7 @@ function oneDayBefore(isoDate: string): string {
   return new Date(ts - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-function buildPetHtmlMail(allPetRows: PetRow[], sourceLabel: string, targetRun: 1 | 2): string {
+function buildPetHtmlMail(allPetRows: PetRow[], sourceLabel: string, targetRun: 1 | 2, platingNotes?: Record<string, PlatingNote>): string {
   type EnrichedPetRow = PetRow & {
     status: string;
     bestByText: string;
@@ -604,6 +626,13 @@ function buildPetHtmlMail(allPetRows: PetRow[], sourceLabel: string, targetRun: 
       const timeStart = cursorMinutes;
       const timeEnd = cursorMinutes + durationMinutes;
       cursorMinutes = timeEnd;
+      const note = platingNotes?.[mealCode];
+      const noteHtml = note?.instruction
+        ? `<div style="margin-top:5px;padding:5px 8px;background:#f0fdf4;border-left:3px solid #22c55e;border-radius:0 4px 4px 0;font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#166534;"><strong>Plating:</strong> ${escapeHtml(note.instruction)}</div>`
+        : "";
+      const imageHtml = note?.packSchemaImageDataUrl
+        ? `<div style="margin-top:5px;"><div style="font-family:Segoe UI,Arial,sans-serif;font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px;">Packschema</div><img src="${note.packSchemaImageDataUrl}" alt="Packschema ${escapeHtml(mealCode)}" style="max-width:100%;max-height:110px;object-fit:contain;border:1px solid #e2e8f0;border-radius:4px;"></div>`
+        : "";
       const card = `
       <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-left:3px solid ${color};border-radius:0 8px 8px 0;background:#ffffff;margin-bottom:6px;">
         <tr>
@@ -618,6 +647,7 @@ function buildPetHtmlMail(allPetRows: PetRow[], sourceLabel: string, targetRun: 
             <div style="font-family:Segoe UI,Arial,sans-serif;font-size:10px;color:#64748b;margin-top:3px;">Best By: <span style="color:${bestByUrgent ? "#991b1b" : "#334155"};font-weight:${bestByUrgent ? "800" : "600"};">${bestByUrgent ? "⚠ " : ""}${escapeHtml(bestBy)}</span> &middot; Sub: ${escapeHtml(bestByName)}</div>
             <div style="margin-top:4px;">${renderAllergenBadges(row)}</div>
             <div style="margin-top:4px;"><span style="display:inline-block;background:${tone.bg};color:${tone.text};border:1px solid ${tone.border};border-radius:999px;padding:2px 8px;font-family:Segoe UI,Arial,sans-serif;font-size:10px;font-weight:800;white-space:nowrap;">${escapeHtml(row.status)}</span></div>
+            ${noteHtml}${imageHtml}
           </td>
         </tr>
       </table>`;
@@ -732,7 +762,9 @@ function buildPetHtmlMail(allPetRows: PetRow[], sourceLabel: string, targetRun: 
 
   return `<!doctype html>
 <html lang="de">
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>PET-Plating Plan ${runLabel}</title></head>
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>PET-Plating Plan ${runLabel}</title>
+<style>@media print{body{background:#fff!important;padding:0!important}table{page-break-inside:avoid}@page{size:A4 landscape;margin:8mm}}</style>
+</head>
 <body style="margin:0;padding:16px;background:#cbd5e1;font-family:Segoe UI,Arial,sans-serif;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:980px;margin:0 auto;">
   <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0369a1 100%);border-radius:16px 16px 0 0;padding:28px 28px 22px 28px;">
@@ -1321,7 +1353,9 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
 
   return `<!doctype html>
 <html lang="de">
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Produktions-Rundmail ${runLabel} KW${weeklyPlanning?.cw ?? ""}</title></head>
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Produktions-Rundmail ${runLabel} KW${weeklyPlanning?.cw ?? ""}</title>
+<style>@media print{body{background:#fff!important;padding:0!important}table{page-break-inside:avoid}@page{size:A4 landscape;margin:8mm}}</style>
+</head>
 <body style="margin:0;padding:16px;background:#cbd5e1;font-family:Segoe UI,Arial,sans-serif;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:980px;margin:0 auto;">
 
@@ -1455,6 +1489,409 @@ function buildRunHtmlMail(allRows: RundmailRow[], sourceLabel: string, weeklyPla
 </html>`;
 }
 
+// ─── KET Präsentation ────────────────────────────────────────────────────────
+
+function buildKetPresentationHtml(allRows: RundmailRow[], sourceLabel: string, targetRun: 1 | 2): string {
+  const runRows = allRows.filter((r) => parseDateNeeded(r.dateNeeded).run === targetRun);
+  const days = Array.from(new Set(runRows.map((r) => r.dateNeeded))).sort((a, b) => daySortValue(a) - daySortValue(b));
+  const runLabel = `Run ${targetRun}`;
+  const generatedAt = new Date().toLocaleString("de-DE");
+
+  // Deduplizierte Totals
+  const dedupedRows = Array.from(new Map(runRows.map((r) => [r.recipeId, r])).values());
+  const totalTarget = dedupedRows.reduce((s, r) => s + r.targetPortions, 0);
+  const totalCooked = dedupedRows.reduce((s, r) => s + r.woCookedPortions, 0);
+  const totalOpen = dedupedRows.reduce((s, r) => s + toSlack(r.targetPortions - r.woCookedPortions), 0);
+  const uniqueRecipes = new Set(runRows.map((r) => r.recipeId)).size;
+  const completion = totalTarget > 0 ? Math.min(100, Math.round((totalCooked / totalTarget) * 100)) : 0;
+
+  function statusColor(status: string): string {
+    const s = status.toLowerCase();
+    if (s.includes("post blast") || s.includes("done") || s.includes("complete")) return "#166534";
+    if (s.includes("pre blast") || s.includes("in progress")) return "#92400e";
+    if (s.includes("not started") || s.includes("open")) return "#991b1b";
+    return "#334155";
+  }
+
+  const dayBlocks = days.map((day) => {
+    const dayRows = runRows.filter((r) => r.dateNeeded === day);
+    const recipeMap = new Map<string, { rows: RundmailRow[]; allergens: AllergenDef[] }>();
+    dayRows.forEach((r) => {
+      const existing = recipeMap.get(r.recipeId);
+      if (existing) { existing.rows.push(r); }
+      else recipeMap.set(r.recipeId, { rows: [r], allergens: [] });
+    });
+    recipeMap.forEach((entry) => {
+      entry.allergens = detectAllergens([entry.rows[0].recipeName, ...entry.rows.map((r) => r.subRecipeName)]);
+    });
+
+    const dayTarget = Array.from(recipeMap.values()).reduce((s, e) => s + e.rows[0].targetPortions, 0);
+    const { date, run } = parseDateNeeded(day);
+
+    const recipeCards = Array.from(recipeMap.values()).map((recipe) => {
+      const first = recipe.rows[0];
+      const hue = (Array.from(first.recipeId).reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 0) * 0.618033) % 1;
+      const h = Math.round(hue * 360);
+      const allergenHtml = recipe.allergens.length
+        ? recipe.allergens.map((a) => `<span class="badge" style="background:${a.bg};color:${a.text};border:1px solid ${a.border};">${escapeHtml(a.label)}</span>`).join("")
+        : `<span style="font-size:9px;color:#94a3b8;">Keine bekannten Allergene</span>`;
+
+      const subRows = recipe.rows.map((r) => {
+        const delta = r.woCookedPortions - r.targetPortions;
+        return `<tr>
+          <td class="mono">${escapeHtml(r.workOrderNumber)}</td>
+          <td>${escapeHtml(r.subRecipeName)}</td>
+          <td class="mono">${escapeHtml(r.cookMethods || "–")}</td>
+          <td class="r">${fmtInt(r.targetPortions)}</td>
+          <td class="r">${r.kitchenKg != null ? fmtInt(r.kitchenKg) + " kg" : "–"}</td>
+          <td class="r bold" style="color:#4338ca;">${r.batchesNeeded != null ? fmtInt(r.batchesNeeded) : "–"}</td>
+          <td style="color:${statusColor(r.kitchenStatus)}; font-weight:600;">${escapeHtml(r.kitchenStatus || "–")}</td>
+          <td style="color:${delta < 0 ? "#991b1b" : "#166534"};font-weight:600;">${delta >= 0 ? "+" : ""}${fmtInt(delta)}</td>
+        </tr>`;
+      }).join("");
+
+      return `<div class="recipe-card" style="border-left-color:hsl(${h},60%,42%);">
+        <div class="recipe-hdr" style="background:hsl(${h},44%,97%);">
+          <div>
+            <span class="recipe-name">${escapeHtml(first.recipeName.replace(/\s*\[.*?\]/g, ""))}</span>
+            <span class="recipe-id">${escapeHtml(first.recipeId)}</span>
+          </div>
+          <div class="recipe-meta">
+            <span class="kpi-chip">${fmtInt(first.targetPortions)} Port.</span>
+            <span class="kpi-chip">${recipe.rows.length} WOs</span>
+            ${allergenHtml}
+          </div>
+        </div>
+        <table class="sub-table">
+          <thead><tr>
+            <th>WO #</th><th>Sub-Rezept</th><th>Methode</th>
+            <th class="r">Target</th><th class="r">Küche kg</th>
+            <th class="r">Batches</th><th>Status</th><th class="r">Δ</th>
+          </tr></thead>
+          <tbody>${subRows}</tbody>
+        </table>
+      </div>`;
+    }).join("");
+
+    return `<div class="day-block">
+      <div class="day-hdr">
+        <span class="day-title">${escapeHtml(date)} &mdash; Run ${run}</span>
+        <span class="day-meta">${recipeMap.size} Rezepte &middot; ${dayRows.length} WOs &middot; ${fmtInt(dayTarget)} Portionen</span>
+      </div>
+      ${recipeCards}
+    </div>`;
+  }).join("");
+
+  const completionBar = `<div class="prog-track"><div class="prog-fill" style="width:${completion}%;"></div></div>`;
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>KET Plating Präsentation &mdash; ${runLabel}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page{size:A4 portrait;margin:12mm 14mm}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#1e293b;background:#fff}
+.cover{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0369a1 100%);border-radius:10px;padding:28px 28px 22px;margin-bottom:20px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cover-eyebrow{font-size:9px;letter-spacing:.2em;color:#7dd3fc;text-transform:uppercase;margin-bottom:8px}
+.cover-title{font-size:28px;font-weight:900;color:#fff;line-height:1.1;letter-spacing:-.02em}
+.cover-sub{font-size:14px;color:#bae6fd;margin-top:6px}
+.cover-meta{font-size:9px;color:#94a3b8;margin-top:12px;border-top:1px solid rgba(255,255,255,.18);padding-top:10px}
+.kpi-row{display:flex;gap:10px;margin-bottom:18px}
+.kpi-box{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;text-align:center}
+.kpi-lbl{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.1em}
+.kpi-val{font-size:22px;font-weight:900;color:#0f172a;line-height:1.1;margin-top:2px}
+.prog-track{height:5px;background:#e2e8f0;border-radius:9px;overflow:hidden;margin-bottom:18px}
+.prog-fill{height:100%;background:linear-gradient(90deg,#0ea5e9,#10b981);border-radius:9px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.day-block{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:18px;page-break-inside:avoid}
+.day-hdr{background:#1e293b;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.day-title{font-size:13px;font-weight:800;color:#fff}
+.day-meta{font-size:10px;color:#94a3b8}
+.recipe-card{border-left:4px solid #0369a1;margin:8px 10px;border-radius:0 6px 6px 0;overflow:hidden}
+.recipe-hdr{padding:6px 10px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px}
+.recipe-name{font-size:12px;font-weight:800;color:#0f172a}
+.recipe-id{font-size:10px;color:#64748b;margin-left:8px;font-family:monospace}
+.recipe-meta{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin-top:2px}
+.kpi-chip{display:inline-block;background:#e2e8f0;color:#334155;border-radius:4px;padding:1px 6px;font-size:9px;font-weight:700}
+.badge{display:inline-block;border-radius:3px;padding:1px 6px;font-size:9px;font-weight:700;margin:1px 2px}
+.sub-table{width:100%;border-collapse:collapse;font-size:9px}
+.sub-table th{padding:3px 8px;background:#f8fafc;color:#64748b;text-transform:uppercase;letter-spacing:.07em;font-weight:700;text-align:left;border-bottom:1px solid #e2e8f0}
+.sub-table td{padding:3px 8px;border-bottom:1px solid #f8fafc;vertical-align:top}
+.sub-table tr:last-child td{border-bottom:none}
+.r{text-align:right;white-space:nowrap}
+.mono{font-family:monospace;color:#475569}
+.bold{font-weight:700}
+.footer{margin-top:18px;font-size:9px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:10px}
+@media print{body{background:#fff}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.day-block{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="cover-eyebrow">Factor OPS &middot; Verden &middot; KET</div>
+  <div class="cover-title">KET Plating &mdash; ${runLabel}</div>
+  <div class="cover-sub">${fmtInt(uniqueRecipes)} Rezepte &middot; ${fmtInt(totalTarget)} Portionen &middot; ${days.length} Produktionstage</div>
+  <div class="cover-meta">Erstellt: ${escapeHtml(generatedAt)} &nbsp;&middot;&nbsp; Quelle: ${escapeHtml(sourceLabel)}</div>
+</div>
+<div class="kpi-row">
+  <div class="kpi-box"><div class="kpi-lbl">Rezepte</div><div class="kpi-val">${fmtInt(uniqueRecipes)}</div></div>
+  <div class="kpi-box"><div class="kpi-lbl">Portionen Ziel</div><div class="kpi-val">${fmtInt(totalTarget)}</div></div>
+  <div class="kpi-box"><div class="kpi-lbl">Portionen Ist</div><div class="kpi-val" style="color:#0369a1;">${fmtInt(totalCooked)}</div></div>
+  <div class="kpi-box"><div class="kpi-lbl">Offen</div><div class="kpi-val" style="color:${totalOpen > 0 ? "#b91c1c" : "#166534"};">${fmtInt(totalOpen)}</div></div>
+  <div class="kpi-box"><div class="kpi-lbl">Fertig</div><div class="kpi-val" style="color:${completion >= 80 ? "#166534" : completion >= 50 ? "#92400e" : "#991b1b"};">${completion}%</div></div>
+</div>
+${completionBar}
+${dayBlocks}
+<div class="footer">Factor OPS Planner &middot; KET Plating Präsentation &middot; ${escapeHtml(runLabel)} &middot; ${escapeHtml(generatedAt)}</div>
+</body>
+</html>`;
+}
+
+// ─── PET Präsentation ─────────────────────────────────────────────────────────
+
+function buildPetPresentationHtml(
+  allPetRows: PetRow[],
+  sourceLabel: string,
+  targetRun: 1 | 2,
+  platingNotes?: Record<string, PlatingNote>,
+): string {
+  const runLabel = `Run ${targetRun}`;
+  const generatedAt = new Date().toLocaleString("de-DE");
+  const soonLimit = Date.now() + 48 * 60 * 60 * 1000;
+
+  type EnrichedRow = PetRow & {
+    status: string; bestByText: string; bestByTs: number | null;
+    open: number; ratio: number; allergens: AllergenDef[];
+    expiringSubRecipeName: string;
+  };
+
+  const runRows: EnrichedRow[] = allPetRows
+    .filter((r) => parseDateNeeded(r.productionShift).run === targetRun)
+    .map((r) => {
+      const status = r.recipeManualPlatingStatus || r.recipePlatingStatus || "Not Started";
+      const bestByText = r.actualBestByDate || r.expiringDatetime || "";
+      const bestByTs = parseBestByTimestamp(bestByText);
+      const open = toSlack(r.recipeWoTarget - r.recipeWoMapped);
+      const ratio = r.recipeWoTarget > 0 ? Math.min(100, Math.round((r.recipeWoMapped / r.recipeWoTarget) * 100)) : 0;
+      const allergens = detectAllergens([r.recipeName, r.expiringSubRecipeName || ""]);
+      return { ...r, status, bestByText, bestByTs, open, ratio, allergens };
+    });
+
+  const shifts = Array.from(new Set(runRows.map((r) => r.productionShift))).sort((a, b) => daySortValue(a) - daySortValue(b));
+  const totalTarget = runRows.reduce((s, r) => s + r.recipeWoTarget, 0);
+  const totalMapped = runRows.reduce((s, r) => s + r.recipeWoMapped, 0);
+  const totalOpen = runRows.reduce((s, r) => s + r.open, 0);
+  const completion = totalTarget > 0 ? Math.min(100, Math.round((totalMapped / totalTarget) * 100)) : 0;
+  const firstShiftDate = shifts.length ? parseDateNeeded(shifts[0]).date : "–";
+
+  function allergenSig(row: EnrichedRow): string {
+    return row.allergens.map((a) => a.label).sort().join("|") || "none";
+  }
+
+  function placementScore(lineRows: EnrichedRow[], lineTargets: number[], lineIdx: number, candidate: EnrichedRow): number {
+    const last = lineRows.at(-1);
+    const switchPenalty = last && allergenSig(last) !== allergenSig(candidate) ? 3 : 0;
+    const projected = lineTargets.map((v, i) => i === lineIdx ? v + candidate.recipeWoTarget : v);
+    const max = Math.max(...projected, 1);
+    const min = Math.min(...projected);
+    const balancePenalty = (max - min) / PET_PORTIONS_PER_LINE_PER_SHIFT;
+    const overflowPenalty = Math.max(0, (projected[lineIdx] - PET_PORTIONS_PER_LINE_PER_SHIFT) / PET_PORTIONS_PER_LINE_PER_SHIFT) * 2;
+    return switchPenalty + balancePenalty + overflowPenalty;
+  }
+
+  const LINE_COLORS = ["#0ea5e9", "#10b981", "#f59e0b"];
+  const LINE_NAMES = ["Linie 1", "Linie 2", "Linie 3"];
+
+  const shiftBlocks = shifts.map((shift, shiftIdx) => {
+    const rows = runRows
+      .filter((r) => r.productionShift === shift)
+      .sort((a, b) => {
+        if (a.bestByTs != null && b.bestByTs != null && a.bestByTs !== b.bestByTs) return a.bestByTs - b.bestByTs;
+        if (a.bestByTs != null && b.bestByTs == null) return -1;
+        if (a.bestByTs == null && b.bestByTs != null) return 1;
+        return b.open - a.open;
+      });
+
+    const shiftTarget = rows.reduce((s, r) => s + r.recipeWoTarget, 0);
+    const shiftMapped = rows.reduce((s, r) => s + r.recipeWoMapped, 0);
+    const linesNeeded = shiftTarget > 0 ? Math.ceil(shiftTarget / PET_PORTIONS_PER_LINE_PER_SHIFT) : 0;
+    const lineCount = linesNeeded > 2 ? 3 : 2;
+    const lines: EnrichedRow[][] = Array.from({ length: lineCount }, () => []);
+    const lineTargets = Array.from({ length: lineCount }, () => 0);
+
+    for (const row of rows) {
+      let bestLine = 0, bestScore = Infinity;
+      for (let i = 0; i < lineCount; i++) {
+        const s = placementScore(lines[i], lineTargets, i, row) + (lineTargets[i] / PET_PORTIONS_PER_LINE_PER_SHIFT) * 0.001;
+        if (s < bestScore) { bestScore = s; bestLine = i; }
+      }
+      lines[bestLine].push(row);
+      lineTargets[bestLine] += row.recipeWoTarget;
+    }
+
+    const { date } = parseDateNeeded(shift);
+    const completedOn = oneDayBefore(date);
+    const shiftUtil = linesNeeded > 0 ? Math.min(100, Math.round((shiftTarget / (linesNeeded * PET_PORTIONS_PER_LINE_PER_SHIFT)) * 100)) : 0;
+    const shiftOpen = rows.reduce((s, r) => s + r.open, 0);
+
+    const lineColumns = lines.map((lineRows, lineIdx) => {
+      let cursorMin = PET_LINE_START_HOUR * 60;
+      const lineColor = LINE_COLORS[lineIdx] ?? "#0ea5e9";
+
+      const cards = lineRows.map((row, rowIdx) => {
+        const mealCode = extractMealCode(row.recipeName);
+        const mealTitle = row.recipeName.replace(/\s*\[.*?\]/g, "").replace(/^FV\d{4}[A-Z]\s*-\s*/i, "").trim();
+        const durationMin = Math.max(10, Math.round((row.recipeWoTarget / PET_PORTIONS_PER_LINE_PER_SHIFT) * 60));
+        const timeStart = cursorMin;
+        const timeEnd = cursorMin + durationMin;
+        cursorMin = timeEnd;
+
+        const bestByUrgent = row.bestByTs != null && row.bestByTs <= soonLimit;
+        const tone = petStatusTone(row.status);
+        const allergenBadges = row.allergens.length
+          ? row.allergens.map((a) => `<span class="badge" style="background:${a.bg};color:${a.text};border:1px solid ${a.border};">${escapeHtml(a.label)}</span>`).join("")
+          : `<span style="font-size:8px;color:#94a3b8;">–</span>`;
+
+        const note = platingNotes?.[mealCode];
+        const noteHtml = note?.instruction
+          ? `<div class="plating-note"><strong>Plating:</strong> ${escapeHtml(note.instruction)}</div>`
+          : "";
+        const imageHtml = note?.packSchemaImageDataUrl
+          ? `<div style="margin-top:4px;"><div class="section-lbl">Packschema</div><img src="${note.packSchemaImageDataUrl}" alt="Packschema ${escapeHtml(mealCode)}" class="pack-img"></div>`
+          : "";
+
+        // Reinigungsblock zwischen Rezepten bei Allergen-Wechsel
+        let cleanHtml = "";
+        if (rowIdx < lineRows.length - 1) {
+          const cur = new Set(row.allergens.map((a) => a.label));
+          const nxt = new Set((lineRows[rowIdx + 1]?.allergens ?? []).map((a) => a.label));
+          const removed = [...cur].filter((l) => !nxt.has(l));
+          const added = [...nxt].filter((l) => !cur.has(l));
+          if (removed.length > 0 || added.length > 0) {
+            const parts = [
+              removed.length ? `entfernt: <strong>${removed.map(escapeHtml).join(", ")}</strong>` : "",
+              added.length ? `neu: <strong>${added.map(escapeHtml).join(", ")}</strong>` : "",
+            ].filter(Boolean).join(" &middot; ");
+            cleanHtml = `<div class="cleaning-bar">&#9888; REINIGEN &mdash; ${parts}</div>`;
+          }
+        }
+
+        return `<div class="recipe-card" style="border-left-color:${lineColor};">
+          <div class="time-row">
+            <span class="time-start">${formatClock(timeStart)}</span>
+            <span class="time-sep">→</span>
+            <span class="time-end">${formatClock(timeEnd)}</span>
+            <span class="time-dur">${(durationMin / 60).toFixed(1)} h</span>
+          </div>
+          <div class="meal-code">${escapeHtml(mealCode)}</div>
+          <div class="meal-title">${escapeHtml(mealTitle)}</div>
+          <div class="meta-row">
+            <span>SOLL <strong>${fmtInt(row.recipeWoTarget)}</strong></span>
+            <span>IST <strong>${fmtInt(row.recipeWoMapped)}</strong></span>
+            <span style="color:${row.open > 0 ? "#b91c1c" : "#166534"};">Gap <strong>${fmtInt(row.open)}</strong></span>
+          </div>
+          ${row.bestByText ? `<div class="best-by${bestByUrgent ? " urgent" : ""}">Best By: ${escapeHtml(row.bestByText)}</div>` : ""}
+          <div class="allergen-row">${allergenBadges}</div>
+          <div><span class="status-chip" style="background:${tone.bg};color:${tone.text};border:1px solid ${tone.border};">${escapeHtml(row.status)}</span></div>
+          ${noteHtml}${imageHtml}
+        </div>${cleanHtml}`;
+      }).join("");
+
+      return `<div class="line-col">
+        <div class="line-title" style="border-bottom:3px solid ${lineColor};color:${lineColor};">
+          ${LINE_NAMES[lineIdx] ?? `Linie ${lineIdx + 1}`}
+          <span class="line-meta">${fmtInt(lineTargets[lineIdx])} Port.</span>
+        </div>
+        ${cards || `<div class="empty-line">Keine Rezepte</div>`}
+      </div>`;
+    }).join("");
+
+    return `<div class="shift-block${shiftIdx > 0 ? " page-break" : ""}">
+      <div class="shift-hdr">
+        <div>
+          <span class="shift-title">Plating ab ${escapeHtml(date)} &mdash; Fertigstellung: ${escapeHtml(completedOn)}</span>
+          <span class="shift-meta">${rows.length} Rezepte &middot; ${fmtInt(shiftTarget)} Port. Soll &middot; ${fmtInt(shiftMapped)} Ist &middot; Offen ${fmtInt(shiftOpen)} &middot; ${shiftUtil}% Auslast.</span>
+        </div>
+      </div>
+      <div class="lines-grid" style="grid-template-columns:repeat(${lineCount},1fr);">
+        ${lineColumns}
+      </div>
+    </div>`;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>PET Plating Präsentation &mdash; ${runLabel}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page{size:A4 landscape;margin:10mm 12mm}
+body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#1e293b;background:#fff}
+.cover{background:linear-gradient(135deg,#0f172a 0%,#0c4a6e 60%,#0369a1 100%);border-radius:10px;padding:22px 24px 18px;margin-bottom:16px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cover-eyebrow{font-size:9px;letter-spacing:.2em;color:#7dd3fc;text-transform:uppercase;margin-bottom:6px}
+.cover-title{font-size:26px;font-weight:900;color:#fff;letter-spacing:-.02em}
+.cover-sub{font-size:13px;color:#bae6fd;margin-top:5px}
+.cover-meta{font-size:9px;color:#94a3b8;margin-top:10px;border-top:1px solid rgba(255,255,255,.15);padding-top:8px}
+.kpi-row{display:flex;gap:8px;margin-bottom:14px}
+.kpi-box{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:8px 10px;text-align:center}
+.kpi-lbl{font-size:8px;color:#64748b;text-transform:uppercase;letter-spacing:.1em}
+.kpi-val{font-size:20px;font-weight:900;color:#0f172a;margin-top:2px}
+.prog-track{height:4px;background:#e2e8f0;border-radius:9px;overflow:hidden;margin-bottom:14px}
+.prog-fill{height:100%;background:linear-gradient(90deg,#0ea5e9,#10b981);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.shift-block{margin-bottom:16px}
+.page-break{page-break-before:always}
+.shift-hdr{background:#0f172a;border-radius:8px 8px 0 0;padding:8px 14px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.shift-title{font-size:12px;font-weight:800;color:#fff;display:block}
+.shift-meta{font-size:9px;color:#94a3b8;display:block;margin-top:2px}
+.lines-grid{display:grid;gap:8px;align-items:start;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:10px;background:#f8fafc}
+.line-col{background:#fff;border-radius:6px;border:1px solid #e2e8f0;padding:8px;min-height:60px}
+.line-title{font-size:11px;font-weight:800;padding-bottom:5px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.line-meta{font-size:9px;color:#64748b;font-weight:400}
+.recipe-card{border-left:3px solid #0ea5e9;border-radius:0 5px 5px 0;background:#fff;border:1px solid #e2e8f0;border-left-width:3px;padding:6px 8px;margin-bottom:5px}
+.time-row{display:flex;align-items:center;gap:4px;font-size:9px;color:#64748b;margin-bottom:3px}
+.time-start{font-weight:800;color:#0f172a}
+.time-sep{color:#94a3b8}
+.time-end{color:#475569}
+.time-dur{margin-left:auto;font-weight:700;color:#0369a1}
+.meal-code{font-family:monospace;font-size:11px;font-weight:900;color:#0f172a}
+.meal-title{font-size:10px;color:#334155;margin-bottom:3px}
+.meta-row{display:flex;gap:8px;font-size:9px;color:#475569;margin-bottom:3px}
+.best-by{font-size:9px;color:#475569;margin-bottom:3px}
+.best-by.urgent{color:#991b1b;font-weight:800}
+.allergen-row{margin-bottom:3px}
+.badge{display:inline-block;border-radius:3px;padding:1px 5px;font-size:8px;font-weight:700;margin:1px 1px}
+.status-chip{display:inline-block;border-radius:99px;padding:2px 7px;font-size:9px;font-weight:800;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.plating-note{margin-top:5px;padding:4px 7px;background:#f0fdf4;border-left:3px solid #22c55e;border-radius:0 3px 3px 0;font-size:9px;color:#166534;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.section-lbl{font-size:8px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
+.pack-img{max-width:100%;max-height:90px;object-fit:contain;border:1px solid #e2e8f0;border-radius:4px}
+.cleaning-bar{margin:3px 0 6px;padding:4px 8px;background:#fef3c7;border:1px dashed #f59e0b;border-radius:5px;font-size:9px;color:#78350f;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.empty-line{font-size:9px;color:#94a3b8;text-align:center;padding:12px}
+.footer{margin-top:14px;font-size:9px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:8px}
+@media print{body{background:#fff}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.page-break{page-break-before:always}}
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="cover-eyebrow">Factor OPS &middot; Verden &middot; PET</div>
+  <div class="cover-title">PET Plating &mdash; ${runLabel}</div>
+  <div class="cover-sub">ab ${escapeHtml(firstShiftDate)} &middot; ${fmtInt(runRows.length)} Rezepte &middot; ${fmtInt(totalTarget)} Portionen</div>
+  <div class="cover-meta">Erstellt: ${escapeHtml(generatedAt)} &nbsp;&middot;&nbsp; Quelle: ${escapeHtml(sourceLabel)}</div>
+</div>
+<div class="kpi-row">
+  <div class="kpi-box"><div class="kpi-lbl">Meal-WOs</div><div class="kpi-val">${fmtInt(runRows.length)}</div></div>
+  <div class="kpi-box"><div class="kpi-lbl">Soll</div><div class="kpi-val">${fmtInt(totalTarget)}</div></div>
+  <div class="kpi-box"><div class="kpi-lbl">Ist</div><div class="kpi-val" style="color:#0369a1;">${fmtInt(totalMapped)}</div></div>
+  <div class="kpi-box"><div class="kpi-lbl">Offen</div><div class="kpi-val" style="color:${totalOpen > 0 ? "#b91c1c" : "#166534"};">${fmtInt(totalOpen)}</div></div>
+  <div class="kpi-box"><div class="kpi-lbl">Fertig</div><div class="kpi-val" style="color:${completion >= 80 ? "#166534" : completion >= 50 ? "#92400e" : "#991b1b"};">${completion}%</div></div>
+</div>
+<div class="prog-track"><div class="prog-fill" style="width:${completion}%;"></div></div>
+${shiftBlocks}
+<div class="footer">Factor OPS Planner &middot; PET Plating Präsentation &middot; ${escapeHtml(runLabel)} &middot; ${escapeHtml(generatedAt)}</div>
+</body>
+</html>`;
+}
+
 function downloadFile(name: string, content: string, mime = "text/plain;charset=utf-8") {
   const blob = new Blob(["\uFEFF", content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -1467,9 +1904,180 @@ function downloadFile(name: string, content: string, mime = "text/plain;charset=
   URL.revokeObjectURL(url);
 }
 
+function printHtmlAsPdf(html: string): void {
+  const w = window.open("", "_blank", "width=1200,height=900");
+  if (!w) { alert("Popup blockiert – bitte für diese Seite erlauben."); return; }
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 450);
+}
+
+async function copyHtmlToClipboard(html: string): Promise<void> {
+  if (typeof navigator?.clipboard?.write === "function") {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([html.replace(/<[^>]+>/g, " ")], { type: "text/plain" }),
+      }),
+    ]);
+  } else {
+    // Fallback: neuen Tab \u00F6ffnen, User kann dort manuell kopieren
+    const blob = new Blob(["\uFEFF", html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    throw new Error("clipboard-fallback");
+  }
+}
+
+function buildPetSlackBlocks(petRows: PetRow[], sourceLabel: string, run: 1 | 2): object {
+  const runRows = petRows.filter((r) => parseDateNeeded(r.productionShift).run === run);
+  const totalTarget = runRows.reduce((s, r) => s + r.recipeWoTarget, 0);
+  const totalMapped = runRows.reduce((s, r) => s + r.recipeWoMapped, 0);
+  const totalOpen = runRows.reduce((s, r) => s + toSlack(r.recipeWoTarget - r.recipeWoMapped), 0);
+  const doneCount = runRows.filter((r) => (r.recipeManualPlatingStatus || r.recipePlatingStatus || "").toLowerCase().includes("done")).length;
+  const inProgressCount = runRows.filter((r) => (r.recipeManualPlatingStatus || r.recipePlatingStatus || "").toLowerCase().includes("in progress")).length;
+  const notStartedCount = runRows.filter((r) => {
+    const s = (r.recipeManualPlatingStatus || r.recipePlatingStatus || "Not Started").toLowerCase();
+    return s.includes("not started") || (!s.includes("done") && !s.includes("in progress"));
+  }).length;
+
+  const shifts = Array.from(new Set(runRows.map((r) => r.productionShift))).sort((a, b) => daySortValue(a) - daySortValue(b));
+  const generatedAt = new Date().toLocaleString("de-DE");
+
+  const shiftSections = shifts.map((shift) => {
+    const shiftRows = runRows.filter((r) => r.productionShift === shift);
+    const { date } = parseDateNeeded(shift);
+    const shiftTarget = shiftRows.reduce((s, r) => s + r.recipeWoTarget, 0);
+    const shiftMapped = shiftRows.reduce((s, r) => s + r.recipeWoMapped, 0);
+    const allergenSet = new Set(shiftRows.flatMap((r) => detectAllergens([r.recipeName, r.bestBySubRecipeName, r.expiringSubRecipeName]).map((a) => a.label)));
+    const allergenStr = allergenSet.size ? [...allergenSet].join(", ") : "keine";
+    const mealLines = shiftRows.map((r) => {
+      const status = r.recipeManualPlatingStatus || r.recipePlatingStatus || "Not Started";
+      const gap = toSlack(r.recipeWoTarget - r.recipeWoMapped);
+      const emoji = status.toLowerCase().includes("done") ? "\u2705" : status.toLowerCase().includes("in progress") ? "\uD83D\uDD04" : "\u2B1C";
+      return `${emoji} *${escapeHtml(r.recipeName)}* \u2014 SOLL ${r.recipeWoTarget.toLocaleString("de-DE")} | IST ${r.recipeWoMapped.toLocaleString("de-DE")} | Gap ${gap.toLocaleString("de-DE")}`;
+    });
+    const linesNeeded = shiftTarget > 0 ? Math.ceil(shiftTarget / PET_PORTIONS_PER_LINE_PER_SHIFT) : 0;
+    const lineCount = linesNeeded > 2 ? 3 : 2;
+    const staffNeeded = shiftRows.length + lineCount;
+
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*\uD83D\uDCC5 Plating ab ${date} \u2014 Run ${run}*\nSoll ${shiftTarget.toLocaleString("de-DE")} | IST ${shiftMapped.toLocaleString("de-DE")} | Linien ${lineCount} | MA ~${staffNeeded}\nAllergene: ${allergenStr}`,
+        },
+      },
+      { type: "section", text: { type: "mrkdwn", text: mealLines.join("\n") || "_Keine Rezepte_" } },
+      { type: "divider" },
+    ];
+  });
+
+  return {
+    blocks: [
+      {
+        type: "header",
+        text: { type: "plain_text", text: `PET Plating \u2014 Run ${run}`, emoji: true },
+      },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: `*SOLL*\n${totalTarget.toLocaleString("de-DE")}` },
+          { type: "mrkdwn", text: `*IST*\n${totalMapped.toLocaleString("de-DE")}` },
+          { type: "mrkdwn", text: `*Gap*\n${totalOpen.toLocaleString("de-DE")}` },
+          { type: "mrkdwn", text: `*Status*\n\u2705 ${doneCount} Done \u00B7 \uD83D\uDD04 ${inProgressCount} Running \u00B7 \u2B1C ${notStartedCount} Offen` },
+        ],
+      },
+      { type: "divider" },
+      ...shiftSections.flat(),
+      {
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `Erstellt: ${generatedAt} \u00B7 Quelle: ${sourceLabel}` }],
+      },
+    ],
+  };
+}
+
+function buildKetSlackBlocks(allRows: RundmailRow[], sourceLabel: string, run: 1 | 2): object {
+  const runRows = allRows.filter((r) => parseDateNeeded(r.dateNeeded).run === run);
+  const dedupedRun = Array.from(new Map(runRows.map((r) => [r.recipeId, r])).values());
+  const totalTarget = dedupedRun.reduce((s, r) => s + r.targetPortions, 0);
+  const totalCooked = dedupedRun.reduce((s, r) => s + r.woCookedPortions, 0);
+  const totalOpen = dedupedRun.reduce((s, r) => s + toSlack(r.targetPortions - r.woCookedPortions), 0);
+  const generatedAt = new Date().toLocaleString("de-DE");
+
+  const days = Array.from(new Set(runRows.map((r) => r.dateNeeded))).sort((a, b) => daySortValue(a) - daySortValue(b));
+
+  const daySections = days.map((day) => {
+    const dayRows = runRows.filter((r) => r.dateNeeded === day);
+    const { date } = parseDateNeeded(day);
+    const recipeMap = new Map<string, RundmailRow>();
+    dayRows.forEach((r) => { if (!recipeMap.has(r.recipeId)) recipeMap.set(r.recipeId, r); });
+    const dayTarget = Array.from(recipeMap.values()).reduce((s, r) => s + r.targetPortions, 0);
+    const dayCooked = Array.from(recipeMap.values()).reduce((s, r) => s + r.woCookedPortions, 0);
+    const recipeLines = Array.from(recipeMap.values()).map((r) => {
+      const gap = toSlack(r.targetPortions - r.woCookedPortions);
+      const ratio = r.targetPortions > 0 ? Math.round((r.woCookedPortions / r.targetPortions) * 100) : 0;
+      const allergens = detectAllergens([r.recipeName, r.subRecipeName]).map((a) => a.label).join(", ");
+      const allergenStr = allergens ? ` | \u26A0 ${allergens}` : "";
+      return `\u2022 *${r.recipeName}* \u2014 SOLL ${r.targetPortions.toLocaleString("de-DE")} | IST ${r.woCookedPortions.toLocaleString("de-DE")} | Gap ${gap.toLocaleString("de-DE")} (${ratio}%)${allergenStr}`;
+    });
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*\uD83C\uDF73 ${date} \u2014 KET Run ${run}*\nSoll ${dayTarget.toLocaleString("de-DE")} | IST ${dayCooked.toLocaleString("de-DE")} | ${recipeMap.size} Rezepte`,
+        },
+      },
+      { type: "section", text: { type: "mrkdwn", text: recipeLines.join("\n") || "_Keine Rezepte_" } },
+      { type: "divider" },
+    ];
+  });
+
+  return {
+    blocks: [
+      {
+        type: "header",
+        text: { type: "plain_text", text: `KET K\u00FCchen-Plan \u2014 Run ${run}`, emoji: true },
+      },
+      {
+        type: "section",
+        fields: [
+          { type: "mrkdwn", text: `*SOLL*\n${totalTarget.toLocaleString("de-DE")}` },
+          { type: "mrkdwn", text: `*IST*\n${totalCooked.toLocaleString("de-DE")}` },
+          { type: "mrkdwn", text: `*Gap*\n${totalOpen.toLocaleString("de-DE")}` },
+          { type: "mrkdwn", text: `*Rezepte*\n${dedupedRun.length}` },
+        ],
+      },
+      { type: "divider" },
+      ...daySections.flat(),
+      {
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `Erstellt: ${generatedAt} \u00B7 Quelle: ${sourceLabel}` }],
+      },
+    ],
+  };
+}
+
+async function sendToSlack(webhookUrl: string, payload: object): Promise<void> {
+  const resp = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(`Slack HTTP ${resp.status}`);
+}
+
 export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNavigate?: (view: string) => void } = {}) {
   const [rows, setRows] = useState<RundmailRow[]>([]);
   const [petRows, setPetRows] = useState<PetRow[]>([]);
+  const [platingNotes, setPlatingNotes] = useState<Record<string, PlatingNote>>(() => loadPlatingNotes());
+  const [platingEditorOpen, setPlatingEditorOpen] = useState(false);
+  const platingImageInputRef = useRef<HTMLInputElement | null>(null);
+  const [platingImageTargetCode, setPlatingImageTargetCode] = useState<string | null>(null);
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -1478,6 +2086,13 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
   const [petSourceLabel, setPetSourceLabel] = useState("PET CSV noch nicht geladen");
   const [mailText, setMailText] = useState("");
   const [weeklyPlanning, setWeeklyPlanning] = useState<WeeklyPlanningData | null>(null);
+  const [slackWebhookUrl, setSlackWebhookUrl] = useState<string>(
+    () => (typeof localStorage !== "undefined" ? localStorage.getItem("slackWebhookUrl") ?? "" : "")
+  );
+  const [slackWebhookInput, setSlackWebhookInput] = useState<string>(
+    () => (typeof localStorage !== "undefined" ? localStorage.getItem("slackWebhookUrl") ?? "" : "")
+  );
+  const [copyToast, setCopyToast] = useState<string>("");
   const [bibleHints, setBibleHints] = useState<Map<string, BatchHint>>(new Map());
   // Basis-URL für interne Tool-Links im HTML-Export.
   // Im Build: VITE_APP_URL setzen (z.B. https://myapp.example.com). Fallback: aktuelle Origin.
@@ -1811,8 +2426,12 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
   const run2HtmlMail = useMemo(() => buildRunHtmlMail(enrichedRows, sourceLabel, weeklyPlanning, 2, toolLinks), [enrichedRows, sourceLabel, weeklyPlanning, toolLinks]);
   const petRun1Rows = useMemo(() => petRows.filter((row) => parseDateNeeded(row.productionShift).run === 1), [petRows]);
   const petRun2Rows = useMemo(() => petRows.filter((row) => parseDateNeeded(row.productionShift).run === 2), [petRows]);
-  const petRun1HtmlMail = useMemo(() => buildPetHtmlMail(petRows, petSourceLabel, 1), [petRows, petSourceLabel]);
-  const petRun2HtmlMail = useMemo(() => buildPetHtmlMail(petRows, petSourceLabel, 2), [petRows, petSourceLabel]);
+  const petRun1HtmlMail = useMemo(() => buildPetHtmlMail(petRows, petSourceLabel, 1, platingNotes), [petRows, petSourceLabel, platingNotes]);
+  const petRun2HtmlMail = useMemo(() => buildPetHtmlMail(petRows, petSourceLabel, 2, platingNotes), [petRows, petSourceLabel, platingNotes]);
+  const ketPraesi1Html = useMemo(() => buildKetPresentationHtml(enrichedRows, sourceLabel, 1), [enrichedRows, sourceLabel]);
+  const ketPraesi2Html = useMemo(() => buildKetPresentationHtml(enrichedRows, sourceLabel, 2), [enrichedRows, sourceLabel]);
+  const petPraesi1Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 1, platingNotes), [petRows, petSourceLabel, platingNotes]);
+  const petPraesi2Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 2, platingNotes), [petRows, petSourceLabel, platingNotes]);
 
   const kitchenStatuses = useMemo(() => {
     const set = new Set<string>();
@@ -1822,7 +2441,18 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [enrichedRows]);
 
+  function showToast(msg: string) {
+    setCopyToast(msg);
+    setTimeout(() => setCopyToast(""), 4000);
+  }
+
   return (
+    <>
+    {copyToast && (
+      <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white text-sm font-semibold px-5 py-3 rounded-xl shadow-xl flex items-center gap-2 animate-fade-in">
+        <span>{copyToast}</span>
+      </div>
+    )}
     <div className="space-y-4 rundmail-page">
       <section className="card p-4 rundmail-hero">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1875,56 +2505,175 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
             </div>
             {/* Gruppe 3: Mail-Export */}
             <div className="flex flex-wrap gap-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">Export:</span>
-              <button className="btn" onClick={() => downloadFile("Run1_Rundmail.html", run1HtmlMail, "text/html;charset=utf-8")} disabled={!run1Rows.length}>
-                KET R1 HTML
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">Email:</span>
+              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200" onClick={() => printHtmlAsPdf(run1HtmlMail)} disabled={!run1Rows.length} title="Als PDF drucken / speichern">
+                📄 KET R1 PDF
+              </button>
+              <button type="button" className="btn" onClick={() => downloadFile("Run1_Rundmail.html", run1HtmlMail, "text/html;charset=utf-8")} disabled={!run1Rows.length} title="HTML-Datei herunterladen (Fallback)">
+                KET R1 ↓
               </button>
               <button
+                type="button"
                 className="btn btn-primary"
-                onClick={() => { if (!run1Rows.length) return; const blob = new Blob(["﻿", run1HtmlMail], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10000); }}
                 disabled={!run1Rows.length}
-                title="Im Browser öffnen → Strg+A → Strg+C → in Gmail"
+                title="HTML in Zwischenablage kopieren → in Gmail/Outlook einfügen"
+                onClick={() => copyHtmlToClipboard(run1HtmlMail).then(() => showToast("✓ KET R1 kopiert! Gmail öffnen → Neue Mail → Strg+V einfügen.")).catch((e: Error) => { if (e.message !== "clipboard-fallback") showToast("⚠ Kopieren fehlgeschlagen — Fallback-Tab geöffnet."); })}
               >
-                KET R1 → Gmail
-              </button>
-              <button className="btn" onClick={() => downloadFile("Run2_Rundmail.html", run2HtmlMail, "text/html;charset=utf-8")} disabled={!rows.length}>
-                KET R2 HTML
+                📋 KET R1 kopieren
               </button>
               <button
+                type="button"
+                className="btn"
+                disabled={!run1Rows.length || !slackWebhookUrl}
+                title={slackWebhookUrl ? "KET Run 1 Zusammenfassung an Slack senden" : "Slack Webhook URL unten eingeben"}
+                onClick={() => sendToSlack(slackWebhookUrl, buildKetSlackBlocks(rows, sourceLabel, 1)).then(() => showToast("✓ KET R1 → Slack gesendet!")).catch(() => showToast("⚠ Slack-Versand fehlgeschlagen — Webhook URL prüfen."))}
+              >
+                📨 KET R1 → Slack
+              </button>
+              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200" onClick={() => printHtmlAsPdf(run2HtmlMail)} disabled={!rows.length} title="Als PDF drucken / speichern">
+                📄 KET R2 PDF
+              </button>
+              <button type="button" className="btn" onClick={() => downloadFile("Run2_Rundmail.html", run2HtmlMail, "text/html;charset=utf-8")} disabled={!rows.length} title="HTML-Datei herunterladen (Fallback)">
+                KET R2 ↓
+              </button>
+              <button
+                type="button"
                 className="btn btn-primary"
-                onClick={() => { if (!rows.length) return; const blob = new Blob(["﻿", run2HtmlMail], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10000); }}
                 disabled={!rows.length}
-                title="Im Browser öffnen → Strg+A → Strg+C → in Gmail"
+                title="HTML in Zwischenablage kopieren → in Gmail/Outlook einfügen"
+                onClick={() => copyHtmlToClipboard(run2HtmlMail).then(() => showToast("✓ KET R2 kopiert! Gmail öffnen → Neue Mail → Strg+V einfügen.")).catch((e: Error) => { if (e.message !== "clipboard-fallback") showToast("⚠ Kopieren fehlgeschlagen — Fallback-Tab geöffnet."); })}
               >
-                KET R2 → Gmail
-              </button>
-              <button className="btn" onClick={() => downloadFile("PET_Run1_Plan.html", petRun1HtmlMail, "text/html;charset=utf-8")} disabled={!petRun1Rows.length}>
-                PET R1 HTML
+                📋 KET R2 kopieren
               </button>
               <button
+                type="button"
+                className="btn"
+                disabled={!rows.length || !slackWebhookUrl}
+                title={slackWebhookUrl ? "KET Run 2 Zusammenfassung an Slack senden" : "Slack Webhook URL unten eingeben"}
+                onClick={() => sendToSlack(slackWebhookUrl, buildKetSlackBlocks(rows, sourceLabel, 2)).then(() => showToast("✓ KET R2 → Slack gesendet!")).catch(() => showToast("⚠ Slack-Versand fehlgeschlagen — Webhook URL prüfen."))}
+              >
+                📨 KET R2 → Slack
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">PET:</span>
+              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200" onClick={() => printHtmlAsPdf(petRun1HtmlMail)} disabled={!petRun1Rows.length} title="Als PDF drucken / speichern">
+                📄 PET R1 PDF
+              </button>
+              <button type="button" className="btn" onClick={() => downloadFile("PET_Run1_Plan.html", petRun1HtmlMail, "text/html;charset=utf-8")} disabled={!petRun1Rows.length} title="HTML-Datei herunterladen (Fallback)">
+                PET R1 ↓
+              </button>
+              <button
+                type="button"
                 className="btn btn-primary"
-                onClick={() => { if (!petRun1Rows.length) return; const blob = new Blob(["﻿", petRun1HtmlMail], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10000); }}
                 disabled={!petRun1Rows.length}
-                title="PET Plan im Browser öffnen → Strg+A → Strg+C → in Gmail"
+                title="PET Plan HTML in Zwischenablage kopieren → in Gmail/Outlook einfügen"
+                onClick={() => copyHtmlToClipboard(petRun1HtmlMail).then(() => showToast("✓ PET R1 kopiert! Gmail öffnen → Neue Mail → Strg+V einfügen.")).catch((e: Error) => { if (e.message !== "clipboard-fallback") showToast("⚠ Kopieren fehlgeschlagen — Fallback-Tab geöffnet."); })}
               >
-                PET R1 → Gmail
-              </button>
-              <button className="btn" onClick={() => downloadFile("PET_Run2_Plan.html", petRun2HtmlMail, "text/html;charset=utf-8")} disabled={!petRun2Rows.length}>
-                PET R2 HTML
+                📋 PET R1 kopieren
               </button>
               <button
-                className="btn btn-primary"
-                onClick={() => { if (!petRun2Rows.length) return; const blob = new Blob(["﻿", petRun2HtmlMail], { type: "text/html;charset=utf-8" }); const url = URL.createObjectURL(blob); window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 10000); }}
-                disabled={!petRun2Rows.length}
-                title="PET Plan im Browser öffnen → Strg+A → Strg+C → in Gmail"
+                type="button"
+                className="btn"
+                disabled={!petRun1Rows.length || !slackWebhookUrl}
+                title={slackWebhookUrl ? "PET Run 1 Zusammenfassung an Slack senden" : "Slack Webhook URL unten eingeben"}
+                onClick={() => sendToSlack(slackWebhookUrl, buildPetSlackBlocks(petRows, petSourceLabel, 1)).then(() => showToast("✓ PET R1 → Slack gesendet!")).catch(() => showToast("⚠ Slack-Versand fehlgeschlagen — Webhook URL prüfen."))}
               >
-                PET R2 → Gmail
+                📨 PET R1 → Slack
               </button>
+              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200" onClick={() => printHtmlAsPdf(petRun2HtmlMail)} disabled={!petRun2Rows.length} title="Als PDF drucken / speichern">
+                📄 PET R2 PDF
+              </button>
+              <button type="button" className="btn" onClick={() => downloadFile("PET_Run2_Plan.html", petRun2HtmlMail, "text/html;charset=utf-8")} disabled={!petRun2Rows.length} title="HTML-Datei herunterladen (Fallback)">
+                PET R2 ↓
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!petRun2Rows.length}
+                title="PET Plan HTML in Zwischenablage kopieren → in Gmail/Outlook einfügen"
+                onClick={() => copyHtmlToClipboard(petRun2HtmlMail).then(() => showToast("✓ PET R2 kopiert! Gmail öffnen → Neue Mail → Strg+V einfügen.")).catch((e: Error) => { if (e.message !== "clipboard-fallback") showToast("⚠ Kopieren fehlgeschlagen — Fallback-Tab geöffnet."); })}
+              >
+                📋 PET R2 kopieren
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={!petRun2Rows.length || !slackWebhookUrl}
+                title={slackWebhookUrl ? "PET Run 2 Zusammenfassung an Slack senden" : "Slack Webhook URL unten eingeben"}
+                onClick={() => sendToSlack(slackWebhookUrl, buildPetSlackBlocks(petRows, petSourceLabel, 2)).then(() => showToast("✓ PET R2 → Slack gesendet!")).catch(() => showToast("⚠ Slack-Versand fehlgeschlagen — Webhook URL prüfen."))}
+              >
+                📨 PET R2 → Slack
+              </button>
+            </div>
+            {/* Gruppe 4: Präsentation PDF */}
+            <div className="flex flex-wrap gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 self-center">Präsi:</span>
+              <button
+                type="button"
+                className="btn text-violet-700 bg-violet-50 border-violet-200 font-bold"
+                disabled={!run1Rows.length}
+                title="KET Run 1 als saubere Präsentations-PDF öffnen und drucken"
+                onClick={() => printHtmlAsPdf(ketPraesi1Html)}
+              >
+                📊 KET R1 Präsi
+              </button>
+              <button
+                type="button"
+                className="btn text-violet-700 bg-violet-50 border-violet-200 font-bold"
+                disabled={!rows.length}
+                title="KET Run 2 als saubere Präsentations-PDF öffnen und drucken"
+                onClick={() => printHtmlAsPdf(ketPraesi2Html)}
+              >
+                📊 KET R2 Präsi
+              </button>
+              <button
+                type="button"
+                className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold"
+                disabled={!petRun1Rows.length}
+                title="PET Run 1 als saubere Präsentations-PDF öffnen und drucken (inkl. Plating-Anweisungen & Packschema)"
+                onClick={() => printHtmlAsPdf(petPraesi1Html)}
+              >
+                📊 PET R1 Präsi
+              </button>
+              <button
+                type="button"
+                className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold"
+                disabled={!petRun2Rows.length}
+                title="PET Run 2 als saubere Präsentations-PDF öffnen und drucken (inkl. Plating-Anweisungen & Packschema)"
+                onClick={() => printHtmlAsPdf(petPraesi2Html)}
+              >
+                📊 PET R2 Präsi
+              </button>
+            </div>
+            {/* Gruppe 5: Slack Webhook Konfiguration */}
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">🔗 Slack Webhook:</span>
+              <input
+                type="url"
+                title="Slack Incoming Webhook URL"
+                placeholder="https://hooks.slack.com/services/..."
+                className="flex-1 min-w-[220px] rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                value={slackWebhookInput}
+                onChange={(e) => setSlackWebhookInput(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn text-sky-700 bg-sky-50 border-sky-200"
+                onClick={() => {
+                  localStorage.setItem("slackWebhookUrl", slackWebhookInput);
+                  setSlackWebhookUrl(slackWebhookInput);
+                  showToast(slackWebhookInput ? "✓ Slack Webhook gespeichert." : "Slack Webhook entfernt.");
+                }}
+              >
+                Speichern
+              </button>
+              {slackWebhookUrl && <span className="text-[10px] text-emerald-600 font-semibold">✓ aktiv</span>}
             </div>
           </div>
         </div>
-        <input ref={fileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)} />
-        <input ref={petFileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onPetFileSelected(event.target.files?.[0] ?? null)} />
+        <input title="KET CSV hochladen" ref={fileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)} />
+        <input title="PET CSV hochladen" ref={petFileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onPetFileSelected(event.target.files?.[0] ?? null)} />
 
         <div
           className={`mt-3 rounded-xl border-2 border-dashed p-4 text-sm transition-colors ${
@@ -1943,6 +2692,146 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
         <div className="mt-2 text-xs text-slate-500">
           PET-Quelle: <span className="font-semibold text-slate-700">{petSourceLabel}</span>
         </div>
+
+        {/* ── Plating-Anweisungen & Packschema-Editor ── */}
+        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-emerald-900 hover:bg-emerald-100 rounded-xl transition-colors"
+            onClick={() => setPlatingEditorOpen((v) => !v)}
+          >
+            <span>📋 Plating-Anweisungen &amp; Packschema ({Object.keys(platingNotes).length} gespeichert)</span>
+            <span className="text-emerald-600">{platingEditorOpen ? "▲" : "▼"}</span>
+          </button>
+          {platingEditorOpen && (
+            <div className="px-4 pb-4">
+              <p className="text-[11px] text-emerald-700 mb-3">
+                Anweisungen und Packschema-Bilder werden pro Rezept-Code gespeichert und erscheinen automatisch im PET-PDF-Ausdruck.
+                Bilder kannst du einfach per Datei-Upload hinzufügen — sie werden lokal im Browser gespeichert.
+              </p>
+              {/* Neu-Hinzufügen für Rezept-Codes die nicht im PET sind */}
+              {(() => {
+                const petCodes = Array.from(new Set(petRows.map((r) => extractMealCode(r.recipeName)))).filter(Boolean).sort();
+                const allCodes = Array.from(new Set([...petCodes, ...Object.keys(platingNotes)])).sort();
+                return allCodes.map((code) => {
+                  const note = platingNotes[code] ?? { instruction: "" };
+                  const recipeRow = petRows.find((r) => extractMealCode(r.recipeName) === code);
+                  const displayName = recipeRow
+                    ? recipeRow.recipeName.replace(/\s*\[.*?\]/g, "").replace(/^FV\d{4}[A-Z]\s*-\s*/i, "").trim()
+                    : "";
+                  return (
+                    <div key={code} className="mb-3 rounded-lg border border-emerald-200 bg-white p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className="font-mono text-xs font-bold text-emerald-800">{code}</span>
+                          {displayName && <span className="ml-2 text-xs text-slate-500">{displayName}</span>}
+                        </div>
+                        {note.packSchemaImageDataUrl && (
+                          <button
+                            type="button"
+                            className="text-[10px] text-rose-500 hover:text-rose-700"
+                            onClick={() => {
+                              const updated = { ...platingNotes, [code]: { ...note, packSchemaImageDataUrl: undefined } };
+                              setPlatingNotes(updated);
+                              savePlatingNotes(updated);
+                            }}
+                          >
+                            Bild entfernen
+                          </button>
+                        )}
+                      </div>
+                      <textarea
+                        title={`Plating-Anweisung für ${code}`}
+                        placeholder="Plating-Anweisung eingeben (z.B. Sauce links, Protein rechts, Garnitur oben)…"
+                        rows={2}
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs text-slate-800 resize-none focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                        value={note.instruction}
+                        onChange={(e) => {
+                          const updated = { ...platingNotes, [code]: { ...note, instruction: e.target.value } };
+                          setPlatingNotes(updated);
+                          savePlatingNotes(updated);
+                        }}
+                      />
+                      <div className="mt-2 flex items-center gap-2">
+                        {note.packSchemaImageDataUrl ? (
+                          <img
+                            src={note.packSchemaImageDataUrl}
+                            alt={`Packschema ${code}`}
+                            className="h-16 w-auto rounded border border-slate-200 object-contain cursor-pointer"
+                            onClick={() => {
+                              setPlatingImageTargetCode(code);
+                              platingImageInputRef.current?.click();
+                            }}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn text-[11px] py-1"
+                            onClick={() => {
+                              setPlatingImageTargetCode(code);
+                              platingImageInputRef.current?.click();
+                            }}
+                          >
+                            🖼 Packschema-Bild hochladen
+                          </button>
+                        )}
+                        {!petCodes.includes(code) && (
+                          <button
+                            type="button"
+                            className="text-[10px] text-slate-400 hover:text-rose-500 ml-auto"
+                            onClick={() => {
+                              const { [code]: _removed, ...rest } = platingNotes;
+                              setPlatingNotes(rest);
+                              savePlatingNotes(rest);
+                            }}
+                          >
+                            Eintrag löschen
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
+        </div>
+        <input
+          ref={platingImageInputRef}
+          type="file"
+          accept="image/*"
+          title="Packschema-Bild hochladen"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file || !platingImageTargetCode) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const dataUrl = ev.target?.result as string;
+              if (!dataUrl) return;
+              const img = new Image();
+              img.onload = () => {
+                const maxDim = 600;
+                const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                const ctx = canvas.getContext("2d");
+                if (!ctx) return;
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const compressed = canvas.toDataURL("image/jpeg", 0.82);
+                setPlatingNotes((prev) => {
+                  const updated = { ...prev, [platingImageTargetCode]: { ...(prev[platingImageTargetCode] ?? { instruction: "" }), packSchemaImageDataUrl: compressed } };
+                  savePlatingNotes(updated);
+                  return updated;
+                });
+              };
+              img.src = dataUrl;
+            };
+            reader.readAsDataURL(file);
+            e.target.value = "";
+          }}
+        />
 
         <div className="mt-4">
           <div className="flex items-center justify-between text-xs text-slate-600 mb-1">
@@ -2138,6 +3027,8 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
                     <td className="px-2 py-2 text-right font-semibold text-indigo-700">{row.batchesNeeded != null ? fmtInt(row.batchesNeeded) : "-"}</td>
                     <td className="px-2 py-2 min-w-[10rem]">
                       <input
+                        title="Kitchen Status"
+                        placeholder="Kitchen Status"
                         className="w-full rounded border border-slate-300 px-2 py-1"
                         value={row.kitchenStatus}
                         onChange={(event) => updateRow(row.id, { kitchenStatus: event.target.value })}
@@ -2148,6 +3039,8 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
                     </td>
                     <td className="px-2 py-2 min-w-[10rem]">
                       <input
+                        title="Staging Status"
+                        placeholder="Staging Status"
                         className="w-full rounded border border-slate-300 px-2 py-1"
                         value={row.stagingStatus}
                         onChange={(event) => updateRow(row.id, { stagingStatus: event.target.value })}
@@ -2156,6 +3049,8 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
                     <td className="px-2 py-2 whitespace-nowrap text-slate-600">{row.unlockedEta || "-"}</td>
                     <td className="px-2 py-2 min-w-[15rem]">
                       <input
+                        title="Work Order Comment"
+                        placeholder="Kommentar…"
                         className="w-full rounded border border-slate-300 px-2 py-1"
                         value={row.workOrderComment}
                         onChange={(event) => updateRow(row.id, { workOrderComment: event.target.value })}
@@ -2175,11 +3070,14 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
           <span className="text-xs text-slate-300">Markdown + Premium HTML Export bereit fuer Versand</span>
         </div>
         <textarea
+          title="Mail Vorschau"
+          placeholder="Mail-Inhalt wird hier angezeigt…"
           className="mt-3 w-full min-h-[18rem] rounded-lg border border-slate-700 bg-slate-900 p-3 font-mono text-xs text-slate-100"
           value={mailText}
           onChange={(event) => setMailText(event.target.value)}
         />
       </section>
     </div>
+    </>
   );
 }

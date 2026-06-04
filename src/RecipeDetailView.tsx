@@ -1090,18 +1090,38 @@ function EngpassTab({ recipe, market, portionsTotal, wr, md }:
 
 function PlatingTab({ md, detailSearch }: { md: NonNullable<Recipe["markets"][Market]>; detailSearch: string }) {
   const needle = detailSearch.trim().toLowerCase();
-  const blocks = md.subRecipes.map(s => ({ name: s.name, id: s.id, text: s.instructions }))
-    .filter(b => b.text).filter(b => matchesNeedle([b.name, b.id, b.text], needle));
+  const allBlocks = md.subRecipes
+    .filter(s => matchesNeedle([s.name, s.id, s.instructions ?? ""], needle))
+    .map(s => ({ name: s.name, id: s.id, text: s.instructions ?? "" }));
+  const withText = allBlocks.filter(b => b.text);
+  const withoutText = allBlocks.filter(b => !b.text);
   return (
     <div className="space-y-3">
-      {blocks.length === 0 && <div className="card p-4 text-slate-500">Keine Plating-Treffer für diese Suche.</div>}
-      {blocks.map(b => (
+      {allBlocks.length === 0 && (
+        <div className="card p-4 text-slate-500">Keine Sub-Rezepte für diese Suche gefunden.</div>
+      )}
+      {withText.map(b => (
         <div key={b.id} className="card p-4">
           <div className="font-semibold">{b.name}</div>
           <div className="font-mono text-[10px] text-slate-400 mb-2">{b.id}</div>
           <pre className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{b.text}</pre>
         </div>
       ))}
+      {withoutText.length > 0 && (
+        <div className="card p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-2">
+            Sub-Rezepte ohne Plating-Anweisung ({withoutText.length})
+          </div>
+          <div className="space-y-1">
+            {withoutText.map(b => (
+              <div key={b.id} className="flex items-center gap-2 text-sm text-slate-500">
+                <span className="font-mono text-[10px] text-slate-300 w-32 shrink-0">{b.id}</span>
+                <span>{b.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1327,11 +1347,13 @@ export function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, up
     if (prevCodeRef.current === wr.code) return;
     prevCodeRef.current = wr.code;
     const def = MARKETS.find(m => wr.verdenVolume[m] > 0) ?? "BENL";
-    setMarket(def);
+    const withData = (Object.keys(recipe?.markets ?? {}) as Market[]);
+    const resolved = (withData.includes(def) ? def : withData[0]) ?? def;
+    setMarket(resolved);
     setDetailSearch("");
-  }, [wr.code, wr.hfWeek]);
+  }, [wr.code, wr.hfWeek, recipe]);
 
-  const md = recipe?.markets[market];
+  const md = recipe?.markets[market] ?? recipe?.markets[(Object.keys(recipe?.markets ?? {})[0] as Market)];
   const structure = useMemo(() => resolveStructureByCode(data.structures, wr.code, recipe?.code, recipe?.baseName ?? wr.recipeName), [data.structures, wr.code, recipe?.code, recipe?.baseName, wr.recipeName]);
   const basePortionsTotal = getBaseVerdenVolume(wr);
   const portionsTotal = adjustedPortions(basePortionsTotal, upliftPercent);
