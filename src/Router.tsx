@@ -211,7 +211,7 @@ export function Router() {
           )}
 
           {view === "pet" && (
-            <PetPlanView />
+            <PetPlanView data={data} />
           )}
 
           {view === "whatif" && (
