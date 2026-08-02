@@ -514,8 +514,7 @@ export function analyzePlan(
   };
 }
 
-  // @ts-expect-error unused
-function recipePlanningHints(data: DataBundle, week: string, recipeCode: string): { thaw: boolean; preproduction: boolean; seafood: boolean } {
+function recipePlanningHints(data: DataBundle, _week: string, recipeCode: string): { thaw: boolean; preproduction: boolean; seafood: boolean } {
   const recipe = resolvePlannerRecipe(data, recipeCode);
   if (!recipe) return { thaw: false, preproduction: false, seafood: false };
   const subRecipes = Object.values(recipe.markets).flatMap(market => market.subRecipes);
@@ -795,8 +794,6 @@ export function computeBatchSplitPlan(
     const runSplit = runSplitForRecipeLike(wr);
     const runOnePortions = runSplit.firstRun.total;
     const totalPortions = runSplit.baseTotal;
-    // @ts-expect-error unused
-    const _runTwoPortions = Math.max(0, totalPortions - runOnePortions);
     if (totalPortions <= 0) continue;
 
     const isSeafood = recipeIsSeafood(data, wr.code);

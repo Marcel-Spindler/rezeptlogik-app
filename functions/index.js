@@ -201,11 +201,11 @@ SELECT
     "preblast_location",
     "status",
     "expiration_date",
-    "production_.time",
+    "production_time",
     "last_updated"
 FROM US_OPS_ANALYTICS.HIGHJUMP_ANALYTICS.V_SUBMEAL_PRODUCTION
-WHERE "wh_id" = ?
-ORDER BY "last_updated" DESC
+WHERE "wh_id" = ? AND "week" IN (?, ?, ?, ?)
+ORDER BY "week" DESC
 LIMIT ?`;
 
 function num(value) {
@@ -259,6 +259,33 @@ function shiftedIsoDate(value, days) {
   const date = new Date(`${value}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+// "week" in V_SUBMEAL_PRODUCTION is "YYYYWW" and already uses this app's own
+// hfWeek convention (Factor-KW = ISO-KW + 1) -- verified empirically against
+// real cached rows. No further offset needed when comparing to hfWeek.
+function hfWeekFromIso(isoLabel) {
+  const m = isoLabel.match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return isoLabel;
+  const year = Number(m[1]);
+  const week = Number(m[2]) + 1;
+  return week <= 52 ? `${year}-W${String(week).padStart(2, "0")}` : `${year + 1}-W01`;
+}
+function hfWeekPlusN(hfWeek, n) {
+  const m = hfWeek.match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return hfWeek;
+  const year = Number(m[1]);
+  const week = Number(m[2]) + n;
+  if (week >= 1 && week <= 52) return `${year}-W${String(week).padStart(2, "0")}`;
+  return week > 52 ? `${year + 1}-W${String(week - 52).padStart(2, "0")}` : `${year - 1}-W${String(week + 52).padStart(2, "0")}`;
+}
+function hfWeekToWmsCode(hfWeek) {
+  const m = hfWeek.match(/^(\d{4})-W(\d{2})$/);
+  return m ? `${m[1]}${m[2]}` : hfWeek;
+}
+function currentWorkorderWeekWindow() {
+  const hfWeek = hfWeekFromIso(isoWeekLabel(new Date()));
+  return [-1, 0, 1, 2].map((n) => hfWeekToWmsCode(hfWeekPlusN(hfWeek, n)));
 }
 
 function wmsRangeForToolWeek(raw) {
@@ -2290,7 +2317,8 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
   try {
     try {
       const conn = await connectSnowflake();
-      const rowsRaw = await executeSnowflakeQuery(conn, WMS_WORKORDERS_SQL, [params.whId, params.limit]);
+      const weekWindow = currentWorkorderWeekWindow();
+      const rowsRaw = await executeSnowflakeQuery(conn, WMS_WORKORDERS_SQL, [params.whId, ...weekWindow, params.limit]);
       return res.json({
         ok: true,
         whId: params.whId,
@@ -2322,5 +2350,361 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
   } catch (error) {
     logger.error("WMS workorders failed", { error: error?.message });
     res.status(500).json({ ok: false, whId: params.whId, limit: params.limit, generatedAt: nowIso(), rows: [], error: error?.message || String(error) });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WMS BREAKDOWN — Aggregierter Equipment-Breakdown pro Work Order (aktuelle KW)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const WMS_BREAKDOWN_SQL = `
+SELECT
+    "wo_number",
+    "week",
+    "submeal_item_number",
+    "submeal_item_desctiption",
+    "meal_item_number",
+    "meal_item_descrption",
+    SUM("quantity") AS total_qty,
+    MAX("uom") AS primary_uom,
+    SUM("pre_blast_quantity") AS total_pre_blast,
+    MAX("preblast_location") AS preblast_location,
+    MAX("status") AS status,
+    MIN("production_time") AS earliest_production,
+    MAX("production_time") AS latest_production,
+    MAX("last_updated") AS last_updated,
+    MAX("plates") AS plates,
+    MAX("target_per_plate") AS target_per_plate,
+    COUNT(*) AS row_count
+FROM US_OPS_ANALYTICS.HIGHJUMP_ANALYTICS.V_SUBMEAL_PRODUCTION
+WHERE "wh_id" = ?
+  AND "week" IN (?, ?, ?, ?)
+GROUP BY "wo_number", "week", "submeal_item_number", "submeal_item_desctiption", "meal_item_number", "meal_item_descrption", "uom"
+ORDER BY "wo_number", "submeal_item_number"`;
+
+function breakdownNorm(value) {
+  return String(value ?? "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function breakdownOverlapScore(a, b) {
+  const aTokens = new Set(breakdownNorm(a).split(" ").filter(t => t.length > 1));
+  const bTokens = new Set(breakdownNorm(b).split(" ").filter(t => t.length > 1));
+  if (aTokens.size === 0 || bTokens.size === 0) return 0;
+  let overlap = 0;
+  for (const t of aTokens) { if (bTokens.has(t)) overlap++; }
+  return overlap / Math.max(aTokens.size, bTokens.size);
+}
+
+function breakdownMatchProcessSpec(submealId, submealName, processSpecs) {
+  if (!processSpecs || Object.keys(processSpecs).length === 0) return null;
+  // Direct ID match
+  if (processSpecs[submealId]) return processSpecs[submealId];
+  // Fuzzy name match
+  const needle = breakdownNorm(submealName);
+  if (!needle) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const spec of Object.values(processSpecs)) {
+    if (!spec || !spec.name) continue;
+    const score = breakdownOverlapScore(needle, spec.name);
+    if (score > bestScore) { bestScore = score; best = spec; }
+  }
+  return bestScore >= 0.5 ? best : null;
+}
+
+function breakdownMatchEquipBible(submealName, equipmentBible) {
+  if (!equipmentBible || equipmentBible.length === 0) return null;
+  const needle = breakdownNorm(submealName);
+  if (!needle) return null;
+  let best = null;
+  let bestScore = 0;
+  for (const entry of equipmentBible) {
+    if (!entry || !entry.itemName) continue;
+    const score = breakdownOverlapScore(needle, entry.itemName);
+    if (score > bestScore) { bestScore = score; best = entry; }
+  }
+  return bestScore >= 0.4 ? best : null;
+}
+
+const BREAKDOWN_STATIONS = [
+  "Staging", "Spice Portioning", "Debox", "Thaw", "Brine", "Marinade",
+  "Hand Marinade", "Immersion Blender", "Planetary Mixer", "Horizontal Mixer",
+  "Patty Maker", "Braiser", "Grill", "Crusted", "Oven", "Drain",
+  "Hand Mix", "Cold Shredder", "Hot Shredder", "Scooper", "Butter Machine",
+  "Slicer", "Cupping", "Blast Chiller"
+];
+
+// Bekannte Protein-Items mit Stückgewicht und Tray-Kapazität
+const BREAKDOWN_PTN_SPECS = {
+  "PTN-00-139317-3": { pcsPerTray: 30, pieceKg: 0.160, label: "Chicken Breast B/S 160g" },
+  "PTN-00-139968-1": { pcsPerTray: 28, pieceKg: 0.140, label: "Salmon Skinless Boneless 140g" },
+};
+
+function breakdownPieceWeightKg(submealId, submealName) {
+  // Direct ID match
+  if (BREAKDOWN_PTN_SPECS[submealId]) return BREAKDOWN_PTN_SPECS[submealId].pieceKg;
+  // Try to extract weight from name (e.g. "Chicken Breast – 160g")
+  const m = String(submealName || "").match(/\b(\d+(?:[.,]\d+)?)\s*(g|kg)\b/i);
+  if (m) {
+    const val = parseFloat(m[1].replace(",", "."));
+    if (Number.isFinite(val) && val > 0) return m[2].toLowerCase() === "kg" ? val : val / 1000;
+  }
+  return null;
+}
+
+function breakdownPcsPerTray(submealId) {
+  if (BREAKDOWN_PTN_SPECS[submealId]) return BREAKDOWN_PTN_SPECS[submealId].pcsPerTray;
+  return null;
+}
+
+function breakdownCalcSubmeal(row, processSpecs, equipmentBible) {
+  const submealId = row.submeal_item_number || "";
+  const submealName = row.submeal_item_desctiption || "";
+  const primaryUom = String(row.primary_uom || "G").toUpperCase();
+  const totalQty = num(row.total_qty);
+
+  // Determine whether this is a piece-count or weight-based entry
+  const isEach = ["EA", "EACH", "PCS", "LBS"].includes(primaryUom);
+
+  let totalKg = null;
+  let totalPieces = null;
+  let estimatedKgFromPieces = null;
+  let pcsPerTray = null;
+  let traysNeeded = null;
+
+  if (isEach) {
+    // Stückzahl-basiert
+    totalPieces = totalQty;
+    const pieceKg = breakdownPieceWeightKg(submealId, submealName);
+    if (pieceKg) {
+      estimatedKgFromPieces = totalPieces * pieceKg;
+      totalKg = estimatedKgFromPieces;
+    }
+    pcsPerTray = breakdownPcsPerTray(submealId);
+    if (pcsPerTray && totalPieces > 0) {
+      traysNeeded = Math.max(1, Math.ceil(totalPieces / pcsPerTray));
+    }
+  } else {
+    // Gewichts-basiert
+    if (primaryUom === "KG") totalKg = totalQty;
+    else totalKg = totalQty / 1000; // G, GRAMS, GRAM, default
+  }
+
+  const spec = breakdownMatchProcessSpec(submealId, submealName, processSpecs);
+  const equipMatch = breakdownMatchEquipBible(submealName, equipmentBible);
+
+  const batchSizeKg = spec?.batchSizeKg && spec.batchSizeKg > 0 ? spec.batchSizeKg : null;
+  const batches = (batchSizeKg && totalKg && totalKg > 0)
+    ? Math.max(1, Math.ceil(totalKg / batchSizeKg))
+    : (totalKg && totalKg > 0 ? 1 : 0);
+
+  // Station breakdown
+  const stations = {};
+  let totalActiveMin = 0;
+  if (spec && spec.minutesPerBatch) {
+    for (const station of BREAKDOWN_STATIONS) {
+      const mpb = spec.minutesPerBatch[station];
+      if (mpb && mpb > 0 && batches > 0) {
+        const minutes = mpb * batches;
+        const holdMin = (spec.holdTimeMin && spec.holdTimeMin[station]) || 0;
+        stations[station] = { minutesPerBatch: mpb, batches, totalMin: minutes, holdMin };
+        totalActiveMin += minutes;
+      }
+    }
+  }
+
+  // Equipment Bible capacity
+  const equipmentMaxKg = equipMatch ? equipMatch.maxKg : null;
+  const equipmentSource = equipMatch ? equipMatch.source : null;
+  const equipmentItem = equipMatch ? equipMatch.itemName : null;
+  const wannenCount = (equipmentMaxKg && totalKg && totalKg > 0)
+    ? Math.max(1, Math.ceil(totalKg / equipmentMaxKg))
+    : null;
+
+  return {
+    submealItemNumber: submealId,
+    submealName,
+    totalKg: totalKg != null ? Math.round(totalKg * 100) / 100 : null,
+    totalPieces,
+    estimatedKgFromPieces: estimatedKgFromPieces != null ? Math.round(estimatedKgFromPieces * 100) / 100 : null,
+    pcsPerTray,
+    traysNeeded,
+    totalQtyRaw: totalQty,
+    primaryUom,
+    isEach,
+    batchSizeKg,
+    batches,
+    equipmentMaxKg,
+    equipmentSource,
+    equipmentItem,
+    wannenCount,
+    stations,
+    totalActiveMin: Math.round(totalActiveMin * 10) / 10,
+    preblastLocation: row.preblast_location || null,
+    preBlastQuantity: num(row.total_pre_blast),
+    status: row.status || null,
+    earliestProduction: row.earliest_production || null,
+    latestProduction: row.latest_production || null,
+    plates: num(row.plates),
+    targetPerPlate: num(row.target_per_plate),
+    processSpecMatch: spec ? { id: spec.subRecipeId, name: spec.name, primaryStation: spec.primaryStation || null } : null,
+  };
+}
+
+exports.wmsBreakdown = onRequest({ region: "europe-west3", timeoutSeconds: 120, cors: true }, async (req, res) => {
+  if (req.method !== "GET") {
+    res.status(405).json({ ok: false, error: "method-not-allowed" });
+    return;
+  }
+
+  const whId = str(req.query.whId || "VF") || "VF";
+  const weekParam = str(req.query.week || "");
+
+  try {
+    // 1. Load Firestore data in parallel
+    const [psSnap, ebDoc] = await Promise.all([
+      APP_ROOT.collection("processSpecs").get(),
+      APP_ROOT.collection("equipmentBible").doc("current").get(),
+    ]);
+
+    const processSpecs = {};
+    psSnap.forEach(d => { const data = d.data(); if (data) processSpecs[d.id] = data; });
+
+    let equipmentBible = [];
+    if (ebDoc.exists) {
+      const ebData = ebDoc.data();
+      const rowsRaw = Array.isArray(ebData?.rows) ? ebData.rows : [];
+      equipmentBible = rowsRaw.filter(r =>
+        !!r &&
+        (r.source === "BRAISER" || r.source === "MIDDLE_KITCHEN" || r.source === "VEGGIE_DEBOX") &&
+        typeof r.itemName === "string" &&
+        typeof r.maxKg === "number" && Number.isFinite(r.maxKg) && r.maxKg > 0
+      );
+    }
+
+    // 2. Fetch WOs from Snowflake
+    let weekWindow;
+    if (weekParam) {
+      const m = weekParam.match(/^(20\d{2})-W(\d{2})$/);
+      if (m) {
+        const code = `${m[1]}${m[2]}`;
+        weekWindow = [code, code, code, code];
+      } else {
+        weekWindow = currentWorkorderWeekWindow();
+      }
+    } else {
+      weekWindow = currentWorkorderWeekWindow();
+    }
+
+    const conn = await connectSnowflake();
+    const rowsRaw = await executeSnowflakeQuery(conn, WMS_BREAKDOWN_SQL, [whId, ...weekWindow]);
+
+    // 3. Deduplicate: prefer G/KG rows over EA for same WO+submeal_item_number
+    //    (Snowflake returns separate rows per UOM and sometimes truncated descriptions)
+    const deduped = new Map();
+    for (const row of rowsRaw) {
+      const key = `${str(row.wo_number)}::${str(row.submeal_item_number)}`;
+      const uom = String(row.primary_uom || "").toUpperCase();
+      const isWeight = ["G", "GRAMS", "GRAM", "KG"].includes(uom);
+      const existing = deduped.get(key);
+      if (!existing) {
+        deduped.set(key, row);
+      } else {
+        const existingUom = String(existing.primary_uom || "").toUpperCase();
+        const existingIsWeight = ["G", "GRAMS", "GRAM", "KG"].includes(existingUom);
+        if (isWeight && !existingIsWeight) {
+          // Weight row preferred over EA row
+          deduped.set(key, row);
+        } else if (isWeight && existingIsWeight) {
+          // Same UOM type: merge quantities (sum up)
+          existing.total_qty = num(existing.total_qty) + num(row.total_qty);
+          existing.total_pre_blast = num(existing.total_pre_blast) + num(row.total_pre_blast);
+          existing.row_count = num(existing.row_count) + num(row.row_count);
+          // Keep longer description
+          if (String(row.submeal_item_desctiption || "").length > String(existing.submeal_item_desctiption || "").length) {
+            existing.submeal_item_desctiption = row.submeal_item_desctiption;
+          }
+        } else if (!isWeight && !existingIsWeight) {
+          // Both EA: merge piece counts
+          existing.total_qty = num(existing.total_qty) + num(row.total_qty);
+          existing.total_pre_blast = num(existing.total_pre_blast) + num(row.total_pre_blast);
+          existing.row_count = num(existing.row_count) + num(row.row_count);
+        }
+      }
+    }
+
+    // 4. Group by WO number and calculate breakdown
+    const woMap = new Map();
+    for (const row of deduped.values()) {
+      const woNum = str(row.wo_number);
+      if (!woNum) continue;
+      if (!woMap.has(woNum)) {
+        woMap.set(woNum, {
+          woNumber: woNum,
+          week: str(row.week),
+          mealItemNumber: str(row.meal_item_number),
+          mealName: str(row.meal_item_descrption),
+          subMeals: [],
+          totalKg: 0,
+          totalPieces: 0,
+          totalActiveMin: 0,
+        });
+      }
+      const wo = woMap.get(woNum);
+      const subBreakdown = breakdownCalcSubmeal(row, processSpecs, equipmentBible);
+      wo.subMeals.push(subBreakdown);
+      wo.totalKg += subBreakdown.totalKg || 0;
+      wo.totalPieces += subBreakdown.totalPieces || 0;
+      wo.totalActiveMin += subBreakdown.totalActiveMin;
+    }
+
+    const workOrders = Array.from(woMap.values()).map(wo => ({
+      ...wo,
+      totalKg: Math.round(wo.totalKg * 100) / 100,
+      totalPieces: wo.totalPieces || null,
+      totalActiveMin: Math.round(wo.totalActiveMin * 10) / 10,
+    }));
+
+    // 5. Station summary across all WOs
+    const stationSummary = {};
+    for (const wo of workOrders) {
+      for (const sub of wo.subMeals) {
+        for (const [station, info] of Object.entries(sub.stations)) {
+          if (!stationSummary[station]) stationSummary[station] = { totalMin: 0, totalBatches: 0, woCount: 0 };
+          stationSummary[station].totalMin += info.totalMin;
+          stationSummary[station].totalBatches += info.batches;
+          stationSummary[station].woCount += 1;
+        }
+      }
+    }
+
+    // Round station summary
+    for (const s of Object.values(stationSummary)) {
+      s.totalMin = Math.round(s.totalMin * 10) / 10;
+    }
+
+    res.json({
+      ok: true,
+      whId,
+      week: weekWindow[1] || weekWindow[0],
+      weekWindow,
+      generatedAt: nowIso(),
+      source: "snowflake-live",
+      workOrderCount: workOrders.length,
+      workOrders,
+      stationSummary,
+      equipmentBibleEntries: equipmentBible.length,
+      processSpecCount: Object.keys(processSpecs).length,
+    });
+  } catch (error) {
+    logger.error("WMS breakdown failed", { error: error?.message });
+    res.status(500).json({
+      ok: false,
+      whId,
+      generatedAt: nowIso(),
+      workOrders: [],
+      stationSummary: {},
+      error: error?.message || String(error),
+    });
   }
 });

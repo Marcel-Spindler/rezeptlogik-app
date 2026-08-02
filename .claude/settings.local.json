@@ -35,7 +35,12 @@
       "Bash(node --loader tsx/esm --experimental-specifier-resolution=node -e ' *)",
       "Bash(node -e \"const d = JSON.parse\\(require\\('fs'\\).readFileSync\\('public/data/weekly-planning.json','utf8'\\)\\); console.log\\('CW:', d.cw, '| isRef:', d.isReference\\); console.log\\('BoxDays:', d.boxSchedule.length\\); d.boxSchedule.forEach\\(b => console.log\\(' ', b.dayLabel, b.boxes, 'boxes,', b.meals, 'meals'\\)\\); console.log\\('TeamDays:', d.teamByDay.length\\); d.teamByDay.forEach\\(t => console.log\\(' ', t.dayLabel, '| Plating:', t.platingLinesEarly+'F/'+t.platingLinesLate+'S', '\\('+\\( t.platingHeadcountEarly+t.platingHeadcountLate\\).toFixed\\(1\\)+' MA\\) | Küche:', \\(t.kitchenHeadcountEarly+t.kitchenHeadcountLate\\).toFixed\\(1\\), 'MA | Total:', \\(t.allStaffEarly+t.allStaffLate\\).toFixed\\(0\\), 'MA'\\)\\);\")",
       "Bash(powershell -NoProfile -Command ' *)",
-      "Bash(python3)"
+      "Bash(python3)",
+      "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\src\\\\PackingScheduleView.tsx\")",
+      "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\inspect-cw23.ts\")",
+      "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\inspect-cw23-correct.ts\")",
+      "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\inspect-weekly-sheet.ts\")",
+      "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\list-drive-folder.ts\")"
     ]
   }
 }

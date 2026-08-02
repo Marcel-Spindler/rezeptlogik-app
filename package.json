@@ -27,6 +27,9 @@
     "deploy:functions": "cd functions && npm install && npx firebase-tools deploy --only functions",
     "deploy:all": "npm run build && npx firebase-tools deploy --only hosting,functions",
     "import:weekly-planning": "tsx scripts/read-weekly-planning.ts",
+    "import:kitchen-bible": "tsx scripts/import-kitchen-bible.ts",
+    "wms:server": "tsx scripts/wms-local-server.ts",
+    "wms:sync-cache": "tsx scripts/sync-wms-cache.ts",
     "dump:kpl": "tsx scripts/dump-gsheet.ts 13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U",
     "sync:all": "npm run import:gsheet && npm run import:local && npm run import:rampup && npm run import:weekly-planning && npm run push:firestore",
     "sync:all:deploy": "npm run sync:all && npm run build && npx firebase-tools deploy --only hosting"
@@ -56,6 +59,7 @@
     "papaparse": "^5.4.1",
     "postcss": "^8.4.49",
     "rollup": "^4.21.3",
+    "snowflake-sdk": "^2.4.1",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",

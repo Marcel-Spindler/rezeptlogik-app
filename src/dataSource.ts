@@ -1,4 +1,4 @@
-import type { DataBundle } from "./types";
+import type { DataBundle, EquipBibleEntry } from "./types";
 
 const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "firestore";
 
@@ -139,6 +139,7 @@ async function loadFromFirestore(): Promise<DataBundle> {
   const pkgSnap = await getDocs(collection(ROOT, "productionPlan")).catch(() => null);
   const poSnap  = await getDocs(collection(ROOT, "printOrders")).catch(() => null);
   const kpSnap  = await getDocs(collection(ROOT, "kitchenPriority")).catch(() => null);
+  const ebSnap  = await getDocs(collection(ROOT, "equipmentBible")).catch(() => null);
   const pplSnap = await getDocs(collection(ROOT, "produktionsplanung")).catch(() => null);
   const mrSnap  = await getDocs(collection(ROOT, "maitreRampup")).catch(() => null);
   const recipes: DataBundle["recipes"] = {};
@@ -191,6 +192,27 @@ async function loadFromFirestore(): Promise<DataBundle> {
   kpSnap?.forEach(d => { const row = d.data() as any; if (row) kitchenPriority!.push(row); });
   kitchenPriority.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 
+  // equipmentBible: single doc "current" holding a "rows" array (Kuechenbible import).
+  // Defensive: drop any row that isn't a well-formed BRAISER/MIDDLE_KITCHEN/
+  // VEGGIE_DEBOX entry with a finite, positive maxKg — a malformed row (e.g.
+  // maxKg missing or stored as a non-numeric string) must never reach the
+  // capacity calculation, where it could silently produce a 0/NaN/Infinity
+  // batch count instead of falling back to the default capacity.
+  let equipmentBible: DataBundle["equipmentBible"] = undefined;
+  const ebCurrentDoc = ebSnap?.docs.find(d => d.id === "current");
+  if (ebCurrentDoc) {
+    const ebData = ebCurrentDoc.data() as any;
+    const ebRowsRaw = Array.isArray(ebData?.rows) ? ebData.rows : [];
+    const ebRows: EquipBibleEntry[] = ebRowsRaw.filter((r: any): r is EquipBibleEntry =>
+      !!r &&
+      (r.source === "BRAISER" || r.source === "MIDDLE_KITCHEN" || r.source === "VEGGIE_DEBOX") &&
+      typeof r.itemName === "string" &&
+      typeof r.category === "string" &&
+      typeof r.maxKg === "number" && Number.isFinite(r.maxKg) && r.maxKg > 0
+    );
+    equipmentBible = ebRows.length ? ebRows : undefined;
+  }
+
   const produktionsplanung: NonNullable<DataBundle["produktionsplanung"]> = {};
   pplSnap?.forEach(d => {
     const row = d.data() as any;
@@ -222,5 +244,6 @@ async function loadFromFirestore(): Promise<DataBundle> {
     kitchenPriority: kitchenPriority.length ? kitchenPriority : undefined,
     produktionsplanung: Object.keys(produktionsplanung).length ? produktionsplanung : undefined,
     maitreRampup: Object.keys(maitreRampup).length ? maitreRampup : undefined,
+    equipmentBible,
   };
 }

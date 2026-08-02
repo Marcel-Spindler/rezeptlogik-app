@@ -452,12 +452,6 @@ export function rackV2IsIceLike(entry: RackEntry): boolean {
   return deriveEntryKind(entry) === "ice" || hay.includes("icepack") || hay.includes("ice pack") || /\bice\d*\b/.test(hay);
 }
 
-// @ts-expect-error unused
-function _rackV2IsFlyerOrGiftLike(entry: RackEntry): boolean {
-  const hay = rackV2EntryHaystack(entry);
-  return hay.includes("flyer") || hay.includes("gift") || deriveEntryKind(entry) === "loyalty";
-}
-
 export function rackV2EffectivePickQuantity(entry: RackEntry): number {
   const base = Math.max(1, Number(entry.quantity ?? 1));
   if (rackV2IsIceLike(entry)) {
@@ -475,15 +469,6 @@ export function rackV2EntryFingerprint(entry: RackEntry): string {
     String(entry.sku ?? "").toLowerCase(),
     String(entry.ingredient ?? "").toLowerCase(),
   ].join("|");
-}
-
-// @ts-expect-error unused
-function _rackV2AllocationTier(block: RackV2Block, preferredTier: 1 | 2 | 3): Array<1 | 2 | 3> {
-  const order: Array<1 | 2 | 3> =
-    preferredTier === 2 ? [2, 1, 3] :
-    preferredTier === 3 ? [3, 2, 1] :
-    [1, 2, 3];
-  return order.filter((tier) => tier <= block.maxTier);
 }
 
 export function rackV2InitialLayout(poolEntries: RackEntry[], market: RackV2MarketId): RackEntry[] {

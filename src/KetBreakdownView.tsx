@@ -2,7 +2,8 @@
 // Upload KET CSV directly; falls back to data.productionPlan.
 // Equipment capacities are user-editable, saved to localStorage.
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import type { RefObject } from "react";
 import Papa from "papaparse";
 import type {
   DataBundle,
@@ -11,7 +12,12 @@ import type {
   DetailedSubRecipe,
   DetailedIngredient,
   RecipeStructure,
+  Recipe,
+  EquipBibleEntry,
 } from "./types";
+import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow, currentHfWeek } from "./wmsCache";
+
+type WoSortMode = "date" | "wo" | "recipe" | "status" | "batches" | "kg";
 
 // ── Equipment priorities & defaults ───────────────────────────────────────
 
@@ -81,16 +87,31 @@ interface IngCalc {
   yieldPct: number | null;
 }
 
+interface EquipBatch {
+  equip: string;        // "BRAISER"
+  label: string;        // "Braiser"
+  capacityKg: number;
+  batches: number;
+  perBatchKg: number;
+  // Set only for BRAISER when capacityKg came from a Kuechenbible match
+  // (instead of the manual/default caps value) — lets the UI label the source.
+  bibleMatch?: EquipBibleEntry | null;
+}
+
 interface BatchCalc {
   totalKg: number;
-  primaryEquip: string | null;
+  equipBatches: EquipBatch[];   // je Cook Method mit bekannter Kapazität
+  primaryEquip: string | null;  // wichtigstes Equipment (erster Treffer in EQUIP_PRIORITY)
   capacityKg: number | null;
-  batches: number;
+  // Set when primaryEquip === "BRAISER" and capacityKg came from a Kuechenbible match.
+  primaryCapBibleMatch?: EquipBibleEntry | null;
+  batches: number;              // Batche des primaryEquip
   perBatchKg: number;
   ingredients: IngCalc[];
   recipeFound: boolean;
   subRecipeFound: boolean;
   cookingInstructions: string | null;
+  subRecipeInstructions: string | null;
 }
 
 // ── Pure helpers ───────────────────────────────────────────────────────────
@@ -113,6 +134,56 @@ function normStr(s: string): string {
     .trim();
 }
 
+// ── Kuechenbible (equipmentBible) matching — BRAISER only ──────────────────
+// Normalize per spec: uppercase, strip everything except letters/digits/spaces.
+function normBibleStr(s: string): string {
+  return (s ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Finds the best BRAISER Kuechenbible entry for a given sub-recipe name.
+// Only substring-matches concrete itemName values against the (normalized)
+// sub-recipe name; bare "-" itemName rows are category-level fallbacks
+// (e.g. "SAUCES", "RISOTTOS") with no ingredient keyword to match against a
+// sub-recipe name, and a KetRow carries no reliable cook-method/category link
+// back to the Bible's "category" column — so per spec, those are always
+// skipped rather than guessed. If several concrete itemNames match as a
+// substring, the longest (most specific) one wins.
+function findBraiserBibleMatch(
+  subRecipeName: string,
+  equipmentBible: EquipBibleEntry[] | undefined,
+): EquipBibleEntry | null {
+  if (!equipmentBible?.length) return null;
+  const normSub = normBibleStr(subRecipeName);
+  if (!normSub) return null;
+
+  let best: EquipBibleEntry | null = null;
+  let bestLen = -1;
+  for (const entry of equipmentBible) {
+    if (entry.source !== "BRAISER") continue;
+    // Defensive: a malformed/absent capacity must never win a match and get
+    // applied as this row's BRAISER cap (would silently produce a bogus
+    // batch count — 0, NaN, or Infinity — instead of falling back safely).
+    if (typeof entry.maxKg !== "number" || !Number.isFinite(entry.maxKg) || entry.maxKg <= 0) continue;
+    const itemName = (entry.itemName ?? "").trim();
+    if (!itemName || itemName === "-") continue; // category-level fallback — skip, see above
+    const normItem = normBibleStr(itemName);
+    // Guard against a future short/generic itemName (e.g. a single 2-3 letter
+    // word) turning into an accidental substring match against unrelated
+    // sub-recipe names. Concrete Bible item names are always multi-word or
+    // long descriptive terms in practice; require some minimum specificity.
+    if (normItem.length < 4) continue;
+    if (normSub.includes(normItem) && normItem.length > bestLen) {
+      best = entry;
+      bestLen = normItem.length;
+    }
+  }
+  return best;
+}
+
 function fmtKg(kg: number): string {
   if (kg === 0) return "0 kg";
   if (kg < 0.1) return `${(kg * 1000).toFixed(0)} g`;
@@ -122,6 +193,10 @@ function fmtKg(kg: number): string {
 
 function fmtNum(n: number): string {
   return Math.round(n).toLocaleString("de-DE");
+}
+
+function escHtml(s: string): string {
+  return (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function parseDateShift(dateNeeded: string): { date: string; shift: string } {
@@ -175,6 +250,28 @@ function collectDetailedIngredients(sub: DetailedSubRecipe): DetailedIngredient[
     ...sub.ingredients,
     ...sub.subRecipes.flatMap(collectDetailedIngredients),
   ];
+}
+
+// Echte Kochanweisungen aus Recipe.markets SubRecipes
+function findSubRecipeInstructions(recipe: Recipe | undefined, subName: string): string | null {
+  if (!recipe) return null;
+  const norm = normStr(subName);
+  for (const mkt of ["DE", "BENL", "DKSE"] as const) {
+    const md = recipe.markets[mkt];
+    if (!md?.subRecipes) continue;
+    for (const sub of md.subRecipes) {
+      if (normStr(sub.name) === norm && sub.instructions) return sub.instructions;
+    }
+  }
+  return null;
+}
+
+// Freitext → nummerierte Arbeitsschritte
+function parseSteps(text: string): string[] {
+  return text
+    .split(/\n+/)
+    .map((s) => s.replace(/^\s*[-–•*]\s*/, "").replace(/^\s*\d+[.)]\s*/, "").trim())
+    .filter(Boolean);
 }
 
 // ── Gross-ingredient fallback ──────────────────────────────────────────────
@@ -280,40 +377,75 @@ function calcBatch(
     }
   }
 
-  // Determine primary capacity-limiting equipment
-  const effectiveCap = (e: string) =>
-    caps[e] !== undefined ? caps[e] : (EQUIP_DEFAULTS[e] ?? 0);
+  // BRAISER-only Kuechenbible lookup: matches row.subRecipeName against
+  // data.equipmentBible BRAISER entries (see findBraiserBibleMatch). Never
+  // touches OVEN/PLANETARY MIXER/etc., and never mutates the global caps map —
+  // it only supplies a per-row override for BRAISER's effective capacity.
+  const braiserBibleMatch = findBraiserBibleMatch(row.subRecipeName, data.equipmentBible);
 
+  const effectiveCap = (e: string) => {
+    // An explicit manual cap — including an intentional "0" to disable this
+    // equipment entirely, a supported value in the sidebar — always wins.
+    // The Kuechenbible match only fills in when the user hasn't set anything
+    // for this equipment; it must never silently override a manual choice.
+    if (caps[e] !== undefined) return caps[e];
+    if (e === "BRAISER" && braiserBibleMatch) return braiserBibleMatch.maxKg;
+    return EQUIP_DEFAULTS[e] ?? 0;
+  };
+
+  // Whether the Bible match is actually the value effectiveCap("BRAISER") used
+  // (i.e. no manual override is set) — the UI must only show the "📖
+  // Kuechenbible" tag when that entry is truly the active capacity, not
+  // whenever a match merely exists but a manual cap has taken precedence.
+  const braiserBibleActive = !!braiserBibleMatch && caps["BRAISER"] === undefined;
+
+  // Per-Equipment Batche: jede Cook Method mit bekannter Kapazität berechnet eigenständig
+  const equipBatches: EquipBatch[] = row.cookMethods
+    .filter((m) => effectiveCap(m) > 0)
+    .map((m) => {
+      const cap = effectiveCap(m);
+      const b = totalKg > 0 ? Math.max(1, Math.ceil(totalKg / cap)) : 0;
+      return {
+        equip: m,
+        label: EQUIP_LABELS[m] ?? m,
+        capacityKg: cap,
+        batches: b,
+        perBatchKg: b > 0 ? totalKg / b : 0,
+        bibleMatch: m === "BRAISER" && braiserBibleActive ? braiserBibleMatch : null,
+      };
+    });
+
+  // Primär-Equipment für Ingredient-Aufschlüsselung = erstes aus EQUIP_PRIORITY
   const primaryEquip =
     EQUIP_PRIORITY.find((e) => row.cookMethods.includes(e) && effectiveCap(e) > 0) ??
     row.cookMethods.find((m) => effectiveCap(m) > 0) ??
     null;
 
   const capacityKg = primaryEquip ? effectiveCap(primaryEquip) : null;
-
-  const batches =
-    capacityKg && capacityKg > 0 && totalKg > 0
-      ? Math.max(1, Math.ceil(totalKg / capacityKg))
-      : totalKg > 0
-        ? 1
-        : 0;
-
-  const perBatchKg = batches > 0 ? totalKg / batches : 0;
+  const primaryCapBibleMatch = primaryEquip === "BRAISER" && braiserBibleActive ? braiserBibleMatch : null;
+  const primaryBatch = equipBatches.find((eb) => eb.equip === primaryEquip);
+  const batches = primaryBatch?.batches ?? (totalKg > 0 ? 1 : 0);
+  const perBatchKg = primaryBatch?.perBatchKg ?? (batches > 0 ? totalKg / batches : 0);
 
   for (const ing of ingredients) {
     ing.perBatchKg = batches > 0 ? ing.totalKg / batches : 0;
   }
 
+  const subRecipeInstructions = findSubRecipeInstructions(recipe, row.subRecipeName);
+
   return {
     totalKg,
+    equipBatches,
     primaryEquip,
     capacityKg,
+    primaryCapBibleMatch,
     batches,
     perBatchKg,
     ingredients,
     recipeFound: !!(recipe || structure),
     subRecipeFound,
     cookingInstructions,
+    subRecipeInstructions,
   };
 }
 
@@ -421,7 +553,13 @@ function catColor(cat: string): string {
 
 // ── PDF builder ────────────────────────────────────────────────────────────
 
-function buildPdf(rows: KetRow[], calcMap: Map<string, BatchCalc>, caps: Record<string, number>, title: string): string {
+function buildPdf(
+  rows: KetRow[],
+  calcMap: Map<string, BatchCalc>,
+  caps: Record<string, number>,
+  title: string,
+  source: "CSV" | "Firestore" | "LiveWMS" | null = null,
+): string {
 
   const cards = rows.map((row, i) => {
     const calc = calcMap.get(row.key);
@@ -460,6 +598,38 @@ function buildPdf(rows: KetRow[], calcMap: Map<string, BatchCalc>, caps: Record<
 
     const equip = calc.primaryEquip ? (EQUIP_LABELS[calc.primaryEquip] ?? calc.primaryEquip) : "—";
     const cap = calc.capacityKg ? `${calc.capacityKg} kg` : "—";
+    const capBibleNote = calc.primaryCapBibleMatch
+      ? ` <span style="color:#b45309;font-weight:800;" title="Kuechenbible-Kapazität (provisorisch)">📖 Kuechenbible: ${escHtml(calc.primaryCapBibleMatch.itemName)}</span>`
+      : "";
+
+    // Per-Equipment Batch-Übersicht
+    const equipBatchHtml = calc.equipBatches.length > 0
+      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;">
+          ${calc.equipBatches.map((eb) => `
+            <div style="background:#1e3a5f;color:#fff;border-radius:8px;padding:6px 10px;min-width:80px;text-align:center;">
+              <div style="font-size:8px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">${eb.label}</div>
+              <div style="font-size:20px;font-weight:900;line-height:1;">${eb.batches}×</div>
+              <div style="font-size:8px;color:#93c5fd;margin-top:1px;">${eb.capacityKg} kg / Batch</div>
+              <div style="font-size:8px;color:#7dd3fc;">à ${eb.perBatchKg.toFixed(1)} kg</div>
+              ${eb.bibleMatch ? `<div style="font-size:7px;color:#fde68a;font-weight:800;margin-top:2px;">📖 Kuechenbible: ${escHtml(eb.bibleMatch.itemName)}</div>` : ""}
+            </div>`).join("")}
+        </div>`
+      : "";
+
+    // Nummerierte Kochanweisungen
+    const instrSteps = calc.subRecipeInstructions ? parseSteps(calc.subRecipeInstructions) : [];
+    const instrHtml = instrSteps.length > 0
+      ? `<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-left:3px solid #22c55e;border-radius:0 6px 6px 0;">
+           <div style="font-size:9px;font-weight:800;color:#166534;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em;">Kochanweisung – ${row.subRecipeName}</div>
+           ${instrSteps.map((s, si) => `
+             <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:3px;">
+               <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;background:#16a34a;color:#fff;border-radius:50%;font-size:8px;font-weight:900;flex-shrink:0;margin-top:1px;">${si + 1}</span>
+               <span style="font-size:9px;color:#1a2e1a;line-height:1.4;">${s.replace(/</g,"&lt;")}</span>
+             </div>`).join("")}
+         </div>`
+      : (calc.cookingInstructions
+          ? `<div class="comment instr">📋 Kochmethode: ${calc.cookingInstructions}</div>`
+          : "");
 
     const unlockedEtaStr = row.unlockedEta
       ? (() => { try { return new Date(row.unlockedEta).toLocaleString("de-DE"); } catch { return row.unlockedEta; } })()
@@ -503,12 +673,12 @@ function buildPdf(rows: KetRow[], calcMap: Map<string, BatchCalc>, caps: Record<
       <div class="sval">${calc.totalKg > 0 ? fmtKg(calc.totalKg) : (calc.recipeFound ? "kein Sub" : "Rezept?")}</div>
     </div>
     <div class="stat">
-      <div class="slabel">Equipment</div>
+      <div class="slabel">Primär-Equipment</div>
       <div class="sval" style="font-size:13px">${equip}</div>
-      <div style="font-size:9px;color:#6b7280;margin-top:1px">${cap} / Batch</div>
+      <div style="font-size:9px;color:#6b7280;margin-top:1px">${cap} / Batch${capBibleNote}</div>
     </div>
     <div class="stat hi-stat">
-      <div class="slabel">BATCHE</div>
+      <div class="slabel">BATCHE (${equip})${calc.primaryCapBibleMatch ? ` <span title="Kuechenbible-Kapazität (provisorisch)">📖</span>` : ""}</div>
       <div class="sval big">${calc.batches > 0 ? calc.batches : "—"}</div>
     </div>
     <div class="stat">
@@ -522,6 +692,8 @@ function buildPdf(rows: KetRow[], calcMap: Map<string, BatchCalc>, caps: Record<
     </div>` : ""}
   </div>
 
+  ${equipBatchHtml}
+
   <div class="badges">
     <span class="badge ${row.kitchenStatus === "Post Blast" ? "badge-green" : row.kitchenStatus === "Pre Blast" ? "badge-amber" : "badge-gray"}">
       Kitchen: ${row.kitchenStatus || "—"}
@@ -534,7 +706,7 @@ function buildPdf(rows: KetRow[], calcMap: Map<string, BatchCalc>, caps: Record<
 
   ${row.workOrderComment ? `<div class="comment warn">⚠ WO Kommentar: ${row.workOrderComment}</div>` : ""}
   ${row.stagingComment ? `<div class="comment info">💬 Staging: ${row.stagingComment}</div>` : ""}
-  ${calc.cookingInstructions ? `<div class="comment instr">📋 Kochmethode: ${calc.cookingInstructions}</div>` : ""}
+  ${instrHtml}
 
   ${ingRows ? `
   <table class="ings">
@@ -623,6 +795,9 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
 <div class="page-header">
   <div class="page-title">🍳 ${title}</div>
   <div class="page-meta">Generiert: ${new Date().toLocaleString("de-DE")} · ${rows.length} Work Orders</div>
+  ${source === "LiveWMS"
+    ? `<div class="page-meta" style="color:#f59e0b;font-weight:800;margin-top:2px;">⚠ Quelle: Live WMS (Snowflake) – Feldzuordnung ungeprüft</div>`
+    : ""}
 </div>
 <div class="equip-section">
   <div>
@@ -641,13 +816,23 @@ ${cards}
 // ── Main Component ─────────────────────────────────────────────────────────
 
 export function KetBreakdownView({ data }: { data: DataBundle }) {
+  const liveWeek = currentHfWeek();
   const [csvRows, setCsvRows] = useState<KetRow[] | null>(null);
   const [csvFileName, setCsvFileName] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [showEquip, setShowEquip] = useState(false);
   const [woSearch, setWoSearch] = useState("");
+  // Right-hand main area: 'detail' = today's existing single-WO breakdown
+  // (EmptyState/WoDetail), 'list' = full-width overview of ALL WOs. Kept
+  // independent of selectedKey so switching back to the overview after
+  // viewing a detail doesn't require deselecting anything.
+  const [mainViewMode, setMainViewMode] = useState<"detail" | "list">("detail");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [woSortMode, setWoSortMode] = useState<WoSortMode>("date");
+  const [liveWmsRows, setLiveWmsRows] = useState<WorkOrderEntry[] | null>(null);
+  const [wmsDroppedWeeks, setWmsDroppedWeeks] = useState<string[]>([]);
 
   const [caps, setCaps] = useState<Record<string, number>>(() => {
     try {
@@ -667,8 +852,47 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
     if (csvRows !== null) return csvRows;
     const rows = data.productionPlan?.rows;
     if (rows?.length) return woEntriesToKetRows(rows);
+    if (liveWmsRows?.length) return woEntriesToKetRows(liveWmsRows);
     return [];
-  }, [csvRows, data.productionPlan?.rows]);
+  }, [csvRows, data.productionPlan?.rows, liveWmsRows]);
+
+  // Lowest-priority fallback: only reach for the live WMS/Snowflake cache when
+  // neither manual CSV nor the established GSheet→Firestore plan has any rows,
+  // so this unverified source can never silently override a trusted one.
+  useEffect(() => {
+    if (csvRows !== null) return;
+    if (data.productionPlan?.rows?.length) return;
+    let cancelled = false;
+    fetchWmsWorkorderCache().then((res) => {
+      if (cancelled || !res || !res.rows.length) return;
+      // Bound to the currently selected week (+ next week, for kitchen data
+      // that shows up a few days early) — the cache itself spans a wider
+      // window, but showing all of it at once makes the list unreadable.
+      const { kept, droppedWeeks } = filterRowsToWeekWindow(res.rows, liveWeek);
+      // Map defensively: one malformed cache row (missing field / unparseable
+      // timestamp) must be skipped, not throw and drop the whole fallback batch.
+      const mapped = kept.reduce<WorkOrderEntry[]>((acc, row) => {
+        try {
+          acc.push(wmsWorkorderRowToEntry(row));
+        } catch {
+          /* skip malformed row */
+        }
+        return acc;
+      }, []);
+      if (cancelled) return;
+      setWmsDroppedWeeks(droppedWeeks);
+      if (mapped.length) setLiveWmsRows(mapped);
+    });
+    return () => { cancelled = true; };
+  }, [csvRows, data.productionPlan?.rows?.length, liveWeek]);
+
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (ketRows.length === 0 && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      fileInputRef.current?.click();
+    }
+  }, [ketRows.length]);
 
   const calcMap = useMemo(() => {
     const m = new Map<string, BatchCalc>();
@@ -687,13 +911,30 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
 
   const needle = woSearch.trim().toLowerCase();
   const filteredGroups = useMemo(() => {
-    if (!needle) return groups;
-    return groups
-      .map(([k, rows]) => [k, rows.filter((r) =>
-        [r.woNumber, r.recipeCode, r.recipeName, r.subRecipeName].join(" ").toLowerCase().includes(needle)
-      )] as [string, KetRow[]])
-      .filter(([, rows]) => rows.length > 0);
-  }, [groups, needle]);
+    const base = !needle
+      ? groups
+      : groups
+          .map(([k, rows]) => [k, rows.filter((r) =>
+            [r.woNumber, r.recipeCode, r.recipeName, r.subRecipeName].join(" ").toLowerCase().includes(needle)
+          )] as [string, KetRow[]])
+          .filter(([, rows]) => rows.length > 0);
+
+    if (woSortMode === "date") return base;
+
+    return base.map(([date, rows]) => {
+      const sorted = [...rows].sort((a, b) => {
+        switch (woSortMode) {
+          case "wo":      return a.woNumber.localeCompare(b.woNumber, "de", { numeric: true });
+          case "recipe":  return (a.subRecipeName || a.recipeName).localeCompare(b.subRecipeName || b.recipeName);
+          case "status":  return a.kitchenStatus.localeCompare(b.kitchenStatus);
+          case "batches": return (calcMap.get(b.key)?.batches ?? 0) - (calcMap.get(a.key)?.batches ?? 0);
+          case "kg":      return (calcMap.get(b.key)?.totalKg ?? 0) - (calcMap.get(a.key)?.totalKg ?? 0);
+          default:        return 0;
+        }
+      });
+      return [date, sorted] as [string, KetRow[]];
+    });
+  }, [groups, needle, woSortMode, calcMap]);
 
   const filteredRows = filteredGroups.flatMap(([, rows]) => rows);
 
@@ -719,9 +960,18 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
     try { localStorage.setItem(LS_CAPS_KEY, JSON.stringify(next)); } catch { /* */ }
   }
 
+  const source: "CSV" | "Firestore" | "LiveWMS" | null =
+    csvRows !== null
+      ? "CSV"
+      : data.productionPlan?.rows?.length
+        ? "Firestore"
+        : liveWmsRows && liveWmsRows.length
+          ? "LiveWMS"
+          : null;
+
   function printPdf(rows: KetRow[]) {
     const title = `KET Breakdown – ${new Date().toLocaleDateString("de-DE")}`;
-    const html = buildPdf(rows, calcMap, caps, title);
+    const html = buildPdf(rows, calcMap, caps, title, source);
     const w = window.open("", "_blank", "width=960,height=750");
     if (!w) { alert("Popup blockiert – bitte für diese Seite erlauben."); return; }
     w.document.write(html);
@@ -729,8 +979,19 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
     setTimeout(() => { w.focus(); w.print(); }, 450);
   }
 
-  const source = csvRows !== null ? "CSV" : data.productionPlan ? "Firestore" : null;
   const totalBatches = [...calcMap.values()].reduce((s, c) => s + c.batches, 0);
+
+  if (ketRows.length === 0) {
+    return (
+      <MissingDataScreen
+        title="KET-Plan Daten fehlen"
+        neededFile="KitchenOS KET-CSV"
+        hint="Erwartet: Work Order Number, Recipe Name, Date Needed, Target Portions, Kitchen Status, Staging Status …"
+        fileInputRef={fileInputRef}
+        onFile={handleFile}
+      />
+    );
+  }
 
   return (
     <div className="flex h-[calc(100vh-112px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
@@ -757,8 +1018,19 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
             )}
           </div>
           {source && (
-            <div className="text-[9px] text-blue-400 mt-1 font-mono truncate">
-              {source === "CSV" ? `✓ ${csvFileName}` : "Quelle: Firestore"}
+            <div
+              className={`text-[9px] mt-1 font-mono truncate ${source === "LiveWMS" ? "text-amber-300 font-bold" : "text-blue-400"}`}
+            >
+              {source === "CSV"
+                ? `✓ ${csvFileName}`
+                : source === "Firestore"
+                  ? "Quelle: Firestore"
+                  : "Quelle: Live WMS (Snowflake) – Feldzuordnung ungeprüft"}
+            </div>
+          )}
+          {source === "LiveWMS" && wmsDroppedWeeks.length > 0 && (
+            <div className="text-[9px] mt-0.5 text-blue-400/70 truncate" title={`Ausgeblendete KWs: ${wmsDroppedWeeks.join(", ")}`}>
+              Gefiltert auf {liveWeek}{"/"}Folge-KW · {wmsDroppedWeeks.length} andere KW{wmsDroppedWeeks.length > 1 ? "s" : ""} ausgeblendet
             </div>
           )}
         </div>
@@ -858,17 +1130,23 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
           </div>
         </div>
 
+        {/* WO Sort */}
+        <div className="px-3 py-1.5 border-b border-slate-100 flex flex-wrap gap-1">
+          {([ ["date","Datum"], ["wo","WO Nr"], ["recipe","Rezept"], ["status","Status"], ["batches","Batche↓"], ["kg","KG↓"] ] as [WoSortMode, string][]).map(([mode, label]) => (
+            <button key={mode} type="button" onClick={() => setWoSortMode(mode)}
+              className={`text-[9px] font-bold px-2 py-0.5 rounded-md border transition-colors ${
+                woSortMode === mode
+                  ? "bg-[#1e3a5f] text-white border-[#1e3a5f]"
+                  : "bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-700"
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
         {/* WO List */}
         <div className="flex-1 overflow-y-auto py-1">
-          {ketRows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-              <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
-                <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-              </div>
-              <p className="text-xs font-semibold text-slate-500">Kein KET-Plan geladen</p>
-              <p className="text-[10px] text-slate-400 mt-1">CSV hochladen oder Woche mit Produktionsplan wählen</p>
-            </div>
-          ) : filteredGroups.length === 0 ? (
+          {filteredGroups.length === 0 ? (
             <div className="text-center py-8 text-xs text-slate-400">Keine WOs gefunden</div>
           ) : (
             filteredGroups.map(([date, rows]) => (
@@ -903,7 +1181,13 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
                           </span>
                           <div className="flex items-center gap-1 shrink-0">
                             {calc && calc.batches > 0 && (
-                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${isSelected ? "bg-white/20 text-white" : "bg-blue-100 text-blue-700"}`}>
+                              <span
+                                className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${isSelected ? "bg-white/20 text-white" : "bg-blue-100 text-blue-700"}`}
+                                title={calc.primaryCapBibleMatch
+                                  ? `Batche berechnet mit Kuechenbible-Kapazität "${calc.primaryCapBibleMatch.itemName}" (provisorisch)`
+                                  : undefined}
+                              >
+                                {calc.primaryCapBibleMatch && <span aria-hidden="true">📖 </span>}
                                 {calc.batches}×
                               </span>
                             )}
@@ -964,17 +1248,47 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
       {/* ════════════════════════════════════════════════════
           RIGHT DETAIL AREA
       ════════════════════════════════════════════════════ */}
-      <main className="flex-1 overflow-y-auto min-w-0 bg-slate-50/30">
-        {!selectedRow ? (
-          <EmptyState hasData={ketRows.length > 0} />
-        ) : (
-          <WoDetail
-            row={selectedRow}
-            calc={selectedCalc}
-            caps={caps}
-            onPrint={() => printPdf([selectedRow])}
-          />
-        )}
+      <main className="flex-1 flex flex-col min-w-0 bg-slate-50/30 overflow-hidden">
+        {/* Detail / Alle WOs toggle — its own bar so it stays visible
+            regardless of mode and survives selecting/deselecting a WO. */}
+        <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-2 bg-gradient-to-r from-[#0f2240] via-[#1e3a5f] to-[#0f2240] border-b border-white/10">
+          <div className="flex rounded-xl overflow-hidden border border-white/20">
+            <button
+              type="button"
+              onClick={() => setMainViewMode("detail")}
+              className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "detail" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
+            >
+              Detail
+            </button>
+            <button
+              type="button"
+              onClick={() => setMainViewMode("list")}
+              className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "list" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
+            >
+              Alle WOs
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-w-0">
+          {mainViewMode === "list" ? (
+            <KetWoOverview
+              groups={filteredGroups}
+              calcMap={calcMap}
+              selectedKey={selectedKey}
+              onSelect={(key) => { setSelectedKey(key); setMainViewMode("detail"); }}
+            />
+          ) : !selectedRow ? (
+            <EmptyState />
+          ) : (
+            <WoDetail
+              row={selectedRow}
+              calc={selectedCalc}
+              onPrint={() => printPdf([selectedRow])}
+              onCapChange={saveCap}
+            />
+          )}
+        </div>
       </main>
     </div>
   );
@@ -982,7 +1296,7 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
 
 // ── Empty state ────────────────────────────────────────────────────────────
 
-function EmptyState({ hasData }: { hasData: boolean }) {
+function EmptyState() {
   return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center max-w-xs px-6">
@@ -991,14 +1305,66 @@ function EmptyState({ hasData }: { hasData: boolean }) {
             <path strokeLinecap="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
           </svg>
         </div>
-        <p className="text-sm font-bold text-slate-600">
-          {hasData ? "Work Order wählen" : "KET Plan laden"}
+        <p className="text-sm font-bold text-slate-600">Work Order wählen</p>
+        <p className="text-xs text-slate-400 mt-1">Klicke links auf eine Work Order für den Breakdown</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Missing-data screen (groß, mit Auto-Upload) ────────────────────────────
+
+function MissingDataScreen({
+  title,
+  neededFile,
+  hint,
+  fileInputRef,
+  onFile,
+}: {
+  title: string;
+  neededFile: string;
+  hint: string;
+  fileInputRef: RefObject<HTMLInputElement>;
+  onFile: (file: File) => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  return (
+    <div className="flex h-[calc(100vh-112px)] items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-lg">
+      <div className="text-center max-w-lg px-8">
+        <div className="w-20 h-20 rounded-3xl bg-amber-100 flex items-center justify-center mx-auto mb-5">
+          <svg className="w-10 h-10 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h2 className="text-2xl font-black text-amber-700 mb-2">{title}</h2>
+        <p className="text-sm font-bold text-slate-700 mb-1">
+          Fehlender Datensatz: <span className="text-amber-700">{neededFile}</span>
         </p>
-        <p className="text-xs text-slate-400 mt-1">
-          {hasData
-            ? "Klicke links auf eine Work Order für den Breakdown"
-            : "Lade deine KET CSV hoch oder wähle eine Woche mit Produktionsplan"}
+        <p className="text-sm text-slate-500 mb-6">
+          Ohne Import dieser Datei kann diese Ansicht nicht berechnet werden. Bitte lade sie jetzt hoch.
         </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          title={`${neededFile} hochladen`}
+          aria-label={`${neededFile} hochladen`}
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }}
+        />
+        <div
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onClick={() => fileInputRef.current?.click()}
+          className={`cursor-pointer rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-all select-none ${
+            dragOver ? "border-blue-400 bg-blue-50 scale-[1.02]" : "border-amber-300 bg-amber-50 hover:border-blue-300 hover:bg-blue-50/50"
+          }`}
+        >
+          <div className="text-sm font-bold text-slate-700 mb-1">📂 {neededFile} hochladen</div>
+          <div className="text-xs text-slate-400">Der Dateidialog sollte sich bereits geöffnet haben · Klicken oder Datei hier ablegen · .csv</div>
+        </div>
+        <p className="text-[11px] text-slate-400 mt-4">{hint}</p>
       </div>
     </div>
   );
@@ -1009,23 +1375,30 @@ function EmptyState({ hasData }: { hasData: boolean }) {
 function WoDetail({
   row,
   calc,
-  caps,
   onPrint,
+  onCapChange,
 }: {
   row: KetRow;
   calc: BatchCalc | null;
-  caps: Record<string, number>;
   onPrint: () => void;
+  onCapChange: (equip: string, raw: string) => void;
 }) {
+  const [editingEquip, setEditingEquip] = useState<string | null>(null);
+  const [capDraft, setCapDraft] = useState("");
+
   if (!calc) return null;
 
   const done = row.woCookedPortions ?? 0;
   const remaining = Math.max(0, row.targetPortions - done);
   const donePct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
   const equip = calc.primaryEquip ? (EQUIP_LABELS[calc.primaryEquip] ?? calc.primaryEquip) : null;
-  const cap = calc.primaryEquip
-    ? (caps[calc.primaryEquip] ?? EQUIP_DEFAULTS[calc.primaryEquip] ?? null)
-    : null;
+
+  const instrSteps = calc.subRecipeInstructions ? parseSteps(calc.subRecipeInstructions) : [];
+
+  function commitCap(e: string) {
+    if (capDraft.trim()) onCapChange(e, capDraft);
+    setEditingEquip(null);
+  }
 
   return (
     <div>
@@ -1054,33 +1427,88 @@ function WoDetail({
 
       <div className="p-5 space-y-4">
 
-        {/* Cook Methods */}
+        {/* Cook Methods + Per-Equipment Batche */}
         <div className="bg-[#0f2240] rounded-2xl px-5 py-4">
           <div className="text-[8px] font-black uppercase tracking-[0.15em] text-blue-400 mb-2.5">
             Cook Methods
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-3">
             {row.cookMethods.length > 0 ? row.cookMethods.map((m) => (
-              <span
-                key={m}
-                className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-colors ${
-                  m === calc.primaryEquip
-                    ? "bg-blue-500 text-white ring-2 ring-blue-300/40"
-                    : "bg-white/10 text-blue-200"
-                }`}
-              >
+              <span key={m}
+                className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl ${
+                  m === calc.primaryEquip ? "bg-blue-500 text-white ring-2 ring-blue-300/40" : "bg-white/10 text-blue-200"
+                }`}>
                 {m === calc.primaryEquip && <span className="w-1.5 h-1.5 rounded-full bg-blue-300"></span>}
-                {m}
+                {EQUIP_LABELS[m] ?? m}
               </span>
-            )) : (
-              <span className="text-blue-400/60 text-sm italic">Keine Cook Methods</span>
-            )}
+            )) : <span className="text-blue-400/60 text-sm italic">Keine Cook Methods</span>}
           </div>
-          {calc.primaryEquip && (
-            <div className="mt-2.5 text-[10px] text-blue-300">
+
+          {/* Per-Equipment Batche mit editierbarer Kapazität */}
+          {calc.equipBatches.length > 0 && (
+            <div>
+              <div className="text-[8px] font-black uppercase tracking-[0.12em] text-blue-400 mb-2">
+                Batche je Equipment — {fmtKg(calc.totalKg)} Gesamt
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {calc.equipBatches.map((eb) => (
+                  <div key={eb.equip}
+                    className={`rounded-xl px-3 py-2.5 border ${eb.equip === calc.primaryEquip ? "bg-blue-600/30 border-blue-400/40" : "bg-white/10 border-white/10"}`}>
+                    <div className="text-[9px] font-bold text-blue-200 mb-1">{eb.label}</div>
+                    <div className="text-2xl font-black text-white tabular-nums">{eb.batches}×</div>
+                    <div className="text-[9px] text-blue-300 mt-0.5">à {fmtKg(eb.perBatchKg)}</div>
+                    {/* Inline Kapazitäts-Edit */}
+                    {editingEquip === eb.equip ? (
+                      <div className="flex items-center gap-1 mt-1.5">
+                        <input
+                          type="number" min={1} step={5}
+                          title={`Kapazität ${eb.label} (kg/Batch)`}
+                          aria-label={`Kapazität ${eb.label} in kg pro Batch`}
+                          value={capDraft}
+                          onChange={(e) => setCapDraft(e.target.value)}
+                          onBlur={() => commitCap(eb.equip)}
+                          onKeyDown={(e) => { if (e.key === "Enter") commitCap(eb.equip); if (e.key === "Escape") setEditingEquip(null); }}
+                          className="w-14 text-center text-xs font-bold text-slate-900 bg-white rounded px-1 py-0.5 border-0 outline-none"
+                          autoFocus
+                        />
+                        <span className="text-[9px] text-blue-300">kg</span>
+                      </div>
+                    ) : (
+                      <button type="button"
+                        onClick={() => { setCapDraft(String(eb.capacityKg)); setEditingEquip(eb.equip); }}
+                        title={eb.bibleMatch
+                          ? `Ändert die globale ${eb.label}-Standardkapazität — wirkt auf ALLE ${eb.label}-Rezepte (auch andere Kuechenbible-Treffer und Rezepte ohne Treffer), nicht nur auf diese Zeile`
+                          : `Globale ${eb.label}-Standardkapazität ändern — wirkt auf alle ${eb.label}-Rezepte`}
+                        className="flex items-center gap-1 mt-1.5 text-[9px] text-blue-300 hover:text-white transition-colors group">
+                        <span>{eb.capacityKg} kg/Batch</span>
+                        <svg className="w-2.5 h-2.5 opacity-50 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                        </svg>
+                      </button>
+                    )}
+                    {eb.bibleMatch && (
+                      <>
+                        <div
+                          title={`Kuechenbible-Kapazität: "${eb.bibleMatch.itemName}" → ${eb.bibleMatch.maxKg} kg (provisorisch, noch nicht vollständig produktionsvalidiert). Aktiv, solange keine manuelle ${eb.label}-Kapazität gesetzt ist.`}
+                          className="inline-flex items-center gap-1 mt-1.5 text-[8px] font-black text-amber-200 bg-amber-500/20 border border-amber-400/30 rounded-md px-1.5 py-0.5 cursor-help"
+                        >
+                          <span aria-hidden="true">📖</span>
+                          <span className="truncate max-w-[90px]">Kuechenbible: {eb.bibleMatch.itemName}</span>
+                        </div>
+                        <div className="text-[7px] text-amber-200/70 mt-1 leading-tight">
+                          ⚠ Bearbeiten ändert den globalen Standard für alle {eb.label}-Rezepte
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {equip && calc.equipBatches.length === 0 && (
+            <div className="mt-1 text-[10px] text-blue-300">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block mr-1.5"></span>
-              <strong>{equip}</strong> ist kapazitätsbestimmendes Equipment
-              {cap ? ` · ${cap} kg/Batch` : ""}
+              <strong>{equip}</strong> — Kapazität in Equipment-Einstellungen (Sidebar) setzen
             </div>
           )}
         </div>
@@ -1100,13 +1528,15 @@ function WoDetail({
             warn={!calc.recipeFound ? "Rezept nicht gefunden" : !calc.subRecipeFound ? "Sub-Rezept ?" : undefined}
           />
           {equip && (
-            <StatCard
-              label="Equipment"
-              value={equip}
-              sub={cap ? `${cap} kg Kapazität/Batch` : undefined}
-            />
+            <StatCard label="Primär-Equipment" value={equip}
+              sub={calc.batches > 0 ? `${calc.batches} Batche à ${fmtKg(calc.perBatchKg)}` : undefined}
+              badge={calc.primaryCapBibleMatch ? "📖" : undefined}
+              badgeTitle={calc.primaryCapBibleMatch ? `Kapazität aus Kuechenbible: "${calc.primaryCapBibleMatch.itemName}" (provisorisch)` : undefined} />
           )}
-          <StatCard label="Batche" value={calc.batches > 0 ? String(calc.batches) : "—"} highlight sub={calc.perBatchKg > 0 ? `à ${fmtKg(calc.perBatchKg)}` : undefined} />
+          <StatCard label="Batche" value={calc.batches > 0 ? String(calc.batches) : "—"} highlight
+            sub={calc.perBatchKg > 0 ? `à ${fmtKg(calc.perBatchKg)}` : undefined}
+            badge={calc.primaryCapBibleMatch ? "📖" : undefined}
+            badgeTitle={calc.primaryCapBibleMatch ? `Batch-Anzahl basiert auf Kuechenbible-Kapazität: "${calc.primaryCapBibleMatch.itemName}" (provisorisch, noch nicht vollständig produktionsvalidiert)` : undefined} />
           <StatCard label="Pro Batch" value={calc.perBatchKg > 0 ? fmtKg(calc.perBatchKg) : "—"} />
         </div>
 
@@ -1162,6 +1592,39 @@ function WoDetail({
                 <span><strong>Unlocked ETA:</strong> {new Date(row.unlockedEta).toLocaleString("de-DE")}</span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Kochanweisungen – immer sichtbar, nummerierte Schritte */}
+        {(instrSteps.length > 0 || calc.cookingInstructions) && (
+          <div className="rounded-2xl border border-green-200 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border-b border-green-200">
+              <span className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center shrink-0">
+                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" d="M9 5l7 7-7 7"/>
+                </svg>
+              </span>
+              <span className="text-[10px] font-black text-green-800 uppercase tracking-[.1em]">
+                Kochanweisung · {row.subRecipeName}
+              </span>
+              {instrSteps.length > 0 && (
+                <span className="ml-auto text-[9px] font-bold text-green-600">{instrSteps.length} Schritte</span>
+              )}
+            </div>
+            <div className="px-4 py-3 space-y-2 bg-green-50/40">
+              {instrSteps.length > 0 ? instrSteps.map((step, si) => (
+                <div key={si} className="flex gap-3 items-start">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-600 text-white text-[9px] font-black shrink-0 mt-0.5">
+                    {si + 1}
+                  </span>
+                  <span className="text-[11px] leading-snug text-slate-700 flex-1">{step}</span>
+                </div>
+              )) : (
+                <div className="text-xs text-slate-500 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                  📋 {calc.cookingInstructions}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1271,12 +1734,139 @@ function WoDetail({
   );
 }
 
+// ── WO Overview (Alle WOs) ─────────────────────────────────────────────────
+// Full-width overview of ALL work orders in the main content area — the
+// scalable counterpart to the narrow 280px sidebar list. Renders whatever
+// filtering/sorting the sidebar already computed (filteredGroups); clicking
+// a card selects that WO and switches back to the detail/breakdown view.
+
+function KetWoOverview({
+  groups,
+  calcMap,
+  selectedKey,
+  onSelect,
+}: {
+  groups: [string, KetRow[]][];
+  calcMap: Map<string, BatchCalc>;
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+}) {
+  const totalRows = groups.reduce((s, [, rows]) => s + rows.length, 0);
+
+  if (totalRows === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center text-sm text-slate-400 py-16">Keine WOs gefunden</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-5">
+      {groups.map(([date, rows]) => (
+        <div key={date}>
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+              {fmtDateHeader(date)}
+            </span>
+            <span className="text-[10px] text-slate-300">{rows.length} WOs</span>
+          </div>
+          <div className="space-y-2">
+            {rows.map((row) => {
+              const calc = calcMap.get(row.key);
+              const isSelected = selectedKey === row.key;
+              const kSc = statusColors(row.kitchenStatus);
+              const sSc = statusColors(row.stagingStatus);
+              const done = row.woCookedPortions ?? 0;
+              const pct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
+
+              return (
+                <button
+                  type="button"
+                  key={row.key}
+                  onClick={() => onSelect(row.key)}
+                  className={`w-full text-left rounded-xl bg-white border shadow-sm hover:shadow transition-all overflow-hidden ${
+                    isSelected ? "border-[#1e3a5f] ring-2 ring-[#1e3a5f]/20" : "border-slate-200"
+                  }`}
+                  style={{ borderLeft: `4px solid ${isSelected ? "#1e3a5f" : "#cbd5e1"}` }}
+                >
+                  <div className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      {/* WO + Rezept */}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black text-[#1e3a5f]">WO {row.woNumber}</span>
+                          {row.recipeCode && (
+                            <span className="text-[9px] font-mono text-slate-400">{row.recipeCode}</span>
+                          )}
+                        </div>
+                        <div className="text-xs font-bold text-slate-800 leading-tight mt-0.5 truncate">
+                          {row.recipeName}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                          {row.subRecipeName || "—"}
+                        </div>
+                      </div>
+
+                      {/* Batche / KG */}
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                        {calc && calc.batches > 0 && (
+                          <span
+                            className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700"
+                            title={calc.primaryCapBibleMatch
+                              ? `Batche berechnet mit Kuechenbible-Kapazität "${calc.primaryCapBibleMatch.itemName}" (provisorisch)`
+                              : undefined}
+                          >
+                            {calc.primaryCapBibleMatch && <span aria-hidden="true">📖 </span>}
+                            {calc.batches}×
+                          </span>
+                        )}
+                        {calc && calc.totalKg > 0 && (
+                          <span className="text-[10px] text-slate-400 tabular-nums">{fmtKg(calc.totalKg)}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Portionen + Status */}
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      <span className="text-sm font-black text-slate-900 tabular-nums">{fmtNum(done)}</span>
+                      <span className="text-[9px] text-slate-400">/ {fmtNum(row.targetPortions)} Port.</span>
+                      {pct > 0 && (
+                        <div className="flex-1 min-w-[60px] max-w-[140px] h-1 rounded-full overflow-hidden bg-slate-100">
+                          <div
+                            className={`h-full rounded-full ${pct >= 100 ? "bg-emerald-500" : "bg-blue-400"}`}
+                            style={{ width: `${Math.min(100, pct)}%` }}
+                          />
+                        </div>
+                      )}
+                      <span className={`ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded-md ${kSc.bg} ${kSc.text}`}>
+                        Kitchen: {row.kitchenStatus || "—"}
+                      </span>
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md ${sSc.bg} ${sSc.text}`}>
+                        Staging: {row.stagingStatus || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Micro components ───────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, sub, subGreen, highlight, warn,
+  label, value, sub, subGreen, highlight, warn, badge, badgeTitle,
 }: {
   label: string; value: string; sub?: string; subGreen?: boolean; highlight?: boolean; warn?: string;
+  // Small, always-visible indicator (e.g. "📖" for a Kuechenbible-sourced
+  // value) — shown next to the label so the source is clear without
+  // requiring a hover, per label with an optional tooltip for detail.
+  badge?: string; badgeTitle?: string;
 }) {
   return (
     <div className={`rounded-2xl px-4 py-3.5 border ${
@@ -1286,9 +1876,14 @@ function StatCard({
           ? "bg-amber-50 border-amber-200"
           : "bg-white border-slate-200 shadow-sm"
     }`}>
-      <div className={`text-[8px] font-black uppercase tracking-[0.12em] mb-1.5 ${
+      <div className={`flex items-center gap-1 text-[8px] font-black uppercase tracking-[0.12em] mb-1.5 ${
         highlight ? "text-blue-300" : warn ? "text-amber-500" : "text-slate-400"
-      }`}>{label}</div>
+      }`}>
+        <span>{label}</span>
+        {badge && (
+          <span title={badgeTitle} aria-label={badgeTitle ?? "Kuechenbible"} className="cursor-help">{badge}</span>
+        )}
+      </div>
       <div className={`text-xl font-black tabular-nums leading-tight ${
         highlight ? "text-white" : warn ? "text-amber-800" : "text-slate-900"
       }`}>{value}</div>

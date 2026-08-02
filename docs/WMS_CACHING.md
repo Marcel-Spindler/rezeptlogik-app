@@ -1,5 +1,15 @@
 # WMS Caching - Lokal SSO + Cloud Fallback
 
+> **Update:** Der tatsächliche Code in `functions/index.js` fragt Snowflake
+> per **Key-Pair/JWT-Auth live** ab (kein SSO, kein Browser, läuft
+> headless in Cloud Functions) — siehe
+> [`SNOWFLAKE_KEYPAIR_SETUP.md`](./SNOWFLAKE_KEYPAIR_SETUP.md) für die
+> aktuelle, funktionierende Einrichtung. Das SSO-Sync-Script
+> `scripts/sync-wms-cache.ts` aus diesem Dokument existiert nicht (mehr)
+> im Repo; der Rest dieser Seite beschreibt den ursprünglich geplanten,
+> nicht umgesetzten Ansatz und dient nur noch als Hintergrund für die
+> Firestore-`wmsCache`-Fallback-Idee.
+
 ## Problem
 - **Lokal:** Snowflake mit SSO (HelloFresh) funktioniert perfekt
 - **Cloud Functions:** Headless → SSO möglich, kein Service Account

@@ -247,6 +247,20 @@ export interface DataBundle {
   kitchenPriority?: KitchenPriorityRow[];
   produktionsplanung?: Record<string, ProduktionsplanungEntry>;
   maitreRampup?: Record<string, MaitreRampupEntry>;
+  equipmentBible?: EquipBibleEntry[];
+}
+
+// === Equipment Bible ("Kuechenbible") =========================================
+// Aus dem 'Kuechenbible' Google Sheet importiert (siehe scripts/import-kitchen-bible.ts).
+// Firestore: apps/rezeptlogik/equipmentBible/current, Feld "rows".
+// Quelle ist laut Sheet-Betreibern explizit "(Provisional)" — reale Werte, aber
+// noch nicht vollständig gegen die Produktion validiert.
+export interface EquipBibleEntry {
+  source: "BRAISER" | "MIDDLE_KITCHEN" | "VEGGIE_DEBOX";
+  category: string;
+  itemName: string;
+  maxKg: number;
+  notes?: string;
 }
 
 // === Fulfillment Report: Maitre-Ramp-up ======================================

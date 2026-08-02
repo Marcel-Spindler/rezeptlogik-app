@@ -33,6 +33,7 @@
       { "source": "/api/wms-debox", "function": "wmsDebox", "region": "europe-west3" },
       { "source": "/api/wms-postblast", "function": "wmsPostblast", "region": "europe-west3" },
       { "source": "/api/wms-workorders", "function": "wmsWorkorders", "region": "europe-west3" },
+      { "source": "/api/wms-breakdown", "function": "wmsBreakdown", "region": "europe-west3" },
       { "source": "**", "destination": "/index.html" }
     ]
   }
