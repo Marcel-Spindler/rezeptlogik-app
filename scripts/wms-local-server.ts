@@ -169,6 +169,51 @@ WHERE WH_ID = ?
 ORDER BY ITEM_NUMBER
 LIMIT ?`;
 
+const WMS_WORKORDERS_SQL = `
+SELECT
+    "wo_number",
+    "week",
+    "submeal_item_number",
+    "submeal_item_desctiption",
+    "meal_item_number",
+    "meal_item_descrption",
+    "quantity",
+    "uom",
+    "plates",
+    "target_per_plate",
+    "pre_blast_quantity",
+    "preblast_location",
+    "status",
+    "expiration_date",
+    "production_time",
+    "last_updated"
+FROM US_OPS_ANALYTICS.HIGHJUMP_ANALYTICS.V_SUBMEAL_PRODUCTION
+WHERE "wh_id" = ? AND "wo_number" LIKE ?
+ORDER BY "wo_number", "meal_item_number"
+LIMIT ?`;
+
+const WMS_WO_DETAIL_SQL = `
+SELECT
+    CONTROL_NUMBER AS WO_NUMBER,
+    TRAN_TYPE,
+    DESCRIPTION,
+    ITEM_NUMBER,
+    TRAN_QTY,
+    LOT_NUMBER,
+    LOCATION_ID,
+    LOCATION_ID_2,
+    HU_ID,
+    START_TRAN_DATE,
+    END_TRAN_DATE,
+    EMPLOYEE_ID
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_TRAN_LOG
+WHERE WH_ID = ?
+  AND CONTROL_NUMBER LIKE ?
+  AND START_TRAN_DATE >= TO_TIMESTAMP_NTZ(?)
+  AND START_TRAN_DATE < TO_TIMESTAMP_NTZ(?)
+ORDER BY CONTROL_NUMBER, START_TRAN_DATE
+LIMIT ?`;
+
 type WmsPlatingRow = {
   locationId: string;
   itemNumber: string;
@@ -229,6 +274,40 @@ type WmsStagingRow = {
 
 type WmsDeboxRow = WmsStagingRow;
 type WmsPostblastRow = WmsStagingRow;
+
+type WmsWorkordersRow = {
+  woNumber: string;
+  week: string;
+  submealItemNumber: string;
+  submealItemDescription: string;
+  mealItemNumber: string;
+  mealItemDescription: string;
+  quantity: number | null;
+  uom: string;
+  plates: number | null;
+  targetPerPlate: number | null;
+  preBlastQuantity: number | null;
+  preBlastLocation: string;
+  status: string;
+  expirationDate: string | null;
+  productionTime: string | null;
+  lastUpdated: string | null;
+};
+
+type WmsWoDetailRow = {
+  woNumber: string;
+  tranType: string;
+  description: string;
+  itemNumber: string;
+  tranQty: number | null;
+  lotNumber: string;
+  locationId: string;
+  locationId2: string;
+  huId: string;
+  startTranDate: string | null;
+  endTranDate: string | null;
+  employeeId: string;
+};
 
 type WeekRange = {
   toolWeek: string;
@@ -449,6 +528,69 @@ function mapWmsDeboxRow(row: Record<string, unknown>): WmsDeboxRow {
 
 function mapWmsPostblastRow(row: Record<string, unknown>): WmsPostblastRow {
   return mapWmsStagingRow(row);
+}
+
+function hfWeekPlusN(hfWeek: string, n: number): string {
+  const m = hfWeek.match(/^(20\d{2})-W(\d{2})$/);
+  if (!m) return hfWeek;
+  let year = Number(m[1]);
+  let week = Number(m[2]) + n;
+  while (week > 52) { week -= 52; year++; }
+  while (week < 1)  { week += 52; year--; }
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
+function hfWeekToWmsCode(hfWeek: string): string {
+  const m = hfWeek.match(/^(20\d{2})-W(\d{2})$/);
+  return m ? `${m[1]}${m[2]}` : "";
+}
+
+function currentWorkorderWeekWindow(): string[] {
+  const iso = isoWeekLabel(new Date());
+  const m = iso.match(/^(20\d{2})-W(\d{2})$/);
+  if (!m) return [];
+  const year = Number(m[1]);
+  const week = Number(m[2]) + 1; // hfWeek = ISO + 1
+  const hfWeek = `${year}-W${String(week).padStart(2, "0")}`;
+  return [-1, 0, 1, 2].map(n => hfWeekToWmsCode(hfWeekPlusN(hfWeek, n)));
+}
+
+function mapWmsWorkordersRow(row: Record<string, unknown>): WmsWorkordersRow {
+  return {
+    woNumber: stringValue(row, "wo_number"),
+    week: stringValue(row, "week"),
+    submealItemNumber: stringValue(row, "submeal_item_number"),
+    submealItemDescription: stringValue(row, "submeal_item_desctiption"),
+    mealItemNumber: stringValue(row, "meal_item_number"),
+    mealItemDescription: stringValue(row, "meal_item_descrption"),
+    quantity: numberValue(row, "quantity"),
+    uom: stringValue(row, "uom"),
+    plates: numberValue(row, "plates"),
+    targetPerPlate: numberValue(row, "target_per_plate"),
+    preBlastQuantity: numberValue(row, "pre_blast_quantity"),
+    preBlastLocation: stringValue(row, "preblast_location"),
+    status: stringValue(row, "status"),
+    expirationDate: dateValue(row, "expiration_date"),
+    productionTime: dateValue(row, "production_time"),
+    lastUpdated: dateValue(row, "last_updated"),
+  };
+}
+
+function mapWmsWoDetailRow(row: Record<string, unknown>): WmsWoDetailRow {
+  return {
+    woNumber: stringValue(row, "WO_NUMBER"),
+    tranType: stringValue(row, "TRAN_TYPE"),
+    description: stringValue(row, "DESCRIPTION"),
+    itemNumber: stringValue(row, "ITEM_NUMBER"),
+    tranQty: numberValue(row, "TRAN_QTY"),
+    lotNumber: stringValue(row, "LOT_NUMBER"),
+    locationId: stringValue(row, "LOCATION_ID"),
+    locationId2: stringValue(row, "LOCATION_ID_2"),
+    huId: stringValue(row, "HU_ID"),
+    startTranDate: dateValue(row, "START_TRAN_DATE"),
+    endTranDate: dateValue(row, "END_TRAN_DATE"),
+    employeeId: stringValue(row, "EMPLOYEE_ID"),
+  };
 }
 
 const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -743,10 +885,88 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  if (url.pathname === "/wms-workorders" && req.method === "GET") {
+    const whId = url.searchParams.get("whId")?.trim() || "VF";
+    const week = url.searchParams.get("week")?.trim() || currentHfWeek();
+    // WO numbers = KW-prefix (e.g. "32-xxx" for KW 32). Extract KW number from HF-Week.
+    const kwNum = week.replace(/^\d{4}-W0?/, "");
+    const woPattern = `${kwNum}-%`;
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 50000);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(100000, Math.max(1, Math.round(requestedLimit)))
+      : 50000;
+
+    try {
+      const conn = await ensureConnection();
+      console.log(`WMS Workorders Query startet: WH_ID=${whId}, WO_PATTERN=${woPattern} (HF-Week=${week}), LIMIT=${limit}`);
+      const rows = await executeQuery(conn, WMS_WORKORDERS_SQL, [whId, woPattern, limit]);
+      const mappedRows = rows.map(mapWmsWorkordersRow);
+      console.log(`WMS Workorders: ${mappedRows.length} Zeilen für WO-Pattern ${woPattern}`);
+      sendJson(res, 200, {
+        ok: true,
+        whId,
+        week,
+        woPattern,
+        limit,
+        generatedAt: new Date().toISOString(),
+        rows: mappedRows,
+      });
+    } catch (error) {
+      if (cachedConn) {
+        void destroyConnection(cachedConn);
+        cachedConn = undefined;
+      }
+      connectingConn = undefined;
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/wms-wo-detail" && req.method === "GET") {
+    const whId = url.searchParams.get("whId")?.trim() || "VF";
+    const week = url.searchParams.get("week")?.trim() || currentHfWeek();
+    const range = wmsRangeForToolWeek(week);
+    const woFilter = url.searchParams.get("wo")?.trim() || "";
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 50000);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(100000, Math.max(1, Math.round(requestedLimit)))
+      : 50000;
+
+    // WO numbers use HF-Week prefix (e.g. 32-xxx for HF-Week 32), not ISO week
+    const hfWeekNum = week.replace(/^\d{4}-W0?/, "");
+    const controlPattern = woFilter || `${hfWeekNum}-%`;
+
+    try {
+      const conn = await ensureConnection();
+      console.log(`WMS WO-Detail Query startet: WH_ID=${whId}, PATTERN=${controlPattern}, RANGE=${range.startDate}..${range.endDate}, LIMIT=${limit}`);
+      const rows = await executeQuery(conn, WMS_WO_DETAIL_SQL, [whId, controlPattern, range.startDate, range.endDate, limit]);
+      sendJson(res, 200, {
+        ok: true,
+        whId,
+        week: range.toolWeek,
+        wmsWeek: range.wmsWeek,
+        controlPattern,
+        rangeStart: range.startDate,
+        rangeEnd: range.endDate,
+        limit,
+        generatedAt: new Date().toISOString(),
+        rows: rows.map(mapWmsWoDetailRow),
+      });
+    } catch (error) {
+      if (cachedConn) {
+        void destroyConnection(cachedConn);
+        cachedConn = undefined;
+      }
+      connectingConn = undefined;
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   sendJson(res, 404, {
     ok: false,
     error: "query-not-configured",
-    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating?week=YYYY-Www&whId=VF&limit=25000, GET /wms-plating-history?week=YYYY-Www&whId=VF&limit=25000&lookbackDays=28, GET /wms-sleeving?week=YYYY-Www&whId=VF&limit=25000, GET /wms-inbound?week=YYYY-Www&whId=VF&limit=25000, GET /wms-staging?week=YYYY-Www&whId=VF&limit=25000, GET /wms-debox?week=YYYY-Www&whId=VF&limit=25000, GET /wms-postblast?week=YYYY-Www&whId=VF&limit=25000.",
+    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history",
   });
 });
 

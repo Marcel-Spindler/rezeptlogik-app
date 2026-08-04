@@ -8,6 +8,7 @@ import { KetBreakdownView } from "./KetBreakdownView";
 import { PetPlanView } from "./PetPlanView";
 import { WhatIfView } from "./WhatIfView";
 import { RundmailView } from "./RundmailView";
+import { WmsKwOverviewView } from "./WmsKwOverviewView";
 import { WeekSelector } from "./components/WeekSelector";
 import { RecipeList } from "./components/RecipeList";
 import { DataHealthBanner } from "./components/DataHealthBanner";
@@ -21,6 +22,7 @@ const NAV_TABS: { view: AppView; label: string }[] = [
   { view: "planning",  label: "Planning OASE" },
   { view: "wo",        label: "KET Plan / WO" },
   { view: "pet",       label: "PET Plan / Plating" },
+  { view: "wms",       label: "WMS Übersicht" },
   { view: "whatif",    label: "What-If Rechner" },
   { view: "rundmail",  label: "Rundmail" },
   { view: "import",    label: "CSV Import" },
@@ -225,6 +227,8 @@ export function Router() {
           )}
 
           {view === "import" && <CsvImportView data={data} />}
+
+          {view === "wms" && <WmsKwOverviewView data={data} />}
         </main>
       </div>
 

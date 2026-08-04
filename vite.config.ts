@@ -77,6 +77,15 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: path => path.replace(/^\/api\/refresh-ramp-up/, "/hellofresh-de-problem-solve/europe-west3/refreshRampUp"),
       },
+      // WMS-Einzelendpoints → lokaler Snowflake-Server (npm run wms:server)
+      // rewrite entfernt "/api" → Server kennt nur "/wms-*"
+      "/api/wms-plating":   { target: "http://127.0.0.1:3141", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, "") },
+      "/api/wms-staging":   { target: "http://127.0.0.1:3141", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, "") },
+      "/api/wms-debox":     { target: "http://127.0.0.1:3141", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, "") },
+      "/api/wms-postblast": { target: "http://127.0.0.1:3141", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, "") },
+      "/api/wms-sleeving":  { target: "http://127.0.0.1:3141", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, "") },
+      "/api/wms-inbound":   { target: "http://127.0.0.1:3141", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, "") },
+      "/api/wms-workorders":{ target: "http://127.0.0.1:3141", changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, "") },
     },
   },
   test: {

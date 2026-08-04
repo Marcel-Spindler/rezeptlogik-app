@@ -2354,6 +2354,132 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// WMS WO-DETAIL — Alle Transaktionen einer Work Order aus T_TRAN_LOG
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const WMS_WO_DETAIL_SQL = `
+SELECT
+    CONTROL_NUMBER AS WO_NUMBER,
+    TRAN_TYPE,
+    DESCRIPTION,
+    ITEM_NUMBER,
+    TRAN_QTY,
+    LOT_NUMBER,
+    LOCATION_ID,
+    LOCATION_ID_2,
+    HU_ID,
+    START_TRAN_DATE,
+    END_TRAN_DATE,
+    EMPLOYEE_ID
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_TRAN_LOG
+WHERE WH_ID = ?
+  AND CONTROL_NUMBER LIKE ?
+  AND START_TRAN_DATE >= TO_TIMESTAMP_NTZ(?)
+  AND START_TRAN_DATE < TO_TIMESTAMP_NTZ(?)
+ORDER BY CONTROL_NUMBER, START_TRAN_DATE
+LIMIT ?`;
+
+function mapWmsWoDetailRow(row) {
+  return {
+    woNumber: String(row.WO_NUMBER ?? ""),
+    tranType: String(row.TRAN_TYPE ?? ""),
+    description: String(row.DESCRIPTION ?? ""),
+    itemNumber: String(row.ITEM_NUMBER ?? ""),
+    tranQty: row.TRAN_QTY != null ? Number(row.TRAN_QTY) : null,
+    lotNumber: String(row.LOT_NUMBER ?? ""),
+    locationId: String(row.LOCATION_ID ?? ""),
+    locationId2: String(row.LOCATION_ID_2 ?? ""),
+    huId: String(row.HU_ID ?? ""),
+    startTranDate: row.START_TRAN_DATE ? String(row.START_TRAN_DATE) : null,
+    endTranDate: row.END_TRAN_DATE ? String(row.END_TRAN_DATE) : null,
+    employeeId: String(row.EMPLOYEE_ID ?? ""),
+  };
+}
+
+function mapCachedWorkorderRowToWoDetailRow(row) {
+  const qty = Number(row.preBlastQuantity ?? row.quantity ?? row.plates ?? 0);
+  const safeQty = Number.isFinite(qty) ? qty : 0;
+  return {
+    woNumber: String(row.woNumber ?? ""),
+    tranType: "651",
+    description: `CACHE ${String(row.submealItemDescription ?? row.mealItemDescription ?? "").trim()}`,
+    itemNumber: String(row.submealItemNumber ?? row.mealItemNumber ?? ""),
+    tranQty: safeQty,
+    lotNumber: String(row.mealItemNumber ?? row.submealItemNumber ?? ""),
+    locationId: String(row.preBlastLocation ?? "CACHE"),
+    locationId2: String(row.mealItemNumber ?? "KITCHENWIP"),
+    huId: "",
+    startTranDate: row.productionTime || row.lastUpdated || null,
+    endTranDate: row.lastUpdated || row.productionTime || null,
+    employeeId: "",
+  };
+}
+
+exports.wmsWoDetail = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+  if (req.method !== "GET") {
+    res.status(405).json({ ok: false, error: "method-not-allowed" });
+    return;
+  }
+  const params = parseWmsParams(req, {});
+  const woFilter = String(req.query.wo ?? "").trim();
+  try {
+    const conn = await connectSnowflake();
+    const hfWeek = params.week || hfWeekFromIso(isoWeekLabel(new Date()));
+    const kwMatch = hfWeek.match(/^\d{4}-W(\d{2})$/);
+    const kwNum = kwMatch ? String(Number(kwMatch[1])) : "";
+    const controlPattern = woFilter || `${kwNum}-%`;
+    const range = wmsRangeForToolWeek(hfWeek);
+    const rowsRaw = await executeSnowflakeQuery(conn, WMS_WO_DETAIL_SQL, [
+      params.whId,
+      controlPattern,
+      range.rangeStart,
+      range.rangeEnd,
+      params.limit,
+    ]);
+    return res.json({
+      ok: true,
+      whId: params.whId,
+      week: hfWeek,
+      wmsWeek: range.wmsWeek,
+      controlPattern,
+      rangeStart: range.rangeStart,
+      rangeEnd: range.rangeEnd,
+      limit: params.limit,
+      generatedAt: nowIso(),
+      source: "snowflake-live",
+      rows: rowsRaw.map(mapWmsWoDetailRow),
+    });
+  } catch (error) {
+    logger.warn("WMS wo-detail Snowflake failed, trying Firestore cache", { error: error?.message });
+    try {
+      const cacheDoc = await db.collection("wmsCache").doc("workorders").get();
+      if (cacheDoc.exists) {
+        const cached = cacheDoc.data() || {};
+        const cachedRows = Array.isArray(cached.rows) ? cached.rows : [];
+        const rows = cachedRows.map(mapCachedWorkorderRowToWoDetailRow).slice(0, params.limit);
+        return res.json({
+          ok: true,
+          whId: params.whId,
+          week: params.week,
+          wmsWeek: params.week,
+          controlPattern: woFilter || null,
+          rangeStart: params.rangeStart,
+          rangeEnd: params.rangeEnd,
+          limit: params.limit,
+          generatedAt: nowIso(),
+          source: "firestore-cache-derived",
+          cachedAt: cached.pushedAt || cached.generatedAt,
+          rows,
+        });
+      }
+    } catch (cacheError) {
+      logger.warn("WMS wo-detail cache fallback failed", { error: cacheError?.message });
+    }
+    res.status(500).json({ ok: false, whId: params.whId, limit: params.limit, generatedAt: nowIso(), rows: [], error: error?.message || String(error) });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // WMS BREAKDOWN — Aggregierter Equipment-Breakdown pro Work Order (aktuelle KW)
 // ═══════════════════════════════════════════════════════════════════════════════
 

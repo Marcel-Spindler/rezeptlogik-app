@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "vite",
-    "dev": "concurrently -n vite,csv -c cyan,green \"vite\" \"tsx scripts/import-sub-recipes.ts --watch\"",
+    "dev": "concurrently -n vite,wms,csv -c cyan,magenta,green \"vite\" \"tsx scripts/wms-local-server.ts\" \"tsx scripts/import-sub-recipes.ts --watch\"",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
