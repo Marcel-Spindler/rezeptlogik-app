@@ -351,15 +351,15 @@ function wmsRangeForToolWeek(raw: string): WeekRange {
   if (!match) throw new Error(`Ungueltige Tool-KW: ${raw}`);
   const toolYear = Number(match[1]);
   const toolWeek = Number(match[2]);
-  const wmsWeekStart = isoWeekStart(toolYear, toolWeek);
-  wmsWeekStart.setUTCDate(wmsWeekStart.getUTCDate() - 7);
-  const wmsWeekEnd = new Date(wmsWeekStart);
-  wmsWeekEnd.setUTCDate(wmsWeekStart.getUTCDate() + 7);
+  const weekLabel = `${toolYear}-W${String(toolWeek).padStart(2, "0")}`;
+  const weekStart = isoWeekStart(toolYear, toolWeek);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
   return {
-    toolWeek: `${toolYear}-W${String(toolWeek).padStart(2, "0")}`,
-    wmsWeek: isoWeekLabel(wmsWeekStart),
-    startDate: wmsWeekStart.toISOString().slice(0, 10),
-    endDate: wmsWeekEnd.toISOString().slice(0, 10),
+    toolWeek: weekLabel,
+    wmsWeek: weekLabel,
+    startDate: weekStart.toISOString().slice(0, 10),
+    endDate: weekEnd.toISOString().slice(0, 10),
   };
 }
 
