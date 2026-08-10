@@ -90,6 +90,9 @@ import {
   type InfoHints,
 } from "./features/planning-oasis/cockpit/recipeInfoHints";
 import { RampUpSparkline, RampUpDeltaBadge, PlannerStat, ToggleChip } from "./features/planning-oasis/cockpit/CockpitMiniWidgets";
+import { BoardEditorModal, type WeekBoardEditorState, type WeekBoardEditorDraft } from "./features/planning-oasis/cockpit/modals/BoardEditorModal";
+import { DayDetailModal } from "./features/planning-oasis/cockpit/modals/DayDetailModal";
+import { SubRecipeInfoModal, type SubRecipeInfoRequest } from "./features/planning-oasis/cockpit/modals/SubRecipeInfoModal";
 
 function fmtNum(n: number, digits = 0): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
@@ -2594,361 +2597,40 @@ export function PlanningView(
           </div>
         </div>
 
-      {boardEditor && (() => {
-        const editorRecipe = recipeLookup[boardEditor.recipeCode];
-        const editorAnalysis = analysis.recipes.find((row) => row.recipeCode === boardEditor.recipeCode);
-        const demand = Math.max(0, Math.round((editorRecipe?.totalVerdenVolume ?? 0) * portionMultiplier));
-        const mapped = editorAnalysis?.assigned?.targetPortions ?? 0;
-        const earliestPlatDay = batchSplitPlan.find(p => p.recipeCode === boardEditor.recipeCode)?.batches[0]?.fulfillmentDay ?? "-";
-        const unassignedSubCount = editorAnalysis?.subRecipes.filter(s => !s.assigned).length ?? 0;
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setBoardEditor(null)}>
-            <div className="w-full max-w-xl rounded-xl bg-white shadow-2xl ring-1 ring-slate-300" onClick={(event) => event.stopPropagation()}>
-              <div className="flex items-center justify-between rounded-t-xl bg-emerald-700 px-4 py-2 text-white">
-                <div className="text-sm font-semibold">{boardEditor.subRecipeId ? "Create sub-recipe work order" : "Create recipe work order"}</div>
-                <button className="text-lg leading-none" onClick={() => setBoardEditor(null)}>×</button>
-              </div>
-              <div className="space-y-3 px-4 py-3">
-                <div className="rounded bg-slate-100 px-3 py-2">
-                  <div className="text-sm font-semibold text-slate-900">{boardEditor.recipeCode} – {editorAnalysis?.recipeName ?? editorRecipe?.recipeName ?? ""}</div>
-                  {boardEditor.subRecipeId && <div className="mt-0.5 text-xs text-slate-600">{boardEditor.subRecipeName ?? boardEditor.subRecipeId}</div>}
-                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                    <span>Earliest plating day: <strong className="text-slate-700">{earliestPlatDay}</strong></span>
-                    <span>Demand: <strong className="text-slate-700">{fmtNum(demand)}</strong></span>
-                    <span>Mapped: <strong className="text-slate-700">{fmtNum(Math.round(mapped))}</strong></span>
-                  </div>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="text-xs font-semibold text-slate-600">
-                    Plating day
-                    <input className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardEditor.day} readOnly />
-                  </label>
-                  <div>
-                    <div className="text-xs font-semibold text-slate-600">Shift</div>
-                    <div className="mt-1 grid grid-cols-3 gap-1">
-                      {activeShifts.map((shift) => (
-                        <button key={`edit-${shift}`} className={`rounded border px-2 py-2 text-sm font-semibold ${boardDraft.shift === shift ? "border-emerald-700 bg-emerald-50 text-emerald-800" : "border-slate-300 bg-white text-slate-600"}`} onClick={() => setBoardDraft((prev) => ({ ...prev, shift }))}>
-                          {shift === "S1" ? "1st shift" : shift === "S2" ? "2nd shift" : "3rd shift"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="text-xs font-semibold text-slate-600">
-                    Target
-                    <input type="number" min={0} className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardDraft.targetPortions} onChange={(event) => setBoardDraft((prev) => ({ ...prev, targetPortions: Math.max(0, Number(event.target.value) || 0) }))} />
-                  </label>
-                  <label className="text-xs font-semibold text-slate-600">
-                    Reason
-                    <select className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm" value={boardDraft.reason} onChange={(event) => setBoardDraft((prev) => ({ ...prev, reason: event.target.value }))}>
-                      <option value="Planned">Planned</option>
-                      <option value="Forecast">Forecast adjustment</option>
-                      <option value="Urgent">Urgent fix</option>
-                    </select>
-                  </label>
-                </div>
-                {!boardEditor.subRecipeId && (
-                  <label className="text-xs font-semibold text-slate-600">
-                    Split spec (optional, e.g. Fr:1200|Sa:900|So:700)
-                    <input
-                      className="mt-1 w-full rounded border border-slate-300 px-2 py-2 text-sm"
-                      placeholder="Fr:1200|Sa:900|So:700"
-                      value={boardDraft.splitSpec}
-                      onChange={(event) => setBoardDraft((prev) => ({ ...prev, splitSpec: event.target.value.trim() }))}
-                    />
-                  </label>
-                )}
-                <label className="text-xs font-semibold text-slate-600">
-                  Notes
-                  <textarea className="mt-1 h-16 w-full resize-none rounded border border-slate-300 px-2 py-2 text-sm" placeholder="Add notes about this work order" value={boardDraft.notes} onChange={(event) => setBoardDraft((prev) => ({ ...prev, notes: event.target.value }))} />
-                </label>
-                {!boardEditor.subRecipeId && unassignedSubCount > 0 && (
-                  <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={boardDraft.createSubRecipeWOs}
-                      onChange={(e) => setBoardDraft((prev) => ({ ...prev, createSubRecipeWOs: e.target.checked }))}
-                    />
-                    Create sub-recipe WOs ({unassignedSubCount} unassigned)
-                  </label>
-                )}
-              </div>
-              <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
-                <button className="rounded border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700" onClick={clearWeekBoardEditorAssignment}>Remove assignment</button>
-                <div className="flex gap-2">
-                  <button className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700" onClick={() => setBoardEditor(null)}>Cancel</button>
-                  <button className="rounded border border-emerald-600 bg-white px-3 py-1.5 text-sm font-semibold text-emerald-700" onClick={() => saveWeekBoardEditorWith("Unlocked")}>Save as Unlocked</button>
-                  <button className="rounded bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white" onClick={saveWeekBoardEditor}>Save & Lock</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {boardEditor && (
+        <BoardEditorModal
+          boardEditor={boardEditor}
+          boardDraft={boardDraft}
+          setBoardDraft={setBoardDraft}
+          onClose={() => setBoardEditor(null)}
+          recipeLookup={recipeLookup}
+          analysisRecipes={analysis.recipes}
+          portionMultiplier={portionMultiplier}
+          batchSplitPlan={batchSplitPlan}
+          activeShifts={activeShifts}
+          onRemoveAssignment={clearWeekBoardEditorAssignment}
+          onSaveUnlocked={() => saveWeekBoardEditorWith("Unlocked")}
+          onSave={saveWeekBoardEditor}
+        />
+      )}
 
-      {dayDetailModal && (() => {
-        const DAY_LABELS: Record<PlannerDay, string> = { Mo: "Montag", Di: "Dienstag", Mi: "Mittwoch", Do: "Donnerstag", Fr: "Freitag", Sa: "Samstag", So: "Sonntag" };
-        const dayLabel = DAY_LABELS[dayDetailModal] ?? dayDetailModal;
-        const mainRecipes = analysis.recipes
-          .filter(r => r.assigned?.day === dayDetailModal)
-          .sort((a, b) => (a.assigned!.order ?? 999) - (b.assigned!.order ?? 999));
-        const subsToday = analysis.recipes.flatMap(r =>
-          r.subRecipes.filter(s => s.assigned?.day === dayDetailModal)
-            .map(s => ({ code: r.recipeCode, name: r.recipeName, sub: s }))
-        );
-        const getAllergens = (code: string): string[] => {
-          const recipe = data.recipes?.[code];
-          if (!recipe) return [];
-          return [...new Set(Object.values(recipe.markets)
-            .flatMap(m => (m?.allergens ?? "").split(/[,;/]/).map(a => a.trim()).filter(Boolean)))];
-        };
-        const allAllergens = [...new Set(mainRecipes.flatMap(r => getAllergens(r.recipeCode)))];
-        // Allergen-Wechsel-Alarme
-        const alarms: string[] = [];
-        let prevAllergens: string[] = [];
-        mainRecipes.forEach(r => {
-          const cur = getAllergens(r.recipeCode);
-          const removed = prevAllergens.filter(a => !cur.includes(a));
-          if (removed.length > 0 && prevAllergens.length > 0)
-            alarms.push(`Linie reinigen vor ${r.recipeName}: ${removed.join(", ")} entfernt`);
-          prevAllergens = cur;
-        });
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setDayDetailModal(null)}>
-            <div className="flex h-[90vh] w-full max-w-3xl flex-col rounded-xl bg-white shadow-2xl ring-1 ring-slate-300" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between rounded-t-xl bg-slate-800 px-4 py-2 text-white">
-                <div className="text-sm font-semibold">Küchenplan: {dayLabel} · {week}</div>
-                <div className="flex items-center gap-2">
-                  <button className="rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700" onClick={() => exportDayKitchenPlan(dayDetailModal)}>Drucken / Export</button>
-                  <button className="text-lg leading-none" onClick={() => setDayDetailModal(null)}>×</button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-                {allAllergens.length > 0 && (
-                  <div className="rounded bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
-                    <div className="text-xs font-bold text-amber-800 mb-1">Allergene heute</div>
-                    <div className="flex flex-wrap gap-1">
-                      {allAllergens.map(a => <span key={a} className="rounded bg-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">{a}</span>)}
-                    </div>
-                  </div>
-                )}
-                {alarms.length > 0 && (
-                  <div className="space-y-1">
-                    {alarms.map((alarm, i) => <div key={i} className="rounded bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-800 ring-1 ring-rose-200">⚠ {alarm}</div>)}
-                  </div>
-                )}
-                <div>
-                  <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Hauptrezepte ({mainRecipes.length})</div>
-                  {mainRecipes.length === 0 && <div className="text-xs text-slate-400">Keine Hauptrezepte für diesen Tag verplant.</div>}
-                  <div className="space-y-2">
-                    {mainRecipes.map((r, i) => {
-                      const allergens = getAllergens(r.recipeCode);
-                      return (
-                        <div key={r.recipeCode} className="rounded border border-slate-200 px-3 py-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <span className="mr-1 text-[10px] font-black text-slate-400">{i + 1}.</span>
-                              <span className="font-semibold text-slate-900">{r.recipeCode}</span>
-                              <span className="ml-1 text-sm text-slate-600">{r.recipeName}</span>
-                            </div>
-                            <div className="text-right text-xs text-slate-500">
-                              <div className="font-bold">{fmtNum(Math.round(r.assigned?.targetPortions ?? 0))} Port.</div>
-                              <div>{r.assigned?.shift ?? "-"}</div>
-                            </div>
-                          </div>
-                          {allergens.length > 0 && (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {allergens.map(a => <span key={a} className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">{a}</span>)}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Sub-Rezepte heute ({subsToday.length})</div>
-                  {subsToday.length === 0 && <div className="text-xs text-slate-400">Keine Sub-Rezepte für diesen Tag verplant.</div>}
-                  <div className="space-y-1">
-                    {subsToday.map(({ code, name: _name, sub }, i) => {
-                      const subDef = Object.values(data.recipes?.[code]?.markets ?? {})
-                        .flatMap(m => m?.subRecipes ?? []).find(s => s.id === sub.subRecipeId);
-                      return (
-                        <div key={`${code}-${sub.subRecipeId}-${i}`} className="rounded border border-slate-100 bg-slate-50 px-3 py-1.5">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <span className="text-[10px] font-semibold text-slate-500">{code} · </span>
-                              <span className="text-xs font-semibold text-slate-800">{sub.subRecipeName}</span>
-                              <div className="mt-0.5 flex flex-wrap gap-1">
-                                {sub.category.split(/[/,]/).map(m => <span key={m} className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] text-sky-800">{m.trim()}</span>)}
-                              </div>
-                              {subDef?.instructions && <div className="mt-0.5 text-[10px] italic text-slate-500">{subDef.instructions}</div>}
-                            </div>
-                            <div className="shrink-0 text-right text-xs text-slate-500">
-                              <div className="font-bold">{fmtNum(Math.round(sub.assigned?.targetPortions ?? 0))}</div>
-                              <div>{sub.assigned?.shift ?? "-"}</div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {dayDetailModal && (
+        <DayDetailModal
+          day={dayDetailModal}
+          week={week}
+          data={data}
+          analysisRecipes={analysis.recipes}
+          onClose={() => setDayDetailModal(null)}
+          onExport={exportDayKitchenPlan}
+        />
+      )}
 
       {subRecipeInfoRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={() => setSubRecipeInfoRequest(null)}>
-          <div className="w-full max-w-4xl rounded-xl bg-white shadow-2xl ring-1 ring-slate-300" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between rounded-t-xl bg-amber-600 px-4 py-2 text-white">
-              <div className="text-sm font-semibold">Subrezept-Info · {subRecipeInfoRequest.subRecipeName}</div>
-              <button className="text-lg leading-none" onClick={() => setSubRecipeInfoRequest(null)}>×</button>
-            </div>
-            <div className="space-y-3 px-4 py-3">
-              {/* ── Meta-Info ──────────────────────────────────────────────── */}
-              <div className="grid gap-2 rounded bg-slate-50 px-3 py-2 text-xs text-slate-700 md:grid-cols-4">
-                <div><span className="font-semibold">Rezept:</span> {subRecipeInfoRequest.recipeCode}</div>
-                <div><span className="font-semibold">Tag/Schicht:</span> {subRecipeInfoRequest.day} / {subRecipeInfoRequest.shift}</div>
-                <div><span className="font-semibold">Menge:</span> {fmtNum(subRecipeInfoRequest.targetPortions)} Portionen</div>
-                <div><span className="font-semibold">Yield:</span> {subRecipeInfo ? `${fmtNum(subRecipeInfo.yieldRatio * 100, 1)}%` : "-"}</div>
-              </div>
-
-              {/* ── Equipment & Kapazität ──────────────────────────────────── */}
-              {subRecipeInfo && (
-                <div className="grid gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-900 md:grid-cols-4">
-                  <div>
-                    <span className="font-semibold">Equipment:</span>{" "}
-                    {subRecipeInfo.equipment ?? <span className="italic text-orange-400">unbekannt</span>}
-                  </div>
-                  <div>
-                    <span className="font-semibold">Kapazität/Batch:</span>{" "}
-                    {subRecipeInfo.capacityKg != null
-                      ? `${fmtNum(subRecipeInfo.capacityKg, 1)} kg`
-                      : <span className="italic text-orange-400">unbekannt</span>}
-                    <span className="ml-1 text-[10px] font-normal text-orange-500">
-                      ({subRecipeInfo.capacitySource === "bible" ? "Bible" : subRecipeInfo.capacitySource === "process-spec" ? "PFEI" : "–"})
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold">Rohware gesamt:</span>{" "}
-                    {fmtNum(subRecipeInfo.totalRawKg, 2)} kg
-                  </div>
-                  <div>
-                    <span className="font-semibold">Batches:</span>{" "}
-                    {subRecipeInfo.batchCount != null
-                      ? <span className="font-bold text-orange-800">{subRecipeInfo.batchCount}</span>
-                      : <span className="italic text-orange-400">–</span>}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Lead-Zeit-Erklärung ─────────────────────────────────────── */}
-              {(() => {
-                const ld = subRecipeInfoRequest.leadDays;
-                const mDay = subRecipeInfoRequest.mainDay;
-                const cat = subRecipeInfoRequest.category;
-                if (!ld && !mDay) return null;
-
-                const ruleExplanation =
-                  ld >= 3 ? "Kategorie erfordert ≥ 3 Tage Vorlauf (Brine / Cure / Ferment / Lagerzeit ≥ 24 h)" :
-                  ld === 2 ? "Kategorie erfordert 2 Tage Vorlauf (Sauce / Marinade / Slow Cook / Lagerzeit ≥ 12 h)" :
-                  "Kategorie erfordert 1 Tag Vorlauf (Grill / Blast Chiller / Portion / Standardprozess)";
-
-                return (
-                  <div className="flex items-start gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-                    <span className="mt-0.5 shrink-0 rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-bold text-white">D-{ld}</span>
-                    <div className="space-y-1">
-                      <div className="font-semibold">Warum liegt dieses Sub hier?</div>
-                      <div>{ruleExplanation}</div>
-                      {cat && <div className="text-sky-700">Kategorie: <span className="font-semibold">{cat}</span></div>}
-                      {mDay && (
-                        <div>
-                          Bedarfstag (Fulfillment-Start): <span className="font-semibold">{mDay}</span>
-                          {" → "} Sub fertig bis: <span className="font-semibold">{subRecipeInfoRequest.day}</span>
-                          {" "}({ld} Küchentag{ld !== 1 ? "e" : ""} früher)
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* ── Zutaten-Tabelle ─────────────────────────────────────────── */}
-              {subRecipeInfo && subRecipeInfo.ingredientRows.length > 0 ? (
-                <>
-                  <div className="overflow-x-auto rounded border border-slate-200">
-                    <table className="min-w-full text-xs">
-                      <thead className="bg-slate-50 text-slate-600">
-                        <tr>
-                          <th className="px-2 py-1.5 text-left font-semibold">Artikel</th>
-                          <th className="px-2 py-1.5 text-right font-semibold">Menge (roh)</th>
-                          <th className="px-2 py-1.5 text-right font-semibold">kg (roh)</th>
-                          <th className="px-2 py-1.5 text-right font-semibold">Yield</th>
-                          <th className="px-2 py-1.5 text-right font-semibold">Fertigware</th>
-                          <th className="px-2 py-1.5 text-right font-semibold">kg/Batch</th>
-                          <th className="px-2 py-1.5 text-left font-semibold">Container</th>
-                          <th className="px-2 py-1.5 text-right font-semibold">Anz.</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {subRecipeInfo.ingredientRows.map((row) => (
-                          <tr key={`${row.ingredientId}-${row.uom}`} className="border-t border-slate-100 hover:bg-slate-50">
-                            <td className="px-2 py-1.5 text-slate-800">{row.ingredientName}</td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
-                              {fmtNum(row.rawTotal, 1)} {row.uom}
-                            </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">
-                              {row.rawKg != null ? `${fmtNum(row.rawKg, 2)} kg` : "–"}
-                            </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
-                              {fmtNum(row.yieldRatio * 100, 1)}%
-                            </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-slate-700">
-                              {fmtNum(row.finishedTotal, 1)} {row.uom}
-                            </td>
-                            <td className="px-2 py-1.5 text-right tabular-nums text-sky-700 font-semibold">
-                              {row.proBatchKg != null ? `${fmtNum(row.proBatchKg, 2)} kg` : "–"}
-                            </td>
-                            <td className="px-2 py-1.5 text-slate-600">{row.containerType}</td>
-                            <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-900">
-                              {row.containerCount > 0 ? fmtNum(row.containerCount) : "–"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot className="border-t-2 border-slate-200 bg-amber-50 text-xs font-semibold text-amber-900">
-                        <tr>
-                          <td className="px-2 py-1.5">Gesamt</td>
-                          <td className="px-2 py-1.5" />
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(subRecipeInfo.totalRawKg, 2)} kg</td>
-                          <td className="px-2 py-1.5" />
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(subRecipeInfo.totalFinishedKg, 2)} kg</td>
-                          <td className="px-2 py-1.5" />
-                          <td className="px-2 py-1.5">
-                            {subRecipeInfo.batchCount != null && (
-                              <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[10px]">
-                                {subRecipeInfo.batchCount} Wanne{subRecipeInfo.batchCount !== 1 ? "n" : ""}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{subRecipeInfo.totalContainerCount > 0 ? `${fmtNum(subRecipeInfo.totalContainerCount)} Tray${subRecipeInfo.totalContainerCount !== 1 ? "s" : ""}` : "–"}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </>
-              ) : (
-                <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  Für dieses Subrezept wurden keine passenden Artikel im Gross-Ingredients-Dump gefunden.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <SubRecipeInfoModal
+          request={subRecipeInfoRequest}
+          info={subRecipeInfo}
+          onClose={() => setSubRecipeInfoRequest(null)}
+        />
       )}
 
       <div className="card p-4">
@@ -3391,35 +3073,4 @@ export function PlanningView(
   );
 }
 
-type WeekBoardEditorState = {
-  recipeCode: string;
-  day: PlannerDay;
-  shift: PlannerShift;
-  subRecipeId?: string;
-  subRecipeName?: string;
-};
-
-type WeekBoardEditorDraft = {
-  shift: PlannerShift;
-  targetPortions: number;
-  reason: string;
-  splitSpec: string;
-  notes: string;
-  createSubRecipeWOs: boolean;
-};
-
-type SubRecipeInfoRequest = {
-  recipeCode: string;
-  recipeName: string;
-  subRecipeId: string;
-  subRecipeName: string;
-  day: PlannerDay;
-  shift: PlannerShift;
-  targetPortions: number;
-  /** Lead-Zeit in Küchentagen vor dem Bedarfstag (Fulfillment-Start) */
-  leadDays: number;
-  /** Tag des Haupt-Rezepts (= Plating / Need-Day), damit klar ist warum der Sub hier liegt */
-  mainDay?: PlannerDay;
-  category: string;
-};
 
