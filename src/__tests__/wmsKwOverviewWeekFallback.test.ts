@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previousWmsWeekCandidates, resolveOperationalWmsWeekNum } from "../WmsKwOverviewView";
+import { previousWmsWeekCandidates, resolveOperationalWmsWeekNum } from "../features/wms-overview/wmsWeeks";
 
 describe("WMS week fallback", () => {
   it("uses selected week when rows exist in selected week", () => {
