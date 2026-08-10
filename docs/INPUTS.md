@@ -27,12 +27,13 @@ Der **Reader-Service-Account** muss bei jedem Sheet als **Viewer** geteilt sein.
 | 2 | F_EU - 2026 Ramp Up Planning V2.0 | `1IEi_CB9KylW2MgjNiGax5EIvhhAtkIzm57uO1sSESj8` | Zusatzquelle fuer Meal-/Ramp-up Daten | `GSHEET_IDS` |
 | 3 | [EU] F_ Recipe PFEI | `1cQtoL4aYHfc_44mfQQty8-EFKPZoYPLBQ2ojmO8hgzg` | Equipment-Zeiten & Batch-Groessen pro Sub-Rezept | `PFEI_GSHEET_ID`, Tab `MAIN` |
 | 4 | Open Shelf Life / MLOR | `1dET5WmRKYRhmzEmhlBv1ZpRo5huWgNLfIY6uaLpCrcc` | MLOR- und Open-Shelf-Life Daten fuer SKU-Risiken | `OPEN_SHELF_GSHEET_ID`, Default-Tab `ALL in 1` |
-| 5 | Kitchen Priority List-Verden-2026 | `13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U` | KPL-Dump fuer Planning OASE, Rack und Linienplanung | `npm run sync:gsheet:registry` |
+| 5 | Kitchen Priority List-Verden-2026 | `13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U` | Tab `Planning W{XX}`: rezeptweise Forecast/Plan/Run-Zahlen je KW (löste Aug 2026 den alten `Verden-{YEAR}-W{XX}`-Tab mit Priority/WO-Ready-Flags ab) | `SHEET_KITCHEN_PRIORITY`, `npm run import:gsheet` → Firestore: `kitchenPlanning/{week}` |
 | 6 | [NEW] MASTER+SUPERVISORS WORKLOAD PLANNING | `1vwTeKDkQcSrWtFLioOBlkcQrbbDzMxbra-f-AbXgO1Q` | Supervisor-/Workload-Dump fuer Breakdown und Manufacturing-Hinweise | Registry / Dump |
 | 7 | Bibles_K_Operations_Manager_Supervisors | `1jZXgFcnDhmALSbIlyDbzL-uKpDyLycwdxcVnFNPn32c` | Bible-/Supervisor-Hinweise fuer Breakdown und Manufacturing | Registry / Dump |
 | 8 | Cook Schedules Per DC | `1jUN_IxCT4nodV21gwb1N_RKdxDrVilH00rC8khBEll8` | Cook-Methoden und Shift-Timings je Site (in der App auf `Site == VF` gefiltert) | `SHEET_COOK_SCHEDULES` |
 | 9 | OUTPUT - [F_ x HF] Weekly Fulfillment Report | `1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE` | Maitre-Ramp-up (DE/Nordics je KW), Produktionsvorbereitung DE+Nordics, FCMS-Inbound, Logistik | `npm run sync:fulfillment:report` → Firestore: `maitreRampup`, `produktionsplanung`, `fcmsInbound` |
 | 10 | F_VE Production Plan (Tab "Planning Calendar") | `1zaQjWKlNN4JNCMnE-lrdgf7iNgabfl9HGq5vdOyKedI` | Wöchentliche Planungs-Deadlines + Eskalationskontakte (L1/L2/L3) | `SHEET_PLANNING_CALENDAR`, `npm run import:planning-calendar` → Firestore: `planningCalendar/current` |
+| 11 | Weight Tracking (Kitchen) \| F_ EU | `1-brEn6eKSMFDTubokqA7brq_BzjKP0RpmGw4A1RPspw` | Manuelles Wiege-Log: `Weekly Yield` (Kitchen→Pre-Blast→Post-Blast Ausbeute je Sub-Rezept/Woche), `Raw Weight - Goal` + `Pre Blast - Goal` (Ziel- vs. getrackte Gewichte je WO, Shortage) | `SHEET_WEIGHT_TRACKING`, `npm run import:weight-tracking` → Firestore: `weeklyYield/current`, `weightGoals/current` |
 
 > Live-Inventar fuer die UI: `public/data/gsheet-sources.json`
 > Vollstaendige Dumps: `public/data/gsheet-dump-*.json`

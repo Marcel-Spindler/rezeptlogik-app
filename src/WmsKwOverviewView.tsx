@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { DataBundle } from "./types";
+import type { DataBundle, WeightGoalRow } from "./types";
 import { buildSkuInfoIndex, getSkuDisplayLabel, type WmsSkuInfo } from "./wmsSkuEnrichment";
 
 // ─── Raw Row Types ────────────────────────────────────────────────────────────
@@ -3483,6 +3483,144 @@ function SleevingAggTable({ rows, skuMap, search, onTrace, onDetail, skuInfoInde
   );
 }
 
+// ─── Planning Calendar (Deadlines & Eskalation) ────────────────────────────────
+
+function PlanningCalendarCard({ calendar }: { calendar: DataBundle["planningCalendar"] }) {
+  const [open, setOpen] = useState(false);
+  if (!calendar || (calendar.deadlines.length === 0 && calendar.rules.length === 0)) return null;
+
+  const todayAbbr = new Date().toLocaleDateString("en-US", { weekday: "short" });
+  const isToday = (days: string) => days.toLowerCase().split(",").map(d => d.trim()).includes(todayAbbr.toLowerCase());
+
+  const priorityCls: Record<string, string> = {
+    must: "bg-rose-100 text-rose-700",
+    can: "bg-sky-100 text-sky-700",
+    optimal: "bg-emerald-100 text-emerald-700",
+    info: "bg-slate-100 text-slate-500",
+  };
+
+  return (
+    <div className="card p-4">
+      <button type="button" className="w-full flex items-center justify-between" onClick={() => setOpen(o => !o)}>
+        <div className="text-xs font-bold uppercase text-slate-500">🗓️ Planning Calendar — Deadlines &amp; Eskalation</div>
+        <span className="text-xs text-slate-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-4">
+          {calendar.deadlines.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b border-slate-100">
+                    <th className="py-1 pr-3 font-semibold">Aktivität</th>
+                    <th className="py-1 pr-3 font-semibold">Deadline</th>
+                    <th className="py-1 pr-3 font-semibold">Tage</th>
+                    <th className="py-1 pr-3 font-semibold">L1</th>
+                    <th className="py-1 pr-3 font-semibold">L2 (+1h)</th>
+                    <th className="py-1 font-semibold">L3 (+2h)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {calendar.deadlines.map((d, i) => (
+                    <tr key={i} className={`border-b border-slate-50 ${isToday(d.days) ? "bg-amber-50" : ""}`}>
+                      <td className="py-1 pr-3 font-medium text-slate-800">{d.activity}</td>
+                      <td className="py-1 pr-3 font-mono text-slate-700">{d.time || "–"}</td>
+                      <td className="py-1 pr-3 text-slate-600">{d.days || "–"}</td>
+                      <td className="py-1 pr-3 text-slate-600">{d.owner ?? "–"}</td>
+                      <td className="py-1 pr-3 text-slate-600">{d.escalation1 ?? "–"}</td>
+                      <td className="py-1 text-slate-600">{d.escalation2 ?? "–"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {calendar.rules.length > 0 && (
+            <div>
+              <div className="text-[10px] font-bold uppercase text-slate-400 mb-1.5">Planungsregeln</div>
+              <ul className="space-y-1">
+                {calendar.rules.map((r, i) => (
+                  <li key={i} className="flex items-start gap-2 text-xs text-slate-600">
+                    {r.priority && (
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${priorityCls[r.priority] ?? "bg-slate-100 text-slate-500"}`}>
+                        {r.priority}
+                      </span>
+                    )}
+                    <span>{r.note}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Weight Tracking (Kitchen): Ziel vs. Ist ───────────────────────────────────
+
+function WeightGoalsCard({ goals }: { goals: DataBundle["weightGoals"] }) {
+  if (!goals?.length) return null;
+
+  // Nur Zeilen mit tatsaechlicher Untermenge (Shortage < 0) sind Handlungsbedarf —
+  // Zeilen ohne Shortage-Wert heissen "im Ziel", nicht "kein Ziel gesetzt".
+  const shortages = goals
+    .filter(g => (g.shortageKg ?? 0) < 0)
+    .sort((a, b) => (a.shortageKg ?? 0) - (b.shortageKg ?? 0));
+
+  if (shortages.length === 0) {
+    return (
+      <div className="card p-4 border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-semibold text-center">
+        ✓ Gewichts-Tracking: keine Untermengen gegenüber Ziel erkannt
+      </div>
+    );
+  }
+
+  const stageLabel: Record<WeightGoalRow["stage"], string> = { raw: "Raw", preBlast: "Pre-Blast" };
+  const stageCls: Record<WeightGoalRow["stage"], string> = {
+    raw: "bg-amber-100 text-amber-700",
+    preBlast: "bg-sky-100 text-sky-700",
+  };
+
+  return (
+    <div className="card p-4">
+      <div className="text-xs font-bold uppercase text-slate-500 mb-2">⚖️ Gewichts-Tracking: Untermengen ggü. Ziel ({shortages.length})</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-slate-500 border-b border-slate-100">
+              <th className="py-1 pr-3 font-semibold">Stufe</th>
+              <th className="py-1 pr-3 font-semibold">WO</th>
+              <th className="py-1 pr-3 font-semibold">Sub-Rezept</th>
+              <th className="py-1 pr-3 font-semibold text-right">Ziel (kg)</th>
+              <th className="py-1 pr-3 font-semibold text-right">Ist (kg)</th>
+              <th className="py-1 font-semibold text-right">Shortage (kg)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shortages.slice(0, 15).map((g, i) => (
+              <tr key={i} className="border-b border-slate-50">
+                <td className="py-1 pr-3">
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${stageCls[g.stage]}`}>{stageLabel[g.stage]}</span>
+                </td>
+                <td className="py-1 pr-3 font-mono text-slate-700">{g.workOrder}</td>
+                <td className="py-1 pr-3 text-slate-800 font-medium truncate max-w-[220px]">{g.subRecipeName}</td>
+                <td className="py-1 pr-3 text-right font-mono text-slate-600">{g.goalKg.toFixed(1)}</td>
+                <td className="py-1 pr-3 text-right font-mono text-slate-600">{g.trackedKg.toFixed(1)}</td>
+                <td className="py-1 text-right font-mono font-semibold text-rose-700">{g.shortageKg?.toFixed(1)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {shortages.length > 15 && (
+        <div className="text-[10px] text-slate-400 mt-2">+ {shortages.length - 15} weitere</div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
@@ -3928,6 +4066,9 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
                   );
                 })()}
 
+                {/* Weight Tracking: Ziel vs. Ist */}
+                <WeightGoalsCard goals={data.weightGoals} />
+
                 {/* WO Readiness Overview */}
                 {aggWorkorders.length > 0 && (
                   <div className="card p-4">
@@ -3953,6 +4094,9 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
                 {!isTrace && funnel.length > 0 && (
                   <SkuFunnelSection funnel={funnel} skuMap={skuMap} skuInfoIndex={skuInfoIndex} onTrace={handleTrace} />
                 )}
+
+                {/* Planning Calendar: Deadlines & Eskalationskontakte */}
+                <PlanningCalendarCard calendar={data.planningCalendar} />
 
                 {/* Snapshots */}
                 <SnapshotPanel

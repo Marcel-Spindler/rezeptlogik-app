@@ -112,6 +112,16 @@ async function main() {
     });
   }
 
+  if (bundle.kitchenPlanning?.length) {
+    const week = bundle.kitchenPlanning[0]?.week ?? "unknown";
+    console.log(`Push kitchenPlanning (${bundle.kitchenPlanning.length} Rezepte, KW ${week}) …`);
+    await APP_ROOT.collection("kitchenPlanning").doc(week).set({
+      week,
+      rows: bundle.kitchenPlanning,
+      updatedAt: bundle.generatedAt
+    });
+  }
+
   if (bundle.produktionsplanung) {
     console.log("Push produktionsplanung …");
     for (const [market, entry] of Object.entries(bundle.produktionsplanung)) {

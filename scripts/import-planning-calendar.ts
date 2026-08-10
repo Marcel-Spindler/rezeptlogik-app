@@ -14,14 +14,16 @@ import { configureFirestoreWriterAuth } from "./lib/firestore-auth.ts";
 const DEFAULT_SHEET_ID = "1zaQjWKlNN4JNCMnE-lrdgf7iNgabfl9HGq5vdOyKedI";
 const TAB_NAME = "Planning Calendar";
 
-// Eskalations-/Deadline-Tabelle: Header-Zeile enthaelt "Deadline" und "Days"
-// (im Sheet aktuell Zeile 28, 0-indiziert 27) -- Zeilensuche statt fixer Index,
-// falls im Sheet oberhalb Zeilen eingefuegt werden.
+// Eskalations-/Deadline-Tabelle: Das Sheet enthaelt zwei Tabellen mit "Deadline"/
+// "Days"-Spalten -- eine aeltere, unvollstaendige (Zeile 16, Spalten POC/1st level/
+// 2nd level/Escelation) und die aktuell gepflegte "Calendar activity (reminder)"
+// (Zeile 28, Spalten L1 (owner)/L2 (+1h)/L3 (+2h)). Nur letztere hat vollstaendige
+// Eskalationskontakte -- am "l1"-Spaltenpraefix erkennbar.
 function parseDeadlines(rows: string[][]): PlanningCalendarDeadline[] {
-  const headerIdx = rows.findIndex(r =>
-    r.some(c => String(c ?? "").trim().toLowerCase() === "deadline") &&
-    r.some(c => String(c ?? "").trim().toLowerCase() === "days")
-  );
+  const headerIdx = rows.findIndex(r => {
+    const h = r.map(c => String(c ?? "").trim().toLowerCase());
+    return h.some(c => c === "deadline") && h.some(c => c === "days") && h.some(c => c.startsWith("l1"));
+  });
   if (headerIdx < 0) return [];
 
   const header = rows[headerIdx].map(c => String(c ?? "").trim().toLowerCase());
@@ -42,9 +44,9 @@ function parseDeadlines(rows: string[][]): PlanningCalendarDeadline[] {
       activity,
       time: deadlineIdx >= 0 ? String(row[deadlineIdx] ?? "").trim() : "",
       days: daysIdx >= 0 ? String(row[daysIdx] ?? "").trim() : "",
-      owner: l1Idx >= 0 ? String(row[l1Idx] ?? "").trim() || undefined : undefined,
-      escalation1: l2Idx >= 0 ? String(row[l2Idx] ?? "").trim() || undefined : undefined,
-      escalation2: l3Idx >= 0 ? String(row[l3Idx] ?? "").trim() || undefined : undefined,
+      owner: (l1Idx >= 0 ? String(row[l1Idx] ?? "").trim() : "") || undefined,
+      escalation1: (l2Idx >= 0 ? String(row[l2Idx] ?? "").trim() : "") || undefined,
+      escalation2: (l3Idx >= 0 ? String(row[l3Idx] ?? "").trim() : "") || undefined,
     });
   }
   return out;
@@ -93,6 +95,7 @@ async function main() {
   configureFirestoreWriterAuth();
   admin.initializeApp({ credential: admin.credential.applicationDefault() });
   const db = admin.firestore();
+  db.settings({ ignoreUndefinedProperties: true }); // manche Aktivitaeten (z.B. "Create Draft Plan") haben keine L1/L2/L3-Kontakte
   const APP_ROOT = db.collection("apps").doc("rezeptlogik");
 
   await APP_ROOT.collection("planningCalendar").doc("current").set({

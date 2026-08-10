@@ -19,12 +19,13 @@ import { join, resolve } from "node:path";
 import { google } from "googleapis";
 import type {
   DataBundle, Market, WeekRecipe, Recipe, GrossIngredient, CookSchedule,
-  ProductionPlan, WorkOrderEntry, PrintOrderRow, KitchenPriorityRow,
+  PrintOrderRow, KitchenPlanningRow,
   ProduktionsplanungEntry, ProduktionsplanungSlot
 } from "../src/types.ts";
 import { readPfei } from "./import-pfei.ts";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
 import { readCookSchedulesFromGSheet } from "./read-cook-schedules.ts";
+import { readProductionPlan } from "./read-production-plan.ts";
 import { num, readCsv, parseRecipeName, resolveSourceDir } from "./lib/helpers.ts";
 import { getAuthClient, getAllTabNames, findCurrentWeekTab } from "./lib/gsheet-helpers.ts";
 
@@ -435,96 +436,9 @@ function loadCookSchedulesVF(): Record<string, CookSchedule> {
 // ─── Operational Sheet Readers ────────────────────────────────────────────────
 
 // ─── Operational Sheet Readers (getAuthClient/getAllTabNames/findCurrentWeekTab aus lib/gsheet-helpers) ────
-
-async function readProductionPlan(spreadsheetId: string): Promise<ProductionPlan | undefined> {
-  if (!spreadsheetId) return undefined;
-  const client = await getAuthClient();
-  const sheets = google.sheets({ version: "v4", auth: client as any });
-
-  let tabName = process.env.SHEET_FERTIGSTELLUNG_TAB?.trim();
-  if (!tabName) {
-    const allTabs = await getAllTabNames(sheets, spreadsheetId);
-    tabName = findCurrentWeekTab(allTabs, ["W{XX} Transperancy", "W{XX} Transparency", "BENL Outbound W{XX}"]);
-    if (!tabName) tabName = allTabs[0];
-  }
-  if (!tabName) { console.warn("  Fertigstellung: kein Tab gefunden"); return undefined; }
-
-  let rows: any[][];
-  try {
-    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:N2000` });
-    rows = res.data.values ?? [];
-  } catch (e: any) {
-    console.warn(`  Fertigstellung Lesen fehlgeschlagen: ${e?.message ?? e}`);
-    return undefined;
-  }
-
-  // Derive week from tab name: "W23 Transperancy Total Overview" → 2026-W23
-  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
-  const year = new Date().getFullYear();
-  const week = tabWeekMatch
-    ? `${year}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}`
-    : `${year}-W??`;
-
-  // Find header row: contains "Work Order" and "Recipe"
-  let headerIdx = -1;
-  for (let i = 0; i < Math.min(rows.length, 5); i++) {
-    const r = rows[i].map((c: unknown) => String(c ?? "").trim().toLowerCase());
-    if (r.some(c => c.includes("work order")) && r.some(c => c === "recipe")) {
-      headerIdx = i;
-      break;
-    }
-  }
-  if (headerIdx < 0) {
-    console.warn(`  Fertigstellung: Header nicht gefunden in Tab "${tabName}"`);
-    return undefined;
-  }
-
-  const header = rows[headerIdx].map((c: unknown) => String(c ?? "").trim().toLowerCase());
-  const runIdx     = header.findIndex(c => c === "run");
-  const dayIdx     = header.findIndex(c => c.includes("kitchen day") || c.includes("planned kitchen"));
-  const woIdx      = header.findIndex(c => c === "work order");
-  const recipeIdx  = header.findIndex(c => c === "recipe");
-  const subIdx     = header.findIndex(c => c.includes("sub recipe") || c === "sub recipe");
-  const mealsIdx   = header.findIndex(c => c.includes("planned meals") || c === "planned meals");
-  const stagingIdx = header.findIndex(c => c.includes("staging"));
-  const kitchenIdx = header.findIndex(c => c.includes("kitchen") && c.includes("kg"));
-  const postIdx    = header.findIndex(c => c.includes("post"));
-  const yieldIdx   = header.findIndex(c => c === "yield");
-  // Logistik block appears to the right: cols 11+ (WO, Target)
-  const logTgtIdx  = header.findLastIndex(c => c === "target");
-
-  const entries: WorkOrderEntry[] = [];
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row?.length) continue;
-    const woCell = woIdx >= 0 ? String(row[woIdx] ?? "").trim() : "";
-    if (!woCell || !/^\d{2}-\d{1,4}$/.test(woCell)) continue; // allow "24-2" .. "24-130"
-
-    const fullRecipe = recipeIdx >= 0 ? String(row[recipeIdx] ?? "").trim() : "";
-    const { code: recipeCode, base: _recipeName } = parseRecipeName(fullRecipe);
-
-    const yieldRaw = String(row[yieldIdx >= 0 ? yieldIdx : 9] ?? "").replace("%", "").trim();
-    const yieldPct = parseFloat(yieldRaw.replace(",", ".")) || 0;
-
-    entries.push({
-      run:            runIdx >= 0 ? (parseInt(String(row[runIdx] ?? ""), 10) || 0) : 0,
-      kitchenDay:     dayIdx >= 0 ? String(row[dayIdx] ?? "").trim() : "",
-      workOrder:      woCell,
-      recipeCode,
-      recipeName:     fullRecipe,
-      subRecipe:      subIdx >= 0 ? String(row[subIdx] ?? "").trim() : "",
-      plannedMeals:   mealsIdx >= 0 ? num(row[mealsIdx]) : 0,
-      stagingKg:      stagingIdx >= 0 ? num(row[stagingIdx]) : 0,
-      kitchenKg:      kitchenIdx >= 0 ? num(row[kitchenIdx]) : 0,
-      postKg:         postIdx >= 0 ? num(row[postIdx]) : 0,
-      yieldPct,
-      logisticTarget: logTgtIdx >= 0 ? (num(row[logTgtIdx]) || undefined) : undefined,
-    });
-  }
-
-  console.log(`  Produktionsplan: ${entries.length} Work-Order-Zeilen aus Tab "${tabName}"`);
-  return { week, generatedAt: new Date().toISOString(), rows: entries };
-}
+// readProductionPlan lebt in ./read-production-plan.ts (geteilt mit import-local.ts) —
+// hier keine zweite Kopie pflegen, sonst laufen Bugfixes wie die "Transperancy Total
+// Overview"-Tab-Erkennung nur in einer der beiden Importpfade.
 
 async function readPrintOrders(spreadsheetId: string): Promise<PrintOrderRow[]> {
   if (!spreadsheetId) return [];
@@ -574,7 +488,10 @@ async function readPrintOrders(spreadsheetId: string): Promise<PrintOrderRow[]> 
   return result;
 }
 
-async function readKitchenPriority(spreadsheetId: string): Promise<KitchenPriorityRow[]> {
+// Loeste ab Aug 2026 den alten "Verden-{YEAR}-W{XX}"-Tab (Priority/WO-Ready-Flags)
+// ab -- der Sheet-Owner hat auf "Planning W{XX}" umgestellt: rezeptweise
+// Forecast/Plan-Zahlen statt Work-Order-Flags (siehe KitchenPlanningRow).
+async function readKitchenPlanning(spreadsheetId: string): Promise<KitchenPlanningRow[]> {
   if (!spreadsheetId) return [];
   const client = await getAuthClient();
   const sheets = google.sheets({ version: "v4", auth: client as any });
@@ -582,66 +499,73 @@ async function readKitchenPriority(spreadsheetId: string): Promise<KitchenPriori
   let tabName = process.env.SHEET_KITCHEN_PRIORITY_TAB?.trim();
   if (!tabName) {
     const allTabs = await getAllTabNames(sheets, spreadsheetId);
-    tabName = findCurrentWeekTab(allTabs, ["Verden-{YEAR}-W{XX}", "Verden-{YEAR}-W{KW}"]);
-    if (!tabName) tabName = allTabs[0];
+    tabName = findCurrentWeekTab(allTabs, ["Planning W{XX}", "Planning W{KW}"]);
   }
-  if (!tabName) { console.warn("  Kitchen Priority: kein Tab gefunden"); return []; }
+  if (!tabName) { console.warn("  Kitchen Planning: kein Tab gefunden"); return []; }
+
+  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
+  const week = tabWeekMatch
+    ? `${new Date().getFullYear()}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}`
+    : `${new Date().getFullYear()}-W??`;
 
   let rows: any[][];
   try {
-    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:J1000` });
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: `'${tabName}'!A1:J1000`, valueRenderOption: "UNFORMATTED_VALUE",
+    });
     rows = res.data.values ?? [];
   } catch (e: any) {
-    console.warn(`  Kitchen Priority Lesen fehlgeschlagen: ${e?.message ?? e}`);
+    console.warn(`  Kitchen Planning Lesen fehlgeschlagen: ${e?.message ?? e}`);
     return [];
   }
 
-  if (!rows.length) return [];
-
-  // Find header row: row with "Priority" and "Work Order" (may be row 0 or 1)
+  // Header: Zeile mit "Recipe Code" und "Forecast"
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rows.length, 4); i++) {
     const r = rows[i].map((c: unknown) => String(c ?? "").trim().toLowerCase());
-    if (r.some(c => c === "priority") && r.some(c => c.includes("work order"))) {
+    if (r.some(c => c === "recipe code") && r.some(c => c === "forecast")) {
       headerIdx = i;
       break;
     }
   }
   if (headerIdx < 0) {
-    console.warn(`  Kitchen Priority: Header nicht gefunden in Tab "${tabName}"`);
+    console.warn(`  Kitchen Planning: Header nicht gefunden in Tab "${tabName}"`);
     return [];
   }
 
   const header = rows[headerIdx].map((c: unknown) => String(c ?? "").trim().toLowerCase());
-  const prioIdx    = header.findIndex(c => c === "priority");
-  const stagingIdx = header.findIndex(c => c.includes("wo") && c.includes("staging") || c.includes("wostaging"));
-  const commentIdx = header.findIndex(c => c.includes("comment"));
-  const deboxIdx   = header.findIndex(c => c.includes("debox"));
-  const readyIdx   = header.findIndex(c => c.includes("wo ready") || c === "wo ready");
-  const hkIdx      = header.findIndex(c => c.includes("hot kitchen"));
-  const dateIdx    = header.findIndex(c => c.includes("date needed"));
-  const woIdx      = header.findIndex(c => c.includes("work order number") || c === "work order number");
+  const codeIdx     = header.findIndex(c => c === "recipe code");
+  const nameIdx     = header.findIndex(c => c === "recipe name");
+  const forecastIdx = header.findIndex(c => c === "forecast");
+  const planIdx     = header.findIndex(c => c === "plan total");
+  const run1Idx      = header.findIndex(c => c === "1. run");
+  const run2Idx      = header.findIndex(c => c === "2. run");
+  const run3Idx      = header.findIndex(c => c === "3. run");
+  const deltaIdx     = header.findIndex(c => c === "forecast delta");
 
-  const result: KitchenPriorityRow[] = [];
+  const runVal = (row: any[], idx: number): number | undefined => idx >= 0 ? (num(row[idx]) || undefined) : undefined;
+
+  const result: KitchenPlanningRow[] = [];
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
-    const wo = woIdx >= 0 ? String(row[woIdx] ?? "").trim() : "";
-    if (!wo || !/^\d{2}-\d{1,4}$/.test(wo)) continue; // allow "24-2" .. "24-130"
+    if (!row?.length) continue;
+    const recipeCode = codeIdx >= 0 ? String(row[codeIdx] ?? "").trim() : "";
+    if (!recipeCode) continue;
 
-    const readyRaw = readyIdx >= 0 ? String(row[readyIdx] ?? "").trim().toUpperCase() : "";
     result.push({
-      priority:          prioIdx >= 0 ? (parseInt(String(row[prioIdx] ?? ""), 10) || result.length + 1) : result.length + 1,
-      workOrder:         wo,
-      woStagingBy:       stagingIdx >= 0 ? String(row[stagingIdx] ?? "").trim() || undefined : undefined,
-      deboxDay:          deboxIdx >= 0 ? String(row[deboxIdx] ?? "").trim() || undefined : undefined,
-      woReady:           readyRaw === "TRUE",
-      hotKitchenWeekday: hkIdx >= 0 ? String(row[hkIdx] ?? "").trim() || undefined : undefined,
-      dateNeeded:        dateIdx >= 0 ? String(row[dateIdx] ?? "").trim() || undefined : undefined,
-      comments:          commentIdx >= 0 ? String(row[commentIdx] ?? "").trim() || undefined : undefined,
+      week,
+      recipeCode,
+      recipeName:    nameIdx >= 0 ? String(row[nameIdx] ?? "").trim() : "",
+      forecast:      forecastIdx >= 0 ? num(row[forecastIdx]) : 0,
+      planTotal:     planIdx >= 0 ? num(row[planIdx]) : 0,
+      run1:          runVal(row, run1Idx),
+      run2:          runVal(row, run2Idx),
+      run3:          runVal(row, run3Idx),
+      forecastDelta: deltaIdx >= 0 ? num(row[deltaIdx]) : 0,
     });
   }
 
-  console.log(`  Kitchen Priority: ${result.length} Einträge aus Tab "${tabName}"`);
+  console.log(`  Kitchen Planning: ${result.length} Rezepte aus Tab "${tabName}" (Woche ${week})`);
   return result;
 }
 
@@ -781,8 +705,8 @@ async function main() {
   console.log("Lese Print Orders Sleeven (Sheet 2) …");
   const printOrders = await readPrintOrders(process.env.SHEET_PRINT_ORDERS ?? "1fpEHBWmd_zk74wbu78unPoTV_u860smNlxTuioEdq-4");
 
-  console.log("Lese Kitchen Priority (Sheet 3) …");
-  const kitchenPriority = await readKitchenPriority(process.env.SHEET_KITCHEN_PRIORITY ?? "13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U");
+  console.log("Lese Kitchen Planning (Sheet 3) …");
+  const kitchenPlanning = await readKitchenPlanning(process.env.SHEET_KITCHEN_PRIORITY ?? "13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U");
 
   console.log("Lese Produktionsvorbereitung DE/Nordics (Sheet 1) ...");
   const sheetWochenstartId = process.env.SHEET_WOCHENSTART ?? "1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE";
@@ -815,7 +739,7 @@ async function main() {
     shelfLifeBySku,
     productionPlan: productionPlan ?? undefined,
     printOrders: printOrders.length ? printOrders : undefined,
-    kitchenPriority: kitchenPriority.length ? kitchenPriority : undefined,
+    kitchenPlanning: kitchenPlanning.length ? kitchenPlanning : undefined,
     produktionsplanung: Object.keys(produktionsplanung).length ? produktionsplanung : undefined,
   };
   if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });

@@ -222,6 +222,9 @@ export interface PrintOrderRow {
 // Cols: [0]=date-group, [2]=Priority, [3]=WOStaging by, [4]=Comments,
 //       [5]=Debox Day, [6]=WO Ready, [7]=Hot Kitchen Weekday,
 //       [8]=Date Needed, [9]=Work Order Number
+// Stand Aug 2026: Dieser Tab-Typ existiert im Sheet nicht mehr (siehe
+// KitchenPlanningRow unten) -- Typ/Feld bleiben fuer bestehende Konsumenten
+// (ManufacturingCalendarView) erhalten, werden aber nicht mehr befuellt.
 export interface KitchenPriorityRow {
   priority: number;
   workOrder: string;          // "23-175"
@@ -231,6 +234,55 @@ export interface KitchenPriorityRow {
   hotKitchenWeekday?: string; // "Monday"
   dateNeeded?: string;        // "2026-05-24 - 1"
   comments?: string;
+}
+
+// === Kitchen Planning (Sheet 3, Tab "Planning W{XX}") ========================
+// Loeste ab Aug 2026 den alten "Verden-{YEAR}-W{XX}"-Tab ab (siehe
+// KitchenPriorityRow oben) -- komplett andere Struktur: rezeptweise
+// Forecast/Plan-Zahlen statt Work-Order-Flags. Header Zeile 2 (0-indiziert 1):
+// "#", "Recipe Code", "Recipe Name", "Forecast", "Plan Total", "1. Run",
+// "2. Run", "3. Run", "Forecast Delta".
+export interface KitchenPlanningRow {
+  week: string;         // "2026-W33"
+  recipeCode: string;   // "FV0576A"
+  recipeName: string;
+  forecast: number;
+  planTotal: number;
+  run1?: number;
+  run2?: number;
+  run3?: number;
+  forecastDelta: number;
+}
+
+// === Weight Tracking (Kitchen) | F_ EU ========================================
+// Manuelles Wiege-Log der Kueche (siehe scripts/import-weight-tracking.ts).
+// "Weekly Yield": vorberechnete Kitchen→Pre-Blast→Post-Blast Ausbeute pro
+// Sub-Rezept/Woche. "Raw Weight - Goal" / "Pre Blast - Goal": Ziel- vs.
+// getrackte Gewichte pro WO fuer den jeweils aktuellen Snapshot-Tag.
+export interface YieldRow {
+  week: string;                    // "2026-W31"
+  subRecipeName: string;
+  code: string;
+  workOrders: string;              // "31-230"
+  kitchenKg: number;
+  preBlastKg: number;
+  postBlastKg: number;
+  kitchenToPreBlastRatio?: number;
+  preBlastToPostBlastRatio?: number;
+  totalRatio?: number;             // Kitchen→Post-Blast
+  readings: number;
+}
+
+export interface WeightGoalRow {
+  stage: "raw" | "preBlast";
+  date: string;          // "2026-08-10"
+  workOrder: string;     // "34-1"
+  recipeName: string;
+  subRecipeName: string;
+  goalKg: number;
+  trackedKg: number;
+  shortageKg?: number;   // negativ = Untermenge ggue. Ziel
+  postBlastGoalKg?: number;
 }
 
 export interface DataBundle {
@@ -245,10 +297,13 @@ export interface DataBundle {
   productionPlan?: ProductionPlan;
   printOrders?: PrintOrderRow[];
   kitchenPriority?: KitchenPriorityRow[];
+  kitchenPlanning?: KitchenPlanningRow[];
   produktionsplanung?: Record<string, ProduktionsplanungEntry>;
   maitreRampup?: Record<string, MaitreRampupEntry>;
   equipmentBible?: EquipBibleEntry[];
   planningCalendar?: PlanningCalendarData;
+  weeklyYield?: YieldRow[];
+  weightGoals?: WeightGoalRow[];
 }
 
 // === Equipment Bible ("Kuechenbible") =========================================

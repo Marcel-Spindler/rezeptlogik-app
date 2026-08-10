@@ -139,8 +139,11 @@ async function loadFromFirestore(): Promise<DataBundle> {
   const pkgSnap = await getDocs(collection(ROOT, "productionPlan")).catch(() => null);
   const poSnap  = await getDocs(collection(ROOT, "printOrders")).catch(() => null);
   const kpSnap  = await getDocs(collection(ROOT, "kitchenPriority")).catch(() => null);
+  const kplSnap = await getDocs(collection(ROOT, "kitchenPlanning")).catch(() => null);
   const ebSnap  = await getDocs(collection(ROOT, "equipmentBible")).catch(() => null);
   const pcSnap  = await getDocs(collection(ROOT, "planningCalendar")).catch(() => null);
+  const wySnap  = await getDocs(collection(ROOT, "weeklyYield")).catch(() => null);
+  const wgSnap  = await getDocs(collection(ROOT, "weightGoals")).catch(() => null);
   const pplSnap = await getDocs(collection(ROOT, "produktionsplanung")).catch(() => null);
   const mrSnap  = await getDocs(collection(ROOT, "maitreRampup")).catch(() => null);
   const recipes: DataBundle["recipes"] = {};
@@ -193,6 +196,15 @@ async function loadFromFirestore(): Promise<DataBundle> {
   kpSnap?.forEach(d => { const row = d.data() as any; if (row) kitchenPriority!.push(row); });
   kitchenPriority.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 
+  // kitchenPlanning: ein Doc pro Woche (id = "2026-W33"), Feld "rows" — Rezepte
+  // aller verfuegbaren Wochen zusammenfuehren (analog productionPlan oben).
+  const kitchenPlanning: DataBundle["kitchenPlanning"] = [];
+  kplSnap?.forEach(d => {
+    const plan = d.data() as any;
+    const rows = Array.isArray(plan?.rows) ? plan.rows : [];
+    kitchenPlanning!.push(...rows);
+  });
+
   // equipmentBible: single doc "current" holding a "rows" array (Kuechenbible import).
   // Defensive: drop any row that isn't a well-formed BRAISER/MIDDLE_KITCHEN/
   // VEGGIE_DEBOX entry with a finite, positive maxKg — a malformed row (e.g.
@@ -225,6 +237,12 @@ async function loadFromFirestore(): Promise<DataBundle> {
     };
   }
 
+  const weeklyYieldDoc = wySnap?.docs.find(d => d.id === "current")?.data() as any;
+  const weeklyYield: DataBundle["weeklyYield"] = Array.isArray(weeklyYieldDoc?.rows) ? weeklyYieldDoc.rows : undefined;
+
+  const weightGoalsDoc = wgSnap?.docs.find(d => d.id === "current")?.data() as any;
+  const weightGoals: DataBundle["weightGoals"] = Array.isArray(weightGoalsDoc?.rows) ? weightGoalsDoc.rows : undefined;
+
   const produktionsplanung: NonNullable<DataBundle["produktionsplanung"]> = {};
   pplSnap?.forEach(d => {
     const row = d.data() as any;
@@ -254,9 +272,12 @@ async function loadFromFirestore(): Promise<DataBundle> {
     productionPlan,
     printOrders: printOrders.length ? printOrders : undefined,
     kitchenPriority: kitchenPriority.length ? kitchenPriority : undefined,
+    kitchenPlanning: kitchenPlanning.length ? kitchenPlanning : undefined,
     produktionsplanung: Object.keys(produktionsplanung).length ? produktionsplanung : undefined,
     maitreRampup: Object.keys(maitreRampup).length ? maitreRampup : undefined,
     equipmentBible,
     planningCalendar,
+    weeklyYield,
+    weightGoals,
   };
 }

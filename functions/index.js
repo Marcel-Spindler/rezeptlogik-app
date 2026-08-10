@@ -1820,56 +1820,70 @@ async function readPrintOrdersGSheet(sheets) {
   })).filter(r => r.code);
 }
 
-async function readKitchenPriorityGSheet(sheets) {
+// Loeste ab Aug 2026 den alten "Verden-{YEAR}-W{XX}"-Tab (Priority/WO-Ready-Flags)
+// ab -- der Sheet-Owner hat auf "Planning W{XX}" umgestellt: rezeptweise
+// Forecast/Plan-Zahlen statt Work-Order-Flags (siehe KitchenPlanningRow in src/types.ts).
+async function readKitchenPlanningGSheet(sheets) {
   const spreadsheetId = process.env.SHEET_KITCHEN_PRIORITY || "13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U";
-  if (!spreadsheetId) return [];
+  if (!spreadsheetId) return { week: null, rows: [] };
   let tabName = process.env.SHEET_KITCHEN_PRIORITY_TAB;
   if (!tabName) {
     const allTabs = await getAllTabNamesGS(sheets, spreadsheetId);
-    tabName = findCurrentWeekTabGS(allTabs, ["Verden-{YEAR}-W{XX}", "Verden-{YEAR}-W{KW}"]) || allTabs[0];
+    tabName = findCurrentWeekTabGS(allTabs, ["Planning W{XX}", "Planning W{KW}"]);
   }
-  if (!tabName) return [];
-  let rows; try { rows = await sheetValues(sheets, spreadsheetId, tabName); } catch { return []; }
-  if (!rows.length) return [];
+  if (!tabName) return { week: null, rows: [] };
 
-  // Find header row: contains "Priority" and "Work Order"
+  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
+  const week = tabWeekMatch ? `${new Date().getFullYear()}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}` : null;
+
+  let rows;
+  try {
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:J1000`, valueRenderOption: "UNFORMATTED_VALUE" });
+    rows = res.data.values || [];
+  } catch { return { week, rows: [] }; }
+  if (!rows.length) return { week, rows: [] };
+
+  // Header: Zeile mit "Recipe Code" und "Forecast"
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rows.length, 4); i++) {
-    const r = rows[i].map(c => String(c || "").trim().toLowerCase());
-    if (r.some(c => c === "priority") && r.some(c => c.includes("work order"))) {
+    const r = rows[i].map(c => String(c ?? "").trim().toLowerCase());
+    if (r.some(c => c === "recipe code") && r.some(c => c === "forecast")) {
       headerIdx = i; break;
     }
   }
-  if (headerIdx < 0) return [];
+  if (headerIdx < 0) return { week, rows: [] };
 
-  const header = rows[headerIdx].map(c => String(c || "").trim().toLowerCase());
-  const prioIdx    = header.findIndex(c => c === "priority");
-  const stagingIdx = header.findIndex(c => c.includes("wostaging") || (c.includes("wo") && c.includes("staging")));
-  const commentIdx = header.findIndex(c => c.includes("comment"));
-  const deboxIdx   = header.findIndex(c => c.includes("debox"));
-  const readyIdx   = header.findIndex(c => c.includes("wo ready"));
-  const hkIdx      = header.findIndex(c => c.includes("hot kitchen"));
-  const dateIdx    = header.findIndex(c => c.includes("date needed"));
-  const woIdx      = header.findIndex(c => c.includes("work order number"));
+  const header = rows[headerIdx].map(c => String(c ?? "").trim().toLowerCase());
+  const codeIdx     = header.findIndex(c => c === "recipe code");
+  const nameIdx     = header.findIndex(c => c === "recipe name");
+  const forecastIdx = header.findIndex(c => c === "forecast");
+  const planIdx     = header.findIndex(c => c === "plan total");
+  const run1Idx      = header.findIndex(c => c === "1. run");
+  const run2Idx      = header.findIndex(c => c === "2. run");
+  const run3Idx      = header.findIndex(c => c === "3. run");
+  const deltaIdx     = header.findIndex(c => c === "forecast delta");
+  const toNum = v => { const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
+  const runVal = (row, idx) => idx >= 0 ? (toNum(row[idx]) || undefined) : undefined;
 
   const result = [];
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
-    const wo = woIdx >= 0 ? String(row[woIdx] || "").trim() : "";
-    if (!wo || !/^\d{2}-\d{3,}/.test(wo)) continue;
-    const readyRaw = readyIdx >= 0 ? String(row[readyIdx] || "").trim().toUpperCase() : "";
+    if (!row?.length) continue;
+    const recipeCode = codeIdx >= 0 ? String(row[codeIdx] ?? "").trim() : "";
+    if (!recipeCode) continue;
     result.push({
-      priority:          prioIdx >= 0 ? (parseInt(String(row[prioIdx] || ""), 10) || result.length + 1) : result.length + 1,
-      workOrder:         wo,
-      woStagingBy:       stagingIdx >= 0 ? String(row[stagingIdx] || "").trim() || undefined : undefined,
-      deboxDay:          deboxIdx >= 0 ? String(row[deboxIdx] || "").trim() || undefined : undefined,
-      woReady:           readyRaw === "TRUE",
-      hotKitchenWeekday: hkIdx >= 0 ? String(row[hkIdx] || "").trim() || undefined : undefined,
-      dateNeeded:        dateIdx >= 0 ? String(row[dateIdx] || "").trim() || undefined : undefined,
-      comments:          commentIdx >= 0 ? String(row[commentIdx] || "").trim() || undefined : undefined,
+      week,
+      recipeCode,
+      recipeName:    nameIdx >= 0 ? String(row[nameIdx] ?? "").trim() : "",
+      forecast:      forecastIdx >= 0 ? toNum(row[forecastIdx]) : 0,
+      planTotal:     planIdx >= 0 ? toNum(row[planIdx]) : 0,
+      run1:          runVal(row, run1Idx),
+      run2:          runVal(row, run2Idx),
+      run3:          runVal(row, run3Idx),
+      forecastDelta: deltaIdx >= 0 ? toNum(row[deltaIdx]) : 0,
     });
   }
-  return result;
+  return { week, rows: result };
 }
 
 exports.refreshOperationalData = onRequest({ region: "europe-west3", timeoutSeconds: 120 }, async (req, res) => {
@@ -1888,10 +1902,10 @@ exports.refreshOperationalData = onRequest({ region: "europe-west3", timeoutSeco
     const sheets = await createSheetsClient();
     const checkedAt = new Date(now).toISOString();
 
-    const [productionPlan, printOrders, kitchenPriority] = await Promise.all([
+    const [productionPlan, printOrders, kitchenPlanning] = await Promise.all([
       readProductionPlanGSheet(sheets),
       readPrintOrdersGSheet(sheets),
-      readKitchenPriorityGSheet(sheets),
+      readKitchenPlanningGSheet(sheets),
     ]);
 
     const batch = db.batch();
@@ -1910,15 +1924,16 @@ exports.refreshOperationalData = onRequest({ region: "europe-west3", timeoutSeco
       }
     }
 
-    const kpColl = APP_ROOT.collection("kitchenPriority");
-    const kpRef = kpColl.doc("current");
-    if (kitchenPriority.length) batch.set(kpRef, { rows: kitchenPriority, updatedAt: checkedAt });
+    if (kitchenPlanning.week && kitchenPlanning.rows.length) {
+      const kplColl = APP_ROOT.collection("kitchenPlanning");
+      batch.set(kplColl.doc(kitchenPlanning.week), { week: kitchenPlanning.week, rows: kitchenPlanning.rows, updatedAt: checkedAt });
+    }
 
     await APP_ROOT.set({ operationalLastCheckedAt: checkedAt }, { merge: true });
     await batch.commit();
 
-    logger.info("refreshOperationalData OK", { productionRows: productionPlan?.rows?.length ?? 0, printOrders: printOrders.length, kitchenPriority: kitchenPriority.length });
-    res.json({ ok: true, refreshed: true, productionRows: productionPlan?.rows?.length ?? 0, printOrders: printOrders.length, kitchenPriority: kitchenPriority.length, checkedAt });
+    logger.info("refreshOperationalData OK", { productionRows: productionPlan?.rows?.length ?? 0, printOrders: printOrders.length, kitchenPlanning: kitchenPlanning.rows.length });
+    res.json({ ok: true, refreshed: true, productionRows: productionPlan?.rows?.length ?? 0, printOrders: printOrders.length, kitchenPlanning: kitchenPlanning.rows.length, checkedAt });
   } catch (error) {
     logger.error("refreshOperationalData failed", error);
     res.status(500).json({ ok: false, error: error?.message || String(error) });
