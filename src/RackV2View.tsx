@@ -2,9 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deriveEntryKind,
   exportRackfileCsv,
-  parseMultilineExcel,
   type RackEntry,
-  type RackMarket,
 } from "./lib/rack";
 import {
   RACK_V2_LINES,
@@ -35,14 +33,20 @@ import {
   rackV2SlotTier,
   rackV2SlotNumber,
   validateV2Plan,
-  type RackV2ActiveOverrides,
   type RackV2Block,
   type RackV2Layouts,
-  type RackV2Line,
   type RackV2MarketId,
 } from "./lib/rackV2";
 import type { UiLocale } from "./lib/i18n";
 import type { CookSchedule, ProcessSpec, Recipe, WeekRecipe } from "./core/types";
+import {
+  ALL_MARKETS, actorName, buildWeekSeedPlan, defaultLinePlanState, defaultSharedPlanState, filterPoolForV2Market,
+  legacyStorageKey, loadV2Entries, parseStoredPlan, serializePlanState, storageKey, weekDocId,
+  type DragPayload, type EntriesByDataMarket, type LinePlanState, type SharedPlanState,
+} from "./features/planning-oasis/rack/rackPlanState";
+import {
+  blockTone, buildBoardKey, isPackagingLike, kindDot, marketChipTone, slotPurposeTone, tierTone,
+} from "./features/planning-oasis/rack/rackTone";
 
 type Props = {
   week: string;
@@ -53,292 +57,6 @@ type Props = {
   processSpecs?: Record<string, ProcessSpec>;
 };
 
-type StoredEntry = Pick<
-  RackEntry,
-  "recipe" | "line" | "flowRackPosition" | "quantity" | "sku" |
-  "ingredient" | "scanRegEx" | "labelPos" | "uniCode" | "displayName" |
-  "gramage" | "sort" | "source" | "tier"
->;
-
-type ReleaseStatus = "draft" | "released" | "rework";
-
-type LinePlanState = {
-  market: RackV2MarketId;
-  entries: RackEntry[];
-  plannedWorkers: number;
-  manualOverrides: RackV2ActiveOverrides;
-  releaseStatus: ReleaseStatus;
-  releasedAt?: number;
-  releasedBy?: string;
-  reworkAt?: number;
-  reworkBy?: string;
-};
-
-type SharedPlanState = {
-  lines: Record<string, LinePlanState>;
-};
-
-type DragPayload = {
-  entryId: string;
-  source: "board" | "pool";
-  lineId: string;
-};
-
-type EntriesByDataMarket = Record<RackMarket, RackEntry[]>;
-
-const AUTO_MULTILINE_URL = "/data/rack/MultiLine-latest.xlsx";
-const ALL_MARKETS: RackV2MarketId[] = ["DE", "DKSE", "BENL"];
-
-function storageKey(week: string): string {
-  return `rackV2.shared.${week}.v3`;
-}
-
-function legacyStorageKey(week: string): string {
-  return `rackV2.shared.${week}.v2`;
-}
-
-function weekDocId(week: string): string {
-  return week.replace(/[^A-Za-z0-9_-]+/g, "-");
-}
-
-function actorName(): string {
-  if (typeof window === "undefined") return "unknown";
-  return window.location.hostname || "unknown";
-}
-
-function dedupePoolEntries(entries: RackEntry[]): RackEntry[] {
-  const seen = new Set<string>();
-  const out: RackEntry[] = [];
-  for (const entry of entries) {
-    const key = `${rackV2EntryFingerprint(entry)}|${String(entry.flowRackPosition).toLowerCase()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(entry);
-  }
-  return out;
-}
-
-function rackV2EntryBelongsToMarket(entry: RackEntry, market: RackV2MarketId): boolean {
-  const recipe = String(entry.recipe ?? "").trim();
-  const kind = deriveEntryKind(entry);
-  if (market === "DE") return true;
-  if (kind !== "meal" && !/^\d/.test(recipe)) return true;
-  if (market === "DKSE") return /^6\d*/.test(recipe);
-  return /^7\d*/.test(recipe);
-}
-
-function filterPoolForV2Market(entries: RackEntry[], market: RackV2MarketId): RackEntry[] {
-  return entries.filter((entry) => rackV2EntryBelongsToMarket(entry, market));
-}
-
-async function fetchAsFile(url: string): Promise<File> {
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error(`HTTP ${response.status} fuer ${url}`);
-  const blob = await response.blob();
-  return new File([blob], url.split("/").pop() ?? "MultiLine.xlsx", { type: blob.type });
-}
-
-async function loadV2Entries(): Promise<EntriesByDataMarket> {
-  const file = await fetchAsFile(AUTO_MULTILINE_URL);
-  const out: EntriesByDataMarket = { de: [], nordics: [] };
-  for (const dataMarket of ["de", "nordics"] as RackMarket[]) {
-    const marketLineIds = RACK_V2_LINES
-      .filter((line) => RACK_V2_MARKET_TO_DATA[line.defaultMarket] === dataMarket)
-      .map((line) => line.id);
-    const parsed = await parseMultilineExcel(file, dataMarket, marketLineIds);
-    out[dataMarket] = dedupePoolEntries(parsed);
-  }
-  return out;
-}
-
-function slimEntries(entries: RackEntry[]): StoredEntry[] {
-  return entries.map(({ id: _id, ...rest }) => rest);
-}
-
-function restoreEntries(rows: StoredEntry[] | undefined, lineId: string): RackEntry[] {
-  if (!rows) return [];
-  return rows.map((entry, index) => ({
-    ...entry,
-    id: `${lineId}:${entry.recipe}:${entry.flowRackPosition}:${entry.tier ?? 0}:${index}`,
-  }));
-}
-
-function defaultLinePlanState(line: RackV2Line): LinePlanState {
-  return {
-    market: line.defaultMarket,
-    entries: [],
-    plannedWorkers: rackV2HallLayoutWorkers(line.defaultMarket),
-    manualOverrides: {},
-    releaseStatus: "draft",
-  };
-}
-
-function defaultSharedPlanState(): SharedPlanState {
-  return {
-    lines: Object.fromEntries(RACK_V2_LINES.map((line) => [line.id, defaultLinePlanState(line)])) as Record<string, LinePlanState>,
-  };
-}
-
-function buildWeekSeedPlan(pool: EntriesByDataMarket): SharedPlanState {
-  return {
-    lines: Object.fromEntries(
-      RACK_V2_LINES.map((line) => {
-        const market = line.defaultMarket;
-        const dataPool = filterPoolForV2Market(pool[RACK_V2_MARKET_TO_DATA[market]] ?? [], market);
-        return [line.id, {
-          ...defaultLinePlanState(line),
-          market,
-          entries: rackV2InitialLayout(dataPool, market),
-        }];
-      }),
-    ) as Record<string, LinePlanState>,
-  };
-}
-
-function coerceMarket(candidate: unknown, fallback: RackV2MarketId): RackV2MarketId {
-  return typeof candidate === "string" && ALL_MARKETS.includes(candidate as RackV2MarketId)
-    ? candidate as RackV2MarketId
-    : fallback;
-}
-
-function coercePlannedWorkers(candidate: unknown, market: RackV2MarketId): number {
-  if (typeof candidate !== "number" || !Number.isFinite(candidate)) return rackV2HallLayoutWorkers(market);
-  if (market === "DE" && candidate === 11) return 9;
-  if (market !== "DE" && candidate === 8) return 7;
-  return Math.max(1, Math.round(candidate));
-}
-
-function parseStoredPlan(raw: string | null): SharedPlanState | null {
-  if (!raw) return null;
-  try {
-    const data = JSON.parse(raw) as {
-      lines?: Record<string, Omit<LinePlanState, "entries"> & { entries?: StoredEntry[] }>;
-      marketByLine?: Record<string, RackV2MarketId>;
-      markets?: Record<RackV2MarketId, Omit<LinePlanState, "market" | "entries"> & { entries?: StoredEntry[] }>;
-    };
-    if (!data || typeof data !== "object") return null;
-    const base = defaultSharedPlanState();
-
-    if (data.lines && typeof data.lines === "object") {
-      for (const line of RACK_V2_LINES) {
-        const row = data.lines[line.id];
-        if (!row) continue;
-        const market = coerceMarket(row.market, line.defaultMarket);
-        base.lines[line.id] = {
-          market,
-          entries: restoreEntries(row.entries, line.id),
-          plannedWorkers: coercePlannedWorkers(row.plannedWorkers, market),
-          manualOverrides: row.manualOverrides && typeof row.manualOverrides === "object" ? row.manualOverrides : {},
-          releaseStatus: row.releaseStatus === "released" || row.releaseStatus === "rework" ? row.releaseStatus : "draft",
-          releasedAt: row.releasedAt,
-          releasedBy: row.releasedBy,
-          reworkAt: row.reworkAt,
-          reworkBy: row.reworkBy,
-        };
-      }
-      return base;
-    }
-
-    if (data.markets && typeof data.markets === "object") {
-      for (const line of RACK_V2_LINES) {
-        const market = coerceMarket(data.marketByLine?.[line.id], line.defaultMarket);
-        const row = data.markets[market];
-        base.lines[line.id] = {
-          market,
-          entries: restoreEntries(row?.entries, line.id),
-          plannedWorkers: coercePlannedWorkers(row?.plannedWorkers, market),
-          manualOverrides: row?.manualOverrides && typeof row.manualOverrides === "object" ? row.manualOverrides : {},
-          releaseStatus: row?.releaseStatus === "released" || row?.releaseStatus === "rework" ? row.releaseStatus : "draft",
-          releasedAt: row?.releasedAt,
-          releasedBy: row?.releasedBy,
-          reworkAt: row?.reworkAt,
-          reworkBy: row?.reworkBy,
-        };
-      }
-      return base;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function serializePlanState(plan: SharedPlanState): string {
-  return JSON.stringify({
-    lines: Object.fromEntries(
-      RACK_V2_LINES.map((line) => [line.id, {
-        ...plan.lines[line.id],
-        entries: slimEntries(plan.lines[line.id].entries),
-      }]),
-    ),
-  });
-}
-
-function marketChipTone(market: RackV2MarketId, active: boolean): string {
-  if (!active) return "bg-white text-slate-600 ring-slate-300 hover:bg-slate-50";
-  if (market === "DE") return "bg-emerald-600 text-white ring-emerald-700";
-  if (market === "DKSE") return "bg-sky-600 text-white ring-sky-700";
-  return "bg-orange-600 text-white ring-orange-700";
-}
-
-function kindDot(entry: RackEntry): string {
-  switch (deriveEntryKind(entry)) {
-    case "meal":
-      return "bg-emerald-500";
-    case "ice":
-      return "bg-cyan-500";
-    case "loyalty":
-      return "bg-amber-500";
-    case "beverage":
-      return "bg-fuchsia-500";
-    case "protein":
-      return "bg-rose-500";
-    case "packaging":
-      return "bg-slate-500";
-    default:
-      return "bg-violet-500";
-  }
-}
-
-function tierTone(tier: 1 | 2 | 3): string {
-  if (tier === 2) return "bg-emerald-50 text-emerald-900 ring-emerald-200";
-  if (tier === 1) return "bg-amber-50 text-amber-900 ring-amber-200";
-  return "bg-slate-100 text-slate-700 ring-slate-300";
-}
-
-function blockTone(active: boolean): string {
-  return active
-    ? "bg-emerald-50 text-emerald-900 ring-emerald-200"
-    : "bg-rose-50 text-rose-800 ring-rose-200";
-}
-
-function slotPurposeTone(purpose: ReturnType<typeof rackV2SlotPurpose>): string {
-  switch (purpose) {
-    case "meal":
-      return "border-orange-300 bg-orange-50";
-    case "ice":
-      return "border-sky-300 bg-sky-50";
-    case "smoothie":
-      return "border-emerald-300 bg-emerald-50";
-    case "flyer":
-      return "border-violet-300 bg-violet-50";
-    case "gift":
-      return "border-blue-400 bg-blue-50";
-    case "emergency":
-      return "border-rose-400 bg-rose-50";
-    default:
-      return "border-slate-300 bg-white";
-  }
-}
-
-function isPackagingLike(entry: RackEntry): boolean {
-  return deriveEntryKind(entry) === "packaging";
-}
-
-function buildBoardKey(slot: number, tier: 1 | 2 | 3): string {
-  return `${slot}:${tier}`;
-}
 
 export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, processSpecs }: Props) {
   const initialStored = typeof window === "undefined"
