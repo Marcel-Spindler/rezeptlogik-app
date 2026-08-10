@@ -352,7 +352,12 @@ function wmsRangeForToolWeek(raw: string): WeekRange {
   const toolYear = Number(match[1]);
   const toolWeek = Number(match[2]);
   const weekLabel = `${toolYear}-W${String(toolWeek).padStart(2, "0")}`;
+  // "KW"/HF-Woche ist app-weit als (echte ISO-Woche + 1) definiert, siehe
+  // currentHfWeekLocal()/currentHfWeek() — die Kalendertage von HF-Woche N
+  // sind also die von echter ISO-Woche (N-1). Nur so bilden startDate/endDate
+  // die tatsächlichen Kalendertage der eingegebenen KW ab.
   const weekStart = isoWeekStart(toolYear, toolWeek);
+  weekStart.setUTCDate(weekStart.getUTCDate() - 7);
   const weekEnd = new Date(weekStart);
   weekEnd.setUTCDate(weekStart.getUTCDate() + 7);
   return {
