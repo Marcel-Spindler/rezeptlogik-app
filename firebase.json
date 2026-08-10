@@ -22,6 +22,7 @@
     ],
     "rewrites": [
       { "source": "/api/refresh-ramp-up", "function": "refreshRampUp", "region": "europe-west3" },
+      { "source": "/api/refresh-operational", "function": "refreshOperationalData", "region": "europe-west3" },
       { "source": "/api/agent-run", "function": "agentRun", "region": "europe-west3" },
       { "source": "/api/agent-approve", "function": "agentApprove", "region": "europe-west3" },
       { "source": "/api/agent-apply", "function": "agentApply", "region": "europe-west3" },
