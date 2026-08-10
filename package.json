@@ -28,6 +28,7 @@
     "deploy:all": "npm run build && npx firebase-tools deploy --only hosting,functions",
     "import:weekly-planning": "tsx scripts/read-weekly-planning.ts",
     "import:kitchen-bible": "tsx scripts/import-kitchen-bible.ts",
+    "import:planning-calendar": "tsx scripts/import-planning-calendar.ts",
     "wms:server": "tsx scripts/wms-local-server.ts",
     "wms:sync-cache": "tsx scripts/sync-wms-cache.ts",
     "dump:kpl": "tsx scripts/dump-gsheet.ts 13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U",

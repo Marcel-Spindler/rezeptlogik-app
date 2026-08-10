@@ -140,6 +140,7 @@ async function loadFromFirestore(): Promise<DataBundle> {
   const poSnap  = await getDocs(collection(ROOT, "printOrders")).catch(() => null);
   const kpSnap  = await getDocs(collection(ROOT, "kitchenPriority")).catch(() => null);
   const ebSnap  = await getDocs(collection(ROOT, "equipmentBible")).catch(() => null);
+  const pcSnap  = await getDocs(collection(ROOT, "planningCalendar")).catch(() => null);
   const pplSnap = await getDocs(collection(ROOT, "produktionsplanung")).catch(() => null);
   const mrSnap  = await getDocs(collection(ROOT, "maitreRampup")).catch(() => null);
   const recipes: DataBundle["recipes"] = {};
@@ -213,6 +214,17 @@ async function loadFromFirestore(): Promise<DataBundle> {
     equipmentBible = ebRows.length ? ebRows : undefined;
   }
 
+  let planningCalendar: DataBundle["planningCalendar"] = undefined;
+  const pcCurrentDoc = pcSnap?.docs.find(d => d.id === "current");
+  if (pcCurrentDoc) {
+    const pcData = pcCurrentDoc.data() as any;
+    planningCalendar = {
+      deadlines: Array.isArray(pcData?.deadlines) ? pcData.deadlines : [],
+      rules: Array.isArray(pcData?.rules) ? pcData.rules : [],
+      updatedAt: pcData?.updatedAt ?? "",
+    };
+  }
+
   const produktionsplanung: NonNullable<DataBundle["produktionsplanung"]> = {};
   pplSnap?.forEach(d => {
     const row = d.data() as any;
@@ -245,5 +257,6 @@ async function loadFromFirestore(): Promise<DataBundle> {
     produktionsplanung: Object.keys(produktionsplanung).length ? produktionsplanung : undefined,
     maitreRampup: Object.keys(maitreRampup).length ? maitreRampup : undefined,
     equipmentBible,
+    planningCalendar,
   };
 }

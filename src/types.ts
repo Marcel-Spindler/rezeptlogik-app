@@ -248,6 +248,7 @@ export interface DataBundle {
   produktionsplanung?: Record<string, ProduktionsplanungEntry>;
   maitreRampup?: Record<string, MaitreRampupEntry>;
   equipmentBible?: EquipBibleEntry[];
+  planningCalendar?: PlanningCalendarData;
 }
 
 // === Equipment Bible ("Kuechenbible") =========================================
@@ -261,6 +262,29 @@ export interface EquipBibleEntry {
   itemName: string;
   maxKg: number;
   notes?: string;
+}
+
+// === Planning Calendar ========================================================
+// Aus "F_VE Production Plan", Tab "Planning Calendar" (siehe scripts/import-planning-calendar.ts).
+// Firestore: apps/rezeptlogik/planningCalendar/current.
+export interface PlanningCalendarDeadline {
+  activity: string;      // "Forecast Updates"
+  time: string;          // "11:30"
+  days: string;          // "Mon, Tue, Wed, Fri"
+  owner?: string;        // L1: verantwortliche Person
+  escalation1?: string;  // L2: +1h nach Deadline
+  escalation2?: string;  // L3: +2h nach Deadline
+}
+
+export interface PlanningCalendarRule {
+  note: string;
+  priority?: string;     // "must" | "can" | "info" | "optimal"
+}
+
+export interface PlanningCalendarData {
+  deadlines: PlanningCalendarDeadline[];
+  rules: PlanningCalendarRule[];
+  updatedAt: string;
 }
 
 // === Fulfillment Report: Maitre-Ramp-up ======================================

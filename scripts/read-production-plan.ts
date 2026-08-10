@@ -11,7 +11,18 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
   let tabName = process.env.SHEET_FERTIGSTELLUNG_TAB?.trim();
   if (!tabName) {
     const allTabs = await getAllTabNames(sheets, spreadsheetId);
-    tabName = findCurrentWeekTab(allTabs, ["W{XX} Transperancy", "W{XX} Transparency", "BENL Outbound W{XX}"]);
+    // "Transperancy Total Overview" (sic — sheet's own spelling) is the
+    // current evergreen tab: no week number in its name, holds a rolling
+    // window of the current + next weeks instead of one tab per week.
+    // Keep the older week-numbered patterns too in case the sheet owner
+    // reverts to per-week tabs.
+    tabName = findCurrentWeekTab(allTabs, [
+      "Transperancy Total Overview",
+      "Transparency Total Overview",
+      "W{XX} Transperancy",
+      "W{XX} Transparency",
+      "BENL Outbound W{XX}",
+    ]);
     if (!tabName) tabName = allTabs[0];
   }
   if (!tabName) { console.warn("  Fertigstellung: kein Tab gefunden"); return undefined; }
@@ -24,12 +35,6 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
     console.warn(`  Fertigstellung Lesen fehlgeschlagen: ${e?.message ?? e}`);
     return undefined;
   }
-
-  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
-  const year = new Date().getFullYear();
-  const week = tabWeekMatch
-    ? `${year}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}`
-    : `${year}-W??`;
 
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rows.length, 5); i++) {
@@ -107,6 +112,32 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
     });
   }
 
-  console.log(`  Produktionsplan: ${entries.length} Work-Order-Zeilen aus Tab "${tabName}"`);
+  const year = new Date().getFullYear();
+  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
+  const week = tabWeekMatch
+    ? `${year}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}`
+    : `${year}-W${String(dominantWoWeek(entries) ?? "??").padStart(2, "0")}`;
+
+  console.log(`  Produktionsplan: ${entries.length} Work-Order-Zeilen aus Tab "${tabName}" (Woche ${week})`);
   return { week, generatedAt: new Date().toISOString(), rows: entries };
+}
+
+// Evergreen tabs (e.g. "Transperancy Total Overview") carry no week number
+// in their name and hold a rolling window of the current + next weeks in
+// one tab — fall back to the most common WO week-prefix ("33-1" -> 33)
+// among the parsed rows instead of leaving the plan's week unset.
+function dominantWoWeek(entries: WorkOrderEntry[]): number | undefined {
+  const counts = new Map<number, number>();
+  for (const e of entries) {
+    const m = /^(\d{2})-/.exec(e.workOrder);
+    if (!m) continue;
+    const wk = parseInt(m[1], 10);
+    counts.set(wk, (counts.get(wk) ?? 0) + 1);
+  }
+  let best: number | undefined;
+  let bestCount = 0;
+  for (const [wk, count] of counts) {
+    if (count > bestCount) { best = wk; bestCount = count; }
+  }
+  return best;
 }

@@ -1651,10 +1651,26 @@ function findCurrentWeekTabGS(tabs, patterns, fallbackToLatest = true) {
     }
   }
   if (fallbackToLatest) {
-    const kwTabs = tabs.filter(t => /W\d{2}|PW\d{2}|\d{4}-W\d{2}/.test(t));
-    if (kwTabs.length) return kwTabs[kwTabs.length - 1];
+    // Pick the tab whose own week number is closest to the current week —
+    // NOT the last matching tab in sheet order. Tabs get added out of
+    // chronological order, so "last in the array" can silently pick stale
+    // data (e.g. an old "W21" tab sitting after the current "W33" one).
+    const candidates = tabs
+      .map(t => ({ tab: t, weekNum: extractTabWeekNumGS(t) }))
+      .filter(c => c.weekNum !== null);
+    if (candidates.length) {
+      candidates.sort((a, b) => Math.abs(a.weekNum - kw) - Math.abs(b.weekNum - kw) || b.weekNum - a.weekNum);
+      return candidates[0].tab;
+    }
   }
   return null;
+}
+
+function extractTabWeekNumGS(tab) {
+  const m = tab.match(/(\d{4})-W(\d{2})/) ?? tab.match(/PW(\d{2})/) ?? tab.match(/W(\d{2})/);
+  if (!m) return null;
+  const weekStr = m.length === 3 ? m[2] : m[1];
+  return parseInt(weekStr, 10);
 }
 
 async function sheetValues(sheets, spreadsheetId, tabName) {
@@ -1681,19 +1697,22 @@ async function readProductionPlanGSheet(sheets) {
   let tabName = process.env.SHEET_FERTIGSTELLUNG_TAB;
   if (!tabName) {
     const allTabs = await getAllTabNamesGS(sheets, spreadsheetId);
-    tabName = findCurrentWeekTabGS(allTabs, ["W{XX} Transperancy", "W{XX} Transparency", "BENL Outbound W{XX}"]) || allTabs[0];
+    // "Transperancy Total Overview" (sic) is the current evergreen tab —
+    // no week number in its name, holds a rolling window of the current +
+    // next weeks instead of one tab per week. Older week-numbered patterns
+    // kept in case the sheet owner reverts to per-week tabs.
+    tabName = findCurrentWeekTabGS(allTabs, [
+      "Transperancy Total Overview",
+      "Transparency Total Overview",
+      "W{XX} Transperancy",
+      "W{XX} Transparency",
+      "BENL Outbound W{XX}",
+    ]) || allTabs[0];
   }
   if (!tabName) return null;
 
   let rows;
   try { rows = await sheetValues(sheets, spreadsheetId, tabName); } catch { return null; }
-
-  // Derive week from tab name: "W23 Transperancy Total Overview" → 2026-W23
-  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
-  const year = new Date().getFullYear();
-  const week = tabWeekMatch
-    ? `${year}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}`
-    : `${year}-W??`;
 
   // Find header row: contains "Work Order" and "Recipe"
   let headerIdx = -1;
@@ -1723,7 +1742,9 @@ async function readProductionPlanGSheet(sheets) {
     const row = rows[i];
     if (!row?.length) continue;
     const woCell = woIdx >= 0 ? String(row[woIdx] || "").trim() : "";
-    if (!woCell || !/^\d{2}-\d{3,}/.test(woCell)) continue;
+    // WO numbers restart low each week ("33-1", "33-2", …), not always
+    // 3+ digits — match the same pattern used by scripts/read-production-plan.ts.
+    if (!woCell || !/^\d{2}-\d{1,4}$/.test(woCell)) continue;
 
     const fullRecipe = recipeIdx >= 0 ? String(row[recipeIdx] || "").trim() : "";
     const { code: recipeCode } = parseRecipeNameGS(fullRecipe);
@@ -1745,8 +1766,32 @@ async function readProductionPlanGSheet(sheets) {
     });
   }
 
-  logger.info("readProductionPlanGSheet", { tab: tabName, rows: resultRows.length });
+  // Derive week from tab name ("W23 Transperancy Total Overview" → 2026-W23);
+  // evergreen tabs carry no week number, so fall back to the most common WO
+  // week-prefix among the parsed rows ("33-1" -> 33).
+  const tabWeekMatch = /W(\d{1,2})/i.exec(tabName);
+  const year = new Date().getFullYear();
+  const week = tabWeekMatch
+    ? `${year}-W${String(parseInt(tabWeekMatch[1], 10)).padStart(2, "0")}`
+    : `${year}-W${String(dominantWoWeekGS(resultRows) ?? "??").padStart(2, "0")}`;
+
+  logger.info("readProductionPlanGSheet", { tab: tabName, rows: resultRows.length, week });
   return { week, generatedAt: new Date().toISOString(), rows: resultRows };
+}
+
+function dominantWoWeekGS(rows) {
+  const counts = new Map();
+  for (const r of rows) {
+    const m = /^(\d{2})-/.exec(r.workOrder);
+    if (!m) continue;
+    const wk = parseInt(m[1], 10);
+    counts.set(wk, (counts.get(wk) ?? 0) + 1);
+  }
+  let best; let bestCount = 0;
+  for (const [wk, count] of counts) {
+    if (count > bestCount) { best = wk; bestCount = count; }
+  }
+  return best;
 }
 
 async function readPrintOrdersGSheet(sheets) {

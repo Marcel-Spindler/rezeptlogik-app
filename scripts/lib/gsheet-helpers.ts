@@ -51,8 +51,25 @@ export function findCurrentWeekTab(
   }
 
   if (fallbackToLatest) {
-    const kwTabs = tabs.filter(t => /W\d{2}|PW\d{2}|\d{4}-W\d{2}/.test(t));
-    if (kwTabs.length) return kwTabs[kwTabs.length - 1];
+    // Pick the tab whose own week number is closest to the current week —
+    // NOT the last matching tab in sheet order. Tabs get added out of
+    // chronological order (e.g. a current "W33" tab sitting before a
+    // stale "W21" tab left over from an earlier snapshot), so "last in
+    // the array" silently picks stale data whenever that happens.
+    const candidates = tabs
+      .map(t => ({ tab: t, weekNum: extractTabWeekNum(t) }))
+      .filter((c): c is { tab: string; weekNum: number } => c.weekNum !== null);
+    if (candidates.length) {
+      candidates.sort((a, b) => Math.abs(a.weekNum - kw) - Math.abs(b.weekNum - kw) || b.weekNum - a.weekNum);
+      return candidates[0].tab;
+    }
   }
   return undefined;
+}
+
+function extractTabWeekNum(tab: string): number | null {
+  const m = tab.match(/(\d{4})-W(\d{2})/) ?? tab.match(/PW(\d{2})/) ?? tab.match(/W(\d{2})/);
+  if (!m) return null;
+  const weekStr = m.length === 3 ? m[2] : m[1];
+  return parseInt(weekStr, 10);
 }

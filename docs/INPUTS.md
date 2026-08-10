@@ -32,6 +32,7 @@ Der **Reader-Service-Account** muss bei jedem Sheet als **Viewer** geteilt sein.
 | 7 | Bibles_K_Operations_Manager_Supervisors | `1jZXgFcnDhmALSbIlyDbzL-uKpDyLycwdxcVnFNPn32c` | Bible-/Supervisor-Hinweise fuer Breakdown und Manufacturing | Registry / Dump |
 | 8 | Cook Schedules Per DC | `1jUN_IxCT4nodV21gwb1N_RKdxDrVilH00rC8khBEll8` | Cook-Methoden und Shift-Timings je Site (in der App auf `Site == VF` gefiltert) | `SHEET_COOK_SCHEDULES` |
 | 9 | OUTPUT - [F_ x HF] Weekly Fulfillment Report | `1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE` | Maitre-Ramp-up (DE/Nordics je KW), Produktionsvorbereitung DE+Nordics, FCMS-Inbound, Logistik | `npm run sync:fulfillment:report` → Firestore: `maitreRampup`, `produktionsplanung`, `fcmsInbound` |
+| 10 | F_VE Production Plan (Tab "Planning Calendar") | `1zaQjWKlNN4JNCMnE-lrdgf7iNgabfl9HGq5vdOyKedI` | Wöchentliche Planungs-Deadlines + Eskalationskontakte (L1/L2/L3) | `SHEET_PLANNING_CALENDAR`, `npm run import:planning-calendar` → Firestore: `planningCalendar/current` |
 
 > Live-Inventar fuer die UI: `public/data/gsheet-sources.json`
 > Vollstaendige Dumps: `public/data/gsheet-dump-*.json`
