@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DataBundle, DetailedSubRecipe, GrossIngredient, Ingredient, Market } from "./types";
+import type { DataBundle, DetailedSubRecipe, GrossIngredient, Ingredient, Market } from "./core/types";
 
 type Props = {
   data: DataBundle;

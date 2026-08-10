@@ -5,7 +5,7 @@ import {
   parseMultilineExcel,
   type RackEntry,
   type RackMarket,
-} from "./rack";
+} from "./lib/rack";
 import {
   RACK_V2_LINES,
   RACK_V2_MARKET_LABEL,
@@ -40,9 +40,9 @@ import {
   type RackV2Layouts,
   type RackV2Line,
   type RackV2MarketId,
-} from "./rackV2";
-import type { UiLocale } from "./i18n";
-import type { CookSchedule, ProcessSpec, Recipe, WeekRecipe } from "./types";
+} from "./lib/rackV2";
+import type { UiLocale } from "./lib/i18n";
+import type { CookSchedule, ProcessSpec, Recipe, WeekRecipe } from "./core/types";
 
 type Props = {
   week: string;
@@ -421,7 +421,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     (async () => {
       try {
         const [{ getFirebase }, fs] = await Promise.all([
-          import("./firebase"),
+          import("./core/firebase"),
           import("firebase/firestore"),
         ]);
         if (cancelled) return;
@@ -463,7 +463,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
       (async () => {
         try {
           const [{ getFirebase }, fs] = await Promise.all([
-            import("./firebase"),
+            import("./core/firebase"),
             import("firebase/firestore"),
           ]);
           const { db } = getFirebase();
@@ -829,7 +829,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     });
     try {
       const [{ getFirebase }, fs] = await Promise.all([
-        import("./firebase"),
+        import("./core/firebase"),
         import("firebase/firestore"),
       ]);
       const { db } = getFirebase();

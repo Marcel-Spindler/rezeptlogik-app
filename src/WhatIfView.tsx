@@ -20,10 +20,10 @@ import type {
   Market,
   RecipeStructure,
   DetailedSubRecipe
-} from "./types";
-import type { UiLocale } from "./i18n";
-import { tl } from "./i18n";
-import { usePlanningOasisData } from "./planningOasisData";
+} from "./core/types";
+import type { UiLocale } from "./lib/i18n";
+import { tl } from "./lib/i18n";
+import { usePlanningOasisData } from "./lib/planningOasisData";
 
 // ════════════════════════════════════════════════════════════════════════════
 // TYPES

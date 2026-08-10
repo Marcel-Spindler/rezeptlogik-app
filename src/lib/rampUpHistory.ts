@@ -1,4 +1,4 @@
-import type { WeekRecipe } from "./types";
+import type { WeekRecipe } from "../core/types";
 
 export interface RampUpSnapshot {
   ts: string;

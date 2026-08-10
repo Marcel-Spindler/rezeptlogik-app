@@ -6,13 +6,13 @@
  */
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { loadData } from "./dataSource";
-import { usePlanningOasisData } from "./planningOasisData";
-import { analyzePlan, type PlannerDay, type PlannerScenario } from "./planner";
-import type { DataBundle, WeekRecipe } from "./types";
-import type { UiLocale } from "./i18n";
-import { calculateRunSplit, type RunSplitPlan } from "./runPlanning";
-import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
+import { loadData } from "./core/dataSource";
+import { usePlanningOasisData } from "./lib/planningOasisData";
+import { analyzePlan, type PlannerDay, type PlannerScenario } from "./lib/planner";
+import type { DataBundle, WeekRecipe } from "./core/types";
+import type { UiLocale } from "./lib/i18n";
+import { calculateRunSplit, type RunSplitPlan } from "./lib/runPlanning";
+import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "./lib/rampUpHistory";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  DOMAIN TYPES
@@ -1378,7 +1378,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       // passendes Lineplanning einen KW-spezifischen Pool geliefert haben.
       if (!hasWeekSpecificRecipePool) {
         try {
-          const { getFirebase } = await import("./firebase");
+          const { getFirebase } = await import("./core/firebase");
           const { doc, getDoc } = await import("firebase/firestore");
           const { db } = getFirebase();
           const snap = await getDoc(doc(db, `apps/rezeptlogik/weekRecipes/de_${week.replace(/\W/g, "-")}`));
@@ -1424,7 +1424,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     let unsubscribe: (() => void) | undefined;
     void (async () => {
       try {
-        const { getFirebase } = await import("./firebase");
+        const { getFirebase } = await import("./core/firebase");
         const { doc, onSnapshot } = await import("firebase/firestore");
         const { db } = getFirebase();
         unsubscribe = onSnapshot(
@@ -1527,7 +1527,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     const timer = window.setTimeout(async () => {
       lastLinePlanAutosaveSignatureRef.current = linePlanAutosaveSignature;
       try {
-        const { getFirebase } = await import("./firebase");
+        const { getFirebase } = await import("./core/firebase");
         const { doc, setDoc } = await import("firebase/firestore");
         const { db } = getFirebase();
         await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
@@ -1554,7 +1554,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     let unsubscribe: (() => void) | undefined;
     void (async () => {
       try {
-        const { getFirebase } = await import("./firebase");
+        const { getFirebase } = await import("./core/firebase");
         const { doc, onSnapshot } = await import("firebase/firestore");
         const { db } = getFirebase();
         unsubscribe = onSnapshot(
@@ -1595,7 +1595,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   async function handleSave() {
     setSaving(true);
     try {
-      const { getFirebase } = await import("./firebase");
+      const { getFirebase } = await import("./core/firebase");
       const { doc, setDoc } = await import("firebase/firestore");
       const { db } = getFirebase();
       await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
@@ -1634,7 +1634,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     setAutoPlanNotice(`Planung für KW ${weekStr} wurde bereinigt.`);
 
     try {
-      const { getFirebase } = await import("./firebase");
+      const { getFirebase } = await import("./core/firebase");
       const { doc, setDoc } = await import("firebase/firestore");
       const { db } = getFirebase();
       await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
@@ -1742,7 +1742,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     window.localStorage.setItem(`rezeptlogik-manufacturing-reconcile-${week}`, JSON.stringify(payload));
     window.dispatchEvent(new CustomEvent("rezeptlogik:manufacturing-reconcile-request", { detail: payload }));
     try {
-      const { getFirebase } = await import("./firebase");
+      const { getFirebase } = await import("./core/firebase");
       const { doc, setDoc } = await import("firebase/firestore");
       const { db } = getFirebase();
       await setDoc(doc(db, "apps/rezeptlogik/planningRequests", `de_W${weekStr}`), payload, { merge: true });
@@ -2595,7 +2595,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
               onClick={async () => {
                 setSaving(true);
                 try {
-                  const { getFirebase } = await import("./firebase");
+                  const { getFirebase } = await import("./core/firebase");
                   const { doc, setDoc } = await import("firebase/firestore");
                   const { db } = getFirebase();
 

@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import type { ProductionPlan, WorkOrderEntry } from "../src/types.ts";
+import type { ProductionPlan, WorkOrderEntry } from "../src/core/types.ts";
 import { num, parseRecipeName } from "./lib/helpers.ts";
 import { getAuthClient, getAllTabNames, findCurrentWeekTab } from "./lib/gsheet-helpers.ts";
 

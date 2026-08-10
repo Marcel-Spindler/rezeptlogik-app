@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, ShelfLifeInfo, DetailedSubRecipe, RecipeStructure } from "./types";
-import { getBaseVerdenVolume, getSubRecipeMassProfile, workflowSteps } from "./equipment";
-import { marketVariantLabel, MARKET_LANGUAGE_LABEL } from "./i18n";
-import { useRecipePlanningIntel } from "./planningOasisData";
-import { getRampUpHistory } from "./rampUpHistory";
+import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, ShelfLifeInfo, DetailedSubRecipe, RecipeStructure } from "./core/types";
+import { getBaseVerdenVolume, getSubRecipeMassProfile, workflowSteps } from "./lib/equipment";
+import { marketVariantLabel, MARKET_LANGUAGE_LABEL } from "./lib/i18n";
+import { useRecipePlanningIntel } from "./lib/planningOasisData";
+import { getRampUpHistory } from "./lib/rampUpHistory";
 import {
   fmtNum, fmtMin, fmtIngName, scaleQty, adjustedPortions, resolveStructureByCode,
   resolveCookSchedule, matchedScheduleSteps, oneShiftLabel, oneShiftShortLabel, getFulfillmentSplit,
@@ -11,7 +11,7 @@ import {
   subRecipeTone, subRecipeUrgency, subRecipeUrgencyLabel, ingredientSectionTone, categoryRiskTone,
   matchesNeedle, engpassStatus, engpassStatusLabel, engpassStatusColor,
   engpassScenarioText, recipeHue, usePersistent, MARKETS, MARKET_COLOR, MARKET_LABEL
-} from "./helpers";
+} from "./lib/helpers";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -92,7 +92,7 @@ function RampHistoryDeltaPill({ delta }: { delta: number }) {
 // ─── OverviewTab ───────────────────────────────────────────────────────────
 
 function OverviewTab({ wr, recipe, market, md, portionsTotal, upliftPercent, productionPlan }:
-  { wr: WeekRecipe; recipe: Recipe; market: Market; md?: Recipe["markets"][Market]; portionsTotal: number; upliftPercent: number; productionPlan?: import("./types").ProductionPlan }) {
+  { wr: WeekRecipe; recipe: Recipe; market: Market; md?: Recipe["markets"][Market]; portionsTotal: number; upliftPercent: number; productionPlan?: import("./core/types").ProductionPlan }) {
   const baseTotal = getBaseVerdenVolume(wr);
   const planningIntel = useRecipePlanningIntel(wr.code);
   const [historyVersion, setHistoryVersion] = useState(0);

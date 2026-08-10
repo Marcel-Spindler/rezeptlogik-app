@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
-import type { DataBundle, ProcessSpec, WorkOrderEntry } from "./types";
+import type { DataBundle, ProcessSpec, WorkOrderEntry } from "./core/types";
 
 type RundmailRow = {
   id: string;

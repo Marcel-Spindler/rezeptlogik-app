@@ -1,13 +1,13 @@
-import type { WeekRecipe, Recipe } from "../types";
-import { getRampUpHistory } from "../rampUpHistory";
+import type { WeekRecipe, Recipe } from "../core/types";
+import { getRampUpHistory } from "../lib/rampUpHistory";
 import { RampHistorySparkline } from "../RecipeDetailView";
 import {
   adjustedPortions, fmtNum,
   MARKETS, MARKET_COLOR, MARKET_LABEL,
   recipeListTone, stripMarketTag,
   resolveRecipeByCode, searchMatchReason,
-} from "../helpers";
-import { getBaseVerdenVolume } from "../equipment";
+} from "../lib/helpers";
+import { getBaseVerdenVolume } from "../lib/equipment";
 
 const MATCH_ICON: Record<string, string> = {
   ingredient: "🥩",

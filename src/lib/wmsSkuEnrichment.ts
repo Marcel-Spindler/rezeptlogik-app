@@ -1,4 +1,4 @@
-import type { DataBundle, DetailedSubRecipe, GrossIngredient, Ingredient, Market } from "./types";
+import type { DataBundle, DetailedSubRecipe, GrossIngredient, Ingredient, Market } from "../core/types";
 
 export type WmsSkuInfo = {
   sku: string;

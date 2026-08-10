@@ -12,8 +12,8 @@
 // Stations-Reihenfolge ist exakt die in src/types.ts definierte STATIONS-Konstante.
 
 import { google } from "googleapis";
-import type { ProcessSpec, Station } from "../src/types.ts";
-import { STATIONS } from "../src/types.ts";
+import type { ProcessSpec, Station } from "../src/core/types.ts";
+import { STATIONS } from "../src/core/types.ts";
 import { numOpt as num } from "./lib/helpers.ts";
 
 export async function readPfei(): Promise<Record<string, ProcessSpec>> {

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useId } from "react";
-import type { DataBundle } from "./types";
-import { formatDateTime } from "./i18n";
+import type { DataBundle } from "./core/types";
+import { formatDateTime } from "./lib/i18n";
 import { parseRecipesCsv, parseDetailedCsv, mergeGrossIntoRecipes } from "./lib/csv-parser";
 
 // ─── Firestore-Batch-Write ───────────────────────────────────────────────────
@@ -11,7 +11,7 @@ async function pushToFirestore(
   onProgress: (msg: string) => void
 ): Promise<void> {
   const [{ getFirebase }, { doc, collection, writeBatch }] = await Promise.all([
-    import("./firebase"),
+    import("./core/firebase"),
     import("firebase/firestore"),
   ]);
   const { db } = getFirebase();

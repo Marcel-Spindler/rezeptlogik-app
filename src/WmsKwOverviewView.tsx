@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { DataBundle, WeightGoalRow } from "./types";
-import { buildSkuInfoIndex, getSkuDisplayLabel, type WmsSkuInfo } from "./wmsSkuEnrichment";
+import type { DataBundle, WeightGoalRow } from "./core/types";
+import { buildSkuInfoIndex, getSkuDisplayLabel, type WmsSkuInfo } from "./lib/wmsSkuEnrichment";
 
 // ─── Raw Row Types ────────────────────────────────────────────────────────────
 

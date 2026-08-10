@@ -1,6 +1,6 @@
 ﻿import { useMemo, useState } from "react";
-import { usePlanningOasisData, type PlanningOasisDataset } from "../planningOasisData";
-import { RACK_V2_LINES, RACK_V2_MARKET_LABEL, type RackV2MarketId } from "../rackV2";
+import { usePlanningOasisData, type PlanningOasisDataset } from "../lib/planningOasisData";
+import { RACK_V2_LINES, RACK_V2_MARKET_LABEL, type RackV2MarketId } from "../lib/rackV2";
 
 type AgentModel = "gemini-2.5-pro" | "gemini-2.5-flash" | "gemini-1.5-pro" | "gpt-4.1" | "gpt-4o-mini";
 type AgentProvider = "gemini" | "github-models";

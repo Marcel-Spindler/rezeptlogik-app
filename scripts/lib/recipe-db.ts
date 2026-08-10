@@ -3,7 +3,7 @@
 // über Git-Pulls hinaus erhalten bleibt.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Recipe, RecipeStructure } from "../../src/types.ts";
+import type { Recipe, RecipeStructure } from "../../src/core/types.ts";
 
 export interface RecipeDbEntry {
   recipe?: Recipe;

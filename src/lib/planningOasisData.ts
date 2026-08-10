@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { loadData } from "./dataSource";
+import { loadData } from "../core/dataSource";
 import { loadPlanningTruthDataset, type PlanningTruthDataset } from "./planningTruthData";
 
 export type PlanningRole = "factory" | "hybrid" | "supplied";

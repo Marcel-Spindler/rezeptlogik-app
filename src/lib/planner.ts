@@ -1,5 +1,5 @@
-import type { DataBundle, ProcessSpec, Station, SubRecipe, WeekRecipe } from "./types";
-import { STATIONS } from "./types";
+import type { DataBundle, ProcessSpec, Station, SubRecipe, WeekRecipe } from "../core/types";
+import { STATIONS } from "../core/types";
 import { DEFAULT_SHIFT_MIN, computeWeekLoad, getStationCapacityView, normalizePoolName } from "./equipment";
 import { runSplitForRecipeLike } from "./runPlanning";
 

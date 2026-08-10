@@ -1,10 +1,10 @@
 // Zentraler App-State als React Context.
 // Enthält Datenladen, persistente Einstellungen und alle abgeleiteten Größen.
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { loadData, refreshRampUpDataOnStart, refreshOperationalData, subscribeRampUpHashChanges } from "./dataSource";
-import { adjustedPortions, isProducedInVerden, lsGet, usePersistent } from "./helpers";
-import { getBaseVerdenVolume } from "./equipment";
-import type { DataBundle, WeekRecipe, Recipe } from "./types";
+import { loadData, refreshRampUpDataOnStart, refreshOperationalData, subscribeRampUpHashChanges } from "./core/dataSource";
+import { adjustedPortions, isProducedInVerden, lsGet, usePersistent } from "./lib/helpers";
+import { getBaseVerdenVolume } from "./lib/equipment";
+import type { DataBundle, WeekRecipe, Recipe } from "./core/types";
 
 export type AppView = "recipe" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms";
 export type AppSurface = "full" | "kitchen" | "rundmail";

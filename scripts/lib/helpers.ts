@@ -2,7 +2,7 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import Papa from "papaparse";
-import type { Market } from "../../src/types.ts";
+import type { Market } from "../../src/core/types.ts";
 
 const COOK_CSV = "Cook Schedules Per DC - Cook Shifts per DC.csv";
 

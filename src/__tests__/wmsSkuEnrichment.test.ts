@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildSkuInfoIndex, getSkuDisplayLabel } from "../wmsSkuEnrichment";
-import type { DataBundle } from "../types";
+import { buildSkuInfoIndex, getSkuDisplayLabel } from "../lib/wmsSkuEnrichment";
+import type { DataBundle } from "../core/types";
 
 describe("wms SKU enrichment", () => {
   it("prefers week-plan names over raw SKU codes", () => {

@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
-import type { DataBundle } from "../types";
-import { STATIONS } from "../types";
+import type { DataBundle } from "../core/types";
+import { STATIONS } from "../core/types";
 import {
   computeWeekLoad,
   getStationCapacityView,
   loadStationDeviceCounts,
   DEFAULT_SHIFT_MIN,
-} from "../equipment";
-import { adjustedPortions, fmtNum } from "../helpers";
+} from "../lib/equipment";
+import { adjustedPortions, fmtNum } from "../lib/helpers";
 
 interface CapacityIssue {
   station: string;

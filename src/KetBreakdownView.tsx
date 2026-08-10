@@ -14,8 +14,8 @@ import type {
   RecipeStructure,
   Recipe,
   EquipBibleEntry,
-} from "./types";
-import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow, currentHfWeek } from "./wmsCache";
+} from "./core/types";
+import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow, currentHfWeek } from "./lib/wmsCache";
 
 type WoSortMode = "date" | "wo" | "recipe" | "status" | "batches" | "kg";
 

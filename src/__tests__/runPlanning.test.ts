@@ -3,7 +3,7 @@ import {
   recommendedRunCount,
   SINGLE_RUN_MAX,
   TRIPLE_RUN_MIN,
-} from "../runPlanning";
+} from "../lib/runPlanning";
 
 describe("recommendedRunCount", () => {
   it("returns 1 for small volumes", () => {

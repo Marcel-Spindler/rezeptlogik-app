@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { isProducedInVerden } from "./helpers";
-import type { DataBundle, DetailedSubRecipe, GrossIngredient, Market, Recipe, RecipeStructure, WeekRecipe, ProcessSpec, CookSchedule, ShelfLifeInfo, WorkOrderEntry } from "./types";
-import type { UiLocale } from "./i18n";
+import { isProducedInVerden } from "./lib/helpers";
+import type { DataBundle, DetailedSubRecipe, GrossIngredient, Market, Recipe, RecipeStructure, WeekRecipe, ProcessSpec, CookSchedule, ShelfLifeInfo, WorkOrderEntry } from "./core/types";
+import type { UiLocale } from "./lib/i18n";
 
 function fmtNum(value: number, digits = 0) {
   return value.toLocaleString("de-DE", { maximumFractionDigits: digits });

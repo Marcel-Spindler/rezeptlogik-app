@@ -16,7 +16,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" }); loadEnv();
 import { google } from "googleapis";
 import admin from "firebase-admin";
-import type { YieldRow, WeightGoalRow } from "../src/types.ts";
+import type { YieldRow, WeightGoalRow } from "../src/core/types.ts";
 import { configureFirestoreWriterAuth } from "./lib/firestore-auth.ts";
 
 const DEFAULT_SHEET_ID = "1-brEn6eKSMFDTubokqA7brq_BzjKP0RpmGw4A1RPspw";

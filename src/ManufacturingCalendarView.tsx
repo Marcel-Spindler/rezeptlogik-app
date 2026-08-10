@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import type { DataBundle, WeekRecipe } from "./types";
-import { runSplitForRecipeLike, type RunCount } from "./runPlanning";
-import { PLANNER_DAYS } from "./planner";
-import type { PlannerDay, RecipeAssignment } from "./planner";
+import type { DataBundle, WeekRecipe } from "./core/types";
+import { runSplitForRecipeLike, type RunCount } from "./lib/runPlanning";
+import { PLANNER_DAYS } from "./lib/planner";
+import type { PlannerDay, RecipeAssignment } from "./lib/planner";
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 

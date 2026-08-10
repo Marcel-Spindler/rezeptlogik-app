@@ -21,7 +21,7 @@ import type {
   DataBundle, Market, WeekRecipe, Recipe, GrossIngredient, CookSchedule,
   PrintOrderRow, KitchenPlanningRow,
   ProduktionsplanungEntry, ProduktionsplanungSlot
-} from "../src/types.ts";
+} from "../src/core/types.ts";
 import { readPfei } from "./import-pfei.ts";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
 import { readCookSchedulesFromGSheet } from "./read-cook-schedules.ts";

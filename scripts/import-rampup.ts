@@ -5,7 +5,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" }); loadEnv();
 import { google } from "googleapis";
 import admin from "firebase-admin";
-import type { MaitreRampupEntry, MaitreSnapshotLabel } from "../src/types.ts";
+import type { MaitreRampupEntry, MaitreSnapshotLabel } from "../src/core/types.ts";
 
 function num(v: unknown): number {
   if (v == null || v === "") return 0;

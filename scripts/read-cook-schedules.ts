@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import type { CookSchedule } from "../src/types.ts";
+import type { CookSchedule } from "../src/core/types.ts";
 import { num } from "./lib/helpers.ts";
 
 const DEFAULT_COOK_SCHEDULES_GSHEET_ID = "1jUN_IxCT4nodV21gwb1N_RKdxDrVilH00rC8khBEll8";

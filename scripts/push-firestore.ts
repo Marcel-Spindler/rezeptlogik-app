@@ -5,7 +5,7 @@ loadEnv({ path: ".env.local" }); loadEnv();
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import admin from "firebase-admin";
-import type { DataBundle } from "../src/types.ts";
+import type { DataBundle } from "../src/core/types.ts";
 import { configureFirestoreWriterAuth } from "./lib/firestore-auth.ts";
 
 const bundle: DataBundle = JSON.parse(readFileSync(resolve("public", "data", "data.json"), "utf8"));

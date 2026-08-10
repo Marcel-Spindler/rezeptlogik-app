@@ -15,8 +15,8 @@
 
 import type {
   DataBundle, WeekRecipe, Recipe, SubRecipe, ProcessSpec, Market, Station
-} from "./types";
-import { STATIONS } from "./types";
+} from "../core/types";
+import { STATIONS } from "../core/types";
 
 const MARKETS: Market[] = ["BENL", "DKSE", "DE"];
 export const DEFAULT_SHIFT_MIN = 8 * 60;

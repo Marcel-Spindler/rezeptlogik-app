@@ -9,7 +9,7 @@ import type {
   DataBundle, Market, WeekRecipe, Recipe,
   GrossIngredient, CookSchedule,
   RecipeStructure, DetailedSubRecipe, ShelfLifeInfo, ProcessSpec, ProductionPlan
-} from "../src/types.ts";
+} from "../src/core/types.ts";
 import { readOpenShelfLifeSheet } from "./read-open-shelf.ts";
 import { readPfei } from "./import-pfei.ts";
 import { readCookSchedulesFromGSheet } from "./read-cook-schedules.ts";

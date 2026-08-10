@@ -1,15 +1,15 @@
 ﻿import { Suspense, lazy, useEffect, useMemo, useState } from "react";
-import type { DataBundle, WeekRecipe } from "../types";
+import type { DataBundle, WeekRecipe } from "../core/types";
 import { PlanningView } from "../PlanningView";
 import { BreakdownEquipmentView } from "../BreakdownEquipmentView";
 import { WmsLiveView } from "../WmsLiveView";
-import type { UiLocale } from "../i18n";
-import { usePlanningOasisData } from "../planningOasisData";
-import { loadFactorDailyMeta, type FactorDailyMeta } from "../planningTruthData";
+import type { UiLocale } from "../lib/i18n";
+import { usePlanningOasisData } from "../lib/planningOasisData";
+import { loadFactorDailyMeta, type FactorDailyMeta } from "../lib/planningTruthData";
 import { PlanningOasisAgentForm } from "./PlanningOasisAgentForm";
-import { runSplitForRecipeLike } from "../runPlanning";
-import { refreshRampUpDataOnStart } from "../dataSource";
-import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "../rampUpHistory";
+import { runSplitForRecipeLike } from "../lib/runPlanning";
+import { refreshRampUpDataOnStart } from "../core/dataSource";
+import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "../lib/rampUpHistory";
 
 const LinePlanningSection = lazy(() => import("../LinePlanningView").then((module) => ({ default: module.LinePlanningView })));
 const RackSection = lazy(() => import("../RackV2View").then((module) => ({ default: module.RackV2View })));

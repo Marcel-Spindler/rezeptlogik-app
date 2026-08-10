@@ -1,5 +1,5 @@
 import { google } from "googleapis";
-import type { ShelfLifeInfo } from "../src/types.ts";
+import type { ShelfLifeInfo } from "../src/core/types.ts";
 
 const DEFAULT_OPEN_SHELF_GSHEET_ID = "1dET5WmRKYRhmzEmhlBv1ZpRo5huWgNLfIY6uaLpCrcc";
 const DEFAULT_OPEN_SHELF_TAB = "ALL in 1";

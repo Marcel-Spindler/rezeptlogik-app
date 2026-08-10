@@ -3,7 +3,7 @@
 // This is a manually-refreshed cache, not realtime data — a plain getDoc is
 // enough, no onSnapshot listener needed. The doc may not exist yet.
 
-import type { WorkOrderEntry } from "./types";
+import type { WorkOrderEntry } from "../core/types";
 
 export interface WmsWorkorderCacheRow {
   woNumber: string;
@@ -89,7 +89,7 @@ export function filterRowsToWeekWindow(
 export async function fetchWmsWorkorderCache(): Promise<{ rows: WmsWorkorderCacheRow[]; generatedAt: string } | null> {
   try {
     const [{ getFirebase }, { collection, doc, getDoc }] = await Promise.all([
-      import("./firebase"),
+      import("../core/firebase"),
       import("firebase/firestore"),
     ]);
     const { db } = getFirebase();

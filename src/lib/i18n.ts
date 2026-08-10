@@ -1,4 +1,4 @@
-import type { Market } from "./types";
+import type { Market } from "../core/types";
 
 export type UiLocale = "de" | "nl" | "en";
 

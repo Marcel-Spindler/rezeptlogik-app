@@ -1,7 +1,7 @@
 // Browser-kompatibler CSV-Parser — portiert aus scripts/import-local.ts.
 // Keine Node.js-APIs; nimmt rohen CSV-Text entgegen und gibt getypte Objekte zurück.
 import Papa from "papaparse";
-import type { Market, Recipe, RecipeStructure, DetailedSubRecipe } from "../types";
+import type { Market, Recipe, RecipeStructure, DetailedSubRecipe } from "../core/types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

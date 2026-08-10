@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from "react";
-import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, ShelfLifeInfo, RecipeStructure } from "./types";
+import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, ShelfLifeInfo, RecipeStructure } from "../core/types";
 import { marketToLocale } from "./i18n";
 import type { UiLocale } from "./i18n";
 

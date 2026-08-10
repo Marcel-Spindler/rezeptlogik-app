@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Papa from "papaparse";
-import type { DataBundle, Recipe, Market } from "./types";
+import type { DataBundle, Recipe, Market } from "./core/types";
 
 // ── Konstanten ──────────────────────────────────────────────────────────────
 

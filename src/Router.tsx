@@ -13,9 +13,9 @@ import { WeekSelector } from "./components/WeekSelector";
 import { RecipeList } from "./components/RecipeList";
 import { DataHealthBanner } from "./components/DataHealthBanner";
 import { CapacityWarningBanner } from "./components/CapacityWarningBanner";
-import { formatDateTime } from "./i18n";
-import { buildKitchenShareUrl, resolveRecipeByCode, isProducedInVerden } from "./helpers";
-import { exportWeeklyCookPlanPDF } from "./planExport";
+import { formatDateTime } from "./lib/i18n";
+import { buildKitchenShareUrl, resolveRecipeByCode, isProducedInVerden } from "./lib/helpers";
+import { exportWeeklyCookPlanPDF } from "./lib/planExport";
 
 const NAV_TABS: { view: AppView; label: string }[] = [
   { view: "recipe",    label: "Rezept" },

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { DataBundle, DetailedSubRecipe, ProcessSpec, Recipe, ShelfLifeInfo, WeekRecipe } from "./types";
-import { STATIONS } from "./types";
-import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools } from "./equipment";
+import type { DataBundle, DetailedSubRecipe, ProcessSpec, Recipe, ShelfLifeInfo, WeekRecipe } from "./core/types";
+import { STATIONS } from "./core/types";
+import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, getSubRecipeMassProfile, loadStationDeviceCounts, loadStationPools } from "./lib/equipment";
 import {
   assignmentKey,
   PLANNER_DAYS,
@@ -26,13 +26,13 @@ import {
   type LinePlatingSummary,
   type LinePlatingEntry,
   type SpecialDeliveryOrder,
-} from "./planner";
-import { tl, type UiLocale } from "./i18n";
-import { usePlanningOasisData } from "./planningOasisData";
-import { exportAsTSV, exportAsExcel, exportAsPDF } from "./planExport";
-import type { RunSplitPlan } from "./runPlanning";
-import { calculateRunSplit } from "./runPlanning";
-import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "./rampUpHistory";
+} from "./lib/planner";
+import { tl, type UiLocale } from "./lib/i18n";
+import { usePlanningOasisData } from "./lib/planningOasisData";
+import { exportAsTSV, exportAsExcel, exportAsPDF } from "./lib/planExport";
+import type { RunSplitPlan } from "./lib/runPlanning";
+import { calculateRunSplit } from "./lib/runPlanning";
+import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "./lib/rampUpHistory";
 
 const PLANNER_UI_SETTINGS_STORAGE_KEY = "rezeptlogik-planner-ui-settings-v1";
 const SPECIAL_DELIVERY_STORAGE_KEY = "rezeptlogik-special-deliveries-v1";
@@ -1333,7 +1333,7 @@ export function PlanningView(
     let unsub: (() => void) | undefined;
     void (async () => {
       try {
-        const { getFirebase } = await import("./firebase");
+        const { getFirebase } = await import("./core/firebase");
         const { doc, onSnapshot } = await import("firebase/firestore");
         const { db } = getFirebase();
         // Wochenformat "2026-W19" → weekStr "19"
@@ -2470,7 +2470,7 @@ export function PlanningView(
     let unsubscribe: (() => void) | null = null;
     void (async () => {
       try {
-        const { getFirebase } = await import("./firebase");
+        const { getFirebase } = await import("./core/firebase");
         const { doc, onSnapshot } = await import("firebase/firestore");
         const { db } = getFirebase();
         if (cancelled) return;
@@ -2618,7 +2618,7 @@ export function PlanningView(
       }
     }));
     try {
-      const { getFirebase } = await import("./firebase");
+      const { getFirebase } = await import("./core/firebase");
       const { doc, setDoc } = await import("firebase/firestore");
       const { db } = getFirebase();
       const weekStr = week.includes("-W") ? week.split("-W")[1] : week;

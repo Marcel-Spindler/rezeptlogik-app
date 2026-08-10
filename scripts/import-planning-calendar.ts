@@ -8,7 +8,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" }); loadEnv();
 import { google } from "googleapis";
 import admin from "firebase-admin";
-import type { PlanningCalendarDeadline, PlanningCalendarRule } from "../src/types.ts";
+import type { PlanningCalendarDeadline, PlanningCalendarRule } from "../src/core/types.ts";
 import { configureFirestoreWriterAuth } from "./lib/firestore-auth.ts";
 
 const DEFAULT_SHEET_ID = "1zaQjWKlNN4JNCMnE-lrdgf7iNgabfl9HGq5vdOyKedI";

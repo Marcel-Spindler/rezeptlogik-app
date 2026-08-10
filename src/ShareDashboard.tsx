@@ -1082,7 +1082,7 @@ export function ShareDashboard({ week }: { week: string }) {
         if (ketSheet) setKetWOs(parseKet(ketSheet.values));
 
         // Firestore overrides (public read)
-        const { getFirebase }           = await import("./firebase");
+        const { getFirebase }           = await import("./core/firebase");
         const { doc, getDoc }           = await import("firebase/firestore");
         const { db }                    = getFirebase();
         const snap                      = await getDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`));

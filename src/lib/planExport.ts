@@ -2,7 +2,7 @@
  * planExport.ts
  * Wochenplan-Export: TSV, Excel (SpreadsheetML .xls) und PDF/Print
  */
-import type { DataBundle, CookSchedule, WeekRecipe, Recipe } from "./types";
+import type { DataBundle, CookSchedule, WeekRecipe, Recipe } from "../core/types";
 import { adjustedPortions } from "./helpers";
 import { getBaseVerdenVolume } from "./equipment";
 import type { PlannerWeekAnalysis, PlannerDay, PlannerShift } from "./planner";

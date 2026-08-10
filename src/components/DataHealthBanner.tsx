@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import type { DataBundle } from "../types";
+import type { DataBundle } from "../core/types";
 
 interface HealthIssue { label: string; fix: string; severity: "warn" | "stale" }
 

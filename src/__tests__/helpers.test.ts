@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fmtNum, stripMarketTag, codeDigits, adjustedPortions } from "../helpers";
+import { fmtNum, stripMarketTag, codeDigits, adjustedPortions } from "../lib/helpers";
 import { parseRecipeName, digitKey } from "../../scripts/lib/helpers";
 
 // ─── fmtNum ──────────────────────────────────────────────────────────────────

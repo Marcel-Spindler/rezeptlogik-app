@@ -36,7 +36,7 @@ loadEnv({ path: ".env.local" }); loadEnv();
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import admin from "firebase-admin";
-import type { Market, RecipeStructure, DetailedSubRecipe, DetailedIngredient } from "../src/types.ts";
+import type { Market, RecipeStructure, DetailedSubRecipe, DetailedIngredient } from "../src/core/types.ts";
 import { readCsv, resolveSourceDir, detectMarket, parseRecipeName as parseRecipeCode, num as numStr } from "./lib/helpers.ts";
 import { loadRecipeDb, mergeIntoDb, saveRecipeDb } from "./lib/recipe-db.ts";
 import { configureFirestoreWriterAuth } from "./lib/firestore-auth.ts";
