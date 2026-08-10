@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { DataBundle } from "../core/types";
 
 interface HealthIssue { label: string; fix: string; severity: "warn" | "stale" }
 
-// Schwellenwerte für Datenalter
-const STALE_WARN_H  = 2;   // >2h  → Warnung
-const STALE_ERROR_H = 6;   // >6h  → kritisch
+const STALE_WARN_H = 2;   // >2h  → Warnung
+const STALE_ERROR_H = 6;  // >6h  → kritisch
+const MATCH_RATE_WARN_PCT = 60;
 
 function dataAgeHours(generatedAt: string): number | null {
   if (!generatedAt) return null;
@@ -14,78 +14,82 @@ function dataAgeHours(generatedAt: string): number | null {
   return (Date.now() - ts) / 3_600_000;
 }
 
+function checkFreshness(generatedAt: string): HealthIssue | null {
+  const ageH = dataAgeHours(generatedAt);
+  if (ageH === null) return null;
+  const hours = Math.floor(ageH);
+  if (ageH >= STALE_ERROR_H) {
+    return { label: `Daten ${hours}h alt`, fix: "Daten veraltet (>6h) — Cloud Function prüfen oder npm run import:gsheet ausführen", severity: "stale" };
+  }
+  if (ageH >= STALE_WARN_H) {
+    return { label: `Daten ${hours}h alt`, fix: "Letzter Import vor über 2 Stunden — bei Bedarf npm run import:gsheet ausführen", severity: "warn" };
+  }
+  return null;
+}
+
+function checkCompleteness(data: DataBundle): HealthIssue[] {
+  const issues: HealthIssue[] = [];
+  const wrCount = data.weekRecipes.length;
+  const recipeCount = Object.keys(data.recipes).length;
+  const structCount = Object.keys(data.structures ?? {}).length;
+  const specCount = Object.keys(data.processSpecs ?? {}).length;
+  const shelfCount = Object.keys(data.shelfLifeBySku ?? {}).length;
+
+  if (wrCount === 0) {
+    issues.push({ label: "Keine Rezepte geladen", fix: "Ramp-Up GSheet (GSHEET_ID) nicht erreichbar — Cloud Function prüfen oder npm run import:gsheet ausführen", severity: "stale" });
+  }
+
+  if (recipeCount === 0) {
+    issues.push({ label: "Keine Rezeptdaten (Zutaten, MSKUs)", fix: "export-sub-recipes-by-recipe-detailed.csv in imports/ ablegen → npm run import:local", severity: "warn" });
+  } else if (wrCount > 0) {
+    const matched = data.weekRecipes.filter(wr => !!data.recipes[wr.code]).length;
+    const pct = Math.round((matched / wrCount) * 100);
+    if (pct < MATCH_RATE_WARN_PCT) {
+      issues.push({ label: `Rezept-Match nur ${pct} %`, fix: "export-sub-recipes-by-recipe-detailed.csv ist veraltet — neuen Export aus Culinary-Tool in imports/ legen → npm run import:local", severity: "warn" });
+    }
+  }
+
+  if (structCount === 0) {
+    issues.push({ label: "Kein Rezeptbaum (Sub-Rezepte)", fix: "export-sub-recipes-by-recipe-detailed.csv fehlt in imports/", severity: "warn" });
+  }
+  if (specCount === 0) {
+    issues.push({ label: "Keine PFEI-Daten (Batch-Größen)", fix: "PFEI GSheet nicht importiert → npm run import:pfei && npm run push:firestore", severity: "warn" });
+  }
+  if (shelfCount === 0) {
+    issues.push({ label: "Kein Shelf-Life (MHD-Status)", fix: "Open Shelf Life GSheet nicht erreichbar — Google-Credentials prüfen → npm run import:local", severity: "warn" });
+  }
+  if (!data.productionPlan) {
+    issues.push({ label: "Kein Fertigstellungszeitplan", fix: "Sheet 6 (SHEET_FERTIGSTELLUNG) fehlt — Cloud Function refresh-operational oder npm run import:gsheet", severity: "warn" });
+  }
+
+  return issues;
+}
+
+function collectHealthIssues(data: DataBundle): HealthIssue[] {
+  const freshness = checkFreshness(data.generatedAt);
+  return [...(freshness ? [freshness] : []), ...checkCompleteness(data)];
+}
+
 export function DataHealthBanner({ data }: { data: DataBundle }) {
   const [dismissed, setDismissed] = useState(false);
   // Tick jede Minute, damit der Alterscheck live aktualisiert wird
-  const [, setTick] = useState(0);
+  const [, forceTick] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setTick(t => t + 1), 60_000);
+    const id = window.setInterval(() => forceTick(t => t + 1), 60_000);
     return () => window.clearInterval(id);
   }, []);
 
   if (dismissed) return null;
 
-  const issues: HealthIssue[] = [];
-
-  const recipeCount  = Object.keys(data.recipes).length;
-  const wrCount      = data.weekRecipes.length;
-  const specCount    = Object.keys(data.processSpecs ?? {}).length;
-  const structCount  = Object.keys(data.structures ?? {}).length;
-  const shelfCount   = Object.keys(data.shelfLifeBySku ?? {}).length;
-  const ageH         = dataAgeHours(data.generatedAt);
-
-  // ── Datenfreshness ──────────────────────────────────────────────────────
-  if (ageH !== null && ageH >= STALE_ERROR_H) {
-    const h = Math.floor(ageH);
-    issues.push({
-      label: `Daten ${h}h alt`,
-      fix: "Daten veraltet (>6h) — Cloud Function prüfen oder npm run import:gsheet ausführen",
-      severity: "stale",
-    });
-  } else if (ageH !== null && ageH >= STALE_WARN_H) {
-    const h = Math.floor(ageH);
-    issues.push({
-      label: `Daten ${h}h alt`,
-      fix: "Letzter Import vor über 2 Stunden — bei Bedarf npm run import:gsheet ausführen",
-      severity: "warn",
-    });
-  }
-
-  // ── Datenvollständigkeit ─────────────────────────────────────────────────
-  if (wrCount === 0)
-    issues.push({ label: "Keine Rezepte geladen", fix: "Ramp-Up GSheet (GSHEET_ID) nicht erreichbar — Cloud Function prüfen oder npm run import:gsheet ausführen", severity: "stale" });
-
-  if (recipeCount === 0)
-    issues.push({ label: "Keine Rezeptdaten (Zutaten, MSKUs)", fix: "export-sub-recipes-by-recipe-detailed.csv in imports/ ablegen → npm run import:local", severity: "warn" });
-  else if (wrCount > 0) {
-    const matched = data.weekRecipes.filter(wr => !!data.recipes[wr.code]).length;
-    const pct = Math.round((matched / wrCount) * 100);
-    if (pct < 60)
-      issues.push({ label: `Rezept-Match nur ${pct} %`, fix: "export-sub-recipes-by-recipe-detailed.csv ist veraltet — neuen Export aus Culinary-Tool in imports/ legen → npm run import:local", severity: "warn" });
-  }
-
-  if (structCount === 0)
-    issues.push({ label: "Kein Rezeptbaum (Sub-Rezepte)", fix: "export-sub-recipes-by-recipe-detailed.csv fehlt in imports/", severity: "warn" });
-
-  if (specCount === 0)
-    issues.push({ label: "Keine PFEI-Daten (Batch-Größen)", fix: "PFEI GSheet nicht importiert → npm run import:pfei && npm run push:firestore", severity: "warn" });
-
-  if (shelfCount === 0)
-    issues.push({ label: "Kein Shelf-Life (MHD-Status)", fix: "Open Shelf Life GSheet nicht erreichbar — Google-Credentials prüfen → npm run import:local", severity: "warn" });
-
-  if (!data.productionPlan)
-    issues.push({ label: "Kein Fertigstellungszeitplan", fix: "Sheet 6 (SHEET_FERTIGSTELLUNG) fehlt — Cloud Function refresh-operational oder npm run import:gsheet", severity: "warn" });
-
+  const issues = collectHealthIssues(data);
   if (issues.length === 0) return null;
 
   const hasCritical = issues.some(i => i.severity === "stale");
-  const bannerCls = hasCritical
-    ? "mb-4 rounded-xl bg-red-50 ring-1 ring-red-300 p-3"
-    : "mb-4 rounded-xl bg-amber-50 ring-1 ring-amber-300 p-3";
-  const titleCls  = hasCritical ? "text-red-800"   : "text-amber-800";
-  const labelCls  = hasCritical ? "text-red-900"   : "text-amber-900";
-  const fixCls    = hasCritical ? "text-red-700"   : "text-amber-800";
-  const btnCls    = hasCritical ? "text-red-400 hover:text-red-800" : "text-amber-500 hover:text-amber-800";
+  const bannerCls = hasCritical ? "mb-4 rounded-xl bg-red-50 ring-1 ring-red-300 p-3" : "mb-4 rounded-xl bg-amber-50 ring-1 ring-amber-300 p-3";
+  const titleCls = hasCritical ? "text-red-800" : "text-amber-800";
+  const labelCls = hasCritical ? "text-red-900" : "text-amber-900";
+  const fixCls = hasCritical ? "text-red-700" : "text-amber-800";
+  const btnCls = hasCritical ? "text-red-400 hover:text-red-800" : "text-amber-500 hover:text-amber-800";
 
   return (
     <div className={bannerCls}>
