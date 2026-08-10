@@ -467,6 +467,29 @@ export const MARKET_COLOR: Record<Market, string> = {
   DE:   "bg-emerald-100 text-emerald-800"
 };
 
+// ─── Recipe-code CSV text helpers ──────────────────────────────────────────
+// Geteilt zwischen KET Plan, PET Plan (WO-Export-Zeilen tragen den Rezeptcode
+// als Präfix im Namensfeld: "FE1234A5 - Chicken Tikka [DE]").
+
+export function extractCode(name: string): string {
+  return (name ?? "").trim().match(/^([A-Z]{2}\d{4}[A-Z0-9]+)/)?.[1] ?? "";
+}
+
+export function cleanRecipeName(name: string): string {
+  return (name ?? "")
+    .replace(/^[A-Z]{2}\d{4}[A-Z0-9]+\s*[-–]\s*/, "")
+    .replace(/\s*\[(?:DE|BNL|DKSE|BENL|NORD)\]\s*$/i, "")
+    .trim();
+}
+
+// Freitext-Anweisungen (Bindestrich-/nummerierte Listen) in einzelne Schritte.
+export function parseSteps(text: string): string[] {
+  return text
+    .split(/\n+/)
+    .map(s => s.replace(/^\s*[-–•*]\s*/, "").replace(/^\s*\d+[.)]\s*/, "").trim())
+    .filter(Boolean);
+}
+
 // Re-export locale helper for convenience
 export { marketToLocale };
 export type { UiLocale };

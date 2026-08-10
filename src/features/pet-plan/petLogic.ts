@@ -4,6 +4,9 @@ import Papa from "papaparse";
 import type { Recipe, Market } from "../../core/types";
 import { ALLERGEN_DEFS, LS_IMAGES_KEY, PORTIONS_PER_HOUR } from "./petTypes";
 import type { AllergenDef, PetRow, PlatingImage } from "./petTypes";
+import { cleanRecipeName, extractCode, fmtNum, parseSteps } from "../../lib/helpers";
+
+export { cleanRecipeName, extractCode, fmtNum, parseSteps };
 
 export function detectAllergensFromText(texts: string[]): AllergenDef[] {
   const combined = texts.join(" ").toLowerCase();
@@ -18,20 +21,9 @@ export function parseNum(s: string): number | null {
   return isFinite(n) ? n : null;
 }
 
-export function extractCode(name: string): string {
-  return (name ?? "").trim().match(/^([A-Z]{2}\d{4}[A-Z0-9]+)/)?.[1] ?? "";
-}
-
 export function extractMarket(name: string): string {
   const m = (name ?? "").match(/\[(DE|BNL|DKSE|BENL|NORD)\]/i);
   return m ? `[${m[1].toUpperCase()}]` : "";
-}
-
-export function cleanRecipeName(name: string): string {
-  return (name ?? "")
-    .replace(/^[A-Z]{2}\d{4}[A-Z0-9]+\s*[-–]\s*/, "")
-    .replace(/\s*\[(?:DE|BNL|DKSE|BENL|NORD)\]\s*$/i, "")
-    .trim();
 }
 
 export function parsePetCsv(text: string): PetRow[] {
@@ -103,25 +95,11 @@ export function fmtShiftShort(shiftKey: string): string {
   return shift ? `${day} S${shift}` : day;
 }
 
-export function fmtNum(n: number): string {
-  return Math.round(n).toLocaleString("de-DE");
-}
-
 export function fmtClock(totalMinutes: number): string {
   const safe = Math.max(0, Math.round(totalMinutes));
   const h = Math.floor(safe / 60).toString().padStart(2, "0");
   const m = (safe % 60).toString().padStart(2, "0");
   return `${h}:${m}`;
-}
-
-// ── Instruction helpers ────────────────────────────────────────────────────
-
-// Parst Freitext-Anweisungen in einzelne Arbeitsschritte
-export function parseSteps(text: string): string[] {
-  return text
-    .split(/\n+/)
-    .map((s) => s.replace(/^\s*[-–•*]\s*/, "").replace(/^\s*\d+[.)]\s*/, "").trim())
-    .filter(Boolean);
 }
 
 // ── Recipe helpers ─────────────────────────────────────────────────────────

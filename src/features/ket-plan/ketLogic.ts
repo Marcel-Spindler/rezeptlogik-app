@@ -6,17 +6,9 @@ import type {
   Recipe, RecipeStructure, WorkOrderEntry,
 } from "../../core/types";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, EQUIP_PRIORITY, type BatchCalc, type EquipBatch, type IngCalc, type KetRow } from "./ketTypes";
+import { cleanRecipeName, extractCode, fmtNum, parseSteps } from "../../lib/helpers";
 
-export function extractCode(name: string): string {
-  return name.trim().match(/^([A-Z]{2}\d{4}[A-Z0-9]+)/)?.[1] ?? "";
-}
-
-export function cleanRecipeName(name: string): string {
-  return name
-    .replace(/^[A-Z]{2}\d{4}[A-Z0-9]+\s*[-–]\s*/, "")
-    .replace(/\s*\[(?:DE|BNL|DKSE|BENL)\]\s*$/i, "")
-    .trim();
-}
+export { cleanRecipeName, extractCode, fmtNum, parseSteps };
 
 export function normStr(s: string): string {
   return (s ?? "")
@@ -82,10 +74,6 @@ export function fmtKg(kg: number): string {
   return `${kg.toFixed(1).replace(".", ",")} kg`;
 }
 
-export function fmtNum(n: number): string {
-  return Math.round(n).toLocaleString("de-DE");
-}
-
 export function escHtml(s: string): string {
   return (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -149,14 +137,6 @@ function findSubRecipeInstructions(recipe: Recipe | undefined, subName: string):
     }
   }
   return null;
-}
-
-// Freitext → nummerierte Arbeitsschritte
-export function parseSteps(text: string): string[] {
-  return text
-    .split(/\n+/)
-    .map(s => s.replace(/^\s*[-–•*]\s*/, "").replace(/^\s*\d+[.)]\s*/, "").trim())
-    .filter(Boolean);
 }
 
 // ── Gross-ingredient fallback ──────────────────────────────────────────────
