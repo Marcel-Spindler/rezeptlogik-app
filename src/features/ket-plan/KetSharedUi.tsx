@@ -1,0 +1,250 @@
+// Kleinere, wiederverwendete Bausteine für KET Plan / WO: leere Zustände,
+// Datei-Upload-Bildschirm, die WO-Gesamtübersicht, Stat-/Status-Chips.
+import { useState, type RefObject } from "react";
+import { fmtDateHeader, fmtKg, fmtNum, statusColors } from "./ketLogic";
+import type { BatchCalc, KetRow } from "./ketTypes";
+
+export function EmptyState() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center max-w-xs px-6">
+        <div className="w-16 h-16 rounded-3xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+          <svg className="w-8 h-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+          </svg>
+        </div>
+        <p className="text-sm font-bold text-slate-600">Work Order wählen</p>
+        <p className="text-xs text-slate-400 mt-1">Klicke links auf eine Work Order für den Breakdown</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Missing-data screen (groß, mit Auto-Upload) ────────────────────────────
+
+export function MissingDataScreen({
+  title,
+  neededFile,
+  hint,
+  fileInputRef,
+  onFile,
+}: {
+  title: string;
+  neededFile: string;
+  hint: string;
+  fileInputRef: RefObject<HTMLInputElement>;
+  onFile: (file: File) => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  return (
+    <div className="flex h-[calc(100vh-112px)] items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-lg">
+      <div className="text-center max-w-lg px-8">
+        <div className="w-20 h-20 rounded-3xl bg-amber-100 flex items-center justify-center mx-auto mb-5">
+          <svg className="w-10 h-10 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h2 className="text-2xl font-black text-amber-700 mb-2">{title}</h2>
+        <p className="text-sm font-bold text-slate-700 mb-1">
+          Fehlender Datensatz: <span className="text-amber-700">{neededFile}</span>
+        </p>
+        <p className="text-sm text-slate-500 mb-6">
+          Ohne Import dieser Datei kann diese Ansicht nicht berechnet werden. Bitte lade sie jetzt hoch.
+        </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          title={`${neededFile} hochladen`}
+          aria-label={`${neededFile} hochladen`}
+          className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ""; }}
+        />
+        <div
+          onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onClick={() => fileInputRef.current?.click()}
+          className={`cursor-pointer rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-all select-none ${
+            dragOver ? "border-blue-400 bg-blue-50 scale-[1.02]" : "border-amber-300 bg-amber-50 hover:border-blue-300 hover:bg-blue-50/50"
+          }`}
+        >
+          <div className="text-sm font-bold text-slate-700 mb-1">📂 {neededFile} hochladen</div>
+          <div className="text-xs text-slate-400">Der Dateidialog sollte sich bereits geöffnet haben · Klicken oder Datei hier ablegen · .csv</div>
+        </div>
+        <p className="text-[11px] text-slate-400 mt-4">{hint}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── WO Overview (Alle WOs) ─────────────────────────────────────────────────
+// Full-width overview of ALL work orders in the main content area — the
+// scalable counterpart to the narrow 280px sidebar list. Renders whatever
+// filtering/sorting the sidebar already computed (filteredGroups); clicking
+// a card selects that WO and switches back to the detail/breakdown view.
+
+export function KetWoOverview({
+  groups,
+  calcMap,
+  selectedKey,
+  onSelect,
+}: {
+  groups: [string, KetRow[]][];
+  calcMap: Map<string, BatchCalc>;
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
+}) {
+  const totalRows = groups.reduce((s, [, rows]) => s + rows.length, 0);
+
+  if (totalRows === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center text-sm text-slate-400 py-16">Keine WOs gefunden</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-5">
+      {groups.map(([date, rows]) => (
+        <div key={date}>
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+              {fmtDateHeader(date)}
+            </span>
+            <span className="text-[10px] text-slate-300">{rows.length} WOs</span>
+          </div>
+          <div className="space-y-2">
+            {rows.map(row => {
+              const calc = calcMap.get(row.key);
+              const isSelected = selectedKey === row.key;
+              const kSc = statusColors(row.kitchenStatus);
+              const sSc = statusColors(row.stagingStatus);
+              const done = row.woCookedPortions ?? 0;
+              const pct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
+
+              return (
+                <button
+                  type="button"
+                  key={row.key}
+                  onClick={() => onSelect(row.key)}
+                  className={`w-full text-left rounded-xl bg-white border shadow-sm hover:shadow transition-all overflow-hidden ${
+                    isSelected ? "border-[#1e3a5f] ring-2 ring-[#1e3a5f]/20" : "border-slate-200"
+                  }`}
+                  style={{ borderLeft: `4px solid ${isSelected ? "#1e3a5f" : "#cbd5e1"}` }}
+                >
+                  <div className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black text-[#1e3a5f]">WO {row.woNumber}</span>
+                          {row.recipeCode && (
+                            <span className="text-[9px] font-mono text-slate-400">{row.recipeCode}</span>
+                          )}
+                        </div>
+                        <div className="text-xs font-bold text-slate-800 leading-tight mt-0.5 truncate">
+                          {row.recipeName}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate mt-0.5">
+                          {row.subRecipeName || "—"}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                        {calc && calc.batches > 0 && (
+                          <span
+                            className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-700"
+                            title={calc.primaryCapBibleMatch
+                              ? `Batche berechnet mit Kuechenbible-Kapazität "${calc.primaryCapBibleMatch.itemName}" (provisorisch)`
+                              : undefined}
+                          >
+                            {calc.primaryCapBibleMatch && <span aria-hidden="true">📖 </span>}
+                            {calc.batches}×
+                          </span>
+                        )}
+                        {calc && calc.totalKg > 0 && (
+                          <span className="text-[10px] text-slate-400 tabular-nums">{fmtKg(calc.totalKg)}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
+                      <span className="text-sm font-black text-slate-900 tabular-nums">{fmtNum(done)}</span>
+                      <span className="text-[9px] text-slate-400">/ {fmtNum(row.targetPortions)} Port.</span>
+                      {pct > 0 && (
+                        <div className="flex-1 min-w-[60px] max-w-[140px] h-1 rounded-full overflow-hidden bg-slate-100">
+                          <div
+                            className={`h-full rounded-full ${pct >= 100 ? "bg-emerald-500" : "bg-blue-400"}`}
+                            style={{ width: `${Math.min(100, pct)}%` }}
+                          />
+                        </div>
+                      )}
+                      <span className={`ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded-md ${kSc.bg} ${kSc.text}`}>
+                        Kitchen: {row.kitchenStatus || "—"}
+                      </span>
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-md ${sSc.bg} ${sSc.text}`}>
+                        Staging: {row.stagingStatus || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Micro components ───────────────────────────────────────────────────────
+
+export function StatCard({
+  label, value, sub, subGreen, highlight, warn, badge, badgeTitle,
+}: {
+  label: string; value: string; sub?: string; subGreen?: boolean; highlight?: boolean; warn?: string;
+  // Small, always-visible indicator (e.g. "📖" for a Kuechenbible-sourced
+  // value) — shown next to the label so the source is clear without
+  // requiring a hover, per label with an optional tooltip for detail.
+  badge?: string; badgeTitle?: string;
+}) {
+  return (
+    <div className={`rounded-2xl px-4 py-3.5 border ${
+      highlight
+        ? "bg-[#1e3a5f] border-[#1e3a5f]"
+        : warn
+          ? "bg-amber-50 border-amber-200"
+          : "bg-white border-slate-200 shadow-sm"
+    }`}>
+      <div className={`flex items-center gap-1 text-[8px] font-black uppercase tracking-[0.12em] mb-1.5 ${
+        highlight ? "text-blue-300" : warn ? "text-amber-500" : "text-slate-400"
+      }`}>
+        <span>{label}</span>
+        {badge && (
+          <span title={badgeTitle} aria-label={badgeTitle ?? "Kuechenbible"} className="cursor-help">{badge}</span>
+        )}
+      </div>
+      <div className={`text-xl font-black tabular-nums leading-tight ${
+        highlight ? "text-white" : warn ? "text-amber-800" : "text-slate-900"
+      }`}>{value}</div>
+      {sub && (
+        <div className={`text-[10px] font-medium mt-0.5 ${
+          subGreen ? "text-emerald-600" : highlight ? "text-blue-300" : "text-slate-400"
+        }`}>{sub}</div>
+      )}
+      {warn && <div className="text-[9px] text-amber-600 font-semibold mt-0.5">{warn}</div>}
+    </div>
+  );
+}
+
+export function StatusChip({ label, value }: { label: string; value: string }) {
+  const { bg, text, dot } = statusColors(value);
+  return (
+    <div className={`flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-xl border ${bg} ${text} border-transparent`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${dot}`}></span>
+      <span className="text-[9px] font-medium opacity-70">{label}:</span>
+      {value || "—"}
+    </div>
+  );
+}
