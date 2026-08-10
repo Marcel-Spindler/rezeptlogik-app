@@ -419,49 +419,6 @@ export function categoryRiskTone(status: ShelfLifeInfo["status"] | "unknown") {
   return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
 }
 
-// ─── Engpass ───────────────────────────────────────────────────────────────
-
-export function engpassStatus(maxPortions: number | null, needed: number): "ok" | "warn" | "critical" | "unknown" {
-  if (maxPortions === null) return "unknown";
-  if (maxPortions >= needed) return "ok";
-  if (maxPortions >= needed * 0.8) return "warn";
-  return "critical";
-}
-
-export function engpassStatusLabel(s: "ok" | "warn" | "critical" | "unknown"): string {
-  if (s === "ok") return "✓ Ausreichend";
-  if (s === "warn") return "⚠ Knapp";
-  if (s === "critical") return "✗ Engpass";
-  return "— offen";
-}
-
-export function engpassStatusColor(s: "ok" | "warn" | "critical" | "unknown"): string {
-  if (s === "ok") return "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200";
-  if (s === "warn") return "bg-amber-50 text-amber-800 ring-1 ring-amber-200";
-  if (s === "critical") return "bg-rose-50 text-rose-800 ring-1 ring-rose-200";
-  return "bg-slate-100 text-slate-500 ring-1 ring-slate-200";
-}
-
-export function engpassScenarioText(
-  available: number | null,
-  availableDisplay: number | null,
-  displayUom: string,
-  convFactor: number,
-  maxPortions: number | null,
-  shortfall: number | null,
-  portionsTotal: number
-): string {
-  if (available === null || availableDisplay === null || maxPortions === null) {
-    return "Trage hier ein, wie viel wirklich da ist. Dann zeigt das Tool sofort, bis wie viele Portionen die Menge reicht.";
-  }
-  const avail = `${fmtNum(availableDisplay, 2)} ${displayUom}`;
-  const portions = fmtNum(maxPortions);
-  if (maxPortions <= 0) return `Mit ${avail} reicht es aktuell fuer keine Portion.`;
-  if (maxPortions >= portionsTotal) return `Mit ${avail} kommen wir bis ${portions} Portionen. Der Plan ist damit abgedeckt.`;
-  if ((shortfall ?? 0) > 0) return `Mit ${avail} kommen wir bis ${portions} Portionen. Fuer den Plan fehlen ${fmtNum((shortfall ?? 0) / convFactor, 2)} ${displayUom}.`;
-  return `Mit ${avail} kommen wir bis ${portions} Portionen.`;
-}
-
 // ─── localStorage ──────────────────────────────────────────────────────────
 
 const LS_PREFIX = "rezeptlogik_v1_";

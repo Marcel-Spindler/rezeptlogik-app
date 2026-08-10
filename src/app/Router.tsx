@@ -5,7 +5,7 @@ import { Shell, LoadingCard, ErrorCard } from "./Shell";
 import { NavTabs } from "./NavTabs";
 import { KitchenSurface } from "./KitchenSurface";
 import { AppFooter } from "./AppFooter";
-import { RecipeDetail } from "../RecipeDetailView";
+import { RecipeDetail } from "../features/recipe-detail/RecipeDetailShell";
 import { CsvImportView } from "../CsvImportView";
 import { PlanningOasisView } from "../planning-oasis/PlanningOasisView";
 import { KetBreakdownView } from "../KetBreakdownView";

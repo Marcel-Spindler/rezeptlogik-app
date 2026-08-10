@@ -1,6 +1,6 @@
 import type { WeekRecipe, Recipe } from "../core/types";
 import { getRampUpHistory } from "../lib/rampUpHistory";
-import { RampHistorySparkline } from "../RecipeDetailView";
+import { RampHistorySparkline } from "../features/recipe-detail/shared";
 import {
   adjustedPortions, fmtNum,
   MARKETS, MARKET_COLOR, MARKET_LABEL,
