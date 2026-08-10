@@ -17,6 +17,7 @@ try {
 admin.initializeApp();
 
 const db = admin.firestore();
+db.settings({ ignoreUndefinedProperties: true });
 const APP_ROOT = db.collection("apps").doc("rezeptlogik");
 const AGENT_RUNS = APP_ROOT.collection("agentRuns");
 const AGENT_PROPOSALS = APP_ROOT.collection("agentProposals");
