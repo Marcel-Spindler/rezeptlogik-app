@@ -134,6 +134,13 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
     };
   }, [liveMode]);
 
+  // WICHTIG: der Fallback hier bleibt IMMER aktiv (nicht an weekScopeFilter
+  // gekoppelt) - er kompensiert nicht bloß einen nachlaufenden Feed, sondern
+  // den systematischen Unterschied zwischen "kw" (WEEKOFYEAR() = echte
+  // Snowflake-ISO-Woche) und selectedWeekNum (HF-Woche = ISO-Woche + 1). Ohne
+  // Fallback wäre wmsWeekNum immer genau 1 zu hoch und JEDE Station würde
+  // leer bleiben. Sichtbar gemacht über wmsWeekFallbackActive unten, statt
+  // stillschweigend zu wirken.
   const wmsWeekNum = useMemo(
     () => resolveOperationalWmsWeekNum(selectedWeekNum, [
       allData?.sleeving.rows ?? [],
@@ -141,6 +148,7 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
     ]),
     [allData, selectedWeekNum],
   );
+  const wmsWeekFallbackActive = allData != null && wmsWeekNum != null && wmsWeekNum !== selectedWeekNum;
 
   // Artikel, die laut Rezeptplan (weekRecipes + Sub-Rezepte/Zutaten) für die
   // gewählte KW tatsächlich gebraucht werden. Zuverlässiger als die rohen WMS-
@@ -155,22 +163,26 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   // ── Filtered raw rows per station ─────────────────────────────────────────
   // Plating/Staging/Debox/Post-Blast hatten bisher GAR KEINEN Wochenfilter -
   // sie zeigten unabhängig von der KW-Auswahl alles aus dem rollierenden
-  // Serverfenster (Ursache für "Artikel, die wir diese Woche nicht haben").
-  const rawPlating   = useMemo(() => (allData?.plating.rows    ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
-  const rawStaging   = useMemo(() => (allData?.staging.rows    ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
-  const rawDebox     = useMemo(() => (allData?.debox.rows      ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
-  const rawPostblast = useMemo(() => (allData?.postblast.rows  ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
-  const rawSleeving  = useMemo(
-    () => (allData?.sleeving.rows ?? []).filter(r => (wmsWeekNum == null || r.kw === wmsWeekNum) && inWeekScope(r.itemNumber)),
-    [allData, wmsWeekNum, inWeekScope],
+  // Serverfenster (Ursache für "Artikel, die wir diese Woche nicht haben" /
+  // "zeigen Einträge anderer Wochen"). Jetzt wie Sleeving/Inbound zusätzlich
+  // über das eigene "kw"-Feld (WEEKOFYEAR aus Snowflake) gefiltert, zusammen
+  // mit dem rezeptbasierten SKU-Filter - zwei unabhängige Signale, da eine
+  // gemeinsam genutzte Zutat (z.B. Gewürz) über viele Wochen hinweg im
+  // SKU-Filter allein bestehen bliebe, auch wenn die konkrete Bewegung aus
+  // einer anderen Woche stammt.
+  const inWmsWeek = useCallback(
+    (kw: number | null) => !weekScopeFilter || wmsWeekNum == null || kw === wmsWeekNum,
+    [weekScopeFilter, wmsWeekNum],
   );
-  const rawInbound   = useMemo(
-    () => (allData?.inbound.rows ?? []).filter(r => (wmsWeekNum == null || r.kw === wmsWeekNum) && inWeekScope(r.itemNumber)),
-    [allData, wmsWeekNum, inWeekScope],
-  );
+  const rawPlating   = useMemo(() => (allData?.plating.rows    ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
+  const rawStaging   = useMemo(() => (allData?.staging.rows    ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
+  const rawDebox     = useMemo(() => (allData?.debox.rows      ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
+  const rawPostblast = useMemo(() => (allData?.postblast.rows  ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
+  const rawSleeving  = useMemo(() => (allData?.sleeving.rows ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
+  const rawInbound   = useMemo(() => (allData?.inbound.rows  ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
   const rawWorkorders = useMemo(
-    () => (allData?.workorders.rows ?? []).filter((row) => woMatchesSelectedWeek(row.week, selectedWeek, row.woNumber)),
-    [allData, selectedWeek],
+    () => (allData?.workorders.rows ?? []).filter((row) => woMatchesSelectedWeek(row.week, selectedWeek, row.woNumber, !weekScopeFilter)),
+    [allData, selectedWeek, weekScopeFilter],
   );
 
   // ── Aggregated rows ───────────────────────────────────────────────────────
@@ -361,6 +373,12 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
             </div>
           )}
         </div>
+
+        {wmsWeekFallbackActive && (
+          <div className="mt-2 rounded bg-amber-900/40 border border-amber-600/50 px-2.5 py-1.5 text-[11px] text-amber-200">
+            ⚠ Inbound/Sleeving/Staging/Debox/Post-Blast/Plating zeigen KW {wmsWeekNum} statt KW {selectedWeekNum} — Snowflake hat für die gewählte KW noch keine Einträge in diesen Stationen, es wird die letzte verfügbare Woche als Näherung gezeigt.
+          </div>
+        )}
       </div>
 
       {/* ══ ALERT STRIP ════════════════════════════════════════════════════ */}

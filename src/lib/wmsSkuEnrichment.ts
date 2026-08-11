@@ -69,6 +69,10 @@ export function buildSkuInfoIndex(data: DataBundle, week: string): Map<string, W
   for (const weekRecipe of weekRecipes) {
     const recipe = data.recipes[weekRecipe.code];
     if (!recipe) continue;
+    // WMS Plating arbeitet mit der rohen "Recipe ID" (z.B. "REC-022729-4-006"),
+    // nicht mit der MSKU - ohne diese fiel jede Plating-Zeile durch den
+    // wochenbasierten SKU-Filter, obwohl das Rezept genau diese Woche lief.
+    const recipeId = data.structures?.[weekRecipe.code]?.recipeId;
 
     for (const market of markets) {
       const portions = weekRecipe.verdenVolume[market] ?? 0;
@@ -77,6 +81,9 @@ export function buildSkuInfoIndex(data: DataBundle, week: string): Map<string, W
 
       if (marketDetails?.msku) {
         addPlannedSku({ sku: marketDetails.msku, name: marketDetails.recipeNameLocal || recipe.baseName || weekRecipe.recipeName, uom: "each", category: "MSKU", qty: portions, recipeCode: weekRecipe.code });
+      }
+      if (recipeId) {
+        addPlannedSku({ sku: recipeId, name: marketDetails?.recipeNameLocal || recipe.baseName || weekRecipe.recipeName, uom: "each", category: "REC", qty: portions, recipeCode: weekRecipe.code });
       }
 
       for (const subRecipe of marketDetails?.subRecipes ?? []) {

@@ -51,7 +51,13 @@ export function weekPrefixFromWoNumber(woNumber: string): number | null {
 // checked whenever the "week" field itself doesn't produce a match, so a
 // surprising/malformed "week" value can never hide a WO the server already
 // filtered correctly by its number.
-export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string, woNumber?: string): boolean {
+// allowAdjacentWeekFallback (default true, matches historical behaviour):
+// when the "week" field matches neither exactly nor via the WO-number
+// prefix, fall back to accepting nearby weeks (-1..+2) so a lagging feed
+// doesn't hide the whole section. Set to false for strict KW-only matching
+// (the "🎯 Nur KW" toggle) - Marcel reported this fallback leaking KW32 rows
+// into a KW33 view, which is exactly this window kicking in.
+export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string, woNumber?: string, allowAdjacentWeekFallback = true): boolean {
   const tokens = hfWeekTokens(selectedHfWeek);
   if (!tokens) return true;
 
@@ -70,6 +76,8 @@ export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string, wo
   if (digits.length === 4 && digits === tokens.short) return true;
   if (digits === tokens.week || digits === tokens.weekUnpadded) return true;
 
+  if (!allowAdjacentWeekFallback) return false;
+
   // If the live WMS feed lags the selected HF week, keep the adjacent
   // operational weeks instead of hiding the whole Workorders section.
   const rowWeekNum = weekNumFromWmsWeek(raw);
@@ -87,11 +95,18 @@ export function previousWmsWeekCandidates(weekNum: number): number[] {
   return [weekNum - 1];
 }
 
+// allowFallback=false disables the previous-week substitution entirely and
+// always returns selectedWeekNum as-is - the strict "🎯 Nur KW" mode. With
+// fallback on (default), an empty selected week silently substitutes the
+// previous week's rows, which is exactly the "KW33 shows KW32" symptom.
 export function resolveOperationalWmsWeekNum(
   selectedWeekNum: number | null,
   datasets: Array<Array<{ kw: number | null }>>,
+  allowFallback = true,
 ): number | null {
   if (selectedWeekNum == null) return null;
+  if (!allowFallback) return selectedWeekNum;
+
   const hasSelectedWeek = datasets.some((rows) => rows.some((row) => row.kw === selectedWeekNum));
   if (hasSelectedWeek) return selectedWeekNum;
 

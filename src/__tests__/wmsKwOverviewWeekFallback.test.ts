@@ -46,6 +46,11 @@ describe("WMS week fallback", () => {
     expect(previousWmsWeekCandidates(32)).toEqual([31]);
     expect(previousWmsWeekCandidates(1)).toEqual([52, 53]);
   });
+
+  it("allowFallback=false always returns the selected week as-is, even with no matching rows anywhere", () => {
+    expect(resolveOperationalWmsWeekNum(32, [[{ kw: 31 }], [{ kw: 30 }]], false)).toBe(32);
+    expect(resolveOperationalWmsWeekNum(32, [[{ kw: 32 }]], false)).toBe(32);
+  });
 });
 
 describe("weekPrefixFromWoNumber", () => {
@@ -78,5 +83,13 @@ describe("woMatchesSelectedWeek", () => {
   it("still rejects rows that match neither the week field nor the WO-number prefix", () => {
     expect(woMatchesSelectedWeek("202601", "2026-W34", "33-62")).toBe(false);
     expect(woMatchesSelectedWeek("garbage", "2026-W34", "12-99")).toBe(false);
+  });
+
+  it("allowAdjacentWeekFallback=false (strict mode) rejects the -1/+2 adjacent-week window that otherwise leaks e.g. KW32 into a KW33 view", () => {
+    // 202633 is inside the default adjacent-week window for a KW34 selection...
+    expect(woMatchesSelectedWeek("202633", "2026-W34")).toBe(true);
+    // ...but not in strict mode, where only exact matches (or WO-number prefix) count.
+    expect(woMatchesSelectedWeek("202633", "2026-W34", undefined, false)).toBe(false);
+    expect(woMatchesSelectedWeek("202634", "2026-W34", undefined, false)).toBe(true);
   });
 });
