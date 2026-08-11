@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSkuInfoIndex, getSkuDisplayLabel } from "../lib/wmsSkuEnrichment";
+import { buildSkuInfoIndex, getSkuDisplayLabel, weekPlannedSkuSet } from "../lib/wmsSkuEnrichment";
 import type { DataBundle } from "../core/types";
 
 describe("wms SKU enrichment", () => {
@@ -61,5 +61,55 @@ describe("wms SKU enrichment", () => {
     }, "2026-W20");
 
     expect(getSkuDisplayLabel("UNKNOWN-SKU", index)).toBe("UNKNOWN-SKU");
+  });
+
+  it("weekPlannedSkuSet includes only SKUs actually planned this week, not shelf-life-only catalog entries", () => {
+    const data: DataBundle = {
+      generatedAt: "",
+      weeks: ["2026-W20"],
+      weekRecipes: [{
+        hfWeek: "2026-W20",
+        weekShort: "W20",
+        code: "TEST001",
+        recipeName: "Test recipe",
+        preference: "P+",
+        slot: {},
+        verdenVolume: { BENL: 10, DKSE: 0, DE: 0 },
+        totalVerdenVolume: 10,
+        productionBuffer: 0,
+      }],
+      recipes: {
+        TEST001: {
+          code: "TEST001",
+          baseName: "Test recipe",
+          markets: {
+            BENL: {
+              market: "BENL",
+              msku: "MSKU-1",
+              recipeNameLocal: "Test recipe local",
+              subRecipes: [{ id: "SUB-001", name: "Sub recipe", category: "HAND MIX", yieldUom: "grams" }],
+              ingredients: [{ name: "Tomato", ingredientId: "ING-001", quantityPerPortion: 1, uom: "grams" }],
+            },
+          },
+          grossIngredients: {},
+        },
+      },
+      cookSchedules: {},
+      shelfLifeBySku: {
+        "ING-002": { skuCode: "ING-002", skuName: "Shelf item", category: "PRO", customerMinDays: 5, status: "ok" },
+      },
+      structures: {},
+    };
+
+    const skus = weekPlannedSkuSet(buildSkuInfoIndex(data, "2026-W20"));
+    expect(skus.has("MSKU-1")).toBe(true);
+    expect(skus.has("SUB-001")).toBe(true);
+    expect(skus.has("ING-001")).toBe(true);
+    // ING-002 only exists as a shelf-life catalog entry, never planned for this week.
+    expect(skus.has("ING-002")).toBe(false);
+
+    // A different week with no matching weekRecipes plans nothing at all.
+    const skusOtherWeek = weekPlannedSkuSet(buildSkuInfoIndex(data, "2026-W21"));
+    expect(skusOtherWeek.size).toBe(0);
   });
 });

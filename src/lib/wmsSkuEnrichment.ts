@@ -149,8 +149,20 @@ export function getSkuDisplayLabel(sku: string, index: Map<string, WmsSkuInfo>):
   return key || "–";
 }
 
-function skuKey(value: string): string {
+export function skuKey(value: string): string {
   return String(value ?? "").trim().toUpperCase();
+}
+
+// SKUs, die laut Rezeptplan (weekRecipes + deren Sub-Rezepte/Zutaten) für die
+// gegebene KW tatsächlich gebraucht werden — Teilmenge von buildSkuInfoIndex,
+// ohne die zusätzlichen wochenunabhängigen Katalog-/Shelf-Life-Einträge, die
+// dort ebenfalls (nur für Namens-Anreicherung) mitgeführt werden.
+export function weekPlannedSkuSet(skuInfoIndex: Map<string, WmsSkuInfo>): Set<string> {
+  const skus = new Set<string>();
+  for (const [sku, info] of skuInfoIndex) {
+    if (info.source === "week-plan") skus.add(sku);
+  }
+  return skus;
 }
 
 function skuDefaultUom(sku: string, fallback = ""): string {

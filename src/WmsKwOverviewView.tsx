@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DataBundle } from "./core/types";
-import { buildSkuInfoIndex } from "./lib/wmsSkuEnrichment";
+import { buildSkuInfoIndex, skuKey, weekPlannedSkuSet } from "./lib/wmsSkuEnrichment";
 
 import { STATION_META, STATION_ORDER } from "./features/wms-overview/wmsTypes";
 import type {
@@ -45,6 +45,11 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const [liveCountdown, setLiveCountdown] = useState(30);
   const [snapshots,    setSnapshots]    = useState<WmsSnapshot[]>(() => loadSnapshots());
   const [compareSnapId, setCompareSnapId] = useState<string | null>(null);
+  // Rezeptplan-Scope: nur Artikel zeigen, die laut weekRecipes (+ deren Sub-
+  // Rezepten/Zutaten) tatsächlich für die gewählte KW geplant sind. Default an,
+  // da sonst z.B. Plating/Staging/Debox/Post-Blast unabhängig von der KW-Wahl
+  // einfach alles aus dem rollierenden Serverfenster zeigten.
+  const [weekScopeFilter, setWeekScopeFilter] = useState(true);
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const liveTickRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const selectedWeekRef = useRef(selectedWeek);
@@ -137,15 +142,34 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
     [allData, selectedWeekNum],
   );
 
+  // Artikel, die laut Rezeptplan (weekRecipes + Sub-Rezepte/Zutaten) für die
+  // gewählte KW tatsächlich gebraucht werden. Zuverlässiger als die rohen WMS-
+  // Datums-/Wochenfelder je Station (uneinheitliches Format, teils gar nicht
+  // vorhanden) - siehe weekScopeFilter-Toggle in der Command-Bar.
+  const weekSkus = useMemo(() => weekPlannedSkuSet(skuInfoIndex), [skuInfoIndex]);
+  const inWeekScope = useCallback(
+    (itemNumber: string) => !weekScopeFilter || weekSkus.size === 0 || weekSkus.has(skuKey(itemNumber)),
+    [weekScopeFilter, weekSkus],
+  );
+
   // ── Filtered raw rows per station ─────────────────────────────────────────
-  const rawPlating   = useMemo(() =>  allData?.plating.rows    ?? [], [allData]);
-  const rawStaging   = useMemo(() =>  allData?.staging.rows    ?? [], [allData]);
-  const rawDebox     = useMemo(() =>  allData?.debox.rows      ?? [], [allData]);
-  const rawPostblast = useMemo(() =>  allData?.postblast.rows  ?? [], [allData]);
-  const rawSleeving  = useMemo(() => (allData?.sleeving.rows   ?? []).filter(r => wmsWeekNum == null || r.kw === wmsWeekNum), [allData, wmsWeekNum]);
-  const rawInbound   = useMemo(() => (allData?.inbound.rows    ?? []).filter(r => wmsWeekNum == null || r.kw === wmsWeekNum), [allData, wmsWeekNum]);
+  // Plating/Staging/Debox/Post-Blast hatten bisher GAR KEINEN Wochenfilter -
+  // sie zeigten unabhängig von der KW-Auswahl alles aus dem rollierenden
+  // Serverfenster (Ursache für "Artikel, die wir diese Woche nicht haben").
+  const rawPlating   = useMemo(() => (allData?.plating.rows    ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
+  const rawStaging   = useMemo(() => (allData?.staging.rows    ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
+  const rawDebox     = useMemo(() => (allData?.debox.rows      ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
+  const rawPostblast = useMemo(() => (allData?.postblast.rows  ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
+  const rawSleeving  = useMemo(
+    () => (allData?.sleeving.rows ?? []).filter(r => (wmsWeekNum == null || r.kw === wmsWeekNum) && inWeekScope(r.itemNumber)),
+    [allData, wmsWeekNum, inWeekScope],
+  );
+  const rawInbound   = useMemo(
+    () => (allData?.inbound.rows ?? []).filter(r => (wmsWeekNum == null || r.kw === wmsWeekNum) && inWeekScope(r.itemNumber)),
+    [allData, wmsWeekNum, inWeekScope],
+  );
   const rawWorkorders = useMemo(
-    () => (allData?.workorders.rows ?? []).filter((row) => woMatchesSelectedWeek(row.week, selectedWeek)),
+    () => (allData?.workorders.rows ?? []).filter((row) => woMatchesSelectedWeek(row.week, selectedWeek, row.woNumber)),
     [allData, selectedWeek],
   );
 
@@ -288,6 +312,17 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
           >
             {allWmsWeeks.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
+
+          <button
+            type="button"
+            title={weekScopeFilter
+              ? "Nur Artikel zeigen, die laut Rezeptplan für diese KW gebraucht werden (alle 7 Abteilungen)"
+              : "Ungefiltert: alle Artikel aus dem Server-Zeitfenster zeigen, unabhängig von der gewählten KW"}
+            className={`rounded px-2.5 py-1 text-[11px] font-bold transition-colors ${weekScopeFilter ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}
+            onClick={() => setWeekScopeFilter(v => !v)}
+          >
+            {weekScopeFilter ? `🎯 Nur KW ${selectedWeekNum ?? ""}` : "◯ Alle Artikel"}
+          </button>
 
           <button
             type="button"

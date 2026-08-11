@@ -33,12 +33,31 @@ export function hfWeekTokens(hfWeek: string): { full: string; short: string; wee
   };
 }
 
+// WO-Nummern folgen serverseitig IMMER dem Muster "<KW>-<laufende Nummer>"
+// (z.B. "34-62", "34-R1") — genau das Muster, mit dem wms-local-server.ts
+// die SQL-Abfrage selbst filtert (WHERE wo_number LIKE '34-%'). Das macht die
+// WO-Nummer die zuverlässigste Wochenquelle: anders als das freie "week"-Feld
+// aus V_SUBMEAL_PRODUCTION kann sie nicht in einem unerwarteten Format
+// ankommen, ohne dass der Server selbst schon leer zurückgegeben hätte.
+export function weekPrefixFromWoNumber(woNumber: string): number | null {
+  const m = String(woNumber ?? "").trim().match(/^(\d{1,2})-/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 // Flexible WO week matcher — V_SUBMEAL_PRODUCTION "week" format varies.
 // Prefer exact year+week matching where available and only fall back to the
-// plain week number if the source omits any year information.
-export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string): boolean {
+// plain week number if the source omits any year information. woNumber is an
+// optional, more reliable secondary signal (see weekPrefixFromWoNumber) —
+// checked whenever the "week" field itself doesn't produce a match, so a
+// surprising/malformed "week" value can never hide a WO the server already
+// filtered correctly by its number.
+export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string, woNumber?: string): boolean {
   const tokens = hfWeekTokens(selectedHfWeek);
   if (!tokens) return true;
+
+  const selectedWeekNum = weekNumFromHfWeek(selectedHfWeek);
+  if (woNumber && selectedWeekNum != null && weekPrefixFromWoNumber(woNumber) === selectedWeekNum) return true;
+
   const raw = String(woWeek ?? "").trim();
   if (!raw) return false;
 
@@ -53,7 +72,6 @@ export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string): b
 
   // If the live WMS feed lags the selected HF week, keep the adjacent
   // operational weeks instead of hiding the whole Workorders section.
-  const selectedWeekNum = weekNumFromHfWeek(selectedHfWeek);
   const rowWeekNum = weekNumFromWmsWeek(raw);
   if (selectedWeekNum == null || rowWeekNum == null) return false;
   return rowWeekNum >= selectedWeekNum - 1 && rowWeekNum <= selectedWeekNum + 2;
