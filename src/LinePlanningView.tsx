@@ -340,9 +340,18 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   }
   
   // ─── Load data ─────────────────────────────────────────────────────────────
+  // upliftPercent gehört in die Deps: handleRefresh berechnet recipes darüber
+  // (deriveRecipesFromWeekRecipes(..., 1 + upliftPercent / 100)) und wird sonst
+  // nirgends in dieser Datei gelesen — ohne diese Dependency reagierte die
+  // Linienplanung nicht auf den globalen Uplift-Regler, live bestätigt (Sidebar
+  // zeigte den neuen Uplift-Wert, "Σ Portionen" hier blieb unverändert).
+  // handleRefresh selbst bewusst nicht aufgenommen: sie ist nicht memoized und
+  // löst einen vollständigen Netzwerk-Reload aus (loadData, KPL-Fetch,
+  // Firestore-Fallback) - sie mit aufzunehmen würde bei jedem Render neu laden.
   useEffect(() => {
     void handleRefresh();
-  }, [week, weekStr]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [week, weekStr, upliftPercent]);
 
   useEffect(() => {
     const refreshSnapshot = () => setManufacturingSnapshot(loadManufacturingPlanSnapshot(week));
@@ -436,6 +445,12 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     }
   }, [forecastAutoThreshold, forecastVarianceRows, forecastVarianceSignature, hasSavedManufacturingPlan, week]);
 
+  // autoPlanFromTargets bewusst nicht in den Deps: der Guard oben verarbeitet
+  // pendingSnapshotAutoplan ohnehin nur einmal pro Trigger (setzt sich sofort
+  // selbst zurück), es gibt hier - anders als beim externen Reconcile-Listener
+  // in PlanningView.tsx - kein Resubscribe-Gap, in dem die aufgerufene Funktion
+  // veraltete Closures haben könnte. Sie aufzunehmen würde nur eine riesige
+  // useCallback-Dependency-Liste erzwingen, ohne einen echten Bug zu beheben.
   useEffect(() => {
     if (pendingSnapshotAutoplan <= 0 || loading) return;
     setPendingSnapshotAutoplan(0);
@@ -448,6 +463,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       setTimeout(() => setAutoPlanNotice(""), 4200);
     }
     autoPlanFromTargets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSnapshotAutoplan, loading, week]);
 
   useEffect(() => {
@@ -1425,6 +1441,12 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       if (left.severity !== right.severity) return left.severity === "error" ? -1 : 1;
       return left.location.localeCompare(right.location, "de");
     });
+    // mealsPerHour bewusst nicht in den Deps: sie liest nur activeLineIdxByDay/
+    // schedule/lineCapacityByLane, die hier schon einzeln stehen. Sie ist nicht
+    // memoized, würde also bei jedem Render eine neue Referenz haben und diesen
+    // Tage×Slots×Linien-Memo bei jedem Render statt nur bei echten Änderungen
+    // neu berechnen.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeLineIdxByDay,
     allocatedPortionsByCell,
