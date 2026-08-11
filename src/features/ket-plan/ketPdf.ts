@@ -7,7 +7,7 @@ export function buildPdf(
   calcMap: Map<string, BatchCalc>,
   caps: Record<string, number>,
   title: string,
-  source: "CSV" | "Firestore" | "LiveWMS" | null = null,
+  source: "CSV" | "Firestore" | "LiveWMS" | "FirestoreStale" | null = null,
 ): string {
 
   const cards = rows.map((row, i) => {
@@ -246,7 +246,9 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
   <div class="page-meta">Generiert: ${new Date().toLocaleString("de-DE")} · ${rows.length} Work Orders</div>
   ${source === "LiveWMS"
     ? `<div class="page-meta" style="color:#f59e0b;font-weight:800;margin-top:2px;">⚠ Quelle: Live WMS (Snowflake) – Feldzuordnung ungeprüft</div>`
-    : ""}
+    : source === "FirestoreStale"
+      ? `<div class="page-meta" style="color:#dc2626;font-weight:800;margin-top:2px;">⚠ Quelle: Firestore – veraltet, enthält nicht die aktuelle Woche</div>`
+      : ""}
 </div>
 <div class="equip-section">
   <div>

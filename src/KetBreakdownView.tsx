@@ -5,6 +5,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type { DataBundle, WorkOrderEntry } from "./core/types";
 import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow, currentHfWeek } from "./lib/wmsCache";
+import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overview/wmsWeeks";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
   calcBatch, fmtDateHeader, fmtKg, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
@@ -33,6 +34,13 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
   const [liveWmsRows, setLiveWmsRows] = useState<WorkOrderEntry[] | null>(null);
   const [wmsDroppedWeeks, setWmsDroppedWeeks] = useState<string[]>([]);
 
+  // productionPlan/liveWmsRows können viele Wochen gemischt enthalten (z.B. 219
+  // KW33- neben 115 KW34-Zeilen) - ohne Filter gehen die aktuellen WOs in der
+  // nach Datum sortierten Liste unter ("keine KW34-WOs" wirkt so, obwohl sie
+  // da sind, nur hinter hunderten älteren Zeilen). Default an, abschaltbar für
+  // den Fall dass man wirklich alle Wochen auf einmal sehen will.
+  const [weekFilterEnabled, setWeekFilterEnabled] = useState(true);
+
   const [caps, setCaps] = useState<Record<string, number>>(() => {
     try {
       const saved = localStorage.getItem(LS_CAPS_KEY);
@@ -47,20 +55,35 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
     ),
   );
 
+  // "Hat Zeilen" reicht nicht - der GSheet→Firestore-Plan kann 300+ Zeilen für
+  // längst vergangene Wochen halten, während die aktuelle Woche darin komplett
+  // fehlt (das GSheet "Fertigstellungszeitplan" wurde für sie noch nicht
+  // befüllt). Ohne diesen Check würde der Live-Snowflake-Fallback unten nie
+  // greifen, obwohl productionPlan für die aktuelle Woche leer ist.
+  const productionPlanHasLiveWeek = useMemo(() => {
+    const rows = data.productionPlan?.rows;
+    if (!rows?.length) return false;
+    const liveWeekNum = weekNumFromHfWeek(liveWeek);
+    if (liveWeekNum == null) return true; // can't tell - don't second-guess the trusted source
+    return rows.some((row) => weekPrefixFromWoNumber(row.workOrder) === liveWeekNum);
+  }, [data.productionPlan?.rows, liveWeek]);
+
   const ketRows = useMemo<KetRow[]>(() => {
     if (csvRows !== null) return csvRows;
     const rows = data.productionPlan?.rows;
-    if (rows?.length) return woEntriesToKetRows(rows);
+    if (rows?.length && productionPlanHasLiveWeek) return woEntriesToKetRows(rows);
     if (liveWmsRows?.length) return woEntriesToKetRows(liveWmsRows);
+    if (rows?.length) return woEntriesToKetRows(rows); // stale but still better than nothing
     return [];
-  }, [csvRows, data.productionPlan?.rows, liveWmsRows]);
+  }, [csvRows, data.productionPlan?.rows, productionPlanHasLiveWeek, liveWmsRows]);
 
   // Lowest-priority fallback: only reach for the live WMS/Snowflake cache when
-  // neither manual CSV nor the established GSheet→Firestore plan has any rows,
-  // so this unverified source can never silently override a trusted one.
+  // neither manual CSV nor the established GSheet→Firestore plan has rows for
+  // the CURRENT week, so this unverified source can never silently override a
+  // trusted one that's actually still current.
   useEffect(() => {
     if (csvRows !== null) return;
-    if (data.productionPlan?.rows?.length) return;
+    if (productionPlanHasLiveWeek) return;
     let cancelled = false;
     fetchWmsWorkorderCache().then((res) => {
       if (cancelled || !res || !res.rows.length) return;
@@ -83,7 +106,7 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
       if (mapped.length) setLiveWmsRows(mapped);
     });
     return () => { cancelled = true; };
-  }, [csvRows, data.productionPlan?.rows?.length, liveWeek]);
+  }, [csvRows, productionPlanHasLiveWeek, liveWeek]);
 
   const autoOpenedRef = useRef(false);
   useEffect(() => {
@@ -99,14 +122,20 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
     return m;
   }, [ketRows, caps, data]);
 
+  const liveWeekNum = useMemo(() => weekNumFromHfWeek(liveWeek), [liveWeek]);
+  const weekFilteredRows = useMemo(() => {
+    if (!weekFilterEnabled || liveWeekNum == null) return ketRows;
+    return ketRows.filter((row) => weekPrefixFromWoNumber(row.woNumber) === liveWeekNum);
+  }, [ketRows, weekFilterEnabled, liveWeekNum]);
+
   const groups = useMemo(() => {
     const m = new Map<string, KetRow[]>();
-    for (const row of ketRows) {
+    for (const row of weekFilteredRows) {
       if (!m.has(row.dateNeeded)) m.set(row.dateNeeded, []);
       m.get(row.dateNeeded)!.push(row);
     }
     return [...m.entries()].sort((a, b) => parseSortKey(a[0]) - parseSortKey(b[0]));
-  }, [ketRows]);
+  }, [weekFilteredRows]);
 
   const needle = woSearch.trim().toLowerCase();
   const filteredGroups = useMemo(() => {
@@ -159,14 +188,16 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
     try { localStorage.setItem(LS_CAPS_KEY, JSON.stringify(next)); } catch { /* */ }
   }
 
-  const source: "CSV" | "Firestore" | "LiveWMS" | null =
+  const source: "CSV" | "Firestore" | "LiveWMS" | "FirestoreStale" | null =
     csvRows !== null
       ? "CSV"
-      : data.productionPlan?.rows?.length
+      : data.productionPlan?.rows?.length && productionPlanHasLiveWeek
         ? "Firestore"
         : liveWmsRows && liveWmsRows.length
           ? "LiveWMS"
-          : null;
+          : data.productionPlan?.rows?.length
+            ? "FirestoreStale"
+            : null;
 
   function printPdf(rows: KetRow[]) {
     const title = `KET Breakdown – ${new Date().toLocaleDateString("de-DE")}`;
@@ -178,7 +209,7 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
     setTimeout(() => { w.focus(); w.print(); }, 450);
   }
 
-  const totalBatches = [...calcMap.values()].reduce((s, c) => s + c.batches, 0);
+  const totalBatches = weekFilteredRows.reduce((s, row) => s + (calcMap.get(row.key)?.batches ?? 0), 0);
 
   if (ketRows.length === 0) {
     return (
@@ -206,7 +237,7 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
             KET Plan · WO Ausdruck
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-white tabular-nums">{ketRows.length}</span>
+            <span className="text-2xl font-black text-white tabular-nums">{weekFilteredRows.length}</span>
             <span className="text-xs text-blue-300">WOs</span>
             {totalBatches > 0 && (
               <>
@@ -216,15 +247,31 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
               </>
             )}
           </div>
+          {liveWeekNum != null && (
+            <button
+              type="button"
+              title={weekFilterEnabled
+                ? `Nur Work Orders mit "${liveWeekNum}-…"-Präfix zeigen (KW ${liveWeek})`
+                : "Ungefiltert: Work Orders aller Wochen zeigen"}
+              className={`mt-2 w-full rounded-lg px-2 py-1.5 text-[10px] font-bold transition-colors ${weekFilterEnabled ? "bg-blue-600 text-white" : "bg-white/10 text-blue-200 hover:bg-white/20"}`}
+              onClick={() => setWeekFilterEnabled((v) => !v)}
+            >
+              {weekFilterEnabled
+                ? `🎯 Nur KW ${liveWeekNum} (${ketRows.length - weekFilteredRows.length} ausgeblendet)`
+                : `◯ Alle Wochen (${ketRows.length})`}
+            </button>
+          )}
           {source && (
             <div
-              className={`text-[9px] mt-1 font-mono truncate ${source === "LiveWMS" ? "text-amber-300 font-bold" : "text-blue-400"}`}
+              className={`text-[9px] mt-1 font-mono truncate ${source === "LiveWMS" ? "text-amber-300 font-bold" : source === "FirestoreStale" ? "text-red-400 font-bold" : "text-blue-400"}`}
             >
               {source === "CSV"
                 ? `✓ ${csvFileName}`
                 : source === "Firestore"
                   ? "Quelle: Firestore"
-                  : "Quelle: Live WMS (Snowflake) – Feldzuordnung ungeprüft"}
+                  : source === "FirestoreStale"
+                    ? `⚠ Quelle: Firestore (veraltet – ohne ${liveWeek})`
+                    : "Quelle: Live WMS (Snowflake) – Feldzuordnung ungeprüft"}
             </div>
           )}
           {source === "LiveWMS" && wmsDroppedWeeks.length > 0 && (
