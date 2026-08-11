@@ -177,6 +177,15 @@ export function PlanningView(
   const [linePlanRunSplitByRecipe, setLinePlanRunSplitByRecipe] = useState<Record<string, RunSplitPlan>>({});
   const lastPublishedManufacturingSignatureRef = useRef<string>("");
   const lastManufacturingReconcileRequestRef = useRef<string>("");
+  // "Latest ref" für handleAutoPlanWeekBoard: der Reconcile-Listener-Effect
+  // unten abonniert absichtlich nur bei week/activeShifts.length-Wechsel neu
+  // (nicht bei jedem Render, sonst würde der Firestore-onSnapshot-Listener
+  // ständig ab-/wieder angemeldet). Damit ein extern (Cross-Tab/Firestore)
+  // ausgelöster Reconcile-Request trotzdem immer mit aktuellen data/
+  // portionMultiplier/activeShifts-Werten rechnet statt mit dem Stand vom
+  // letzten Resubscribe, wird hier bei jedem Render die neueste Funktion
+  // nachgezogen, statt sie in die Dependency-Liste aufzunehmen.
+  const handleAutoPlanWeekBoardRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     setSpecialDeliveries(loadSpecialDeliveries(week));
@@ -681,7 +690,7 @@ export function PlanningView(
       });
     }
     return buckets;
-  }, [analysis.recipes, batchSplitPlan, activeShifts, suggestOverrides, recipeLookup, portionMultiplier]);
+  }, [analysis.recipes, batchSplitPlan, activeShifts, suggestOverrides, recipeLookup, portionMultiplier, singleRunMode, data.processSpecs]);
 
   // @ts-expect-error unused
   const _stationsBySlot = useMemo(() => {
@@ -1358,6 +1367,7 @@ export function PlanningView(
       };
     });
   }
+  handleAutoPlanWeekBoardRef.current = handleAutoPlanWeekBoard;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1369,7 +1379,7 @@ export function PlanningView(
       const signature = `${row.requestedAt ?? ""}|${row.reason ?? ""}`;
       if (!signature.trim() || lastManufacturingReconcileRequestRef.current === signature) return;
       lastManufacturingReconcileRequestRef.current = signature;
-      handleAutoPlanWeekBoard();
+      handleAutoPlanWeekBoardRef.current();
     };
 
     try {
@@ -1561,6 +1571,12 @@ export function PlanningView(
     unplannedCount: analysis.unplannedCount,
   }), [analysis.plannedCount, analysis.unplannedCount, scenario.assignments, scenario.id, scenario.name, week]);
 
+  // publishManufacturingSnapshot bewusst NICHT in den Deps: die Signature oben
+  // kapselt bereits jeden Wert, den die Funktion liest (week/scenario.*/analysis.*),
+  // daher läuft dieser Effect ohnehin bei jeder relevanten Änderung neu und ruft
+  // dabei immer die zum selben Render gehörende (aktuelle) Funktion auf. Sie
+  // aufzunehmen würde den 650ms-Debounce brechen, da publishManufacturingSnapshot
+  // bei jedem Render neu erzeugt wird (kein useCallback).
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (lastPublishedManufacturingSignatureRef.current === manufacturingLiveSignature) return;
@@ -1569,6 +1585,7 @@ export function PlanningView(
       void publishManufacturingSnapshot("live");
     }, 650);
     return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manufacturingLiveSignature]);
 
   function exportDayKitchenPlan(day: PlannerDay) {
