@@ -150,10 +150,11 @@ export function PlanningView(
     createSubRecipeWOs: false,
   });
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const [calendarFullView, setCalendarFullView] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.innerWidth < 1700;
-  });
+  // Bewusst NICHT breiten-basiert automatisch aktiviert: der Vollansicht-Overlay
+  // ist "fixed inset-2 z-[120]" und deckt damit auch die Planning-OASE-Tableiste
+  // (Cockpit/Linienplanung/Rack) ab, die außerhalb dieser Komponente liegt — bei
+  // < 1700px (praktisch jeder normale Monitor) wirkte "Rack" dadurch verschwunden.
+  const [calendarFullView, setCalendarFullView] = useState(false);
   const [savePlanStamp, setSavePlanStamp] = useState<string | null>(null);
   /** Manuelle Verschiebungen der Ghost-Pillen per Drag & Drop: tileKey → neuer Produktionstag */
   const [suggestOverrides, setSuggestOverrides] = useState<Record<string, PlannerDay>>({});
