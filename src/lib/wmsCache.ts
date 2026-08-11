@@ -4,6 +4,7 @@
 // enough, no onSnapshot listener needed. The doc may not exist yet.
 
 import type { WorkOrderEntry } from "../core/types";
+import { currentHfWeek as sharedCurrentHfWeek } from "./hfWeek";
 
 export interface WmsWorkorderCacheRow {
   woNumber: string;
@@ -48,15 +49,7 @@ function dedupeWorkorderRows(rows: WmsWorkorderCacheRow[]): WmsWorkorderCacheRow
 // real calendar, not that lag, or current data would get filtered out as
 // "wrong week" by mistake.
 export function currentHfWeek(): string {
-  const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const isoWeek = Math.ceil((((d.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
-  const year = d.getUTCFullYear();
-  const week = isoWeek + 1;
-  return week <= 52 ? `${year}-W${String(week).padStart(2, "0")}` : `${year + 1}-W01`;
+  return sharedCurrentHfWeek();
 }
 
 // Bounds cache rows to the given hfWeek (e.g. "2026-W31") plus the following

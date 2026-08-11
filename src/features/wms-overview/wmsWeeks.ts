@@ -1,26 +1,10 @@
 // WMS Übersicht – KW-Generierung und operative Wochen-Fallback-Logik.
 // previousWmsWeekCandidates/resolveOperationalWmsWeekNum sind testabgedeckt,
 // siehe src/__tests__/wmsKwOverviewWeekFallback.test.ts.
+import { currentHfWeek as currentHfWeekLocal } from "../../lib/hfWeek";
+export { currentHfWeekLocal };
 
 // ─── KW Generation ────────────────────────────────────────────────────────────
-
-export function isoWeekLabelLocal(date: Date): string {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
-}
-
-export function currentHfWeekLocal(): string {
-  const iso = isoWeekLabelLocal(new Date());
-  const m = iso.match(/^(20\d{2})-W(\d{2})$/);
-  if (!m) return iso;
-  const week = Number(m[2]) + 1;
-  if (week <= 52) return `${m[1]}-W${String(week).padStart(2, "0")}`;
-  return `${Number(m[1]) + 1}-W01`;
-}
 
 export function generateWmsWeeks(startYear = 2026, startWeek = 1): string[] {
   const current = currentHfWeekLocal();
