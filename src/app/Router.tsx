@@ -1,6 +1,6 @@
 // View-Dispatch: liest State aus AppContext und rendert die passende Oberfläche.
 // Die 8 Fach-Views hängen unverändert dahinter — nur die Chrome drumherum ist neu.
-import { useAppState, ALL_VIEWS, type AppView } from "./AppContext";
+import { useAppState, type AppView } from "./AppContext";
 import { Shell, LoadingCard, ErrorCard } from "./Shell";
 import { NavTabs } from "./NavTabs";
 import { KitchenSurface } from "./KitchenSurface";
@@ -67,12 +67,7 @@ function MainPane({ view }: { view: AppView }) {
       return <WhatIfView data={data} week={selectedWeek} upliftPercent={upliftPercent} locale="de" />;
 
     case "rundmail":
-      return (
-        <RundmailView
-          data={data}
-          onNavigate={v => { if ((ALL_VIEWS as readonly string[]).includes(v)) setView(v as AppView); }}
-        />
-      );
+      return <RundmailView data={data} />;
 
     case "import":
       return <CsvImportView data={data} />;

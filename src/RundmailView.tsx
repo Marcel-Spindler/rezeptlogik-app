@@ -10,11 +10,11 @@ import {
 } from "./features/rundmail/rundmailParsing";
 import { fmtInt, normalizeText, statusTone, toSlack } from "./features/rundmail/rundmailFormat";
 import { parseBibleBatchHints, resolveBatchSizeKg, resolveKitchenKgForRow } from "./features/rundmail/rundmailBibleMatch";
-import { extractMealCode, buildPetHtmlMail, buildPetPresentationHtml, buildPetSlackBlocks } from "./features/rundmail/rundmailPetMail";
-import { buildKetPresentationHtml, buildKetSlackBlocks, buildRun1Mail, buildRunHtmlMail, sendToSlack } from "./features/rundmail/rundmailKetMail";
-import { copyHtmlToClipboard, downloadFile, printHtmlAsPdf } from "./features/rundmail/rundmailExport";
+import { extractMealCode, buildPetPresentationHtml } from "./features/rundmail/rundmailPetMail";
+import { buildKetPresentationHtml } from "./features/rundmail/rundmailKetMail";
+import { printHtmlAsPdf } from "./features/rundmail/rundmailExport";
 
-export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNavigate?: (view: string) => void } = {}) {
+export function RundmailView({ data }: { data?: DataBundle } = {}) {
   const [rows, setRows] = useState<RundmailRow[]>([]);
   const [petRows, setPetRows] = useState<PetRow[]>([]);
   const [platingNotes, setPlatingNotes] = useState<Record<string, PlatingNote>>(() => loadPlatingNotes());
@@ -27,22 +27,9 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
   const [isDragging, setIsDragging] = useState(false);
   const [sourceLabel, setSourceLabel] = useState("Seed: public/data/rundmail-seed.csv");
   const [petSourceLabel, setPetSourceLabel] = useState("PET CSV noch nicht geladen");
-  const [mailText, setMailText] = useState("");
   const [weeklyPlanning, setWeeklyPlanning] = useState<WeeklyPlanningData | null>(null);
-  const [slackWebhookUrl, setSlackWebhookUrl] = useState<string>(
-    () => (typeof localStorage !== "undefined" ? localStorage.getItem("slackWebhookUrl") ?? "" : "")
-  );
-  const [slackWebhookInput, setSlackWebhookInput] = useState<string>(
-    () => (typeof localStorage !== "undefined" ? localStorage.getItem("slackWebhookUrl") ?? "" : "")
-  );
-  const [copyToast, setCopyToast] = useState<string>("");
   const [bibleHints, setBibleHints] = useState<Map<string, BatchHint>>(new Map());
-  // Basis-URL für interne Tool-Links im HTML-Export.
-  // Im Build: VITE_APP_URL setzen (z.B. https://myapp.example.com). Fallback: aktuelle Origin.
-  const appOrigin = ((import.meta.env.VITE_APP_URL as string) || "").replace(/\/$/, "") ||
-    (typeof window !== "undefined" ? window.location.origin : "");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const petFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -276,14 +263,6 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
     });
   }, [days, rowsByDay]);
 
-  useEffect(() => {
-    if (!run1Rows.length) {
-      setMailText("");
-      return;
-    }
-    setMailText(buildRun1Mail(run1Rows));
-  }, [run1Rows]);
-
   function applyCsvText(csvText: string, label: string) {
     const parsedRows = parseSeedCsv(csvText);
     setRows(parsedRows);
@@ -296,37 +275,22 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
     setPetSourceLabel(label);
   }
 
+  function ingestCsvText(csvText: string, fileName: string) {
+    const detected = detectCsvType(csvText);
+    if (detected === "pet") {
+      applyPetCsvText(csvText, `Upload: ${fileName}`);
+      return;
+    }
+    applyCsvText(csvText, `Upload: ${fileName}`);
+  }
+
   function onFileSelected(file: File | null) {
     if (!file) return;
     file
       .text()
-      .then((csvText) => {
-        const detected = detectCsvType(csvText);
-        if (detected === "pet") {
-          applyPetCsvText(csvText, `PET Upload (auto erkannt): ${file.name}`);
-          return;
-        }
-        applyCsvText(csvText, `Upload: ${file.name}`);
-      })
+      .then((csvText) => ingestCsvText(csvText, file.name))
       .catch(() => {
         setSourceLabel(`Upload fehlgeschlagen: ${file.name}`);
-      });
-  }
-
-  function onPetFileSelected(file: File | null) {
-    if (!file) return;
-    file
-      .text()
-      .then((csvText) => {
-        const detected = detectCsvType(csvText);
-        if (detected === "ket") {
-          applyCsvText(csvText, `KET Upload (auto erkannt): ${file.name}`);
-          return;
-        }
-        applyPetCsvText(csvText, `PET Upload: ${file.name}`);
-      })
-      .catch(() => {
-        setPetSourceLabel(`PET Upload fehlgeschlagen: ${file.name}`);
       });
   }
 
@@ -337,14 +301,7 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
     if (!file) return;
     file
       .text()
-      .then((csvText) => {
-        const detected = detectCsvType(csvText);
-        if (detected === "pet") {
-          applyPetCsvText(csvText, `PET Drag&Drop: ${file.name}`);
-          return;
-        }
-        applyCsvText(csvText, `Drag&Drop: ${file.name}`);
-      })
+      .then((csvText) => ingestCsvText(csvText, file.name))
       .catch(() => {
         setSourceLabel(`Upload fehlgeschlagen: ${file.name}`);
       });
@@ -354,27 +311,12 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
     setRows((current) => current.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   }
 
-  function copyCurrentMail() {
-    if (!mailText) return;
-    void navigator.clipboard.writeText(mailText);
-  }
-
-  // @ts-expect-error unused
-  const _run1Mail = useMemo(() => buildRun1Mail(run1Rows), [run1Rows]);
-  const toolLinks = useMemo(() => ({
-    whatIf: appOrigin + "?view=whatif",
-    breakdown: appOrigin + "?view=breakdown",
-  }), [appOrigin]);
-  const run1HtmlMail = useMemo(() => buildRunHtmlMail(enrichedRows, sourceLabel, weeklyPlanning, 1, toolLinks), [enrichedRows, sourceLabel, weeklyPlanning, toolLinks]);
-  const run2HtmlMail = useMemo(() => buildRunHtmlMail(enrichedRows, sourceLabel, weeklyPlanning, 2, toolLinks), [enrichedRows, sourceLabel, weeklyPlanning, toolLinks]);
   const petRun1Rows = useMemo(() => petRows.filter((row) => parseDateNeeded(row.productionShift).run === 1), [petRows]);
   const petRun2Rows = useMemo(() => petRows.filter((row) => parseDateNeeded(row.productionShift).run === 2), [petRows]);
-  const petRun1HtmlMail = useMemo(() => buildPetHtmlMail(petRows, petSourceLabel, 1, platingNotes), [petRows, petSourceLabel, platingNotes]);
-  const petRun2HtmlMail = useMemo(() => buildPetHtmlMail(petRows, petSourceLabel, 2, platingNotes), [petRows, petSourceLabel, platingNotes]);
-  const ketPraesi1Html = useMemo(() => buildKetPresentationHtml(enrichedRows, sourceLabel, 1), [enrichedRows, sourceLabel]);
-  const ketPraesi2Html = useMemo(() => buildKetPresentationHtml(enrichedRows, sourceLabel, 2), [enrichedRows, sourceLabel]);
-  const petPraesi1Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 1, platingNotes), [petRows, petSourceLabel, platingNotes]);
-  const petPraesi2Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 2, platingNotes), [petRows, petSourceLabel, platingNotes]);
+  const ketPlan1Html = useMemo(() => buildKetPresentationHtml(enrichedRows, sourceLabel, 1), [enrichedRows, sourceLabel]);
+  const ketPlan2Html = useMemo(() => buildKetPresentationHtml(enrichedRows, sourceLabel, 2), [enrichedRows, sourceLabel]);
+  const petPlan1Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 1, platingNotes), [petRows, petSourceLabel, platingNotes]);
+  const petPlan2Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 2, platingNotes), [petRows, petSourceLabel, platingNotes]);
 
   const kitchenStatuses = useMemo(() => {
     const set = new Set<string>();
@@ -384,25 +326,14 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [enrichedRows]);
 
-  function showToast(msg: string) {
-    setCopyToast(msg);
-    setTimeout(() => setCopyToast(""), 4000);
-  }
-
   return (
-    <>
-    {copyToast && (
-      <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white text-sm font-semibold px-5 py-3 rounded-xl shadow-xl flex items-center gap-2 animate-fade-in">
-        <span>{copyToast}</span>
-      </div>
-    )}
     <div className="space-y-4 rundmail-page">
       <section className="card p-4 rundmail-hero">
         <div className="flex flex-wrap items-start justify-between gap-4">
           {/* ── Titel & Status-Chips ── */}
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.16em] text-orange-700">Factor OPS · Verden · Produktionsplanung</div>
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">Tägliche Produktions-Rundmail</h2>
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">Rundmail — KET &amp; PET Plating-Pläne</h2>
             <p className={`text-xs mt-1 ${sourceLabel.startsWith("⚠") ? "text-red-600 font-semibold" : "text-slate-500"}`}>{sourceLabel}</p>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="rundmail-chip">RUN1: {run1Rows.length} WOs</span>
@@ -417,206 +348,34 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
             </div>
           </div>
 
-          {/* ── Button-Gruppen ── */}
+          {/* ── CSV Upload + PDF-Export (alles Weitere entfernt) ── */}
           <div className="flex flex-col gap-2 shrink-0">
-            {/* Gruppe 1: Daten */}
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 justify-end">
               <button className="btn" onClick={() => fileInputRef.current?.click()}>
-                📂 CSV auswählen
-              </button>
-              <button className="btn" onClick={() => petFileInputRef.current?.click()}>
-                📂 PET CSV auswählen
-              </button>
-              <button className="btn" onClick={copyCurrentMail} disabled={!mailText}>
-                📋 Markdown
+                📂 CSV hochladen
               </button>
             </div>
-            {/* Gruppe 2: Tools */}
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                className="btn text-blue-700 bg-blue-50 border-blue-200"
-                onClick={() => onNavigate?.("whatif")}
-              >
-                📈 What-If
+            <div className="flex flex-wrap gap-1.5 justify-end">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">KET:</span>
+              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200 font-bold" disabled={!run1Rows.length} title="KET Run 1 als PDF speichern" onClick={() => printHtmlAsPdf(ketPlan1Html)}>
+                📄 Run 1 PDF
               </button>
-              <button
-                className="btn text-emerald-700 bg-emerald-50 border-emerald-200"
-                onClick={() => onNavigate?.("breakdown")}
-              >
-                🔢 Breakdown
+              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200 font-bold" disabled={!rows.length} title="KET Run 2 als PDF speichern" onClick={() => printHtmlAsPdf(ketPlan2Html)}>
+                📄 Run 2 PDF
               </button>
             </div>
-            {/* Gruppe 3: Mail-Export */}
-            <div className="flex flex-wrap gap-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">Email:</span>
-              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200" onClick={() => printHtmlAsPdf(run1HtmlMail)} disabled={!run1Rows.length} title="Als PDF drucken / speichern">
-                📄 KET R1 PDF
-              </button>
-              <button type="button" className="btn" onClick={() => downloadFile("Run1_Rundmail.html", run1HtmlMail, "text/html;charset=utf-8")} disabled={!run1Rows.length} title="HTML-Datei herunterladen (Fallback)">
-                KET R1 ↓
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!run1Rows.length}
-                title="HTML in Zwischenablage kopieren → in Gmail/Outlook einfügen"
-                onClick={() => copyHtmlToClipboard(run1HtmlMail).then(() => showToast("✓ KET R1 kopiert! Gmail öffnen → Neue Mail → Strg+V einfügen.")).catch((e: Error) => { if (e.message !== "clipboard-fallback") showToast("⚠ Kopieren fehlgeschlagen — Fallback-Tab geöffnet."); })}
-              >
-                📋 KET R1 kopieren
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={!run1Rows.length || !slackWebhookUrl}
-                title={slackWebhookUrl ? "KET Run 1 Zusammenfassung an Slack senden" : "Slack Webhook URL unten eingeben"}
-                onClick={() => sendToSlack(slackWebhookUrl, buildKetSlackBlocks(rows, sourceLabel, 1)).then(() => showToast("✓ KET R1 → Slack gesendet!")).catch(() => showToast("⚠ Slack-Versand fehlgeschlagen — Webhook URL prüfen."))}
-              >
-                📨 KET R1 → Slack
-              </button>
-              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200" onClick={() => printHtmlAsPdf(run2HtmlMail)} disabled={!rows.length} title="Als PDF drucken / speichern">
-                📄 KET R2 PDF
-              </button>
-              <button type="button" className="btn" onClick={() => downloadFile("Run2_Rundmail.html", run2HtmlMail, "text/html;charset=utf-8")} disabled={!rows.length} title="HTML-Datei herunterladen (Fallback)">
-                KET R2 ↓
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!rows.length}
-                title="HTML in Zwischenablage kopieren → in Gmail/Outlook einfügen"
-                onClick={() => copyHtmlToClipboard(run2HtmlMail).then(() => showToast("✓ KET R2 kopiert! Gmail öffnen → Neue Mail → Strg+V einfügen.")).catch((e: Error) => { if (e.message !== "clipboard-fallback") showToast("⚠ Kopieren fehlgeschlagen — Fallback-Tab geöffnet."); })}
-              >
-                📋 KET R2 kopieren
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={!rows.length || !slackWebhookUrl}
-                title={slackWebhookUrl ? "KET Run 2 Zusammenfassung an Slack senden" : "Slack Webhook URL unten eingeben"}
-                onClick={() => sendToSlack(slackWebhookUrl, buildKetSlackBlocks(rows, sourceLabel, 2)).then(() => showToast("✓ KET R2 → Slack gesendet!")).catch(() => showToast("⚠ Slack-Versand fehlgeschlagen — Webhook URL prüfen."))}
-              >
-                📨 KET R2 → Slack
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 justify-end">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">PET:</span>
-              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200" onClick={() => printHtmlAsPdf(petRun1HtmlMail)} disabled={!petRun1Rows.length} title="Als PDF drucken / speichern">
-                📄 PET R1 PDF
+              <button type="button" className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold" disabled={!petRun1Rows.length} title="PET Run 1 als PDF speichern" onClick={() => printHtmlAsPdf(petPlan1Html)}>
+                📄 Run 1 PDF
               </button>
-              <button type="button" className="btn" onClick={() => downloadFile("PET_Run1_Plan.html", petRun1HtmlMail, "text/html;charset=utf-8")} disabled={!petRun1Rows.length} title="HTML-Datei herunterladen (Fallback)">
-                PET R1 ↓
+              <button type="button" className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold" disabled={!petRun2Rows.length} title="PET Run 2 als PDF speichern" onClick={() => printHtmlAsPdf(petPlan2Html)}>
+                📄 Run 2 PDF
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!petRun1Rows.length}
-                title="PET Plan HTML in Zwischenablage kopieren → in Gmail/Outlook einfügen"
-                onClick={() => copyHtmlToClipboard(petRun1HtmlMail).then(() => showToast("✓ PET R1 kopiert! Gmail öffnen → Neue Mail → Strg+V einfügen.")).catch((e: Error) => { if (e.message !== "clipboard-fallback") showToast("⚠ Kopieren fehlgeschlagen — Fallback-Tab geöffnet."); })}
-              >
-                📋 PET R1 kopieren
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={!petRun1Rows.length || !slackWebhookUrl}
-                title={slackWebhookUrl ? "PET Run 1 Zusammenfassung an Slack senden" : "Slack Webhook URL unten eingeben"}
-                onClick={() => sendToSlack(slackWebhookUrl, buildPetSlackBlocks(petRows, petSourceLabel, 1)).then(() => showToast("✓ PET R1 → Slack gesendet!")).catch(() => showToast("⚠ Slack-Versand fehlgeschlagen — Webhook URL prüfen."))}
-              >
-                📨 PET R1 → Slack
-              </button>
-              <button type="button" className="btn text-rose-700 bg-rose-50 border-rose-200" onClick={() => printHtmlAsPdf(petRun2HtmlMail)} disabled={!petRun2Rows.length} title="Als PDF drucken / speichern">
-                📄 PET R2 PDF
-              </button>
-              <button type="button" className="btn" onClick={() => downloadFile("PET_Run2_Plan.html", petRun2HtmlMail, "text/html;charset=utf-8")} disabled={!petRun2Rows.length} title="HTML-Datei herunterladen (Fallback)">
-                PET R2 ↓
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!petRun2Rows.length}
-                title="PET Plan HTML in Zwischenablage kopieren → in Gmail/Outlook einfügen"
-                onClick={() => copyHtmlToClipboard(petRun2HtmlMail).then(() => showToast("✓ PET R2 kopiert! Gmail öffnen → Neue Mail → Strg+V einfügen.")).catch((e: Error) => { if (e.message !== "clipboard-fallback") showToast("⚠ Kopieren fehlgeschlagen — Fallback-Tab geöffnet."); })}
-              >
-                📋 PET R2 kopieren
-              </button>
-              <button
-                type="button"
-                className="btn"
-                disabled={!petRun2Rows.length || !slackWebhookUrl}
-                title={slackWebhookUrl ? "PET Run 2 Zusammenfassung an Slack senden" : "Slack Webhook URL unten eingeben"}
-                onClick={() => sendToSlack(slackWebhookUrl, buildPetSlackBlocks(petRows, petSourceLabel, 2)).then(() => showToast("✓ PET R2 → Slack gesendet!")).catch(() => showToast("⚠ Slack-Versand fehlgeschlagen — Webhook URL prüfen."))}
-              >
-                📨 PET R2 → Slack
-              </button>
-            </div>
-            {/* Gruppe 4: Präsentation PDF */}
-            <div className="flex flex-wrap gap-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-500 self-center">Präsi:</span>
-              <button
-                type="button"
-                className="btn text-violet-700 bg-violet-50 border-violet-200 font-bold"
-                disabled={!run1Rows.length}
-                title="KET Run 1 als saubere Präsentations-PDF öffnen und drucken"
-                onClick={() => printHtmlAsPdf(ketPraesi1Html)}
-              >
-                📊 KET R1 Präsi
-              </button>
-              <button
-                type="button"
-                className="btn text-violet-700 bg-violet-50 border-violet-200 font-bold"
-                disabled={!rows.length}
-                title="KET Run 2 als saubere Präsentations-PDF öffnen und drucken"
-                onClick={() => printHtmlAsPdf(ketPraesi2Html)}
-              >
-                📊 KET R2 Präsi
-              </button>
-              <button
-                type="button"
-                className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold"
-                disabled={!petRun1Rows.length}
-                title="PET Run 1 als saubere Präsentations-PDF öffnen und drucken (inkl. Plating-Anweisungen & Packschema)"
-                onClick={() => printHtmlAsPdf(petPraesi1Html)}
-              >
-                📊 PET R1 Präsi
-              </button>
-              <button
-                type="button"
-                className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold"
-                disabled={!petRun2Rows.length}
-                title="PET Run 2 als saubere Präsentations-PDF öffnen und drucken (inkl. Plating-Anweisungen & Packschema)"
-                onClick={() => printHtmlAsPdf(petPraesi2Html)}
-              >
-                📊 PET R2 Präsi
-              </button>
-            </div>
-            {/* Gruppe 5: Slack Webhook Konfiguration */}
-            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">🔗 Slack Webhook:</span>
-              <input
-                type="url"
-                title="Slack Incoming Webhook URL"
-                placeholder="https://hooks.slack.com/services/..."
-                className="flex-1 min-w-[220px] rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-sky-400"
-                value={slackWebhookInput}
-                onChange={(e) => setSlackWebhookInput(e.target.value)}
-              />
-              <button
-                type="button"
-                className="btn text-sky-700 bg-sky-50 border-sky-200"
-                onClick={() => {
-                  localStorage.setItem("slackWebhookUrl", slackWebhookInput);
-                  setSlackWebhookUrl(slackWebhookInput);
-                  showToast(slackWebhookInput ? "✓ Slack Webhook gespeichert." : "Slack Webhook entfernt.");
-                }}
-              >
-                Speichern
-              </button>
-              {slackWebhookUrl && <span className="text-[10px] text-emerald-600 font-semibold">✓ aktiv</span>}
             </div>
           </div>
         </div>
-        <input title="KET CSV hochladen" ref={fileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)} />
-        <input title="PET CSV hochladen" ref={petFileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onPetFileSelected(event.target.files?.[0] ?? null)} />
+        <input title="KET oder PET CSV hochladen" ref={fileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)} />
 
         <div
           className={`mt-3 rounded-xl border-2 border-dashed p-4 text-sm transition-colors ${
@@ -629,7 +388,7 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
           onDragLeave={() => setIsDragging(false)}
           onDrop={onDrop}
         >
-          CSV per Drag-and-Drop hier ablegen. Danach wird die RUN1 Rundmail automatisch erzeugt.
+          KET- oder PET-CSV per Drag-and-Drop hier ablegen (Typ wird automatisch erkannt).
         </div>
 
         <div className="mt-2 text-xs text-slate-500">
@@ -1006,21 +765,6 @@ export function RundmailView({ data, onNavigate }: { data?: DataBundle; onNaviga
           </table>
         </div>
       </section>
-
-      <section className="card p-4 bg-gradient-to-br from-slate-950 to-slate-900 text-slate-100">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-base font-semibold text-white">Mail Vorschau (Markdown)</h3>
-          <span className="text-xs text-slate-300">Markdown + Premium HTML Export bereit fuer Versand</span>
-        </div>
-        <textarea
-          title="Mail Vorschau"
-          placeholder="Mail-Inhalt wird hier angezeigt…"
-          className="mt-3 w-full min-h-[18rem] rounded-lg border border-slate-700 bg-slate-900 p-3 font-mono text-xs text-slate-100"
-          value={mailText}
-          onChange={(event) => setMailText(event.target.value)}
-        />
-      </section>
     </div>
-    </>
   );
 }
