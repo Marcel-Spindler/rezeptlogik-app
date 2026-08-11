@@ -132,20 +132,26 @@ async function loadFromFirestore(): Promise<DataBundle> {
   const meta = (await getDoc(ROOT)).data() ?? {};
   const wrSnap  = await getDocs(collection(ROOT, "weekRecipes"));
   const recSnap = await getDocs(collection(ROOT, "recipes"));
-  const stSnap  = await getDocs(collection(ROOT, "structures")).catch(() => null);
+  // Diese Collections sind optional (App funktioniert ohne sie) - ein Fehler
+  // wird daher nicht weitergeworfen, aber geloggt, damit ein Berechtigungs-
+  // oder Netzwerkfehler sich nicht als "Collection ist einfach leer" tarnt.
+  const optional = <T,>(name: string, promise: Promise<T>): Promise<T | null> =>
+    promise.catch((err) => { logWarn(`Collection "${name}" nicht ladbar (optional)`, err); return null; });
+
+  const stSnap  = await optional("structures", getDocs(collection(ROOT, "structures")));
   const csSnap  = await getDocs(collection(ROOT, "cookSchedules"));
-  const psSnap  = await getDocs(collection(ROOT, "processSpecs")).catch(() => null);
-  const slSnap  = await getDocs(collection(ROOT, "shelfLifeBySku")).catch(() => null);
-  const pkgSnap = await getDocs(collection(ROOT, "productionPlan")).catch(() => null);
-  const poSnap  = await getDocs(collection(ROOT, "printOrders")).catch(() => null);
-  const kpSnap  = await getDocs(collection(ROOT, "kitchenPriority")).catch(() => null);
-  const kplSnap = await getDocs(collection(ROOT, "kitchenPlanning")).catch(() => null);
-  const ebSnap  = await getDocs(collection(ROOT, "equipmentBible")).catch(() => null);
-  const pcSnap  = await getDocs(collection(ROOT, "planningCalendar")).catch(() => null);
-  const wySnap  = await getDocs(collection(ROOT, "weeklyYield")).catch(() => null);
-  const wgSnap  = await getDocs(collection(ROOT, "weightGoals")).catch(() => null);
-  const pplSnap = await getDocs(collection(ROOT, "produktionsplanung")).catch(() => null);
-  const mrSnap  = await getDocs(collection(ROOT, "maitreRampup")).catch(() => null);
+  const psSnap  = await optional("processSpecs", getDocs(collection(ROOT, "processSpecs")));
+  const slSnap  = await optional("shelfLifeBySku", getDocs(collection(ROOT, "shelfLifeBySku")));
+  const pkgSnap = await optional("productionPlan", getDocs(collection(ROOT, "productionPlan")));
+  const poSnap  = await optional("printOrders", getDocs(collection(ROOT, "printOrders")));
+  const kpSnap  = await optional("kitchenPriority", getDocs(collection(ROOT, "kitchenPriority")));
+  const kplSnap = await optional("kitchenPlanning", getDocs(collection(ROOT, "kitchenPlanning")));
+  const ebSnap  = await optional("equipmentBible", getDocs(collection(ROOT, "equipmentBible")));
+  const pcSnap  = await optional("planningCalendar", getDocs(collection(ROOT, "planningCalendar")));
+  const wySnap  = await optional("weeklyYield", getDocs(collection(ROOT, "weeklyYield")));
+  const wgSnap  = await optional("weightGoals", getDocs(collection(ROOT, "weightGoals")));
+  const pplSnap = await optional("produktionsplanung", getDocs(collection(ROOT, "produktionsplanung")));
+  const mrSnap  = await optional("maitreRampup", getDocs(collection(ROOT, "maitreRampup")));
   const recipes: DataBundle["recipes"] = {};
   recSnap.forEach(d => { recipes[d.id] = d.data() as any; });
   const structures: NonNullable<DataBundle["structures"]> = {};
