@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { previousWmsWeekCandidates, resolveOperationalWmsWeekNum, weekPrefixFromWoNumber, woMatchesSelectedWeek } from "../features/wms-overview/wmsWeeks";
+import { previousWmsWeekCandidates, resolveOperationalWmsWeekNum, resolveSelectedWeekFromStationRows, weekPrefixFromWoNumber, woMatchesSelectedWeek } from "../features/wms-overview/wmsWeeks";
 
 describe("WMS week fallback", () => {
   it("uses selected week when rows exist in selected week", () => {
@@ -10,12 +10,12 @@ describe("WMS week fallback", () => {
     expect(resolved).toBe(32);
   });
 
-  it("falls back to previous week when selected week has no rows", () => {
+  it("keeps the selected week when no rows exist in that week", () => {
     const resolved = resolveOperationalWmsWeekNum(32, [
       [{ kw: 31 }],
       [{ kw: null }, { kw: 30 }],
     ]);
-    expect(resolved).toBe(31);
+    expect(resolved).toBe(32);
   });
 
   it("keeps selected week when neither selected nor fallback week has rows", () => {
@@ -26,25 +26,37 @@ describe("WMS week fallback", () => {
     expect(resolved).toBe(32);
   });
 
-  it("supports year transition fallback from week 1 to week 52", () => {
+  it("keeps week 1 when no previous-year fallback is allowed", () => {
     const resolved = resolveOperationalWmsWeekNum(1, [
       [{ kw: 52 }],
       [{ kw: null }],
     ]);
-    expect(resolved).toBe(52);
+    expect(resolved).toBe(1);
   });
 
-  it("supports year transition fallback from week 1 to week 53", () => {
+  it("keeps week 1 when no previous-year fallback is allowed for week 53", () => {
     const resolved = resolveOperationalWmsWeekNum(1, [
       [{ kw: 53 }],
       [{ kw: null }],
     ]);
-    expect(resolved).toBe(53);
+    expect(resolved).toBe(1);
   });
 
   it("returns expected fallback candidates", () => {
     expect(previousWmsWeekCandidates(32)).toEqual([31]);
     expect(previousWmsWeekCandidates(1)).toEqual([52, 53]);
+  });
+
+  it("keeps the selected week when another station has rows for it even if inbound/sleeving are empty", () => {
+    const resolved = resolveSelectedWeekFromStationRows(34, [
+      [{ kw: 33 }],
+      [{ kw: 33 }],
+      [{ kw: 34 }, { kw: 34 }],
+      [{ kw: 33 }],
+      [{ kw: 33 }],
+      [{ kw: 33 }],
+    ]);
+    expect(resolved).toBe(34);
   });
 
   it("allowFallback=false always returns the selected week as-is, even with no matching rows anywhere", () => {
@@ -69,8 +81,7 @@ describe("weekPrefixFromWoNumber", () => {
 describe("woMatchesSelectedWeek", () => {
   it("matches the documented YYYYWW raw format", () => {
     expect(woMatchesSelectedWeek("202634", "2026-W34")).toBe(true);
-    // 202633 falls inside the intentional "-1 week" adjacent-week fallback below,
-    // so use a week further outside that window to test the exact-match path.
+    expect(woMatchesSelectedWeek("202633", "2026-W34")).toBe(false);
     expect(woMatchesSelectedWeek("202628", "2026-W34")).toBe(false);
   });
 
@@ -85,11 +96,9 @@ describe("woMatchesSelectedWeek", () => {
     expect(woMatchesSelectedWeek("garbage", "2026-W34", "12-99")).toBe(false);
   });
 
-  it("allowAdjacentWeekFallback=false (strict mode) rejects the -1/+2 adjacent-week window that otherwise leaks e.g. KW32 into a KW33 view", () => {
-    // 202633 is inside the default adjacent-week window for a KW34 selection...
-    expect(woMatchesSelectedWeek("202633", "2026-W34")).toBe(true);
-    // ...but not in strict mode, where only exact matches (or WO-number prefix) count.
-    expect(woMatchesSelectedWeek("202633", "2026-W34", undefined, false)).toBe(false);
+  it("strict mode rejects the -1/+2 adjacent-week window and only allows exact week matches", () => {
+    expect(woMatchesSelectedWeek("202633", "2026-W34")).toBe(false);
+    expect(woMatchesSelectedWeek("202633", "2026-W34", undefined, true)).toBe(true);
     expect(woMatchesSelectedWeek("202634", "2026-W34", undefined, false)).toBe(true);
   });
 });

@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   deriveEntryKind,
   exportRackfileCsv,
+  buildPoolFromBoxfile,
+  type BoxfileVolumes,
   type RackEntry,
+  type RackMarket,
 } from "./lib/rack";
 import {
   RACK_V2_LINES,
@@ -23,6 +26,7 @@ import {
   rackV2HallLayoutWorkers,
   rackV2InitialLayout,
   rackV2IsIceLike,
+  rackV2MarketHasLiner,
   rackV2NormalizeSlot,
   rackV2PackagingAllowedSlots,
   rackV2PackagingZoneForEntry,
@@ -41,7 +45,7 @@ import type { UiLocale } from "./lib/i18n";
 import type { CookSchedule, ProcessSpec, Recipe, WeekRecipe } from "./core/types";
 import {
   ALL_MARKETS, actorName, buildWeekSeedPlan, defaultLinePlanState, defaultSharedPlanState, filterPoolForV2Market,
-  legacyStorageKey, loadV2Entries, parseStoredPlan, serializePlanState, storageKey, weekDocId,
+  legacyStorageKey, parseStoredPlan, serializePlanState, storageKey, weekDocId,
   type DragPayload, type EntriesByDataMarket, type LinePlanState, type SharedPlanState,
 } from "./features/planning-oasis/rack/rackPlanState";
 import {
@@ -64,7 +68,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     : parseStoredPlan(localStorage.getItem(storageKey(week))) ?? parseStoredPlan(localStorage.getItem(legacyStorageKey(week)));
   const [pool, setPool] = useState<EntriesByDataMarket>({ de: [], nordics: [] });
   const [sharedPlan, setSharedPlan] = useState<SharedPlanState>(() => initialStored ?? defaultSharedPlanState());
-  const [editorLineId, setEditorLineId] = useState<string>(RACK_V2_LINES[0]?.id ?? "ASL1");
+  const [editorLineId, setEditorLineId] = useState<string>("ASL3");
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
@@ -72,6 +76,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
   const [loadingPool, setLoadingPool] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"local" | "shared" | "saving">("local");
   const [hint, setHint] = useState<string | null>(null);
+  const [boxfileVolumes, setBoxfileVolumes] = useState<Partial<Record<RackMarket, BoxfileVolumes>>>({});
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const applyingRemoteRef = useRef(false);
@@ -107,26 +112,6 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     if (hydratedWeekRef.current !== week) return;
     localStorage.setItem(storageKey(week), serializePlanState(sharedPlan));
   }, [sharedPlan, week]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingPool(true);
-    setLoadError(null);
-    loadV2Entries()
-      .then((rows) => {
-        if (cancelled) return;
-        setPool(rows);
-      })
-      .catch((error) => {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingPool(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     setSelectedEntryId(null);
@@ -253,8 +238,11 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
       ]),
     ) as Record<string, number>;
   }, [validation.perLine]);
-  const releasedLineCount = RACK_V2_LINES.filter((line) => (sharedPlan.lines[line.id] ?? defaultLinePlanState(line)).releaseStatus === "released").length;
-  const allLinesReleased = releasedLineCount === RACK_V2_LINES.length;
+  const releasedGroupCount = (ALL_MARKETS as RackV2MarketId[]).filter(market => {
+    const marketLines = RACK_V2_LINES.filter(l => (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).market === market);
+    return marketLines.length > 0 && marketLines.every(l => (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).releaseStatus === "released");
+  }).length;
+  const allLinesReleased = RACK_V2_LINES.every(l => (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).releaseStatus === "released");
 
   const currentLine = useMemo(() => RACK_V2_LINES.find((line) => line.id === editorLineId) ?? RACK_V2_LINES[0], [editorLineId]);
   const currentLinePlan = sharedPlan.lines[currentLine.id] ?? defaultLinePlanState(currentLine);
@@ -272,6 +260,15 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
   const currentLocked = currentLinePlan.releaseStatus === "released";
   const currentLineValidation = lineValidationById[currentLine.id];
   const currentLineErrorCount = lineErrorCountById[currentLine.id] ?? 0;
+
+  const currentEnrichedPool = useMemo(() => {
+    const vols = boxfileVolumes[RACK_V2_MARKET_TO_DATA[currentMarket]];
+    if (!vols || vols.picks.size === 0) return currentDataPool;
+    return currentDataPool.map(e => {
+      const vol = vols.picks.get(e.recipe);
+      return vol !== undefined ? { ...e, quantity: vol } : e;
+    });
+  }, [currentDataPool, currentMarket, boxfileVolumes]);
 
   const boardByCell = useMemo(() => {
     const map = new Map<string, RackEntry>();
@@ -316,51 +313,49 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
   const poolEntries = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return currentDataPool
+    return currentEnrichedPool
       .filter((entry) => {
         if (!term) return true;
         const hay = `${entry.recipe} ${entry.sku} ${entry.ingredient} ${entry.displayName}`.toLowerCase();
         return hay.includes(term);
       })
       .sort((left, right) => (right.quantity ?? 0) - (left.quantity ?? 0));
-  }, [currentDataPool, search]);
+  }, [currentEnrichedPool, search]);
 
   const selectedEntry = useMemo(() => currentEntries.find((entry) => entry.id === selectedEntryId) ?? null, [currentEntries, selectedEntryId]);
 
   function setLinePlan(lineId: string, updater: (plan: LinePlanState) => LinePlanState) {
     const line = RACK_V2_LINES.find((candidate) => candidate.id === lineId);
     if (!line) return;
-    setSharedPlan((prev) => ({
-      ...prev,
-      lines: {
-        ...prev.lines,
-        [lineId]: updater(prev.lines[lineId] ?? defaultLinePlanState(line)),
-      },
-    }));
+    setSharedPlan((prev) => {
+      const updatedPlan = updater(prev.lines[lineId] ?? defaultLinePlanState(line));
+      const targetMarket = updatedPlan.market;
+      const nextLines: Record<string, LinePlanState> = { ...prev.lines, [lineId]: updatedPlan };
+      // Alle anderen Linien mit demselben Markt automatisch synchronisieren
+      for (const otherLine of RACK_V2_LINES) {
+        if (otherLine.id === lineId) continue;
+        const otherMarket = (prev.lines[otherLine.id] ?? defaultLinePlanState(otherLine)).market;
+        if (otherMarket === targetMarket) nextLines[otherLine.id] = updatedPlan;
+      }
+      return { ...prev, lines: nextLines };
+    });
   }
 
   function setLineMarket(lineId: string, market: RackV2MarketId) {
-    const line = RACK_V2_LINES.find((candidate) => candidate.id === lineId);
-    if (!line) return;
-    const existing = sharedPlan.lines[lineId] ?? defaultLinePlanState(line);
-    if (existing.releaseStatus === "released") return;
+    const existing = sharedPlan.lines[lineId];
+    if (existing?.releaseStatus === "released") return;
     const dataPool = filterPoolForV2Market(pool[RACK_V2_MARKET_TO_DATA[market]] ?? [], market);
-    setSharedPlan((prev) => ({
-      ...prev,
-      lines: {
-        ...prev.lines,
-        [lineId]: {
-          market,
-          entries: rackV2InitialLayout(dataPool, market),
-          plannedWorkers: rackV2HallLayoutWorkers(market),
-          manualOverrides: {},
-          releaseStatus: existing.releaseStatus === "rework" ? "rework" : "draft",
-          releasedAt: undefined,
-          releasedBy: undefined,
-          reworkAt: existing.releaseStatus === "rework" ? existing.reworkAt : undefined,
-          reworkBy: existing.releaseStatus === "rework" ? existing.reworkBy : undefined,
-        },
-      },
+    setLinePlan(lineId, (plan) => ({
+      ...plan,
+      market,
+      entries: rackV2InitialLayout(dataPool, market),
+      plannedWorkers: rackV2HallLayoutWorkers(market),
+      manualOverrides: {},
+      releaseStatus: plan.releaseStatus === "rework" ? "rework" : "draft",
+      releasedAt: undefined,
+      releasedBy: undefined,
+      reworkAt: plan.releaseStatus === "rework" ? plan.reworkAt : undefined,
+      reworkBy: plan.releaseStatus === "rework" ? plan.reworkBy : undefined,
     }));
   }
 
@@ -482,9 +477,9 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
       return;
     }
 
-    const nextEntries = rackV2AutoFillLayout([], currentDataPool, currentMarket, currentLinePlan.manualOverrides);
+    const nextEntries = rackV2AutoFillLayout([], currentEnrichedPool, currentMarket, currentLinePlan.manualOverrides);
     const sourceFingerprints = new Set(
-      currentDataPool
+      currentEnrichedPool
         .filter((entry) => deriveEntryKind(entry) !== "packaging")
         .map(rackV2EntryFingerprint),
     );
@@ -493,26 +488,45 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
         .filter((entry) => deriveEntryKind(entry) !== "packaging")
         .map(rackV2EntryFingerprint),
     );
-    const unplannedCount = [...sourceFingerprints].filter((fingerprint) => !plannedFingerprints.has(fingerprint)).length;
+    const unplannedEntries = [...sourceFingerprints]
+      .filter(fp => !plannedFingerprints.has(fp))
+      .map(fp => currentEnrichedPool.find(e => rackV2EntryFingerprint(e) === fp))
+      .filter((e): e is typeof currentEnrichedPool[number] => !!e && deriveEntryKind(e) === "meal")
+      .sort((a, b) => (b.quantity ?? 0) - (a.quantity ?? 0));
 
-    setSharedPlan((prev) => ({
-      ...prev,
-      lines: {
-        ...prev.lines,
-        [currentLine.id]: {
-          ...currentLinePlan,
-          entries: nextEntries,
-          releaseStatus: currentLinePlan.releaseStatus === "rework" ? "rework" : "draft",
-          releasedAt: undefined,
-          releasedBy: undefined,
-        },
-      },
+    setLinePlan(currentLine.id, (plan) => ({
+      ...plan,
+      entries: nextEntries,
+      releaseStatus: plan.releaseStatus === "rework" ? "rework" : "draft",
+      releasedAt: undefined,
+      releasedBy: undefined,
     }));
-    setHint(
-      unplannedCount > 0
-        ? `Automatik hat ${currentLine.code} geplant. ${unplannedCount} Nicht-Packaging-Pillen passen nicht in die aktiven Bloecke.`
-        : `Automatik hat ${currentLine.code} komplett in die aktiven Bloecke geplant.`,
-    );
+    const syncCodes = RACK_V2_LINES
+      .filter(l => l.id !== currentLine.id && (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).market === currentMarket)
+      .map(l => l.code);
+    const partnerStr = syncCodes.length > 0 ? ` + ${syncCodes.join(", ")}` : "";
+    if (unplannedEntries.length > 0) {
+      const top = unplannedEntries.slice(0, 5).map(e => `${e.recipe} (${e.quantity ?? 0} Picks)`).join(", ");
+      const more = unplannedEntries.length > 5 ? ` + ${unplannedEntries.length - 5} weitere` : "";
+      setHint(`⚠️ ${currentLine.code}${partnerStr}: ${unplannedEntries.length} Meals ohne Platz → ${top}${more}. Bitte zusätzliche Pickplätze manuell aktivieren.`);
+    } else {
+      // Picklast pro Pickface berechnen für Info-Anzeige
+      const loadByPf = new Map<string, number>();
+      for (const entry of nextEntries) {
+        if (deriveEntryKind(entry) === "packaging") continue;
+        const slot = rackV2SlotNumber(entry.flowRackPosition);
+        if (!Number.isFinite(slot) || slot <= 12) continue;
+        const block = rackV2BlocksForMarket(currentMarket).find(b => slot >= b.minSlot && slot <= b.maxSlot);
+        if (!block?.pLabel) continue;
+        loadByPf.set(block.pLabel, (loadByPf.get(block.pLabel) ?? 0) + (entry.quantity ?? 1));
+      }
+      const loadStr = [...loadByPf.entries()]
+        .filter(([, v]) => v > 0)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => `${k}:${v}`)
+        .join(" · ");
+      setHint(`${currentLine.code}${partnerStr} geplant${loadStr ? ` – Last: ${loadStr}` : ""}.`);
+    }
   }
 
   function resetLine() {
@@ -574,6 +588,74 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
       reworkAt: Date.now(),
       reworkBy: actorName(),
     }));
+  }
+
+  async function autoLoadBoxfiles() {
+    setLoadingPool(true);
+    setLoadError(null);
+    try {
+      const resp = await fetch(`/api/rack-boxfiles?week=${encodeURIComponent(week)}`);
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error ?? "Unbekannter Fehler");
+      let loaded = 0;
+      for (const [csvText, filename] of [
+        [data.de, "VE-TZ.csv"],
+        [data.nordics, "VE-TK-TV.csv"],
+      ] as [string | null, string][]) {
+        if (!csvText) continue;
+        const file = new File([csvText], filename, { type: "text/csv" });
+        const result = await buildPoolFromBoxfile(file);
+        const market: RackMarket = result.isNordics ? "nordics" : "de";
+        setPool(prev => ({ ...prev, [market]: result.entries }));
+        setBoxfileVolumes(prev => ({ ...prev, [market]: { picks: result.volumes, boxCount: result.boxCount } }));
+        loaded++;
+      }
+      setHint(`Boxfiles für ${week} automatisch geladen (${loaded} Märkte).`);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoadingPool(false);
+    }
+  }
+
+  async function handleBoxfileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = "";
+    setLoadingPool(true);
+    setLoadError(null);
+    try {
+      const result = await buildPoolFromBoxfile(file);
+      const market: RackMarket = result.isNordics ? "nordics" : "de";
+      setPool(prev => ({ ...prev, [market]: result.entries }));
+      setBoxfileVolumes(prev => ({ ...prev, [market]: { picks: result.volumes, boxCount: result.boxCount } }));
+      const recipeCount = result.volumes.size;
+      setHint(`Boxfile ${market === "nordics" ? "Nordics" : "DE"} geladen: ${result.boxCount} Boxen, ${recipeCount} Rezepte. Automatik bereit.`);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoadingPool(false);
+    }
+  }
+
+  function downloadMarketRackfile(market: RackV2MarketId) {
+    const marketLines = RACK_V2_LINES.filter(l => (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).market === market);
+    const anyUnreleased = marketLines.some(l => (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).releaseStatus !== "released");
+    if (anyUnreleased || marketLines.length === 0) {
+      setHint("Rackfile CSV ist erst nach Freigabe aller Linien dieses Markts verfuegbar.");
+      return;
+    }
+    const assignments = marketLines.map(l => rackV2BuildAssignment(l, market));
+    const combinedLayouts: RackV2Layouts = {};
+    for (const l of marketLines) combinedLayouts[l.id] = sharedPlan.lines[l.id]?.entries ?? [];
+    const csv = exportRackfileCsv(assembleRackfileFromV2(assignments, combinedLayouts));
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `Rackfile_Comb_KW${week}_${market}_[${marketLines.map(l => l.code).join(",")}].csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   function downloadLineRackfile(lineId: string) {
@@ -640,7 +722,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
               {rackfileEntries.length} Rackfile-Eintraege
             </span>
             <span className={`rounded-full px-3 py-1 ring-1 font-semibold ${allLinesReleased ? "bg-emerald-100 text-emerald-900 ring-emerald-300" : "bg-white text-slate-700 ring-slate-300"}`}>
-              {releasedLineCount}/{RACK_V2_LINES.length} Linien freigegeben
+              {releasedGroupCount}/{(ALL_MARKETS as RackV2MarketId[]).filter(m => RACK_V2_LINES.some(l => (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).market === m)).length} Märkte freigegeben
             </span>
             {totalErrors > 0 && (
               <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-800 ring-1 ring-rose-300 font-semibold">
@@ -653,13 +735,41 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
           </div>
         </div>
         {loadError && <div className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-900 ring-1 ring-rose-200">{loadError}</div>}
-        {loadingPool && <div className="rounded-xl bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-1 ring-sky-200">MultiLine wird geladen...</div>}
+        {loadingPool && <div className="rounded-xl bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-1 ring-sky-200">Boxfile wird geladen...</div>}
+        {pool.de.length === 0 && pool.nordics.length === 0 && !loadingPool && (
+          <div className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
+            Noch keine Boxfile geladen – bitte VE-TZ.csv (DE) und/oder VE-TK-TV.csv (Nordics) hochladen.
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="font-semibold text-slate-500">Boxfile:</span>
+          {(["de", "nordics"] as RackMarket[]).map(market => {
+            const vols = boxfileVolumes[market];
+            return (
+              <span key={market} className={`rounded-full px-2.5 py-0.5 ring-1 font-medium ${vols ? "bg-emerald-100 text-emerald-800 ring-emerald-300" : "bg-white text-slate-400 ring-slate-300"}`}>
+                {market === "de" ? "DE" : "Nordics"}: {vols ? `${vols.boxCount} Boxen · ${vols.picks.size} Rez.` : "–"}
+              </span>
+            );
+          })}
+          <button
+            type="button"
+            onClick={autoLoadBoxfiles}
+            disabled={loadingPool}
+            className="rounded-full bg-emerald-700 px-3 py-1 font-semibold text-white ring-1 ring-emerald-800 hover:bg-emerald-600 disabled:opacity-50"
+          >
+            Auto-Laden {week}
+          </button>
+          <label className="cursor-pointer rounded-full bg-slate-800 px-3 py-1 font-semibold text-white ring-1 ring-slate-700 hover:bg-slate-700">
+            Manuell laden
+            <input type="file" accept=".csv" className="hidden" onChange={handleBoxfileUpload} />
+          </label>
+        </div>
       </header>
 
       <section className="card p-4 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-sm font-bold text-slate-800">Linienplanung</div>
-          <div className="text-[11px] text-slate-500">Jede Linie hat eigenes Layout, eigene MA, eigene Freigabe.</div>
+          <div className="text-sm font-bold text-slate-800">Linienzuteilung <span className="font-normal text-slate-400">(Markt anklicken zum ändern)</span></div>
+          <div className="text-[11px] text-slate-500">Gleicher Markt → automatisch synchronisiert · Standard: DE=ASL3+4 · Nordics=ASL1+5 · Benelux=ASL2+6</div>
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {RACK_V2_LINES.map((line) => {
@@ -667,6 +777,9 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
             const active = editorLineId === line.id;
             const isLocked = plan.releaseStatus === "released";
             const lineErrors = lineErrorCountById[line.id] ?? 0;
+            const syncWith = RACK_V2_LINES
+              .filter(l => l.id !== line.id && (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).market === plan.market)
+              .map(l => l.code);
             return (
               <div
                 key={line.id}
@@ -676,7 +789,9 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="text-sm font-black">{line.code}</div>
-                    <div className="text-[10px] opacity-70">Default {line.defaultMarket}</div>
+                    <div className="text-[10px] opacity-60">
+                      {syncWith.length > 0 ? `⇔ ${syncWith.join(", ")}` : "keine Sync-Linie"}
+                    </div>
                   </div>
                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${isLocked ? "bg-slate-900 text-white ring-slate-700" : plan.releaseStatus === "rework" ? "bg-amber-100 text-amber-900 ring-amber-300" : "bg-white text-slate-600 ring-slate-300"}`}>
                     {plan.releaseStatus === "released" ? "freigegeben" : plan.releaseStatus === "rework" ? "Nacharbeit" : "Draft"}
@@ -686,10 +801,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                   {ALL_MARKETS.map((candidate) => (
                     <span
                       key={candidate}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setLineMarket(line.id, candidate);
-                      }}
+                      onClick={(event) => { event.stopPropagation(); setLineMarket(line.id, candidate); }}
                       className={`rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${marketChipTone(candidate, candidate === plan.market)} ${isLocked ? "opacity-50" : "cursor-pointer"}`}
                     >
                       {candidate}
@@ -697,17 +809,13 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
                   ))}
                 </div>
                 <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600">
-                  <span>{RACK_V2_MARKET_LABEL[plan.market]}</span>
-                  <span>{plan.entries.length} Slots · {lineErrors === 0 ? "valid" : `${lineErrors} Fehler`}</span>
+                  <span>{plan.entries.length} Slots{rackV2MarketHasLiner(plan.market) ? " · Liner" : ""}</span>
+                  <span>{lineErrors === 0 ? "valid" : `${lineErrors} Fehler`}</span>
                 </div>
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-slate-500">CSV je Linie, Upload einzeln</span>
+                <div className="mt-3 flex justify-end">
                   <button
                     type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      downloadLineRackfile(line.id);
-                    }}
+                    onClick={(event) => { event.stopPropagation(); downloadMarketRackfile(plan.market); }}
                     disabled={plan.releaseStatus !== "released"}
                     className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white ring-1 ring-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 disabled:ring-slate-300"
                   >
@@ -724,7 +832,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
         <div className="card p-4 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-sm font-bold text-slate-800">Editor {currentLine.code}</div>
+              <div className="text-sm font-bold text-slate-800">Editor {currentLine.code}{(() => { const s = RACK_V2_LINES.filter(l => l.id !== currentLine.id && (sharedPlan.lines[l.id] ?? defaultLinePlanState(l)).market === currentMarket).map(l => l.code); return s.length > 0 ? ` + ${s.join(", ")}` : ""; })()}</div>
               <div className="text-[11px] text-slate-500">
                 {RACK_V2_MARKET_LABEL[currentMarket]} · Hallenbild {rackV2HallLayoutWorkers(currentMarket)} MA · {currentBlocks.length} Bloecke
               </div>

@@ -77,9 +77,10 @@ export function rackV2EntryBelongsToMarket(entry: RackEntry, market: RackV2Marke
   const recipe = String(entry.recipe ?? "").trim();
   const kind = deriveEntryKind(entry);
   if (market === "DE") return true;
-  if (kind !== "meal" && !/^\d/.test(recipe)) return true;
-  if (market === "DKSE") return /^6\d*/.test(recipe);
-  return /^7\d*/.test(recipe);
+  // Nicht-Meal-Einträge ohne numerisches Rezept (Ice, Packaging, Loyalty) → immer
+  if (kind !== "meal" && kind !== "beverage" && kind !== "protein") return true;
+  // Nordics: 6xx Meals + 7xx Add-ons (Protein, Shots)
+  return /^[67]\d\d_/.test(recipe);
 }
 
 export function filterPoolForV2Market(entries: RackEntry[], market: RackV2MarketId): RackEntry[] {
@@ -212,6 +213,10 @@ export function serializePlanState(plan: SharedPlanState): string {
 
 export async function loadV2Entries(): Promise<EntriesByDataMarket> {
   const file = await fetchAsFile(AUTO_MULTILINE_URL);
+  return loadV2EntriesFromFile(file);
+}
+
+export async function loadV2EntriesFromFile(file: File): Promise<EntriesByDataMarket> {
   const out: EntriesByDataMarket = { de: [], nordics: [] };
   for (const dataMarket of ["de", "nordics"] as RackMarket[]) {
     const marketLineIds = RACK_V2_LINES

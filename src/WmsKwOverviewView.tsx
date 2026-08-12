@@ -8,7 +8,7 @@ import type {
   StoredPayload, WoDetailPayload, WorkordersPayload, WoTransactionRow,
 } from "./features/wms-overview/wmsTypes";
 import { fmtQty } from "./features/wms-overview/wmsFormat";
-import { generateWmsWeeks, resolveOperationalWmsWeekNum, weekNumFromHfWeek, woMatchesSelectedWeek } from "./features/wms-overview/wmsWeeks";
+import { generateWmsWeeks, resolveSelectedWeekFromStationRows, weekNumFromHfWeek, woMatchesSelectedWeek } from "./features/wms-overview/wmsWeeks";
 import { aggregateInbound, aggregateSleeving, aggregateStored, aggregateWorkorders, buildSkuBilanz, detectKettenbruch } from "./features/wms-overview/wmsAggregate";
 import { loadSnapshots, persistSnapshot, removeSnapshot } from "./features/wms-overview/wmsSnapshots";
 import type { WmsSnapshot } from "./features/wms-overview/wmsSnapshots";
@@ -142,9 +142,14 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   // leer bleiben. Sichtbar gemacht über wmsWeekFallbackActive unten, statt
   // stillschweigend zu wirken.
   const wmsWeekNum = useMemo(
-    () => resolveOperationalWmsWeekNum(selectedWeekNum, [
+    () => resolveSelectedWeekFromStationRows(selectedWeekNum, [
+      allData?.workorders.rows ?? [],
       allData?.sleeving.rows ?? [],
       allData?.inbound.rows ?? [],
+      allData?.staging.rows ?? [],
+      allData?.debox.rows ?? [],
+      allData?.postblast.rows ?? [],
+      allData?.plating.rows ?? [],
     ]),
     [allData, selectedWeekNum],
   );
@@ -181,8 +186,8 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const rawSleeving  = useMemo(() => (allData?.sleeving.rows ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
   const rawInbound   = useMemo(() => (allData?.inbound.rows  ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
   const rawWorkorders = useMemo(
-    () => (allData?.workorders.rows ?? []).filter((row) => woMatchesSelectedWeek(row.week, selectedWeek, row.woNumber, !weekScopeFilter)),
-    [allData, selectedWeek, weekScopeFilter],
+    () => (allData?.workorders.rows ?? []).filter((row) => woMatchesSelectedWeek(row.week, selectedWeek, row.woNumber)),
+    [allData, selectedWeek],
   );
 
   // ── Aggregated rows ───────────────────────────────────────────────────────

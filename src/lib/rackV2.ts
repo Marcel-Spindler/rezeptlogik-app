@@ -42,6 +42,26 @@ export const RACK_V2_LINES: RackV2Line[] = [
   { id: "ASL6", code: "ASL6", defaultMarket: "BENL" },
 ];
 
+/** Jede Linie ist mit ihrer Schwester-Linie identisch beplant (immer paarweise). */
+export const RACK_V2_LINE_PAIRS: Record<string, string> = {
+  ASL1: "ASL5", ASL5: "ASL1",
+  ASL2: "ASL6", ASL6: "ASL2",
+  ASL3: "ASL4", ASL4: "ASL3",
+};
+
+export type RackV2LineGroup = {
+  market: RackV2MarketId;
+  primaryLineId: string;
+  secondaryLineId: string;
+};
+
+/** DE = ASL3+4, Nordics = ASL1+5, Benelux = ASL2+6. Planung immer pro Gruppe. */
+export const RACK_V2_LINE_GROUPS: RackV2LineGroup[] = [
+  { market: "DE",   primaryLineId: "ASL3", secondaryLineId: "ASL4" },
+  { market: "DKSE", primaryLineId: "ASL1", secondaryLineId: "ASL5" },
+  { market: "BENL", primaryLineId: "ASL2", secondaryLineId: "ASL6" },
+];
+
 export type RackV2LineAssignment = {
   line: RackV2Line;
   market: RackV2MarketId;
@@ -106,40 +126,40 @@ const NORDICS_FOREZONE: RackV2ForezoneSlot[] = [
 ];
 
 const DE_BLOCKS: RackV2Block[] = [
-  { number: 1, id: "de-b1", label: "Block 1", subtitle: "F13-F18", kind: "window", area: "rack", minSlot: 13, maxSlot: 18, maxTier: 3, defaultActive: false },
-  { number: 2, id: "de-b2", label: "Block 2", subtitle: "F19-F27", kind: "window", area: "rack", minSlot: 19, maxSlot: 27, maxTier: 3, defaultActive: false },
-  { number: 3, id: "de-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, pLabel: "P1", defaultActive: true },
-  { number: 4, id: "de-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: false },
-  { number: 5, id: "de-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, pLabel: "P2", defaultActive: true },
-  { number: 6, id: "de-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: false },
-  { number: 7, id: "de-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, pLabel: "P3", defaultActive: true },
-  { number: 8, id: "de-b8", label: "Block 8", subtitle: "F73-F78", kind: "window", area: "rack", minSlot: 73, maxSlot: 78, maxTier: 3, defaultActive: false },
-  { number: 9, id: "de-b9", label: "Block 9", subtitle: "F79-F84", kind: "window", area: "rack", minSlot: 79, maxSlot: 84, maxTier: 3, defaultActive: false },
-  { number: 10, id: "de-b10", label: "Block 10", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, pLabel: "P4", defaultActive: true },
-  { number: 11, id: "de-b11", label: "Block 11", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, pLabel: "P5", wallBefore: true, defaultActive: true },
-  { number: 12, id: "de-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack", minSlot: 103, maxSlot: 112, maxTier: 2, pLabel: "P6", defaultActive: true },
-  { number: 13, id: "de-b13", label: "Block 13", subtitle: "F113-F120", kind: "window", area: "rack", minSlot: 113, maxSlot: 120, maxTier: 2, defaultActive: false },
-  { number: 14, id: "de-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack", minSlot: 121, maxSlot: 128, maxTier: 2, pLabel: "P7", defaultActive: true },
-  { number: 15, id: "de-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack", minSlot: 129, maxSlot: 136, maxTier: 2, pLabel: "P8", defaultActive: true },
-  { number: 16, id: "de-b16", label: "Block 16", subtitle: "F137-F144", kind: "gifts", area: "gifts", minSlot: 137, maxSlot: 144, maxTier: 2, pLabel: "P9", defaultActive: true },
+  { number: 1,  id: "de-b1",  label: "Block 1",  subtitle: "F13-F18",   kind: "window", area: "rack",  minSlot: 13,  maxSlot: 18,  maxTier: 3, defaultActive: false },
+  { number: 2,  id: "de-b2",  label: "Block 2",  subtitle: "F19-F27",   kind: "window", area: "rack",  minSlot: 19,  maxSlot: 27,  maxTier: 3, defaultActive: false },
+  { number: 3,  id: "de-b3",  label: "Block 3",  subtitle: "F28-F36",   kind: "window", area: "rack",  minSlot: 28,  maxSlot: 36,  maxTier: 3, defaultActive: true },
+  { number: 4,  id: "de-b4",  label: "Block 4",  subtitle: "F37-F45",   kind: "window", area: "rack",  minSlot: 37,  maxSlot: 45,  maxTier: 3, defaultActive: false },
+  { number: 5,  id: "de-b5",  label: "Block 5",  subtitle: "F46-F54",   kind: "window", area: "rack",  minSlot: 46,  maxSlot: 54,  maxTier: 3, pLabel: "P1", defaultActive: true },
+  { number: 6,  id: "de-b6",  label: "Block 6",  subtitle: "F55-F63",   kind: "window", area: "rack",  minSlot: 55,  maxSlot: 63,  maxTier: 3, defaultActive: false },
+  { number: 7,  id: "de-b7",  label: "Block 7",  subtitle: "F64-F72",   kind: "window", area: "rack",  minSlot: 64,  maxSlot: 72,  maxTier: 3, pLabel: "P2", defaultActive: true },
+  { number: 8,  id: "de-b8",  label: "Block 8",  subtitle: "F73-F78",   kind: "window", area: "rack",  minSlot: 73,  maxSlot: 78,  maxTier: 3, defaultActive: false },
+  { number: 9,  id: "de-b9",  label: "Block 9",  subtitle: "F79-F84",   kind: "window", area: "rack",  minSlot: 79,  maxSlot: 84,  maxTier: 3, defaultActive: false },
+  { number: 10, id: "de-b10", label: "Block 10", subtitle: "F85-F90",   kind: "window", area: "rack",  minSlot: 85,  maxSlot: 90,  maxTier: 3, pLabel: "P3", defaultActive: true },
+  { number: 11, id: "de-b11", label: "Block 11", subtitle: "F91-F102",  kind: "window", area: "rack",  minSlot: 91,  maxSlot: 102, maxTier: 3, pLabel: "P4", wallBefore: true, defaultActive: true },
+  { number: 12, id: "de-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack",  minSlot: 103, maxSlot: 112, maxTier: 2, pLabel: "P5", defaultActive: true },
+  { number: 13, id: "de-b13", label: "Block 13", subtitle: "F113-F120", kind: "window", area: "rack",  minSlot: 113, maxSlot: 120, maxTier: 2, defaultActive: false },
+  { number: 14, id: "de-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack",  minSlot: 121, maxSlot: 128, maxTier: 2, pLabel: "P6", defaultActive: true },
+  { number: 15, id: "de-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack",  minSlot: 129, maxSlot: 136, maxTier: 2, pLabel: "P7", defaultActive: true },
+  { number: 16, id: "de-b16", label: "Block 16", subtitle: "F137-F144", kind: "gifts",  area: "gifts", minSlot: 137, maxSlot: 144, maxTier: 2, pLabel: "P8", defaultActive: true },
 ];
 
 const NORDICS_BLOCKS: RackV2Block[] = [
-  { number: 1, id: "nordics-b1", label: "Block 1", subtitle: "F13-F18", kind: "window", area: "rack", minSlot: 13, maxSlot: 18, maxTier: 3, defaultActive: false },
-  { number: 2, id: "nordics-b2", label: "Block 2", subtitle: "F19-F27", kind: "window", area: "rack", minSlot: 19, maxSlot: 27, maxTier: 3, defaultActive: false },
-  { number: 3, id: "nordics-b3", label: "Block 3", subtitle: "F28-F36", kind: "window", area: "rack", minSlot: 28, maxSlot: 36, maxTier: 3, pLabel: "P1", defaultActive: true },
-  { number: 4, id: "nordics-b4", label: "Block 4", subtitle: "F37-F45", kind: "window", area: "rack", minSlot: 37, maxSlot: 45, maxTier: 3, defaultActive: false },
-  { number: 5, id: "nordics-b5", label: "Block 5", subtitle: "F46-F54", kind: "window", area: "rack", minSlot: 46, maxSlot: 54, maxTier: 3, pLabel: "P2", defaultActive: true },
-  { number: 6, id: "nordics-b6", label: "Block 6", subtitle: "F55-F63", kind: "window", area: "rack", minSlot: 55, maxSlot: 63, maxTier: 3, defaultActive: false },
-  { number: 7, id: "nordics-b7", label: "Block 7", subtitle: "F64-F72", kind: "window", area: "rack", minSlot: 64, maxSlot: 72, maxTier: 3, pLabel: "P3", defaultActive: true },
-  { number: 8, id: "nordics-b8", label: "Block 8", subtitle: "F73-F78", kind: "window", area: "rack", minSlot: 73, maxSlot: 78, maxTier: 3, defaultActive: false },
-  { number: 9, id: "nordics-b9", label: "Block 9", subtitle: "F79-F84", kind: "window", area: "rack", minSlot: 79, maxSlot: 84, maxTier: 3, defaultActive: false },
-  { number: 10, id: "nordics-b10", label: "Block 10", subtitle: "F85-F90", kind: "window", area: "rack", minSlot: 85, maxSlot: 90, maxTier: 3, pLabel: "P4", defaultActive: true },
-  { number: 11, id: "nordics-b11", label: "Block 11", subtitle: "F91-F102", kind: "window", area: "rack", minSlot: 91, maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: false },
+  { number: 1,  id: "nordics-b1",  label: "Block 1",  subtitle: "F13-F18",   kind: "window", area: "rack", minSlot: 13,  maxSlot: 18,  maxTier: 3, defaultActive: false },
+  { number: 2,  id: "nordics-b2",  label: "Block 2",  subtitle: "F19-F27",   kind: "window", area: "rack", minSlot: 19,  maxSlot: 27,  maxTier: 3, defaultActive: false },
+  { number: 3,  id: "nordics-b3",  label: "Block 3",  subtitle: "F28-F36",   kind: "window", area: "rack", minSlot: 28,  maxSlot: 36,  maxTier: 3, pLabel: "P1", defaultActive: true },
+  { number: 4,  id: "nordics-b4",  label: "Block 4",  subtitle: "F37-F45",   kind: "window", area: "rack", minSlot: 37,  maxSlot: 45,  maxTier: 3, defaultActive: false },
+  { number: 5,  id: "nordics-b5",  label: "Block 5",  subtitle: "F46-F54",   kind: "window", area: "rack", minSlot: 46,  maxSlot: 54,  maxTier: 3, pLabel: "P2", defaultActive: true },
+  { number: 6,  id: "nordics-b6",  label: "Block 6",  subtitle: "F55-F63",   kind: "window", area: "rack", minSlot: 55,  maxSlot: 63,  maxTier: 3, defaultActive: false },
+  { number: 7,  id: "nordics-b7",  label: "Block 7",  subtitle: "F64-F72",   kind: "window", area: "rack", minSlot: 64,  maxSlot: 72,  maxTier: 3, pLabel: "P3", defaultActive: true },
+  { number: 8,  id: "nordics-b8",  label: "Block 8",  subtitle: "F73-F78",   kind: "window", area: "rack", minSlot: 73,  maxSlot: 78,  maxTier: 3, defaultActive: false },
+  { number: 9,  id: "nordics-b9",  label: "Block 9",  subtitle: "F79-F84",   kind: "window", area: "rack", minSlot: 79,  maxSlot: 84,  maxTier: 3, defaultActive: false },
+  { number: 10, id: "nordics-b10", label: "Block 10", subtitle: "F85-F90",   kind: "window", area: "rack", minSlot: 85,  maxSlot: 90,  maxTier: 3, pLabel: "P4", defaultActive: true },
+  { number: 11, id: "nordics-b11", label: "Block 11", subtitle: "F91-F102",  kind: "window", area: "rack", minSlot: 91,  maxSlot: 102, maxTier: 3, wallBefore: true, defaultActive: false },
   { number: 12, id: "nordics-b12", label: "Block 12", subtitle: "F103-F112", kind: "window", area: "rack", minSlot: 103, maxSlot: 112, maxTier: 2, pLabel: "P5", defaultActive: true },
   { number: 13, id: "nordics-b13", label: "Block 13", subtitle: "F113-F120", kind: "window", area: "rack", minSlot: 113, maxSlot: 120, maxTier: 2, defaultActive: false },
   { number: 14, id: "nordics-b14", label: "Block 14", subtitle: "F121-F128", kind: "window", area: "rack", minSlot: 121, maxSlot: 128, maxTier: 2, pLabel: "P6", defaultActive: true },
-  { number: 15, id: "nordics-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack", minSlot: 129, maxSlot: 136, maxTier: 2, defaultActive: false },
+  { number: 15, id: "nordics-b15", label: "Block 15", subtitle: "F129-F136", kind: "window", area: "rack", minSlot: 129, maxSlot: 136, maxTier: 2, defaultActive: true },
   { number: 16, id: "nordics-b16", label: "Block 16", subtitle: "F137-F144", kind: "window", area: "rack", minSlot: 137, maxSlot: 144, maxTier: 2, pLabel: "P7", defaultActive: true },
 ];
 
@@ -219,33 +239,66 @@ type RackV2PurposeMap = Partial<Record<RackV2SlotPurpose, RackV2CellRef[]>>;
 
 const DE_SLOT_PURPOSES: RackV2PurposeMap = {
   meal: [
-    "29:2", "32:2", "50:2", "53:2", "68:2", "71:2", "86:2", "89:2", "98:2", "101:2", "124:2",
-    "46:1", "49:1", "52:1", "64:1", "67:1", "70:1", "85:1", "88:1", "94:1", "97:1", "100:1", "107:1", "123:1", "125:1",
+    // Block 5 (P1): F46-F54
+    "47:2", "49:1", "50:2", "52:1", "53:2",
+    // Block 7 (P2): F64-F72
+    "64:1", "65:2", "67:1", "68:2", "70:1", "71:2",
+    // Block 10 (P3): F85-F90
+    "85:1", "86:2", "88:1", "89:2",
+    // Block 11 (P4): F91-F102
+    "94:1", "97:1", "100:1", "101:2",
+    // Block 12 (P5): F103-F112
+    "107:1",
+    // Block 14 (P6): F121-F128
+    "123:1", "124:2", "125:1",
   ],
-  ice: ["31:1", "105:1", "133:1"],
-  smoothie: ["106:2", "108:2", "126:2", "128:2", "132:2", "134:2"],
-  flyer: ["136:2", "140:2", "142:2", "137:1", "141:1", "143:1"],
-  gift: ["138:2", "144:2", "135:1", "139:1"],
+  ice: ["28:1", "105:1", "133:1"],  // vorne (Block3/F28), mitte (P5/F105), hinten (P7/F133)
+  smoothie: ["98:2", "106:2", "108:2", "126:2", "128:2", "132:2", "134:2"],
+  flyer: ["136:2", "137:1", "140:2", "141:1"],
+  gift: ["135:1", "138:2", "139:1", "142:2", "143:1", "144:2"],
   emergency: [
-    "15:3", "18:3", "21:3", "24:3", "27:3", "30:3", "33:3", "36:3", "39:3", "42:3", "45:3",
-    "48:3", "51:3", "54:3", "57:3", "60:3", "63:3", "66:3", "69:3", "72:3", "75:3", "78:3",
-    "81:3", "84:3", "87:3", "90:3", "93:3", "96:3", "99:3", "102:3", "1:1", "4:1",
+    // Vorzone Reserve
+    "1:1", "4:1", "9:1",
+    // Block 5 T3
+    "48:3", "51:3", "54:3",
+    // Block 7 T3
+    "66:3", "69:3", "72:3",
+    // Block 10 T3
+    "87:3", "90:3",
+    // Block 11 T3
+    "93:3", "96:3", "99:3", "102:3",
   ],
 };
 
 const NORDICS_SLOT_PURPOSES: RackV2PurposeMap = {
   meal: [
-    "32:2", "35:2", "50:2", "53:2", "68:2", "71:2", "86:2", "89:2", "124:2",
-    "31:1", "34:1", "49:1", "52:1", "67:1", "70:1", "85:1", "88:1", "105:1", "107:1", "109:1", "121:1", "123:1", "125:1",
+    // Block 3 (P1): F28-F36
+    "31:1", "32:2", "34:1", "35:2",
+    // Block 5 (P2): F46-F54
+    "49:1", "50:2", "52:1", "53:2",
+    // Block 7 (P3): F64-F72
+    "67:1", "68:2", "70:1", "71:2",
+    // Block 10 (P4): F85-F90
+    "85:1", "86:2", "88:1", "89:2",
+    // Block 12 (P5): F103-F112
+    "105:1", "107:1", "109:1",
+    // Block 14 (P6): F121-F128
+    "123:1", "124:2", "125:1",
   ],
-  ice: ["137:1"],
+  ice: ["135:1"],
   smoothie: ["106:2", "108:2", "122:2"],
-  flyer: ["138:2", "140:2"],
+  flyer: ["140:2", "141:1", "142:2", "143:1", "144:2"],  // bis zu 5 Loyalty-Slots
   emergency: [
-    "15:3", "18:3", "21:3", "24:3", "27:3", "30:3", "33:3", "36:3", "39:3", "42:3", "45:3",
-    "48:3", "51:3", "54:3", "57:3", "60:3", "63:3", "66:3", "69:3", "72:3", "75:3", "78:3",
-    "81:3", "84:3", "87:3", "90:3", "93:3", "96:3", "99:3", "102:3", "6:2", "8:2", "10:2",
-    "12:2", "7:1", "9:1", "11:1",
+    // Vorzone Reserve (F06-F12 ungenutzt in Nordics)
+    "1:1", "6:2", "7:1", "8:2", "9:1", "10:2", "11:1", "12:2",
+    // Block 3 T3
+    "30:3", "33:3", "36:3",
+    // Block 5 T3
+    "48:3", "51:3", "54:3",
+    // Block 7 T3
+    "66:3", "69:3", "72:3",
+    // Block 10 T3
+    "87:3", "90:3",
   ],
 };
 
@@ -307,9 +360,10 @@ export function rackV2PackagingAllowedSlots(market: RackV2MarketId, zone: RackV2
     if (zone === "liner") return [6, 7, 8, 10, 11, 12];
     return [1];
   }
-  if (zone === "box") return [2, 3, 4];
+  // Nordics/BENL: L, M, S, XS → F02-F05; kein Liner
+  if (zone === "box") return [2, 3, 4, 5];
   if (zone === "liner") return [];
-  return [1, 5];
+  return [1];
 }
 
 function inferForezoneTier(slotNumber: number): 1 | 2 {
@@ -444,7 +498,8 @@ function rackV2EntryHaystack(entry: RackEntry): string {
 
 function rackV2IsSmoothieLike(entry: RackEntry): boolean {
   const hay = rackV2EntryHaystack(entry);
-  return hay.includes("smoothie") || hay.includes("drink");
+  if (hay.includes("smoothie") || hay.includes("drink") || hay.includes("shot")) return true;
+  return String(entry.sku ?? "").toLowerCase().startsWith("bev-");
 }
 
 export function rackV2IsIceLike(entry: RackEntry): boolean {
@@ -547,7 +602,8 @@ export function rackV2AutoFillLayout(
 
   function allocatePurpose(purpose: RackV2EntryPurpose): { slot: number; tier: 1 | 2 | 3 } | null {
     for (const target of rackV2PurposeSlots(market, purpose)) {
-      if (!isSlotInActiveBlocks(target.slot)) continue;
+      // Meal-Slots beachten aktive Bloecke; Ice/Smoothie/Flyer/Gift immer platzieren
+      if (purpose === "meal" && !isSlotInActiveBlocks(target.slot)) continue;
       const key = `${target.slot}:${target.tier}`;
       if (occupied.has(key)) continue;
       occupied.add(key);
@@ -636,6 +692,19 @@ export function rackV2AutoFillLayout(
   }
   for (const entry of gifts) place(entry, allocatePurpose("gift"));
   for (const entry of flyers) place(entry, allocatePurpose("flyer"));
+
+  // Basislast: Shots/Smoothies an festen Pickface-Slots in Ausgangslast einrechnen.
+  // Eis ist ausgenommen (gleichmäßige Last, kein Ausgleich nötig).
+  for (const entry of merged) {
+    const kind = deriveEntryKind(entry);
+    if (kind === "packaging" || kind === "meal" || kind === "protein" || kind === "ice") continue;
+    const slot = rackV2SlotNumber(entry.flowRackPosition);
+    if (!Number.isFinite(slot) || slot <= 12) continue;
+    const block = rackV2BlockForSlot(slot, market);
+    if (!block?.pLabel || !loadByPickface.has(block.pLabel)) continue;
+    loadByPickface.set(block.pLabel, (loadByPickface.get(block.pLabel) ?? 0) + (entry.quantity ?? 1));
+  }
+
   for (const entry of sortedMeals) place(entry, allocateMealBalanced(rackV2EffectivePickQuantity(entry)));
 
   return merged;

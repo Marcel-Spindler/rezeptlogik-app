@@ -57,7 +57,7 @@ export function weekPrefixFromWoNumber(woNumber: string): number | null {
 // doesn't hide the whole section. Set to false for strict KW-only matching
 // (the "🎯 Nur KW" toggle) - Marcel reported this fallback leaking KW32 rows
 // into a KW33 view, which is exactly this window kicking in.
-export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string, woNumber?: string, allowAdjacentWeekFallback = true): boolean {
+export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string, woNumber?: string, allowAdjacentWeekFallback = false): boolean {
   const tokens = hfWeekTokens(selectedHfWeek);
   if (!tokens) return true;
 
@@ -72,14 +72,10 @@ export function woMatchesSelectedWeek(woWeek: string, selectedHfWeek: string, wo
 
   const digits = raw.replace(/\D/g, "");
   if (!digits) return false;
-  if (digits.length >= 6 && digits.includes(tokens.full)) return true;
-  if (digits.length === 4 && digits === tokens.short) return true;
-  if (digits === tokens.week || digits === tokens.weekUnpadded) return true;
+  if (digits === tokens.full || digits === tokens.short || digits === tokens.week || digits === tokens.weekUnpadded) return true;
 
   if (!allowAdjacentWeekFallback) return false;
 
-  // If the live WMS feed lags the selected HF week, keep the adjacent
-  // operational weeks instead of hiding the whole Workorders section.
   const rowWeekNum = weekNumFromWmsWeek(raw);
   if (selectedWeekNum == null || rowWeekNum == null) return false;
   return rowWeekNum >= selectedWeekNum - 1 && rowWeekNum <= selectedWeekNum + 2;
@@ -99,23 +95,53 @@ export function previousWmsWeekCandidates(weekNum: number): number[] {
 // always returns selectedWeekNum as-is - the strict "🎯 Nur KW" mode. With
 // fallback on (default), an empty selected week silently substitutes the
 // previous week's rows, which is exactly the "KW33 shows KW32" symptom.
-export function resolveOperationalWmsWeekNum(
+type WeekRowLike = {
+  kw?: number | null;
+  week?: string | null;
+  woNumber?: string | null;
+};
+
+export function resolveSelectedWeekFromStationRows(
   selectedWeekNum: number | null,
-  datasets: Array<Array<{ kw: number | null }>>,
-  allowFallback = true,
+  datasets: Array<Array<WeekRowLike>>,
+  allowFallback = false,
 ): number | null {
   if (selectedWeekNum == null) return null;
   if (!allowFallback) return selectedWeekNum;
 
-  const hasSelectedWeek = datasets.some((rows) => rows.some((row) => row.kw === selectedWeekNum));
+  const hasSelectedWeek = datasets.some((rows) => rows.some((row) => {
+    if (typeof row.kw === "number" && row.kw === selectedWeekNum) return true;
+    const rowWeek = String(row.week ?? "").trim();
+    if (rowWeek && weekNumFromWmsWeek(rowWeek) === selectedWeekNum) return true;
+    const woNumber = String(row.woNumber ?? "").trim();
+    return !!woNumber && weekPrefixFromWoNumber(woNumber) === selectedWeekNum;
+  }));
   if (hasSelectedWeek) return selectedWeekNum;
 
   for (const candidate of previousWmsWeekCandidates(selectedWeekNum)) {
-    const hasCandidateWeek = datasets.some((rows) => rows.some((row) => row.kw === candidate));
+    const hasCandidateWeek = datasets.some((rows) => rows.some((row) => {
+      if (typeof row.kw === "number" && row.kw === candidate) return true;
+      const rowWeek = String(row.week ?? "").trim();
+      if (rowWeek && weekNumFromWmsWeek(rowWeek) === candidate) return true;
+      const woNumber = String(row.woNumber ?? "").trim();
+      return !!woNumber && weekPrefixFromWoNumber(woNumber) === candidate;
+    }));
     if (hasCandidateWeek) return candidate;
   }
 
   return selectedWeekNum;
+}
+
+export function resolveOperationalWmsWeekNum(
+  selectedWeekNum: number | null,
+  datasets: Array<Array<{ kw: number | null }>>,
+  allowFallback = false,
+): number | null {
+  return resolveSelectedWeekFromStationRows(
+    selectedWeekNum,
+    datasets.map((rows) => rows.map((row) => ({ kw: row.kw }))),
+    allowFallback,
+  );
 }
 
 export function weekNumFromWmsWeek(woWeek: string): number | null {

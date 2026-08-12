@@ -3,6 +3,7 @@ const admin = require("firebase-admin");
 const { google } = require("googleapis");
 const snowflake = require("snowflake-sdk");
 const { onRequest } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const ExcelJS = require("exceljs");
 
@@ -284,9 +285,55 @@ function hfWeekToWmsCode(hfWeek) {
   const m = hfWeek.match(/^(\d{4})-W(\d{2})$/);
   return m ? `${m[1]}${m[2]}` : hfWeek;
 }
-function currentWorkorderWeekWindow() {
-  const hfWeek = hfWeekFromIso(isoWeekLabel(new Date()));
-  return [-1, 0, 1, 2].map((n) => hfWeekToWmsCode(hfWeekPlusN(hfWeek, n)));
+function currentWorkorderWeekWindow(rawWeek) {
+  const normalized = String(rawWeek || "").trim();
+  const base = normalized && /^\d{4}-W\d{2}$/.test(normalized)
+    ? normalized
+    : hfWeekFromIso(isoWeekLabel(new Date()));
+  const yearWeekCode = hfWeekToWmsCode(base);
+  return [yearWeekCode];
+}
+
+function workorderPatternsForWeek(rawWeek) {
+  const normalized = String(rawWeek || "").trim();
+  const single = /^\d{4}-W\d{2}$/.test(normalized)
+    ? normalized
+    : hfWeekFromIso(isoWeekLabel(new Date()));
+  const match = single.match(/^(\d{4})-W(\d{2})$/);
+  if (!match) return ["1-%"];
+  const selectedWeek = Number(match[2]);
+  const yearWeekCode = `${match[1]}${String(selectedWeek).padStart(2, "0")}`;
+  return [`${selectedWeek}-%`, `${yearWeekCode}-%`, `${yearWeekCode}`];
+}
+
+function buildWorkorderQueryForWeek(whId, rawWeek, limit) {
+  const patterns = workorderPatternsForWeek(rawWeek);
+  const clause = patterns.map(() => '"wo_number" LIKE ?').join(" OR ");
+  return {
+    sql: `
+      SELECT
+          "wo_number",
+          "week",
+          "submeal_item_number",
+          "submeal_item_desctiption",
+          "meal_item_number",
+          "meal_item_descrption",
+          "quantity",
+          "uom",
+          "plates",
+          "target_per_plate",
+          "pre_blast_quantity",
+          "preblast_location",
+          "status",
+          "expiration_date",
+          "production_time",
+          "last_updated"
+      FROM US_OPS_ANALYTICS.HIGHJUMP_ANALYTICS.V_SUBMEAL_PRODUCTION
+      WHERE "wh_id" = ? AND (${clause})
+      ORDER BY "wo_number", "meal_item_number"
+      LIMIT ?`,
+    binds: [whId, ...patterns, limit],
+  };
 }
 
 function wmsRangeForToolWeek(raw) {
@@ -2378,11 +2425,12 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
   try {
     try {
       const conn = await connectSnowflake();
-      const weekWindow = currentWorkorderWeekWindow();
-      const rowsRaw = await executeSnowflakeQuery(conn, WMS_WORKORDERS_SQL, [params.whId, ...weekWindow, params.limit]);
+      const { sql, binds } = buildWorkorderQueryForWeek(params.whId, params.week || params.wmsWeek, params.limit);
+      const rowsRaw = await executeSnowflakeQuery(conn, sql, binds);
       return res.json({
         ok: true,
         whId: params.whId,
+        week: params.week || params.wmsWeek,
         limit: params.limit,
         generatedAt: nowIso(),
         source: "snowflake-live",
@@ -2399,6 +2447,7 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
       return res.json({
         ok: true,
         whId: params.whId,
+        week: params.week || params.wmsWeek,
         limit: params.limit,
         generatedAt: nowIso(),
         source: "firestore-cache",
@@ -2410,7 +2459,41 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
     throw new Error("Keine Workorders-Daten. Bitte 'npm run wms-sync' ausführen.");
   } catch (error) {
     logger.error("WMS workorders failed", { error: error?.message });
-    res.status(500).json({ ok: false, whId: params.whId, limit: params.limit, generatedAt: nowIso(), rows: [], error: error?.message || String(error) });
+    res.status(500).json({ ok: false, whId: params.whId, week: params.week || params.wmsWeek, limit: params.limit, generatedAt: nowIso(), rows: [], error: error?.message || String(error) });
+  }
+});
+
+exports.refreshWmsCache = onSchedule("every 60 minutes", async () => {
+  try {
+    const conn = await connectSnowflake();
+    const dbRef = admin.firestore();
+    const today = localDateIso();
+    const lookback = 60;
+    const rangeStart = shiftedIsoDate(today, -lookback);
+    const rangeEnd = shiftedIsoDate(today, 1);
+    const baseWeek = hfWeekFromIso(isoWeekLabel(new Date()));
+
+    const allJobs = [
+      { cacheKey: "wms-plating-latest", sql: WMS_PLATING_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsPlatingRow },
+      { cacheKey: "wms-sleeving-latest", sql: WMS_SLEEVING_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsSleevingRow },
+      { cacheKey: "wms-inbound-latest", sql: WMS_INBOUND_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsInboundRow },
+      { cacheKey: "wms-staging-latest", sql: WMS_STAGING_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsPlatingRow },
+      { cacheKey: "wms-debox-latest", sql: WMS_DEBOX_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsPlatingRow },
+      { cacheKey: "wms-postblast-latest", sql: WMS_POSTBLAST_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsPlatingRow },
+    ];
+
+    const workorders = buildWorkorderQueryForWeek("VF", baseWeek, 25000);
+    const workordersRows = (await executeSnowflakeQuery(conn, workorders.sql, workorders.binds)).map(mapWmsWorkordersRow);
+    await dbRef.collection("wmsCache").doc("workorders").set({ rows: workordersRows, generatedAt: nowIso(), pushedAt: nowIso(), whId: "VF" });
+
+    for (const job of allJobs) {
+      const rawRows = await executeSnowflakeQuery(conn, job.sql, job.binds);
+      await dbRef.collection("wmsCache").doc(job.cacheKey).set({ rows: rawRows.map(job.mapper), generatedAt: nowIso(), pushedAt: nowIso(), whId: "VF" });
+    }
+
+    logger.info("WMS cache refresh completed");
+  } catch (error) {
+    logger.error("WMS cache refresh failed", { error: error?.message || String(error) });
   }
 });
 
@@ -2612,6 +2695,217 @@ function breakdownMatchEquipBible(submealName, equipmentBible) {
   }
   return bestScore >= 0.4 ? best : null;
 }
+
+// ─── Rack Planning: Boxfiles automatisch aus Google Drive laden ──────────────
+const BOXFILE_DRIVE_ROOT = "1eCsBqOA6dwfxG3KWAhOpLYnGJpYRLX0G";
+
+async function driveNavigatePath(drive, rootId, ...folderNames) {
+  let currentId = rootId;
+  for (const name of folderNames) {
+    const res = await drive.files.list({
+      q: `'${currentId}' in parents and name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "files(id)",
+      pageSize: 1,
+    });
+    const id = res.data.files?.[0]?.id;
+    if (!id) throw new Error(`Drive-Ordner nicht gefunden: ${name}`);
+    currentId = id;
+  }
+  return currentId;
+}
+
+async function driveReadFile(drive, folderId, filename) {
+  const res = await drive.files.list({
+    q: `'${folderId}' in parents and name = '${filename}' and trashed = false`,
+    fields: "files(id)",
+    pageSize: 1,
+  });
+  const fileId = res.data.files?.[0]?.id;
+  if (!fileId) return null;
+  const content = await drive.files.get({ fileId, alt: "media" }, { responseType: "text" });
+  return typeof content.data === "string" ? content.data : null;
+}
+
+exports.rackBoxfiles = onRequest({ region: "europe-west3", timeoutSeconds: 60, cors: true }, async (req, res) => {
+  if (req.method !== "GET") { res.status(405).json({ ok: false, error: "method-not-allowed" }); return; }
+  const week = String(req.query.week || "").trim(); // z.B. "2026-W34"
+  if (!week) { res.status(400).json({ ok: false, error: "week param required (z.B. 2026-W34)" }); return; }
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(process.env.GOOGLE_SA_JSON || "{}"),
+      scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+    });
+    const drive = google.drive({ version: "v3", auth });
+    // Navigiere: Root → ETL_OR → ETL_OR_FACTOR → {week} → BOXFILE_VE
+    const boxfileVeId = await driveNavigatePath(drive, BOXFILE_DRIVE_ROOT, "ETL_OR", "ETL_OR_FACTOR", week, "BOXFILE_VE");
+    const [deCsv, nordicsCsv] = await Promise.all([
+      driveReadFile(drive, boxfileVeId, "VE-TZ.csv"),
+      driveReadFile(drive, boxfileVeId, "VE-TK-TV.csv"),
+    ]);
+    res.json({ ok: true, week, de: deCsv, nordics: nordicsCsv });
+  } catch (err) {
+    logger.error("rackBoxfiles error", err);
+    res.status(500).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+// ─── Rack Planning: Inputs aus ALPS-Rackfile-GSheet lesen ───────────────────
+const RACK_ALPS_GSHEET_ID = process.env.SHEET_RACK_ALPS || "1ZduHX41wLhZ3xdKQQjoqW22RpjpGNj_OFRr6iUTFdNI";
+const RACK_ALPS_UPLOAD_TAB = process.env.SHEET_RACK_ALPS_UPLOAD_TAB || "RackfileUPLOAD";
+const RACK_ALPS_CONTROL_TAB = process.env.SHEET_RACK_ALPS_CONTROL_TAB || "Control Panel";
+
+const RACK_LINES_BY_MARKET = {
+  DE: new Set(["ASL3", "ASL4"]),
+  DKSE: new Set(["ASL1", "ASL5"]),
+  BENL: new Set(["ASL2", "ASL6"]),
+};
+
+function rackMarketFromLine(line) {
+  const normalized = String(line || "").trim().toUpperCase();
+  if (RACK_LINES_BY_MARKET.DE.has(normalized)) return "DE";
+  if (RACK_LINES_BY_MARKET.DKSE.has(normalized)) return "DKSE";
+  if (RACK_LINES_BY_MARKET.BENL.has(normalized)) return "BENL";
+  return "UNKNOWN";
+}
+
+function rackDataMarketFromLine(line) {
+  return rackMarketFromLine(line) === "DE" ? "de" : "nordics";
+}
+
+function rackFindHeaderIdx(header, names) {
+  return header.findIndex((h) => names.includes(h));
+}
+
+function rackToInt(v, fallback = 0) {
+  if (v == null || v === "") return fallback;
+  const n = typeof v === "number" ? v : parseInt(String(v).replace(/[^0-9-]/g, ""), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function rackSortFromFlow(flowRackPosition) {
+  const m = /^F(\d+)$/i.exec(String(flowRackPosition || "").trim());
+  return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
+}
+
+exports.rackInputs = onRequest({ region: "europe-west3", timeoutSeconds: 45, cors: true }, async (req, res) => {
+  if (req.method !== "GET") { res.status(405).json({ ok: false, error: "method-not-allowed" }); return; }
+
+  const weekParam = String(req.query.week || "").trim();
+  const marketParam = String(req.query.market || "ALL").trim().toUpperCase(); // ALL|DE|DKSE|BENL|NORDICS
+
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(process.env.GOOGLE_SA_JSON || "{}"),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    });
+    const sheets = google.sheets({ version: "v4", auth });
+
+    const [uploadResp, controlResp] = await Promise.all([
+      sheets.spreadsheets.values.get({
+        spreadsheetId: RACK_ALPS_GSHEET_ID,
+        range: `'${RACK_ALPS_UPLOAD_TAB}'!A1:N6000`,
+        valueRenderOption: "UNFORMATTED_VALUE",
+      }),
+      sheets.spreadsheets.values.get({
+        spreadsheetId: RACK_ALPS_GSHEET_ID,
+        range: `'${RACK_ALPS_CONTROL_TAB}'!A1:F20`,
+      }).catch(() => ({ data: { values: [] } })),
+    ]);
+
+    const rows = uploadResp.data.values ?? [];
+    if (!rows.length) {
+      res.json({ ok: true, week: weekParam || null, market: marketParam, entries: [], pool: { de: [], nordics: [] } });
+      return;
+    }
+
+    const header = rows[0].map((c) => String(c ?? "").trim().toLowerCase());
+    const recipeIdx = rackFindHeaderIdx(header, ["recipe"]);
+    const lineIdx = rackFindHeaderIdx(header, ["line"]);
+    const flowIdx = rackFindHeaderIdx(header, ["flowrackposition", "flow rack position"]);
+    const qtyIdx = rackFindHeaderIdx(header, ["quantity", "qty"]);
+    const skuIdx = rackFindHeaderIdx(header, ["sku"]);
+    const ingredientIdx = rackFindHeaderIdx(header, ["ingredient", "artikel"]);
+    const scanIdx = rackFindHeaderIdx(header, ["scanregex", "scan regex"]);
+    const labelPosIdx = rackFindHeaderIdx(header, ["labelpos", "label pos"]);
+    const uniCodeIdx = rackFindHeaderIdx(header, ["unicode", "uni code"]);
+    const displayNameIdx = rackFindHeaderIdx(header, ["displayname", "display name"]);
+    const gramageIdx = rackFindHeaderIdx(header, ["gramage"]);
+    const sortIdx = rackFindHeaderIdx(header, ["sort"]);
+    const portionSizeIdx = rackFindHeaderIdx(header, ["portionsize", "portion size"]);
+
+    const parsed = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const recipe = String(row[recipeIdx] ?? "").trim();
+      const line = String(row[lineIdx] ?? "").trim().toUpperCase();
+      const flowRackPosition = String(row[flowIdx] ?? "").trim().toUpperCase();
+      if (!recipe || !line || !/^ASL[1-6]$/.test(line) || !/^F\d{2,3}$/.test(flowRackPosition)) continue;
+
+      const ingredient = String(row[ingredientIdx] ?? "").trim();
+      const labelPos = String(row[labelPosIdx] ?? "").trim() || `${line}${flowRackPosition}`;
+      const portion = recipe.includes("_") ? recipe.split("_", 2)[1] : "";
+      const uniCode = String(row[uniCodeIdx] ?? "").trim() || `${labelPos}${portion}`;
+      const parsedEntry = {
+        recipe,
+        line,
+        flowRackPosition,
+        quantity: rackToInt(row[qtyIdx], 1) || 1,
+        sku: String(row[skuIdx] ?? "").trim(),
+        ingredient,
+        scanRegEx: String(row[scanIdx] ?? "").trim(),
+        labelPos,
+        uniCode,
+        displayName: String(row[displayNameIdx] ?? "").trim() || ingredient,
+        gramage: String(row[gramageIdx] ?? "").trim(),
+        sort: rackToInt(row[sortIdx], rackSortFromFlow(flowRackPosition)),
+        portionSize: String(row[portionSizeIdx] ?? "").trim() || undefined,
+        market: rackMarketFromLine(line),
+        dataMarket: rackDataMarketFromLine(line),
+      };
+      parsed.push(parsedEntry);
+    }
+
+    const entries = parsed.filter((entry) => {
+      if (marketParam === "ALL") return true;
+      if (marketParam === "NORDICS") return entry.market === "DKSE" || entry.market === "BENL";
+      return entry.market === marketParam;
+    });
+
+    const pool = {
+      de: entries.filter((entry) => entry.dataMarket === "de"),
+      nordics: entries.filter((entry) => entry.dataMarket === "nordics"),
+    };
+
+    let detectedWeek = weekParam || null;
+    const controlRows = controlResp?.data?.values ?? [];
+    if (!detectedWeek) {
+      for (const row of controlRows) {
+        for (const cell of row) {
+          const value = String(cell ?? "").trim();
+          if (/^20\d{2}-W\d{2}$/i.test(value)) {
+            detectedWeek = value.toUpperCase();
+            break;
+          }
+        }
+        if (detectedWeek) break;
+      }
+    }
+
+    res.json({
+      ok: true,
+      spreadsheetId: RACK_ALPS_GSHEET_ID,
+      uploadTab: RACK_ALPS_UPLOAD_TAB,
+      week: detectedWeek,
+      market: marketParam,
+      count: entries.length,
+      entries,
+      pool,
+    });
+  } catch (err) {
+    logger.error("rackInputs error", err);
+    res.status(500).json({ ok: false, error: String(err.message || err) });
+  }
+});
 
 const BREAKDOWN_STATIONS = [
   "Staging", "Spice Portioning", "Debox", "Thaw", "Brine", "Marinade",

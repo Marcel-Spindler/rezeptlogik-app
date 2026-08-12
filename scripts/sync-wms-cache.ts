@@ -243,7 +243,7 @@ async function main() {
   // Mischung quer durch die Historie (last_updated ist ein Batch-Timestamp,
   // fuer ALLE Zeilen identisch -- ORDER BY danach ist wirkungslos).
   const hfWeek = currentHfWeek();
-  const weekWindow = [-1, 0, 1, 2].map((n) => hfWeekToWmsCode(hfWeekPlusN(hfWeek, n)));
+  const weekWindow = [hfWeekToWmsCode(hfWeek)];
   console.log(`Work-Orders Wochenfenster: ${weekWindow.join(", ")} (aktuelle hfWeek: ${hfWeek})\n`);
 
   const jobs: Job[] = [

@@ -331,6 +331,136 @@ export async function parseCo2Csv(file: File, boxPrefix?: string): Promise<Set<s
   return ids;
 }
 
+export type BoxfileVolumes = {
+  picks: Map<string, number>;
+  boxCount: number;
+};
+
+/** Parst VE-TZ.csv oder VE-TK-TV.csv und zählt Picks pro Rezept (High-Runner-Ranking). */
+export async function parseBoxfileForVolumes(file: File): Promise<BoxfileVolumes> {
+  const text = await file.text();
+  const parsed = Papa.parse<Record<string, string>>(text, {
+    header: true,
+    skipEmptyLines: true,
+  });
+  const picks = new Map<string, number>();
+  for (const row of parsed.data) {
+    const src = asString(row.Recipes || row.RecipeCards);
+    if (!src) continue;
+    for (const token of src.split('+')) {
+      const id = normalizeRecipeId(token.trim());
+      if (/^\d+_\d+p$/.test(id)) {
+        picks.set(id, (picks.get(id) ?? 0) + 1);
+      }
+    }
+  }
+  return { picks, boxCount: parsed.data.length };
+}
+
+// Feste Loyalty-Artikel je Markt (ändern sich nur bei Loyalty-Programmwechsel)
+const DE_LOYALTY_ITEMS: Array<{ recipe: string; ingredient: string }> = [
+  { recipe: "FLA1", ingredient: "FA-DE Hydroflask" },
+  { recipe: "FLY4", ingredient: "FA-DE Flyer 4. Box" },
+  { recipe: "FLY3", ingredient: "FA-DE Flyer 3. Box" },
+  { recipe: "SOC1", ingredient: "FA-DE Socks" },
+  { recipe: "BAG1", ingredient: "FA-DE Tote Bag" },
+  { recipe: "FLY2", ingredient: "FA-DE Flyer 2. Box" },
+  { recipe: "FLY1", ingredient: "FA-DE Flyer 1. Box" },
+  { recipe: "WB1",  ingredient: "FA-DE Welcome Booklet" },
+  { recipe: "FR1",  ingredient: "FA-DE Freebies" },
+  { recipe: "DUF1", ingredient: "FA-DE Duffel Bag" },
+];
+const NORDICS_LOYALTY_ITEMS: Array<{ recipe: string; ingredient: string }> = [
+  { recipe: "NPS1", ingredient: "FA-DK Trust Pilot Flyer (TK)" },
+  { recipe: "WB1", ingredient: "FA-Nordics Welcome Booklet" },
+  { recipe: "FR1", ingredient: "FA-NO Freebies" },
+];
+
+function skuFromRecipeId(recipeId: string): string {
+  const match = /^(\d+)_\d+p$/.exec(recipeId);
+  if (!match) return recipeId;
+  const num = parseInt(match[1], 10);
+  if (num === 206 || num === 706) return `PTN-${recipeId}`;
+  if ((num >= 200 && num < 300) || (num >= 700 && num < 800)) return `BEV-${recipeId}`;
+  return `CON-${recipeId}`;
+}
+
+function makePoolEntry(recipe: string, quantity: number, sku: string, ingredient?: string): RackEntry {
+  const r = normalizeRecipeId(recipe);
+  return {
+    id: `pool:${r}:${String(Math.random()).slice(2)}`,
+    recipe: r,
+    line: "",
+    flowRackPosition: "",
+    quantity,
+    sku,
+    ingredient: ingredient ?? r,
+    scanRegEx: "",
+    labelPos: "",
+    uniCode: r,
+    displayName: r,
+    gramage: "",
+    sort: 0,
+    source: "manual",
+  };
+}
+
+export type BoxfilePoolResult = {
+  entries: RackEntry[];
+  volumes: Map<string, number>;
+  boxCount: number;
+  isNordics: boolean;
+};
+
+/**
+ * Baut den vollständigen Rack-Pool direkt aus einer Boxfile (VE-TZ.csv oder VE-TK-TV.csv).
+ * Kein separater P2L-Export nötig.
+ */
+export async function buildPoolFromBoxfile(file: File): Promise<BoxfilePoolResult> {
+  const text = await file.text();
+  const parsed = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
+
+  const volumes = new Map<string, number>();
+  const iceTypes = new Set<string>();
+  const boxSizes = new Set<string>();
+  const linerTypes = new Set<string>();
+
+  for (const row of parsed.data) {
+    const src = asString(row.Recipes || row.RecipeCards);
+    for (const token of src.split('+')) {
+      const id = normalizeRecipeId(token.trim());
+      if (/^\d+_\d+p$/.test(id)) volumes.set(id, (volumes.get(id) ?? 0) + 1);
+    }
+    const ice = asString(row.Ice).trim();
+    if (ice) iceTypes.add(ice);
+    const boxSize = asString(row.BoxSize).trim();
+    if (boxSize) boxSizes.add(boxSize);
+    const liner = asString(row.Coolpouch1).trim();
+    if (liner) linerTypes.add(liner);
+  }
+
+  const isNordics = [...volumes.keys()].some(id => /^6\d\d_/.test(id));
+  const entries: RackEntry[] = [];
+
+  for (const [recipe, picks] of volumes) {
+    entries.push(makePoolEntry(recipe, picks, skuFromRecipeId(recipe)));
+  }
+  for (const ice of iceTypes) {
+    entries.push(makePoolEntry(ice, 1, "IcePack"));
+  }
+  for (const boxSize of boxSizes) {
+    entries.push(makePoolEntry(boxSize, 1, boxSize));
+  }
+  for (const liner of linerTypes) {
+    entries.push(makePoolEntry(liner, 1, liner));
+  }
+  for (const { recipe, ingredient } of (isNordics ? NORDICS_LOYALTY_ITEMS : DE_LOYALTY_ITEMS)) {
+    entries.push(makePoolEntry(recipe, 1, "Loyalties", ingredient));
+  }
+
+  return { entries, volumes, boxCount: parsed.data.length, isNordics };
+}
+
 export function lineSlotRange(entries: RackEntry[], line: string): number[] {
   const positions = entries
     .filter((entry) => entry.line === line)
