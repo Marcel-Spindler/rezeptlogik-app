@@ -61,6 +61,7 @@ export type PetRow = {
 export type PlatingNote = {
   instruction: string;
   packSchemaImageDataUrl?: string;
+  mealImageDataUrl?: string;
 };
 
 

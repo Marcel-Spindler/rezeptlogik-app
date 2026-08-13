@@ -10,7 +10,8 @@ import {
 } from "./features/rundmail/rundmailParsing";
 import { fmtInt, normalizeText, statusTone, toSlack } from "./features/rundmail/rundmailFormat";
 import { parseBibleBatchHints, resolveBatchSizeKg, resolveKitchenKgForRow } from "./features/rundmail/rundmailBibleMatch";
-import { extractMealCode, buildPetPresentationHtml } from "./features/rundmail/rundmailPetMail";
+import { extractMealCode, buildPetPresentationHtml, buildPetLineHtmls } from "./features/rundmail/rundmailPetMail";
+import type { PetLineExport } from "./features/rundmail/rundmailPetMail";
 import { buildKetPresentationHtml } from "./features/rundmail/rundmailKetMail";
 import { printHtmlAsPdf } from "./features/rundmail/rundmailExport";
 
@@ -25,6 +26,7 @@ export function RundmailView({ data }: { data?: DataBundle } = {}) {
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [isDragging, setIsDragging] = useState(false);
+  const [petMealImages, setPetMealImages] = useState<Record<string, string>>({});
   const [sourceLabel, setSourceLabel] = useState("Seed: public/data/rundmail-seed.csv");
   const [petSourceLabel, setPetSourceLabel] = useState("PET CSV noch nicht geladen");
   const [weeklyPlanning, setWeeklyPlanning] = useState<WeeklyPlanningData | null>(null);
@@ -86,6 +88,40 @@ export function RundmailView({ data }: { data?: DataBundle } = {}) {
       active = false;
     };
   }, []);
+
+  // Lädt Katalog-Bilder für alle aktuell geladenen PET-Rezepte als DataURLs vor,
+  // damit sie im PDF-Popup selbstständig eingebettet sind.
+  useEffect(() => {
+    if (!petRows.length || !data?.mealCatalog) return;
+    const catalog = data.mealCatalog;
+    const origin = window.location.origin;
+    const codes = Array.from(new Set(petRows.map((r) => extractMealCode(r.recipeName))));
+    let cancelled = false;
+    (async () => {
+      const result: Record<string, string> = {};
+      for (const code of codes) {
+        const entry = catalog[code];
+        if (!entry?.photoUrl) continue;
+        try {
+          const url = entry.photoUrl.startsWith("/") ? `${origin}${entry.photoUrl}` : entry.photoUrl;
+          const resp = await fetch(url);
+          if (!resp.ok) continue;
+          const blob = await resp.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          if (!cancelled) result[code] = dataUrl;
+        } catch {
+          // Bild nicht verfügbar – überspringen
+        }
+      }
+      if (!cancelled) setPetMealImages(result);
+    })();
+    return () => { cancelled = true; };
+  }, [petRows, data?.mealCatalog]);
 
   const processSpecsByName = useMemo(() => {
     const map = new Map<string, ProcessSpec>();
@@ -315,8 +351,10 @@ export function RundmailView({ data }: { data?: DataBundle } = {}) {
   const petRun2Rows = useMemo(() => petRows.filter((row) => parseDateNeeded(row.productionShift).run === 2), [petRows]);
   const ketPlan1Html = useMemo(() => buildKetPresentationHtml(enrichedRows, sourceLabel, 1), [enrichedRows, sourceLabel]);
   const ketPlan2Html = useMemo(() => buildKetPresentationHtml(enrichedRows, sourceLabel, 2), [enrichedRows, sourceLabel]);
-  const petPlan1Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 1, platingNotes), [petRows, petSourceLabel, platingNotes]);
-  const petPlan2Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 2, platingNotes), [petRows, petSourceLabel, platingNotes]);
+  const petPlan1Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 1, platingNotes, petMealImages, data?.recipes), [petRows, petSourceLabel, platingNotes, petMealImages, data?.recipes]);
+  const petPlan2Html = useMemo(() => buildPetPresentationHtml(petRows, petSourceLabel, 2, platingNotes, petMealImages, data?.recipes), [petRows, petSourceLabel, platingNotes, petMealImages, data?.recipes]);
+  const petLine1Exports = useMemo<PetLineExport[]>(() => buildPetLineHtmls(petRows, petSourceLabel, 1, platingNotes, petMealImages, data?.recipes), [petRows, petSourceLabel, platingNotes, petMealImages, data?.recipes]);
+  const petLine2Exports = useMemo<PetLineExport[]>(() => buildPetLineHtmls(petRows, petSourceLabel, 2, platingNotes, petMealImages, data?.recipes), [petRows, petSourceLabel, platingNotes, petMealImages, data?.recipes]);
 
   const kitchenStatuses = useMemo(() => {
     const set = new Set<string>();
@@ -365,14 +403,34 @@ export function RundmailView({ data }: { data?: DataBundle } = {}) {
               </button>
             </div>
             <div className="flex flex-wrap gap-1.5 justify-end">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">PET:</span>
-              <button type="button" className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold" disabled={!petRun1Rows.length} title="PET Run 1 als PDF speichern" onClick={() => printHtmlAsPdf(petPlan1Html)}>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">PET gesamt:</span>
+              <button type="button" className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold" disabled={!petRun1Rows.length} title="PET Run 1 komplett als PDF" onClick={() => printHtmlAsPdf(petPlan1Html)}>
                 📄 Run 1 PDF
               </button>
-              <button type="button" className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold" disabled={!petRun2Rows.length} title="PET Run 2 als PDF speichern" onClick={() => printHtmlAsPdf(petPlan2Html)}>
+              <button type="button" className="btn text-indigo-700 bg-indigo-50 border-indigo-200 font-bold" disabled={!petRun2Rows.length} title="PET Run 2 komplett als PDF" onClick={() => printHtmlAsPdf(petPlan2Html)}>
                 📄 Run 2 PDF
               </button>
             </div>
+            {petLine1Exports.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 justify-end">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">R1 Linien:</span>
+                {petLine1Exports.map(({ lineName, html }, i) => (
+                  <button key={lineName} type="button" className="btn text-violet-700 bg-violet-50 border-violet-200 font-bold" title={lineName} onClick={() => printHtmlAsPdf(html)}>
+                    📋 Linie {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+            {petLine2Exports.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 justify-end">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 self-center">R2 Linien:</span>
+                {petLine2Exports.map(({ lineName, html }, i) => (
+                  <button key={lineName} type="button" className="btn text-violet-700 bg-violet-50 border-violet-200 font-bold" title={lineName} onClick={() => printHtmlAsPdf(html)}>
+                    📋 Linie {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <input title="KET oder PET CSV hochladen" ref={fileInputRef} className="hidden" type="file" accept=".csv,text/csv" onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)} />
@@ -428,19 +486,6 @@ export function RundmailView({ data }: { data?: DataBundle } = {}) {
                           <span className="font-mono text-xs font-bold text-emerald-800">{code}</span>
                           {displayName && <span className="ml-2 text-xs text-slate-500">{displayName}</span>}
                         </div>
-                        {note.packSchemaImageDataUrl && (
-                          <button
-                            type="button"
-                            className="text-[10px] text-rose-500 hover:text-rose-700"
-                            onClick={() => {
-                              const updated = { ...platingNotes, [code]: { ...note, packSchemaImageDataUrl: undefined } };
-                              setPlatingNotes(updated);
-                              savePlatingNotes(updated);
-                            }}
-                          >
-                            Bild entfernen
-                          </button>
-                        )}
                       </div>
                       <textarea
                         title={`Plating-Anweisung für ${code}`}
@@ -454,29 +499,63 @@ export function RundmailView({ data }: { data?: DataBundle } = {}) {
                           savePlatingNotes(updated);
                         }}
                       />
-                      <div className="mt-2 flex items-center gap-2">
-                        {note.packSchemaImageDataUrl ? (
-                          <img
-                            src={note.packSchemaImageDataUrl}
-                            alt={`Packschema ${code}`}
-                            className="h-16 w-auto rounded border border-slate-200 object-contain cursor-pointer"
-                            onClick={() => {
-                              setPlatingImageTargetCode(code);
-                              platingImageInputRef.current?.click();
-                            }}
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn text-[11px] py-1"
-                            onClick={() => {
-                              setPlatingImageTargetCode(code);
-                              platingImageInputRef.current?.click();
-                            }}
-                          >
-                            🖼 Packschema-Bild hochladen
-                          </button>
-                        )}
+                      <div className="mt-2 flex flex-wrap items-start gap-3">
+                        {/* Meal-Foto — automatisch aus Katalog */}
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold">Meal-Foto (Katalog)</span>
+                          {petMealImages[code] ? (
+                            <div>
+                              <img
+                                src={petMealImages[code]}
+                                alt={`Meal ${code}`}
+                                className="h-24 w-auto rounded border border-slate-200 object-contain"
+                              />
+                              <span className="text-[10px] text-emerald-600 block mt-1">✓ aus Katalog geladen</span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">kein Bild im Katalog</span>
+                          )}
+                        </div>
+
+                        {/* Packschema */}
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold">Packschema</span>
+                          {note.packSchemaImageDataUrl ? (
+                            <div>
+                              <img
+                                src={note.packSchemaImageDataUrl}
+                                alt={`Packschema ${code}`}
+                                className="h-16 w-auto rounded border border-slate-200 object-contain cursor-pointer"
+                                onClick={() => {
+                                  setPlatingImageTargetCode(code);
+                                  platingImageInputRef.current?.click();
+                                }}
+                              />
+                              <button
+                                type="button"
+                                className="text-[10px] text-rose-500 hover:text-rose-700 block mt-1"
+                                onClick={() => {
+                                  const updated = { ...platingNotes, [code]: { ...note, packSchemaImageDataUrl: undefined } };
+                                  setPlatingNotes(updated);
+                                  savePlatingNotes(updated);
+                                }}
+                              >
+                                Packschema entfernen
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn text-[11px] py-1"
+                              onClick={() => {
+                                setPlatingImageTargetCode(code);
+                                platingImageInputRef.current?.click();
+                              }}
+                            >
+                              🖼 Packschema hochladen
+                            </button>
+                          )}
+                        </div>
                         {!petCodes.includes(code) && (
                           <button
                             type="button"

@@ -87,7 +87,10 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
         pbR.json()  as Promise<StoredPayload>,
         slR.json()  as Promise<SleevingPayload>,
         inR.json()  as Promise<InboundPayload>,
-        woR.ok ? woR.json() as Promise<WorkordersPayload> : Promise.resolve({ ok: true, rows: [] } as WorkordersPayload),
+        woR.ok ? woR.json() as Promise<WorkordersPayload> : woR.json().catch(() => ({})).then(body => {
+          console.warn(`WMS WO-Endpoint Fehler HTTP ${woR.status}:`, body);
+          return { ok: false, rows: [], error: `WO-Daten nicht verfügbar (HTTP ${woR.status}) — lokaler Server läuft? Snowflake verbunden?` } as WorkordersPayload;
+        }),
         wodR.ok ? wodR.json() as Promise<WoDetailPayload> : Promise.resolve({ ok: true, rows: [] } as WoDetailPayload),
       ]);
       for (const [label, pay] of [["Plating", pl], ["Staging", stg], ["Debox", deb], ["Post-Blast", pb], ["Sleeving", sl], ["Inbound", inb]] as [string, BasePayload][]) {
@@ -599,6 +602,11 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
             {/* ─── TAB: Work Orders ─── */}
             {activeTab === "workorders" && (
               <SectionCard stationKey="workorders" totalCount={totalCounts.workorders} filteredCount={isTrace ? filtCounts.workorders : undefined}>
+                {allData?.workorders.ok === false && (
+                  <div className="mx-3 mt-2 rounded border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] text-rose-800">
+                    {allData.workorders.error ?? "WO-Daten konnten nicht geladen werden."}
+                  </div>
+                )}
                 <div className="flex items-center gap-1 px-3 pt-2 pb-1">
                   <button type="button" onClick={() => setWoViewMode("list")}
                     className={`px-2 py-1 rounded text-[10px] font-semibold cursor-pointer ${woViewMode === "list" ? "bg-violet-100 text-violet-700 border border-violet-300" : "text-slate-500 hover:bg-slate-100"}`}>

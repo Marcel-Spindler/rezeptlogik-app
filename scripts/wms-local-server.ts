@@ -188,7 +188,7 @@ SELECT
     "production_time",
     "last_updated"
 FROM US_OPS_ANALYTICS.HIGHJUMP_ANALYTICS.V_SUBMEAL_PRODUCTION
-WHERE "wh_id" = ? AND "wo_number" LIKE ?
+WHERE "wh_id" = ? AND ("wo_number" LIKE ? OR "wo_number" LIKE ? OR "wo_number" LIKE ?)
 ORDER BY "wo_number", "meal_item_number"
 LIMIT ?`;
 
@@ -893,9 +893,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   if (url.pathname === "/wms-workorders" && req.method === "GET") {
     const whId = url.searchParams.get("whId")?.trim() || "VF";
     const week = url.searchParams.get("week")?.trim() || currentHfWeek();
-    // WO numbers = KW-prefix (e.g. "32-xxx" for KW 32). Extract KW number from HF-Week.
-    const kwNum = week.replace(/^\d{4}-W0?/, "");
-    const woPattern = `${kwNum}-%`;
+    // Three patterns like Cloud Function: plain week ("34-%"), year+week ("202634-%"), exact year+week ("202634")
+    const mWeek = week.match(/^(\d{4})-W(\d{2})$/);
+    const kwNum = mWeek ? String(Number(mWeek[2])) : week.replace(/^\d{4}-W0?/, "");
+    const yearWeekCode = mWeek ? `${mWeek[1]}${kwNum.padStart(2, "0")}` : `2026${kwNum.padStart(2, "0")}`;
+    const woPatterns = [`${kwNum}-%`, `${yearWeekCode}-%`, `${yearWeekCode}`];
     const requestedLimit = Number(url.searchParams.get("limit") ?? 50000);
     const limit = Number.isFinite(requestedLimit)
       ? Math.min(100000, Math.max(1, Math.round(requestedLimit)))
@@ -903,15 +905,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
     try {
       const conn = await ensureConnection();
-      console.log(`WMS Workorders Query startet: WH_ID=${whId}, WO_PATTERN=${woPattern} (HF-Week=${week}), LIMIT=${limit}`);
-      const rows = await executeQuery(conn, WMS_WORKORDERS_SQL, [whId, woPattern, limit]);
+      console.log(`WMS Workorders Query startet: WH_ID=${whId}, WO_PATTERNS=${JSON.stringify(woPatterns)} (HF-Week=${week}), LIMIT=${limit}`);
+      const rows = await executeQuery(conn, WMS_WORKORDERS_SQL, [whId, ...woPatterns, limit]);
       const mappedRows = rows.map(mapWmsWorkordersRow);
-      console.log(`WMS Workorders: ${mappedRows.length} Zeilen für WO-Pattern ${woPattern}`);
+      console.log(`WMS Workorders: ${mappedRows.length} Zeilen für WO-Patterns ${JSON.stringify(woPatterns)}`);
       sendJson(res, 200, {
         ok: true,
         whId,
         week,
-        woPattern,
+        woPatterns,
         limit,
         generatedAt: new Date().toISOString(),
         rows: mappedRows,

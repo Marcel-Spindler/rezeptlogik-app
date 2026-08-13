@@ -2448,15 +2448,23 @@ exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }
     const cacheDoc = await db.collection("wmsCache").doc("workorders").get();
     if (cacheDoc.exists) {
       const cached = cacheDoc.data();
+      const requestedWeek = params.week || params.wmsWeek;
+      const patterns = workorderPatternsForWeek(requestedWeek);
+      const allCachedRows = cached.rows || [];
+      const filteredRows = allCachedRows.filter(row => {
+        const woNum = String(row.woNumber || "");
+        return patterns.some(p => p.endsWith("%") ? woNum.startsWith(p.slice(0, -1)) : woNum === p);
+      });
+      logger.info("WMS workorders Firestore fallback", { requestedWeek, patterns, total: allCachedRows.length, filtered: filteredRows.length });
       return res.json({
         ok: true,
         whId: params.whId,
-        week: params.week || params.wmsWeek,
+        week: requestedWeek,
         limit: params.limit,
         generatedAt: nowIso(),
         source: "firestore-cache",
         cachedAt: cached.pushedAt || cached.generatedAt,
-        rows: cached.rows || [],
+        rows: filteredRows,
       });
     }
 
