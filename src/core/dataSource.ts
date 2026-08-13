@@ -95,15 +95,28 @@ export async function loadData(): Promise<DataBundle> {
     try {
       const bundle = await loadFromFirestore();
       lastDataError = null;
-      return bundle;
+      return mergeMealCatalog(bundle);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       lastDataError = msg;
       logWarn("Firestore-Load fehlgeschlagen, Fallback auf data.json", e);
-      return loadFromJson();
+      return mergeMealCatalog(await loadFromJson());
     }
   }
-  return loadFromJson();
+  return mergeMealCatalog(await loadFromJson());
+}
+
+async function mergeMealCatalog(bundle: DataBundle): Promise<DataBundle> {
+  try {
+    const response = await fetch(`/data/meal-catalog.json?ts=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) return bundle;
+    const payload = await response.json() as { mealCatalog?: DataBundle["mealCatalog"] };
+    if (!payload.mealCatalog || Object.keys(payload.mealCatalog).length === 0) return bundle;
+    return { ...bundle, mealCatalog: payload.mealCatalog };
+  } catch (error) {
+    logWarn("Meal-Katalog nicht ladbar (optional)", error);
+    return bundle;
+  }
 }
 
 async function loadFromJson(): Promise<DataBundle> {

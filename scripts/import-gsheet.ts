@@ -28,6 +28,7 @@ import { readCookSchedulesFromGSheet } from "./read-cook-schedules.ts";
 import { readProductionPlan } from "./read-production-plan.ts";
 import { num, readCsv, parseRecipeName, resolveSourceDir } from "./lib/helpers.ts";
 import { getAuthClient, getAllTabNames, findCurrentWeekTab } from "./lib/gsheet-helpers.ts";
+import { loadMealDatabase } from "./import-meal-database.ts";
 
 const SOURCE_DIR = resolveSourceDir();
 const OUT_DIR = resolve("public", "data");
@@ -679,6 +680,18 @@ async function main() {
 
   const recipes = loadRecipesFromCsv();
   loadGrossFromCsv(recipes);
+  const mealCatalog = await loadMealDatabase();
+  let catalogMatches = 0;
+  for (const [code, recipe] of Object.entries(recipes)) {
+    const direct = mealCatalog[code];
+    const byDigits = direct ? undefined : Object.values(mealCatalog).find(entry => /\d{4,5}/.exec(entry.mealId)?.[0] === /\d{4,5}/.exec(code)?.[0]);
+    const catalog = direct ?? byDigits;
+    if (catalog) {
+      recipe.catalog = catalog;
+      catalogMatches++;
+    }
+  }
+  console.log(`  Meal Database: ${catalogMatches} Katalogeinträge mit Rezepten verknüpft`);
   let cookSchedules: Record<string, any> = {};
   try {
     cookSchedules = loadCookSchedulesVF();
@@ -734,6 +747,7 @@ async function main() {
     weeks,
     weekRecipes,
     recipes,
+    mealCatalog: Object.keys(mealCatalog).length ? mealCatalog : undefined,
     cookSchedules,
     processSpecs,
     shelfLifeBySku,

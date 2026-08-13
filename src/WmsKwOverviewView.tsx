@@ -24,6 +24,7 @@ import { ReadinessBadge } from "./features/wms-overview/WmsWoFlowWidgets";
 import { WoListTable, WorkordersMealTable } from "./features/wms-overview/WmsWoTables";
 import { InboundAggTable, SleevingAggTable, StoredAggTable } from "./features/wms-overview/WmsStationTables";
 import { StationsBilanz, SnapshotPanel } from "./features/wms-overview/WmsBilanzPanels";
+import { buildMealOperations, MealOperationsBoard } from "./features/wms-overview/WmsMealOperations";
 
 export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const allWmsWeeks = useMemo(() => generateWmsWeeks(2026, 1), []);
@@ -255,6 +256,10 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
     () => allData ? buildSkuBilanz(rawWorkorders, aggInbound, aggStaging, aggDebox, aggPostblast, aggSleeving, aggPlating) : [],
     [allData, rawWorkorders, aggInbound, aggStaging, aggDebox, aggPostblast, aggSleeving, aggPlating],
   );
+  const mealOperations = useMemo(
+    () => buildMealOperations(aggWorkorders, aggPlating, aggPostblast, aggSleeving, skuInfoIndex),
+    [aggWorkorders, aggPlating, aggPostblast, aggSleeving, skuInfoIndex],
+  );
 
   const compareSnap = useMemo(
     () => snapshots.find(s => s.id === compareSnapId) ?? null,
@@ -467,6 +472,8 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
             {/* ─── TAB: Leitwarte (Command) ─── */}
             {activeTab === "command" && (
               <div className="space-y-3">
+                <MealOperationsBoard rows={mealOperations} onTrace={handleTrace} onWoDetail={handleWoDetail} />
+
                 {/* Gesamtfluss: Aggregierte Mengen pro Station */}
                 <div className="card p-4">
                   <div className="text-xs font-bold uppercase text-slate-500 mb-3">Aktiver Mengenstrom (Gesamt)</div>

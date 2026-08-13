@@ -17,16 +17,31 @@ import { WeekSelector } from "../components/WeekSelector";
 import { RecipeList } from "../components/RecipeList";
 import { DataHealthBanner } from "../components/DataHealthBanner";
 import { CapacityWarningBanner } from "../components/CapacityWarningBanner";
+import { MealCatalogView } from "../features/meal-catalog/MealCatalogView";
 import { resolveRecipeByCode } from "../lib/helpers";
 
 function MainPane({ view }: { view: AppView }) {
   const {
     data, selectedWeek, selectedRecipe, upliftPercent,
-    recipesByCode, activeRecipe, setSelectedRecipe, setView,
+    recipesByCode, activeRecipe, setSelectedWeek, setSelectedRecipe, setView,
   } = useAppState();
   if (!data) return null;
 
   switch (view) {
+    case "catalog":
+      return (
+        <MealCatalogView
+          catalog={data.mealCatalog ?? {}}
+          data={data}
+          selectedWeek={selectedWeek}
+          upliftPercent={upliftPercent}
+          onSelectWeek={setSelectedWeek}
+          onOpenRecipe={code => { setSelectedRecipe(code); setView("recipe"); }}
+          onOpenPlanning={code => { setSelectedRecipe(code); setView("planning"); }}
+          onOpenWms={() => setView("wms")}
+        />
+      );
+
     case "recipe":
       return activeRecipe ? (
         <RecipeDetail

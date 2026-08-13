@@ -3,10 +3,44 @@ import type { Plugin, ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createConnection } from "node:net";
 import { stripVTControlCharacters } from "node:util";
 /// <reference types="vitest" />
 
 type MiddlewareNext = (err?: unknown) => void;
+
+function isPortOpen(port: number): Promise<boolean> {
+  return new Promise(resolve => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    socket.once("connect", () => { socket.destroy(); resolve(true); });
+    socket.once("error", () => { socket.destroy(); resolve(false); });
+  });
+}
+
+// WMS-Endpoints werden vom lokalen Snowflake-Server auf Port 3141 bereitgestellt.
+// Der Vite-Server besitzt den Prozess nur, wenn er ihn selbst gestartet hat;
+// ein separat laufender `npm run wms:server` wird deshalb nie beendet.
+function autoStartWmsPlugin(): Plugin {
+  return {
+    name: "auto-start-wms-server",
+    async configureServer(server: ViteDevServer) {
+      if (await isPortOpen(3141)) return;
+
+      const child = spawn("npx", ["tsx", "scripts/wms-local-server.ts"], {
+        cwd: process.cwd(),
+        shell: true,
+        env: { ...process.env, FORCE_COLOR: "0" },
+        windowsHide: true,
+        stdio: "inherit",
+      });
+      console.log("[wms] Lokaler WMS-Server wird automatisch gestartet (Port 3141).");
+
+      server.httpServer?.once("close", () => {
+        if (!child.killed) child.kill();
+      });
+    },
+  };
+}
 
 // Middleware: POST /api/import-local → spawnt "npm run import:local"
 // und streamt den Output zurück. Nur im Dev-Server aktiv.
@@ -62,7 +96,7 @@ function noopRefreshRampUpPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [importLocalPlugin(), noopRefreshRampUpPlugin(), react()],
+  plugins: [autoStartWmsPlugin(), importLocalPlugin(), noopRefreshRampUpPlugin(), react()],
   server: {
     port: 5173,
     open: true,
@@ -76,6 +110,16 @@ export default defineConfig({
         target: "http://127.0.0.1:5001",
         changeOrigin: true,
         rewrite: path => path.replace(/^\/api\/refresh-ramp-up/, "/hellofresh-de-problem-solve/europe-west3/refreshRampUp"),
+      },
+      "/api/rack-boxfiles": {
+        target: "http://127.0.0.1:5001",
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api\/rack-boxfiles/, "/hellofresh-de-problem-solve/europe-west3/rackBoxfiles"),
+      },
+      "/api/rack-inputs": {
+        target: "http://127.0.0.1:5001",
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api\/rack-inputs/, "/hellofresh-de-problem-solve/europe-west3/rackInputs"),
       },
       // WMS-Einzelendpoints → lokaler Snowflake-Server (npm run wms:server)
       // rewrite entfernt "/api" → Server kennt nur "/wms-*"

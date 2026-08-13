@@ -57,6 +57,17 @@ export interface Recipe {
   markets: Partial<Record<Market, RecipeMarketDetails>>;
   // Brutto-Zutaten je Markt (aus gross-ingredients-CSV) — meist identisch über Märkte hinweg
   grossIngredients: Partial<Record<Market, GrossIngredient[]>>;
+  catalog?: MealCatalogEntry;
+}
+
+// Vollständige Meal-Stammdaten aus der Verden Meal Database. Die Tabelleninhalte
+// bleiben pro Quelldatenblatt erhalten, damit auch neue Spalten ohne Codeänderung
+// verfügbar sind. `photoUrl` kommt aus "Meal DB_Culinary" / "Photo Link".
+export interface MealCatalogEntry {
+  mealId: string;
+  photoUrl?: string;
+  photoSourceUrl?: string;
+  sheets: Record<string, Record<string, string>>;
 }
 
 export interface GrossIngredient {
@@ -290,6 +301,7 @@ export interface DataBundle {
   weeks: string[];                                // sortiert: ["2026-W17", ...]
   weekRecipes: WeekRecipe[];
   recipes: Record<string, Recipe>;                // key = code
+  mealCatalog?: Record<string, MealCatalogEntry>; // vollständige Verden Meal Database, key = Meal ID
   cookSchedules: Record<string, CookSchedule>;    // key = cookMethod (für VF)
   processSpecs?: Record<string, ProcessSpec>;     // key = subRecipeId
   shelfLifeBySku?: Record<string, ShelfLifeInfo>; // key = ingredient / SKU code

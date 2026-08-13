@@ -2,6 +2,7 @@ import type { AppView } from "./AppContext";
 
 const NAV_TABS: ReadonlyArray<{ view: AppView; label: string }> = [
   { view: "recipe", label: "Rezept" },
+  { view: "catalog", label: "Meal Katalog" },
   { view: "planning", label: "Planning OASE" },
   { view: "wo", label: "KET Plan / WO" },
   { view: "pet", label: "PET Plan / Plating" },

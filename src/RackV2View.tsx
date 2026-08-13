@@ -113,6 +113,35 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     localStorage.setItem(storageKey(week), serializePlanState(sharedPlan));
   }, [sharedPlan, week]);
 
+  async function autoLoadRackInputs(silent = false) {
+    try {
+      const resp = await fetch(`/api/rack-inputs?week=${encodeURIComponent(week)}&market=ALL`, { cache: "no-store" });
+      const data = await resp.json();
+      if (!data.ok) throw new Error(data.error ?? "Rack-Inputs konnten nicht geladen werden");
+      const nextDe = Array.isArray(data.pool?.de) ? data.pool.de : [];
+      const nextNordics = Array.isArray(data.pool?.nordics) ? data.pool.nordics : [];
+      if (nextDe.length > 0 || nextNordics.length > 0) {
+        setPool((prev) => ({
+          ...prev,
+          de: nextDe.length > 0 ? nextDe : prev.de,
+          nordics: nextNordics.length > 0 ? nextNordics : prev.nordics,
+        }));
+      }
+      if (!silent) {
+        const count = (nextDe.length ?? 0) + (nextNordics.length ?? 0);
+        setHint(`Rack-Inputs für ${data.week ?? week} geladen (${count} Einträge).`);
+      }
+    } catch (error) {
+      if (!silent) {
+        setLoadError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+
+  useEffect(() => {
+    void autoLoadRackInputs(true);
+  }, [week]);
+
   useEffect(() => {
     setSelectedEntryId(null);
     setHint(null);
@@ -697,6 +726,68 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     URL.revokeObjectURL(url);
   }
 
+  function printShopfloorLabels() {
+    const marketLines = RACK_V2_LINES.filter((line) => (sharedPlan.lines[line.id] ?? defaultLinePlanState(line)).market === currentMarket);
+    const rows = marketLines.flatMap((line) => {
+      const entries = sharedPlan.lines[line.id]?.entries ?? [];
+      return entries.map((entry) => ({
+        line: line.code,
+        slot: entry.flowRackPosition,
+        recipe: entry.recipe,
+        label: entry.displayName || entry.ingredient || entry.recipe,
+        labelPos: entry.labelPos || `${line.code}${entry.flowRackPosition}`,
+        uniCode: entry.uniCode || `${line.code}${entry.flowRackPosition}${entry.recipe}`,
+      }));
+    }).sort((a, b) => a.line.localeCompare(b.line) || a.slot.localeCompare(b.slot) || a.recipe.localeCompare(b.recipe));
+
+    if (rows.length === 0) {
+      setHint("Für die aktuelle Marktgruppe gibt es noch keine Shopfloor-Labels zum Drucken.");
+      return;
+    }
+
+    const html = `
+      <html>
+        <head>
+          <title>Rack Labels ${week}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 18px; background: #f8fafc; color: #0f172a; }
+            .wrap { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(180px, 1fr)); }
+            .label { background: white; border: 2px solid #cbd5e1; border-radius: 10px; padding: 10px 12px; min-height: 150px; page-break-inside: avoid; }
+            .meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #475569; }
+            .slot { font-size: 12px; font-weight: 800; color: #0f172a; }
+            .recipe { font-size: 20px; font-weight: 900; margin: 8px 0; line-height: 1.1; }
+            .display { font-size: 12px; color: #334155; min-height: 36px; }
+            .barcode { margin-top: 8px; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #1e293b; }
+            @media print { body { margin: 0; } .label { break-inside: avoid; } }
+          </style>
+        </head>
+        <body>
+          <div class="wrap">
+            ${rows.map((item) => `
+              <div class="label">
+                <div class="meta"><span>${item.line}</span><span class="slot">${item.slot}</span></div>
+                <div class="recipe">${item.recipe}</div>
+                <div class="display">${item.label}</div>
+                <div class="barcode">Label: ${item.labelPos}</div>
+                <div class="barcode">Scan: ${item.uniCode}</div>
+              </div>
+            `).join("")}
+          </div>
+        </body>
+      </html>
+    `;
+
+    const win = window.open("", "_blank", "noopener,noreferrer");
+    if (!win) {
+      setHint("Popup wurde blockiert. Bitte Druckfenster erlauben.");
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 250);
+  }
+
   const totalErrors = validation.perLine.reduce((sum, line) => sum + line.issues.filter((issue) => issue.severity === "error").length, 0)
     + validation.global.filter((issue) => issue.severity === "error").length;
 
@@ -731,6 +822,9 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
             )}
             <button type="button" onClick={downloadAllRackfiles} disabled={!allLinesReleased} className="btn disabled:opacity-50">
               Gesamt-Rackfile CSV
+            </button>
+            <button type="button" onClick={printShopfloorLabels} className="btn">
+              Labels drucken
             </button>
           </div>
         </div>

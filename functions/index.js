@@ -2384,7 +2384,11 @@ exports.wmsSleeving = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, 
   await runWmsQuery(req, res, { name: "wms-sleeving", sql: WMS_SLEEVING_SQL, mapper: mapWmsSleevingRow });
 });
 
-exports.wmsInbound = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsInbound = onRequest({
+  region: "europe-west3",
+  timeoutSeconds: 60,
+  serviceAccount: "wmsinbound-sa@hellofresh-de-problem-solve.iam.gserviceaccount.com",
+}, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;

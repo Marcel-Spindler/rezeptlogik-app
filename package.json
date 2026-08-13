@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "vite",
-    "dev": "concurrently -n vite,wms,csv -c cyan,magenta,green \"vite\" \"tsx scripts/wms-local-server.ts\" \"tsx scripts/import-sub-recipes.ts --watch\"",
+    "dev": "concurrently -n vite,csv -c cyan,green \"vite\" \"tsx scripts/import-sub-recipes.ts --watch\"",
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -16,6 +16,7 @@
     "import:local": "tsx scripts/import-local.ts",
     "watch:operational": "tsx scripts/watch-operational.ts",
     "import:gsheet": "tsx scripts/import-gsheet.ts",
+    "import:meal-database": "tsx scripts/import-meal-database.ts",
     "import:sub-recipes": "tsx scripts/import-sub-recipes.ts",
     "import:pfei": "tsx scripts/import-pfei.ts",
     "import:rampup": "tsx scripts/import-rampup.ts",
