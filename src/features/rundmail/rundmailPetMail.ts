@@ -15,8 +15,11 @@ export function formatClock(totalMinutes: number): string {
 }
 
 export function extractMealCode(recipeName: string): string {
-  const match = recipeName.match(/([A-Z]{2}\d{4}[A-Z])/i);
-  if (match) return match[1].toUpperCase();
+  const withLetter = recipeName.match(/([A-Z]{2}\d{4}[A-Z])/i);
+  if (withLetter) return withLetter[1].toUpperCase();
+  // Fallback: Code ohne abschließenden Buchstaben → "A" anhängen
+  const noLetter = recipeName.match(/([A-Z]{2}\d{4})(?:\s|_|-|$)/i);
+  if (noLetter) return noLetter[1].toUpperCase() + "A";
   return recipeName.split(/\s+/)[0] ?? "";
 }
 

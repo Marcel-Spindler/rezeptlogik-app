@@ -1,8 +1,12 @@
 /**
- * Kopiert SA- (Schalen-) Bilder aus dem lokalen Google-Drive-Ordner nach public/data/meal-images/.
- * Bevorzugung: _SA_*low > _Tray_*low > _SA_*high > _Tray_*high
+ * Kopiert SA- (Schalen-) und Tray-Bilder aus dem lokalen Google-Drive-Ordner nach public/data/meal-images/.
+ * Bevorzugung: _SA_*low > _SA_*high > _Tray_*low > _Tray_*high
  * Kein Fallback auf Teller/Bento-Bilder — Score < 4 wird übersprungen.
- * Danach werden neue Meal-Codes auch in meal-catalog.json eingetragen.
+ *
+ * Am Ende:
+ * - Alle Dateien in public/data/meal-images/ die NICHT durch diesen Lauf kopiert wurden → gelöscht
+ * - meal-catalog.json: photoUrl wird nur für tatsächlich vorhandene SA/Tray-Bilder gesetzt,
+ *   alle anderen photoUrl-Einträge werden gelöscht (nicht geskippt, aktiv auf undefined gesetzt).
  */
 
 import * as fs from "fs";
@@ -13,10 +17,8 @@ const DEST_DIR = path.resolve("public/data/meal-images");
 const CATALOG_PATH = path.resolve("public/data/meal-catalog.json");
 
 function extractMealCode(folderName: string): string | null {
-  // Bevorzuge Code mit abschliessendem Buchstaben (z.B. FV1731A)
   const withLetter = folderName.match(/^([A-Z]{2}\d{4}[A-Z])/i);
   if (withLetter) return withLetter[1].toUpperCase();
-  // Fallback: Code ohne Buchstaben → "A" anhängen (z.B. FV1731 → FV1731A)
   const noLetter = folderName.match(/^([A-Z]{2}\d{4})(?:\s|_|-|$)/i);
   if (noLetter) return noLetter[1].toUpperCase() + "A";
   return null;
@@ -52,7 +54,7 @@ function findBestImage(dir: string): string | null {
     }
   }
   scan(dir);
-  // Nur zurückgeben wenn es wirklich ein SA- oder Tray-Bild ist (score >= 4)
+  // Nur SA- oder Tray-Bilder (score >= 4) — kein Fallback auf Bento/Plated
   if (!best || best.score < 4) return null;
   return best.filePath;
 }
@@ -71,7 +73,8 @@ function main() {
     .filter((e) => e.isDirectory())
     .map((e) => e.name);
 
-  let copied = 0, skipped = 0, noImage = 0, noSA = 0;
+  let copied = 0, skipped = 0, noSA = 0;
+  const copiedCodes = new Set<string>();
 
   for (const dirName of mealDirs) {
     const code = extractMealCode(dirName);
@@ -79,28 +82,55 @@ function main() {
 
     const mealDir = path.join(SOURCE_DIR, dirName);
     const best = findBestImage(mealDir);
-    if (!best) { console.log(`  ○ Kein SA/Tray-Bild: ${code}`); noSA++; continue; }
+    if (!best) {
+      console.log(`  ○ Kein SA/Tray-Bild: ${code}`);
+      noSA++;
+      continue;
+    }
 
     const destPath = path.join(DEST_DIR, `${code}.jpg`);
     fs.copyFileSync(best, destPath);
     console.log(`  ✓ ${code} ← ${path.basename(best)}`);
     copied++;
+    copiedCodes.add(code);
 
-    // Meal-Catalog-Eintrag anlegen falls noch nicht vorhanden
     if (!catalog.mealCatalog[code]) {
-      catalog.mealCatalog[code] = {
-        mealId: code,
-        photoUrl: `/data/meal-images/${code}.jpg`,
-        sheets: {},
-      };
+      catalog.mealCatalog[code] = { mealId: code, photoUrl: `/data/meal-images/${code}.jpg`, sheets: {} };
     } else {
       catalog.mealCatalog[code].photoUrl = `/data/meal-images/${code}.jpg`;
     }
   }
 
+  // ── Bereinigung: Alle Bilddateien löschen die NICHT aus diesem Lauf stammen ──
+  const existingFiles = fs.readdirSync(DEST_DIR).filter((f) => /\.(jpg|jpeg)$/i.test(f));
+  let deleted = 0;
+  for (const filename of existingFiles) {
+    const code = filename.replace(/\.(jpg|jpeg)$/i, "").toUpperCase();
+    if (!copiedCodes.has(code)) {
+      fs.unlinkSync(path.join(DEST_DIR, filename));
+      console.log(`  🗑 Gelöscht (kein SA/Tray): ${filename}`);
+      deleted++;
+    }
+  }
+
+  // ── Bereinigung: photoUrl aus Katalog entfernen wenn kein Bild vorhanden ──
+  let cleared = 0;
+  for (const [code, entry] of Object.entries(catalog.mealCatalog) as [string, Record<string, unknown>][]) {
+    if (entry.photoUrl && !copiedCodes.has(code)) {
+      delete entry.photoUrl;
+      cleared++;
+    }
+  }
+
+  catalog.generatedAt = new Date().toISOString();
   fs.writeFileSync(CATALOG_PATH, JSON.stringify(catalog, null, 2), "utf8");
 
-  console.log(`\nFertig: ${copied} SA/Tray-Bilder kopiert, ${skipped} Ordner ohne Code, ${noSA} Ordner ohne SA/Tray-Bild (übersprungen)`);
+  console.log(`\nFertig:`);
+  console.log(`  ${copied} SA/Tray-Bilder kopiert`);
+  console.log(`  ${deleted} alte/falsche Bilder gelöscht`);
+  console.log(`  ${cleared} photoUrl-Einträge aus Katalog entfernt`);
+  console.log(`  ${skipped} Ordner ohne erkennbaren Code`);
+  console.log(`  ${noSA} Ordner ohne SA/Tray-Bild (übersprungen)`);
 }
 
 main();
