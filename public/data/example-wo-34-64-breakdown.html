@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>WO 34-64 · Mixed veg - Roasted Zucchini & Corn</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
+.page-header{padding:14px 16px 8px;border-bottom:3px solid #1e3a5f;background:linear-gradient(135deg,#0f2240 0%,#1e3a5f 100%);color:#fff}
+.page-title{font-size:20px;font-weight:900;color:#fff;letter-spacing:-.02em}
+.page-meta{font-size:9px;color:#93c5fd;margin-top:3px}
+.equip-section{display:flex;gap:16px;align-items:flex-start;padding:8px 16px;background:#f8fafc;border-bottom:1px solid #e5e7eb}
+.equip-label{font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.equip-grid{display:flex;flex-wrap:wrap;gap:4px}
+.equip-chip{background:#1e3a5f;color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px}
+.card{padding:14px 16px;border:1.5px solid #e2e8f0;border-radius:10px;margin:8px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.wo-num{font-size:28px;font-weight:900;color:#1e3a5f;line-height:1}
+.date-tag{font-size:10px;color:#6b7280;margin-top:3px}
+.recipe-tag{text-align:right}
+.code{font-size:10px;font-weight:700;color:#9ca3af;font-family:monospace}
+.rname{font-size:11px;font-weight:600;color:#374151;max-width:260px;text-align:right}
+.sub{font-size:18px;font-weight:900;color:#111;border-bottom:2px solid #e2e8f0;padding-bottom:7px;margin-bottom:8px}
+.methods{background:linear-gradient(135deg,#0f2240,#1e3a5f);color:#fff;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:700;letter-spacing:.04em;margin-bottom:10px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.stat{background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:7px 10px}
+.hi-stat{background:#1e3a5f;border-color:#1e3a5f}
+.stat-green{background:#f0fdf4;border-color:#bbf7d0}
+.stat-red{background:#fef2f2;border-color:#fecaca}
+.slabel{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:2px}
+.hi-stat .slabel{color:#93c5fd}
+.stat-green .slabel{color:#16a34a}
+.stat-red .slabel{color:#dc2626}
+.sval{font-size:19px;font-weight:900;color:#111;line-height:1.1}
+.hi-stat .sval{color:#fff}
+.stat-green .sval{color:#15803d}
+.stat-red .sval{color:#b91c1c}
+.sval.big{font-size:36px}
+.progress-wrap{height:4px;background:#e5e7eb;border-radius:2px;margin-top:4px;overflow:hidden}
+.progress-bar{height:100%;border-radius:2px;transition:width .3s}
+.badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px}
+.badge{font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px}
+.badge-green{background:#d1fae5;color:#065f46}
+.badge-amber{background:#fef3c7;color:#92400e}
+.badge-orange{background:#ffedd5;color:#9a3412}
+.badge-blue{background:#dbeafe;color:#1e40af}
+.badge-gray{background:#f1f5f9;color:#475569}
+.badge-red{background:#fee2e2;color:#991b1b}
+.comment{font-size:10px;padding:6px 10px;border-radius:6px;margin-bottom:5px;border-left:3px solid transparent}
+.comment.warn{background:#fef3c7;color:#92400e;border-color:#fbbf24}
+.comment.info{background:#f1f5f9;color:#374151;border-color:#94a3b8}
+.comment.instr{background:#eff6ff;color:#1e40af;border-color:#93c5fd}
+.ings{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px}
+.ings th{background:#f1f5f9;padding:5px 8px;text-align:left;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #e2e8f0;color:#475569}
+.ings td{padding:4px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.ings tfoot td{border-top:2px solid #1e3a5f;padding-top:6px;background:#f8fafc}
+.num{text-align:right;white-space:nowrap;font-weight:600}
+.hi{color:#1e40af;font-weight:700}
+.cat{display:inline-block;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;background:#f1f5f9;color:#64748b;margin-right:4px}
+.no-data{padding:10px;background:#fef3c7;border-radius:6px;font-size:10px;color:#92400e;margin-top:8px;border-left:3px solid #fbbf24}
+@media print{
+  body{font-size:10px}
+  .card{page-break-inside:avoid;margin:4px;border-width:1px;box-shadow:none}
+  .page-header{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .methods,.hi-stat,.stat-green,.stat-red{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:A4;margin:8mm}
+}
+</style>
+</head>
+<body>
+<div class="page-header">
+  <div class="page-title">🍳 WO 34-64 · Mixed veg - Roasted Zucchini & Corn</div>
+  <div class="page-meta">Generiert: 14.8.2026, 10:56:31 · 1 Work Orders</div>
+  
+</div>
+<div class="equip-section">
+  <div>
+    <div class="equip-label">Equipment-Kapazitäten</div>
+    <div class="equip-grid">
+      <span class="equip-chip">Braiser: 80 kg</span><span class="equip-chip">Ofen: 60 kg</span><span class="equip-chip">Planetary Mixer: 30 kg</span><span class="equip-chip">Horizontal Mixer: 50 kg</span><span class="equip-chip">Patty Maker: 400 kg</span><span class="equip-chip">Hot Shredder: 20 kg</span><span class="equip-chip">Cupping: 50 kg</span>
+    </div>
+  </div>
+</div>
+
+<section class="card" style="page-break-after:auto">
+  <div class="card-top">
+    <div>
+      <div class="wo-num">WO 34-64</div>
+      <div class="date-tag">Montag, 10.08.2026 · Shift 1</div>
+    </div>
+    <div class="recipe-tag">
+      <div class="code">FV0131A</div>
+      <div class="rname">FV0131A - Black bean bowl and enchilada sauce [DE]</div>
+    </div>
+  </div>
+
+  <div class="sub">Mixed veg - Roasted Zucchini & Corn</div>
+
+  <div class="methods">OVEN · BLAST CHILLER</div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="slabel">Ziel-Portionen</div>
+      <div class="sval">1.306</div>
+    </div>
+    <div class="stat">
+      <div class="slabel">Gekocht / Rest</div>
+      <div class="sval">0 <span style="font-size:12px;color:#6b7280">/ 1.306</span></div>
+      
+      
+    </div>
+    <div class="stat">
+      <div class="slabel">Total KG (Roh)</div>
+      <div class="sval">218,4 kg</div>
+    </div>
+    <div class="stat">
+      <div class="slabel">Primär-Equipment</div>
+      <div class="sval" style="font-size:13px">Ofen</div>
+      <div style="font-size:9px;color:#6b7280;margin-top:1px">60 kg / Batch</div>
+    </div>
+    <div class="stat hi-stat">
+      <div class="slabel">BATCHE (Ofen)</div>
+      <div class="sval big">4</div>
+    </div>
+    <div class="stat">
+      <div class="slabel">Pro Batch</div>
+      <div class="sval">54,6 kg</div>
+    </div>
+    
+    <div class="stat stat-red">
+      <div class="slabel">Excess Portionen</div>
+      <div class="sval">-1.306</div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;">
+          
+            <div style="background:#1e3a5f;color:#fff;border-radius:8px;padding:6px 10px;min-width:80px;text-align:center;">
+              <div style="font-size:8px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">Ofen</div>
+              <div style="font-size:20px;font-weight:900;line-height:1;">4×</div>
+              <div style="font-size:8px;color:#93c5fd;margin-top:1px;">60 kg / Batch</div>
+              <div style="font-size:8px;color:#7dd3fc;">à 54.6 kg</div>
+              
+            </div>
+        </div>
+
+  <div class="badges">
+    <span class="badge badge-gray">
+      Kitchen: Not Started
+    </span>
+    <span class="badge badge-gray">
+      Staging: Allocation Pending
+    </span>
+    
+  </div>
+
+  
+  
+  
+      <div class="instructions-block">
+        <div class="instructions-title">Cooking instructions · Mixed veg - Roasted Zucchini &amp; Corn</div>
+        <div style="margin-top:6px;padding:7px 9px;background:#f0fdf4;border-radius:4px;">
+        <div style="font-size:8px;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">English</div>
+        
+            <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:3px;">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;background:#166534;color:#fff;border-radius:50%;font-size:8px;font-weight:900;flex-shrink:0;margin-top:1px;">1</span>
+              <span style="font-size:9px;color:#1e293b;line-height:1.4;white-space:pre-wrap;">Station 1: Prep &amp; Mix1. Combine 29.22 kg diced zucchini, 16.92 kg IQF sweetcorn, 2.15 kg olive oil, 2.78 kg IQF diced garlic, 2.69 kg sliced green onion, 0.09 kg lime juice, and all remaining spices for one batch (total 54.59 kg).2. Ensure all ingredients are thoroughly mixed to coat evenly. Repeat for 4 batches.Station 2: Oven Roasting1. Roast each 54.59 kg batch in the OVEN. Cook until [MANUAL CHECK REQUIRED] at [MANUAL CHECK REQUIRED] °C.2. Monitor for even roasting and desired texture.Station 3: Chill &amp; Handover1. Immediately transfer roasted vegetables to a BLAST CHILLER until cooled to [MANUAL CHECK REQUIRED] °C.2. Label and transfer 218.35 kg total product to [MANUAL CHECK REQUIRED] for WO 34-64.</span>
+            </div>
+      </div>
+        <div style="margin-top:6px;padding:7px 9px;background:#eff6ff;border-radius:4px;">
+        <div style="font-size:8px;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Deutsch (Claude draft · review)</div>
+        
+            <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:3px;">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;background:#166534;color:#fff;border-radius:50%;font-size:8px;font-weight:900;flex-shrink:0;margin-top:1px;">1</span>
+              <span style="font-size:9px;color:#1e293b;line-height:1.4;white-space:pre-wrap;">Station 1: Vorbereitung &amp; Mischen1. Für eine Charge (insgesamt 54.59 kg) 29.22 kg gewürfelte Zucchini, 16.92 kg IQF Zuckermais, 2.15 kg Olivenöl, 2.78 kg IQF gewürfelten Knoblauch, 2.69 kg geschnittene grüne Zwiebel, 0.09 kg Limettensaft und alle restlichen Gewürze mischen.2. Sicherstellen, dass alle Zutaten gründlich und gleichmäßig vermischt sind. Für 4 Chargen wiederholen.Station 2: Ofenröstung1. Jede 54.59 kg Charge im OFEN rösten. Garen bis [MANUAL CHECK REQUIRED] bei [MANUAL CHECK REQUIRED] °C.2. Auf gleichmäßige Röstung und gewünschte Textur achten.Station 3: Kühlen &amp; Übergabe1. Geröstetes Gemüse sofort in einen SCHNELLKÜHLER geben, bis es auf [MANUAL CHECK REQUIRED] °C abgekühlt ist.2. Insgesamt 218.35 kg Produkt etikettieren und für WO 34-64 an [MANUAL CHECK REQUIRED] übergeben.</span>
+            </div>
+      </div>
+      </div>
+
+  
+  <table class="ings">
+    <thead><tr><th>Zutat</th><th class="num">Total</th><th class="num hi">Pro Batch</th></tr></thead>
+    <tbody><tr style="background:#dbeafe">
+          <td>
+            <span class="cat">PHF</span>
+            FA-DE Zucchini, Diced 10mm /Zucchini, gewürfelt 10 mm<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">116,9 kg</td>
+          <td class="num hi">29,2 kg</td>
+        </tr><tr style="background:#dbeafe">
+          <td>
+            <span class="cat">PHF</span>
+            FA-DE Sweetcorn Supersweet Kernels, IQF /Zuckermais-Supersüßkörner, IQF<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">67,7 kg</td>
+          <td class="num hi">16,9 kg</td>
+        </tr><tr style="background:#dbeafe">
+          <td>
+            <span class="cat">PHF</span>
+            FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">11,1 kg</td>
+          <td class="num hi">2,8 kg</td>
+        </tr><tr style="background:#dbeafe">
+          <td>
+            <span class="cat">PHF</span>
+            FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">10,7 kg</td>
+          <td class="num hi">2,7 kg</td>
+        </tr><tr style="background:#fee2e2">
+          <td>
+            <span class="cat">PRO</span>
+            FA-DE Oil, Olive /Öl, Olivenöl<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">8,6 kg</td>
+          <td class="num hi">2,2 kg</td>
+        </tr><tr style="background:#fef9c3">
+          <td>
+            <span class="cat">SPI</span>
+            FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">966 g</td>
+          <td class="num hi">242 g</td>
+        </tr><tr style="background:#fef9c3">
+          <td>
+            <span class="cat">SPI</span>
+            FA-DE Spice, Sea Salt /Gewürze, Meersalz<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">731 g</td>
+          <td class="num hi">183 g</td>
+        </tr><tr style="background:#fef9c3">
+          <td>
+            <span class="cat">SPI</span>
+            FA-DE Spice, Chili Powder /Gewürz, Chilipulver<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">366 g</td>
+          <td class="num hi">91 g</td>
+        </tr><tr style="background:#fee2e2">
+          <td>
+            <span class="cat">PRO</span>
+            FA-DE Juice, Lime /Saft, Limette<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">366 g</td>
+          <td class="num hi">91 g</td>
+        </tr><tr style="background:#fef9c3">
+          <td>
+            <span class="cat">SPI</span>
+            FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">340 g</td>
+          <td class="num hi">85 g</td>
+        </tr><tr style="background:#fef9c3">
+          <td>
+            <span class="cat">SPI</span>
+            FA-DE Spice, Coriander Ground /Gewürz, gemahlener Koriander<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">274 g</td>
+          <td class="num hi">69 g</td>
+        </tr><tr style="background:#fef9c3">
+          <td>
+            <span class="cat">SPI</span>
+            FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen<br><span style="font-size:8px;color:#d97706;font-weight:700">52% Verlust</span>
+          </td>
+          <td class="num">274 g</td>
+          <td class="num hi">69 g</td>
+        </tr></tbody>
+    <tfoot><tr>
+      <td><strong>GESAMT (4 Batche)</strong></td>
+      <td class="num"><strong>218,4 kg</strong></td>
+      <td class="num hi"><strong>54,6 kg</strong></td>
+    </tr></tfoot>
+  </table>
+</section>
+</body>
+</html>

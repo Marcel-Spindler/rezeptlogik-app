@@ -17,13 +17,14 @@ import {
   wrSafeFilePart, wrTsvSafe, wrHtmlSafe, wrPathIsBrining, wrPathCookCategories,
   wrPathPrimaryCookingMethod, wrEffectiveCookingMethod,
   wrCookingMethodBadgeClass, wrParseNumberLoose,
-  wrExtractPieceWeightKgFromName,
+  wrExtractPieceWeightKgFromName, wrResolveSubRecipeYieldInfo,
 } from "./features/kitchen-mode/wrEquipmentCalc";
 import {
   wrBuildHintsFromDumps, wrResolveCapacityHint,
   wrResolveProcessSpecHint, wrResolveKetPlanForPath, wrLookupPieceKg, wrLookupTrayPcs,
 } from "./features/kitchen-mode/wrEquipmentHints";
 import { equipmentColorScheme, wrScenarioTone } from "./features/kitchen-mode/wrEquipmentTone";
+import { lookupEquipmentCapacity, calcEquipmentNeeds } from "./features/kitchen-mode/wrEquipmentCapacityDB";
 
 export function BreakdownEquipmentView({
   data,
@@ -896,6 +897,249 @@ export function BreakdownEquipmentView({
     }, 250);
   }
 
+  function exportWoBreakdownPdf(meals: WR_MealAgg[], title: string): void {
+    // Extracts the primary cook step label (BRINE, MARINADE, OVEN, …) from the categories string.
+    // Skips generic infrastructure steps so the heading is meaningful.
+    function primaryCookLabel(cats: string): string {
+      const SKIP = new Set(["blast chiller", "staging", "debox", "thaw", "spice portioning", "drain", "scooper", "cupping", "butter machine"]);
+      return cats.split(/[,/]+/).map(s => s.trim().toUpperCase()).find(c => c && !SKIP.has(c.toLowerCase())) ?? "";
+    }
+
+    const cards: string[] = [];
+
+    for (const meal of meals) {
+      const recipe = data.recipes[meal.code];
+
+      // In WO mode (meal.workOrder set): only keep paths whose sub1 matches this WO.
+      // In recipe mode: keep all paths.
+      const planRows = data.productionPlan?.rows;
+      const pathsToRender = meal.workOrder
+        ? meal.paths.filter(path => {
+            const wo = wrResolveWorkOrderForPath(planRows, meal.code, path.sub1, meal.portionsInput, meal.workOrder);
+            return wo !== null && wo.workOrder === meal.workOrder;
+          })
+        : meal.paths;
+
+      const renderPaths = pathsToRender.length > 0 ? pathsToRender : meal.paths;
+
+      // Group paths by sub1 → one card per top-level sub-recipe (= one WO sub-recipe)
+      const sub1Map = new Map<string, WR_PathAgg[]>();
+      for (const path of renderPaths) {
+        const arr = sub1Map.get(path.sub1) ?? [];
+        arr.push(path);
+        sub1Map.set(path.sub1, arr);
+      }
+
+      for (const [sub1, pathsInSub1] of sub1Map) {
+        // WO + run info for this top-level sub-recipe
+        const matchedWo = wrResolveWorkOrderForPath(planRows, meal.code, sub1, meal.portionsInput, meal.workOrder);
+
+        // Per-portion yield/scoop info from sub-recipe definition
+        const yieldInfo = recipe ? wrResolveSubRecipeYieldInfo(recipe, sub1, "—", "—") : null;
+
+        // Representative path for card-level batch display (heaviest = most kg)
+        const heaviest = pathsInSub1.reduce((a, b) => a.totalKg >= b.totalKg ? a : b, pathsInSub1[0]);
+        const overallPlan = wrCalcBreakdownPlan(heaviest);
+        const cookMethod = wrEffectiveCookingMethod(heaviest, matchedWo);
+
+        // Process path: union of all section categories across sub2 paths
+        const processPath = [...new Set(pathsInSub1.map(p => p.cookCategories).filter(Boolean))].join(" / ") || heaviest.cookCategories;
+
+        // Batch display: "N × X kg" or just "N×"
+        const batchDisplay = overallPlan.count != null && overallPlan.capacityKg
+          ? `${overallPlan.count} × ${overallPlan.capacityKg} kg`
+          : overallPlan.count != null ? `${overallPlan.count}×` : "";
+
+        // Portion display: "115 grams · scoop white"
+        let portionStr = "";
+        if (yieldInfo?.yieldGrams) {
+          portionStr = `${yieldInfo.yieldGrams} ${yieldInfo.yieldUom || "grams"}`;
+          const scoop = [yieldInfo.methodType, yieldInfo.methodColor].filter(Boolean).join(" ");
+          if (scoop) portionStr += ` · ${scoop}`;
+        }
+
+        // Top header line
+        const runLabel = matchedWo?.run ? ` · RUN ${matchedWo.run}` : "";
+        const recipeIdLabel = matchedWo?.recipeId ? ` · ${matchedWo.recipeId}` : "";
+        const portions = Math.round(meal.portionsEffective).toLocaleString("de-DE");
+        const mealLine = `${wrHtmlSafe(meal.code)} · ${wrHtmlSafe(meal.name)}${recipeIdLabel} · ${portions} portions${runLabel}`;
+
+        // Sort sections: named sub2 steps first (ordered by kg), direct ingredients (sub2="—") last
+        const sortedSections = [...pathsInSub1].sort((a, b) => {
+          const aDirect = !a.sub2 || a.sub2 === "—";
+          const bDirect = !b.sub2 || b.sub2 === "—";
+          if (aDirect !== bDirect) return aDirect ? 1 : -1;
+          return b.totalKg - a.totalKg;
+        });
+
+        // Build one section block per sub2 path
+        let sectionsHtml = "";
+        for (const path of sortedSections) {
+          const sectionPlan = wrCalcBreakdownPlan(path);
+          const batchCount = sectionPlan.count;
+          const instructions = recipe
+            ? wrResolvePathInstructions(recipe, path.sub1, path.sub2, path.sub3)
+            : null;
+
+          // Section sub-header (only when sub2 is a real named sub-step)
+          let sectionHdrHtml = "";
+          const sub2 = path.sub2 && path.sub2 !== "—" ? path.sub2 : "";
+          if (sub2) {
+            const label = primaryCookLabel(path.cookCategories);
+            const secTitle = label ? `${label} — ${sub2}` : sub2;
+            const isBrineSection = path.isBrining || /brin/i.test(path.cookCategories);
+            const col = isBrineSection ? "#0284c7" : "#166534";
+            const bg = isBrineSection ? "#f0f9ff" : "#f0fdf4";
+            sectionHdrHtml = `<div class="sec-hdr" style="color:${col};border-left:4px solid ${col};background:${bg}">${isBrineSection ? "🧂 " : ""}${wrHtmlSafe(secTitle)}</div>`;
+          }
+
+          // Brining note for this section
+          const brineHtml = path.isBrining
+            ? `<div class="brine-note">💧 Brining 1:1 — ${wrHtmlSafe(wrFmtKg(path.totalKg))} Rohware + ${wrHtmlSafe(wrFmtKg(path.totalKg))} Wasser = ${wrHtmlSafe(wrFmtKg(sectionPlan.effectiveTubKg))} Wannenvolumen${sectionPlan.count != null && sectionPlan.capacityKg ? ` → ${sectionPlan.count} Wannen à ${sectionPlan.capacityKg} kg` : ""}</div>`
+            : "";
+
+          // Ingredient rows — per row: lookup VEGGIE DEBOX capacity and derive Wannen / GN-Trays
+          type RowNeeds = { wannen: number | null; trays: number | null; ovenLoads: number | null; wanneKg: number | null };
+          const rowNeeds: RowNeeds[] = path.rows.map(row => {
+            const cap = lookupEquipmentCapacity(row.name);
+            if (!cap || !row.totalKg) return { wannen: null, trays: null, ovenLoads: null, wanneKg: null };
+            const n = calcEquipmentNeeds(row.totalKg, cap);
+            return { wannen: n.wannen, trays: n.trays, ovenLoads: n.ovenLoads, wanneKg: cap.wanneKg };
+          });
+
+          const ingRows = path.rows.map((row, i) => {
+            const woBatch = batchCount ? wrFmtRowWoSize(row, batchCount) : "—";
+            const total = wrFmtRowTotalSize(row);
+            const isWeeklyPrep = /ready|weekly prep/i.test(row.name);
+            const needs = rowNeeds[i];
+            // Wannen cell: number + hint (à N kg)
+            const wannenCell = needs.wannen != null
+              ? `${needs.wannen}<span class="wanne-hint"> (à ${needs.wanneKg} kg)</span>`
+              : `<span class="na">—</span>`;
+            const traysCell = needs.trays != null ? `${needs.trays}` : `<span class="na">—</span>`;
+            return `<tr>
+              <td><span class="cat cat-${(row.category || "").toLowerCase()}">${wrHtmlSafe(row.category || "—")}</span><span class="${isWeeklyPrep ? "ing-sub" : "ing"}">${wrHtmlSafe(row.name)}</span>${row.ingredientId !== "-" ? `<br><span class="ing-id">${wrHtmlSafe(row.ingredientId)}</span>` : ""}</td>
+              <td>${wrHtmlSafe(woBatch)}</td>
+              <td>${wrHtmlSafe(total)}</td>
+              <td class="wanne-cell">${wannenCell}</td>
+              <td class="tray-cell">${traysCell}</td>
+            </tr>`;
+          }).join("");
+
+          // Total footer row — sum up matched Wannen and Trays
+          const totalWannen = rowNeeds.reduce((s, n) => s + (n.wannen ?? 0), 0);
+          const totalTrays  = rowNeeds.reduce((s, n) => s + (n.trays  ?? 0), 0);
+          const totalRow = `<tr class="tot">
+            <td><strong>TOTAL</strong></td>
+            <td>${batchCount != null && sectionPlan.woSizeKg != null ? wrHtmlSafe(wrFmtKg(sectionPlan.woSizeKg)) : "—"}</td>
+            <td>${wrHtmlSafe(wrFmtKg(path.totalKg))}</td>
+            <td class="wanne-cell tot-wanne">${totalWannen > 0 ? `${totalWannen}` : "—"}</td>
+            <td class="tray-cell tot-wanne">${totalTrays > 0 ? `${totalTrays}` : "—"}</td>
+          </tr>`;
+
+          // Equipment summary bar — compact visual below the table
+          const hasData = totalWannen > 0 || totalTrays > 0;
+          const ovenTotal = rowNeeds.reduce((s, n) => s + (n.ovenLoads ?? 0), 0);
+          const equipHtml = hasData ? `<div class="equip-bar">
+            <span class="equip-lbl">EQUIPMENT</span>
+            ${totalWannen > 0 ? `<span class="equip-chip wanne-chip">🪣 ${totalWannen} Wannen</span>` : ""}
+            ${totalTrays  > 0 ? `<span class="equip-chip tray-chip">📦 ${totalTrays} GN 2:1 Trays</span>` : ""}
+            ${ovenTotal   > 0 ? `<span class="equip-chip oven-chip">🔥 ${ovenTotal} Ofen-Ladung${ovenTotal > 1 ? "en" : ""}</span>` : ""}
+            <span class="equip-src">Quelle: VEGGIE DEBOX Matrix</span>
+          </div>` : "";
+
+          // Instructions block
+          const instrHtml = instructions
+            ? `<div class="instr-box"><div class="instr-lbl">INSTRUCTIONS</div><div class="instr-txt">${wrHtmlSafe(instructions)}</div></div>`
+            : "";
+
+          sectionsHtml += `${sectionHdrHtml}${brineHtml}<table class="ing-t"><thead><tr><th>INGREDIENT</th><th>PER BATCH</th><th>TOTAL</th><th class="wanne-cell">WANNEN</th><th class="tray-cell">GN TRAYS</th></tr></thead><tbody>${ingRows}</tbody><tfoot>${totalRow}</tfoot></table>${equipHtml}${instrHtml}`;
+        }
+
+        cards.push(`<div class="wo-card">
+  <div class="meal-bar">${mealLine}</div>
+  <div class="sub1-hdr">
+    <span class="sub1-name">${wrHtmlSafe(sub1)}</span>
+    ${matchedWo?.workOrder ? `<span class="wo-chip">WO ${wrHtmlSafe(matchedWo.workOrder)}</span>` : ""}
+  </div>
+  <div class="meta-row">
+    <div class="m"><b class="ml">Cooking</b><span class="mv">${wrHtmlSafe(cookMethod || "—")}</span></div>
+    ${processPath ? `<div class="m"><b class="ml">Process</b><span class="mv">${wrHtmlSafe(processPath)}</span></div>` : ""}
+    ${batchDisplay ? `<div class="m"><b class="ml">Batches</b><span class="mv batch-val">${wrHtmlSafe(batchDisplay)}</span></div>` : ""}
+    ${portionStr ? `<div class="m"><b class="ml">Portion</b><span class="mv">${wrHtmlSafe(portionStr)}</span></div>` : ""}
+    ${matchedWo?.kitchenDay ? `<div class="m"><b class="ml">Date Needed</b><span class="mv">${wrHtmlSafe(matchedWo.kitchenDay)}</span></div>` : ""}
+  </div>
+  ${sectionsHtml}
+</div>`);
+      }
+    }
+
+    const css = `
+      *{box-sizing:border-box;margin:0;padding:0}
+      @page{size:A4 portrait;margin:10mm 12mm}
+      body{font-family:Arial,sans-serif;font-size:10px;color:#0f172a}
+      .wo-card{margin-bottom:6mm;page-break-after:always}
+      .wo-card:last-child{page-break-after:avoid}
+      .meal-bar{background:#0f172a;color:#fff;padding:5px 10px;font-size:10px;font-weight:900}
+      .sub1-hdr{background:#166534;color:#fff;padding:8px 10px;display:flex;justify-content:space-between;align-items:center}
+      .sub1-name{font-size:14px;font-weight:900;flex:1;min-width:0}
+      .wo-chip{background:#fff;color:#166534;font-weight:900;font-size:11px;padding:3px 10px;border-radius:4px;white-space:nowrap;margin-left:10px}
+      .meta-row{background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:6px 10px;display:flex;flex-wrap:wrap;gap:10px 20px}
+      .m{display:flex;flex-direction:column}
+      .ml{font-size:7px;text-transform:uppercase;letter-spacing:.1em;color:#16a34a;font-weight:900;font-style:normal}
+      .mv{font-size:11px;font-weight:700;color:#0f172a}
+      .batch-val{font-size:13px;font-weight:900;color:#166534}
+      .sec-hdr{padding:5px 10px;font-size:11px;font-weight:900;letter-spacing:.02em;margin-top:1px}
+      .brine-note{background:#eff6ff;padding:4px 10px;font-size:9px;color:#1e40af;font-weight:bold;border-top:1px solid #bfdbfe}
+      .ing-t{width:100%;border-collapse:collapse}
+      .ing-t th{background:#f8fafc;padding:3px 8px;font-size:8px;text-transform:uppercase;letter-spacing:.06em;font-weight:900;border-bottom:1.5px solid #1e293b;color:#334155}
+      .ing-t th:not(:first-child){text-align:right}
+      .ing-t td{padding:3.5px 8px;border-bottom:1px solid #f1f5f9;font-size:10px;vertical-align:middle}
+      .ing-t td:not(:first-child){text-align:right;font-weight:600;white-space:nowrap}
+      .tot td{background:#f0fdf4;border-top:2px solid #166534;font-weight:900}
+      .cat{display:inline-block;font-size:7px;font-weight:900;padding:1px 4px;border-radius:3px;text-transform:uppercase;margin-right:4px;vertical-align:middle}
+      .cat-pro{background:#fef3c7;color:#92400e}
+      .cat-spi{background:#fee2e2;color:#991b1b}
+      .cat-phf{background:#dbeafe;color:#1e40af}
+      .cat-dry{background:#dcfce7;color:#166534}
+      .ing{font-weight:500}
+      .ing-sub{font-weight:700;color:#166534}
+      .ing-id{font-family:monospace;font-size:8px;color:#94a3b8}
+      .wanne-cell{text-align:right;white-space:nowrap;color:#0369a1;font-weight:700;font-size:10px}
+      .tray-cell{text-align:right;white-space:nowrap;color:#7c3aed;font-weight:700;font-size:10px}
+      .wanne-hint{font-size:7px;font-weight:400;color:#94a3b8}
+      .na{color:#cbd5e1;font-weight:400}
+      .tot-wanne{font-weight:900;font-size:11px}
+      .equip-bar{background:#f8fafc;border-top:2px solid #e2e8f0;border-bottom:1px solid #e2e8f0;padding:5px 10px;display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px}
+      .equip-lbl{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.12em;color:#64748b;margin-right:4px}
+      .equip-chip{font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px}
+      .wanne-chip{background:#e0f2fe;color:#0369a1}
+      .tray-chip{background:#ede9fe;color:#7c3aed}
+      .oven-chip{background:#fef3c7;color:#92400e}
+      .equip-src{font-size:7px;color:#94a3b8;margin-left:auto;font-style:italic}
+      .instr-box{padding:7px 10px;background:#fafafa;border-top:1px solid #e2e8f0}
+      .instr-lbl{font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.1em;color:#64748b;margin-bottom:3px}
+      .instr-txt{font-size:9px;line-height:1.6;color:#1e293b;white-space:pre-wrap}
+      @media print{.wo-card{page-break-after:always}.wo-card:last-child{page-break-after:avoid}}
+    `;
+
+    const html = `<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>${wrHtmlSafe(title)}</title><style>${css}</style></head>
+<body>${cards.join("\n")}</body>
+</html>`;
+
+    const win = window.open("about:blank", "_blank");
+    if (!win) {
+      downloadTextFile(`wo-breakdown-${week}.html`, html, "text/html;charset=utf-8");
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    setTimeout(() => { win.focus(); win.print(); }, 300);
+  }
+
   function exportMealSettings(meal: WR_MealAgg): void {
     exportMealJson(meal);
   }
@@ -1078,8 +1322,23 @@ export function BreakdownEquipmentView({
       }
 
       paths.sort((a, b) => b.totalKg - a.totalKg);
-      const totalKg = paths.reduce((sum, p) => sum + p.totalKg, 0);
-      const totalLossKg = paths.reduce((sum, p) => sum + p.totalLossKg, 0);
+
+      // Eine KET-Zeile ist eine eigene WO für genau ein Sub-Rezept. Im WO-Modus
+      // darf die Detailansicht deshalb nicht den kompletten Rezeptbaum anzeigen.
+      const displayPaths = entryMode === "wo" && entry.workOrder
+        ? paths.filter((path) => {
+            const matchedWo = wrResolveWorkOrderForPath(
+              data.productionPlan?.rows,
+              entry.code,
+              path.sub1,
+              entry.portions,
+              entry.workOrder,
+            );
+            return matchedWo?.workOrder === entry.workOrder;
+          })
+        : paths;
+      const totalKg = displayPaths.reduce((sum, p) => sum + p.totalKg, 0);
+      const totalLossKg = displayPaths.reduce((sum, p) => sum + p.totalLossKg, 0);
       result.push({
         key: entry.key,
         code: entry.code,
@@ -1089,14 +1348,14 @@ export function BreakdownEquipmentView({
         kitchenDay: entry.kitchenDay,
         portionsInput: entry.portions,
         portionsEffective,
-        paths,
+        paths: displayPaths,
         totalKg,
         totalLossKg,
       });
     }
 
     return result.sort((a, b) => b.totalKg - a.totalKg);
-  }, [entries, data.recipes, data.structures, data.processSpecs, upliftPercent, capacityHints, pieceWeightKg, trayHints, overrides]);
+  }, [entries, entryMode, data.recipes, data.structures, data.processSpecs, data.productionPlan?.rows, upliftPercent, capacityHints, pieceWeightKg, trayHints, overrides]);
 
   const totalKgAll = mealAggs.reduce((sum, meal) => sum + meal.totalKg, 0);
   const totalPathCount = mealAggs.reduce((sum, meal) => sum + meal.paths.length, 0);
@@ -1372,13 +1631,25 @@ export function BreakdownEquipmentView({
           {entryMode === "wo" ? (
             <>
               <button
+                onClick={() => exportWoBreakdownPdf(mealAggs, `WO Breakdown ${week}`)}
+                className="w-full text-[11px] bg-green-700 hover:bg-green-800 active:bg-green-900 text-white px-2 py-1.5 rounded-lg border border-green-800 transition-colors font-bold flex items-center justify-center gap-1.5"
+              >
+                <span>🖨</span> Schnelldruck alle WOs
+              </button>
+              <button
+                onClick={() => selectedMeal && exportWoBreakdownPdf([selectedMeal], `WO ${selectedMeal.workOrder ?? selectedMeal.code}`)}
+                disabled={!selectedMeal}
+                className="text-[10px] bg-green-100 hover:bg-green-200 disabled:opacity-50 disabled:cursor-not-allowed text-green-800 px-2 py-1 rounded-lg border border-green-200 transition-colors font-medium"
+              >
+                Druck ausgewählte WO
+              </button>
+              <button
                 onClick={() => selectedMeal && exportMealPdf(selectedMeal)}
                 disabled={!selectedMeal}
-                className="text-[10px] bg-indigo-100 hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed text-indigo-700 px-2 py-1 rounded-lg border border-indigo-200 transition-colors font-medium"
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 px-2 py-1 rounded-lg border border-slate-200 transition-colors font-medium"
               >
-                PDF ausgewählte WO
+                PDF (alt)
               </button>
-              <button onClick={exportAllMealsPdf} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">PDF alle WOs</button>
               <button onClick={() => selectedMeal && exportMealGsheet(selectedMeal)} disabled={!selectedMeal} className="text-[10px] bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">GSheet WO</button>
               <button onClick={() => { if (selectedMeal) void exportMealExcel(selectedMeal); }} disabled={!selectedMeal} className="text-[10px] bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 px-2 py-1 rounded-lg transition-colors font-medium">Excel WO</button>
             </>

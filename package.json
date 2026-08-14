@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "vite",
+    "db:build": "node scripts/local-db.mjs",
+    "db:translate-instructions": "node scripts/translate-instructions.mjs",
+    "db:serve": "node scripts/local-db-server.mjs",
+    "dev:local": "npm run db:build && node scripts/start-local.mjs",
     "dev": "concurrently -n vite,csv -c cyan,green \"vite\" \"tsx scripts/import-sub-recipes.ts --watch\"",
     "build": "tsc -b && vite build",
     "test": "vitest run",

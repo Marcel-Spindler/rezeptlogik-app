@@ -136,7 +136,7 @@ function FullApp() {
           />
         </aside>
 
-        <main className="col-span-12 md:col-span-8 lg:col-span-9">
+        <main className="col-span-12 min-w-0 md:col-span-8 lg:col-span-9">
           <MainPane view={view} />
         </main>
       </div>

@@ -1,23 +1,45 @@
 // Detailansicht für eine einzelne Work Order: Cook Methods, Batch-Kapazitäten
 // (inline editierbar), Zutaten-Tabelle, Kochanweisungen.
-import { useState } from "react";
-import { EQUIP_LABELS, type BatchCalc, type KetRow } from "./ketTypes";
+import { useEffect, useState } from "react";
+import { EQUIP_LABELS, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction } from "./ketTypes";
 import { catColor, fmtDateHeader, fmtKg, fmtNum, parseSteps } from "./ketLogic";
 import { StatCard, StatusChip } from "./KetSharedUi";
+import { orderCookingMethods } from "./woInstructionBot";
 
 export function WoDetail({
   row,
   calc,
   onPrint,
   onCapChange,
+  instruction,
+  onGenerateInstruction,
+  onDownload,
+  manualEquipment,
+  onManualEquipmentChange,
 }: {
   row: KetRow;
   calc: BatchCalc | null;
   onPrint: () => void;
   onCapChange: (equip: string, raw: string) => void;
+  instruction?: WoInstruction;
+  onGenerateInstruction: () => Promise<void>;
+  onDownload: () => Promise<void>;
+  manualEquipment?: ManualEquipmentOverride;
+  onManualEquipmentChange: (override: ManualEquipmentOverride | null) => void;
 }) {
   const [editingEquip, setEditingEquip] = useState<string | null>(null);
   const [capDraft, setCapDraft] = useState("");
+  const [manualEquipmentDraft, setManualEquipmentDraft] = useState("");
+  const [manualCapacityDraft, setManualCapacityDraft] = useState("");
+  const [instructionBusy, setInstructionBusy] = useState(false);
+  const [instructionError, setInstructionError] = useState<string | null>(null);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  useEffect(() => {
+    setManualEquipmentDraft(manualEquipment?.equipment ?? "");
+    setManualCapacityDraft(manualEquipment ? String(manualEquipment.capacityKg) : "");
+  }, [row.key, manualEquipment]);
 
   if (!calc) return null;
 
@@ -31,6 +53,18 @@ export function WoDetail({
   function commitCap(e: string) {
     if (capDraft.trim()) onCapChange(e, capDraft);
     setEditingEquip(null);
+  }
+
+  async function generateInstruction() {
+    setInstructionBusy(true);
+    setInstructionError(null);
+    try {
+      await onGenerateInstruction();
+    } catch (error) {
+      setInstructionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setInstructionBusy(false);
+    }
   }
 
   return (
@@ -47,14 +81,48 @@ export function WoDetail({
             <div className="text-sm font-bold text-blue-100 truncate">{row.recipeName}</div>
             <div className="text-xs text-blue-300/80 mt-0.5 truncate">{row.subRecipeName}</div>
           </div>
-          <button
-            type="button"
-            onClick={onPrint}
-            className="shrink-0 flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors border border-white/10"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-            PDF drucken
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              disabled={downloadBusy}
+              onClick={async () => {
+                setDownloadBusy(true);
+                setDownloadStatus(null);
+                try {
+                  await onDownload();
+                  setDownloadStatus({ ok: true, msg: "Gespeichert ✓" });
+                  setTimeout(() => setDownloadStatus(null), 4000);
+                } catch (err) {
+                  setDownloadStatus({ ok: false, msg: err instanceof Error ? err.message : String(err) });
+                } finally {
+                  setDownloadBusy(false);
+                }
+              }}
+              title={downloadStatus && !downloadStatus.ok ? downloadStatus.msg : "Als PDF-Datei speichern (ohne Druckdialog)"}
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl transition-colors border disabled:opacity-50 ${
+                downloadStatus?.ok
+                  ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-200"
+                  : downloadStatus && !downloadStatus.ok
+                    ? "bg-red-500/20 border-red-400/40 text-red-200"
+                    : "bg-white/10 hover:bg-white/20 text-white border-white/10"
+              }`}
+            >
+              {downloadBusy ? (
+                <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              )}
+              {downloadStatus ? downloadStatus.msg : "Speichern"}
+            </button>
+            <button
+              type="button"
+              onClick={onPrint}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors border border-white/10"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+              Drucken
+            </button>
+          </div>
         </div>
       </div>
 
@@ -66,7 +134,7 @@ export function WoDetail({
             Cook Methods
           </div>
           <div className="flex flex-wrap gap-2 mb-3">
-            {row.cookMethods.length > 0 ? row.cookMethods.map(m => (
+            {orderCookingMethods(calc.resolvedCookMethods).length > 0 ? orderCookingMethods(calc.resolvedCookMethods).map(m => (
               <span key={m}
                 className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl ${
                   m === calc.primaryEquip ? "bg-blue-500 text-white ring-2 ring-blue-300/40" : "bg-white/10 text-blue-200"
@@ -144,7 +212,82 @@ export function WoDetail({
               <strong>{equip}</strong> — Kapazität in Equipment-Einstellungen (Sidebar) setzen
             </div>
           )}
+          {!calc.primaryEquip && (
+            <div className="mt-1 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[10px] font-semibold text-amber-100">
+              Kein Equipment automatisch erkannt. Für eine belastbare Batch- und PDF-Berechnung bitte unten einmal Equipment und kg/Batch eintragen.
+            </div>
+          )}
+          <div className="mt-3 border-t border-white/10 pt-3">
+            <div className="text-[8px] font-black uppercase tracking-[0.12em] text-blue-400 mb-1">
+              Equipment-Ausnahme
+            </div>
+            <div className="text-[10px] text-blue-200/70 mb-2">
+              Nur verwenden, wenn WO, ProcessSpec und Bible kein Equipment liefern.
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={manualEquipmentDraft}
+                onChange={(event) => setManualEquipmentDraft(event.target.value)}
+                placeholder="Equipment, z. B. BRAISER"
+                aria-label="Manuelles Equipment"
+                className="min-w-[180px] flex-1 rounded-lg border-0 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-900 outline-none"
+              />
+              <input
+                type="number"
+                min={0.1}
+                step={0.1}
+                value={manualCapacityDraft}
+                onChange={(event) => setManualCapacityDraft(event.target.value)}
+                placeholder="kg/Batch"
+                aria-label="Manuelle Equipment-Kapazität in kg"
+                className="w-24 rounded-lg border-0 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-900 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const equipment = manualEquipmentDraft.trim().toUpperCase();
+                  const capacityKg = Number(manualCapacityDraft.replace(",", "."));
+                  if (equipment && Number.isFinite(capacityKg) && capacityKg > 0) {
+                    onManualEquipmentChange({ equipment, capacityKg });
+                  }
+                }}
+                className="rounded-lg bg-blue-500 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-blue-400 transition-colors"
+              >
+                Anwenden
+              </button>
+              {manualEquipment && (
+                <button
+                  type="button"
+                  onClick={() => onManualEquipmentChange(null)}
+                  className="rounded-lg px-2 py-1.5 text-[10px] font-bold text-blue-200 hover:bg-white/10 transition-colors"
+                >
+                  Ausnahme löschen
+                </button>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Stats Grid */}
+        <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-emerald-200">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[.12em] text-emerald-800">Google Gemini WO Instruction Bot</div>
+              <div className="text-[10px] text-emerald-700 mt-0.5">Individuelle Arbeitsanweisung für diese WO und dieses Sub-Rezept</div>
+            </div>
+            <button type="button" onClick={() => void generateInstruction()} disabled={instructionBusy}
+              className="rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+              {instructionBusy ? "Erzeuge …" : instruction ? "Neu erzeugen" : "Instruction erzeugen"}
+            </button>
+          </div>
+          {instructionError && <div className="px-4 py-2 text-[10px] font-semibold text-rose-700 bg-rose-50 border-b border-rose-200">{instructionError}</div>}
+          {instruction && (
+            <div className="grid gap-3 p-4 lg:grid-cols-2">
+              <div><div className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1">Instructions (EN)</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.english}</div></div>
+              <div><div className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1">Anleitung (DE) · {instruction.status === "needs_review" ? "Review erforderlich" : "Claude"}</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.german}</div></div>
+            </div>
+          )}
+        </section>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

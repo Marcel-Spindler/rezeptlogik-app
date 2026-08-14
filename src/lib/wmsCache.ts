@@ -23,6 +23,7 @@ export interface WmsWorkorderCacheRow {
   expirationDate: string | null;
   productionTime: string | null;
   lastUpdated: string | null;
+  cookMethods?: string | string[] | null;
 }
 
 // The underlying WMS view reports some work-order/sub-meal combinations more
@@ -112,6 +113,9 @@ export function wmsWorkorderRowToEntry(row: WmsWorkorderCacheRow): WorkOrderEntr
     if (!isNaN(d.getTime())) kitchenDay = d.toISOString().slice(0, 10);
   }
   const plannedMeals = row.plates ?? row.quantity ?? 0;
+  const cookMethods = Array.isArray(row.cookMethods)
+    ? row.cookMethods.map((method) => method.trim().toUpperCase()).filter(Boolean).join(", ")
+    : row.cookMethods?.trim() || undefined;
 
   return {
     run: 0,
@@ -129,7 +133,7 @@ export function wmsWorkorderRowToEntry(row: WmsWorkorderCacheRow): WorkOrderEntr
     kitchenKg: 0,
     postKg: 0,
     yieldPct: 0,
-    cookMethods: undefined,
+    cookMethods,
     stagingStatus: undefined,
     stagingComment: undefined,
     kitchenStatus: row.status?.trim() || undefined,

@@ -94,7 +94,9 @@ export function wrResolveWorkOrderForPath(
     if (!rowSub) continue;
     const score = overlapScore(subKey, rowSub);
     if (score < 0.45) continue;
-    const rowTarget = row.targetPortions ?? row.plannedMeals ?? 0;
+    const rowTarget = row.targetPortions != null && row.targetPortions > 0
+      ? row.targetPortions
+      : row.plannedMeals ?? 0;
     const portionDelta = Math.abs(rowTarget - portionsInput);
     if (!best || score > best.score || (score === best.score && portionDelta < best.portionDelta)) {
       best = { row, score, portionDelta };
@@ -106,7 +108,11 @@ export function wrResolveWorkOrderForPath(
   return {
     workOrder: row.workOrder,
     kitchenDay: row.kitchenDay,
-    targetPortions: row.targetPortions ?? row.plannedMeals ?? null,
+    run: row.run,
+    recipeId: row.recipeId,
+    targetPortions: row.targetPortions != null && row.targetPortions > 0
+      ? row.targetPortions
+      : row.plannedMeals ?? null,
     woCookedPortions: row.woCookedPortions ?? null,
     cookedPortionsExcess: row.cookedPortionsExcess ?? null,
     cookMethods: row.cookMethods ?? "",
@@ -115,6 +121,31 @@ export function wrResolveWorkOrderForPath(
     unlockedEta: row.unlockedEta ?? "",
     workOrderComment: row.workOrderComment ?? "",
   };
+}
+
+export function wrResolveSubRecipeYieldInfo(
+  recipe: Recipe,
+  sub1: string,
+  sub2: string,
+  sub3: string,
+): { yieldGrams: number | null; yieldUom: string | null; methodColor: string | null; methodType: string | null } {
+  const names = [sub3, sub2, sub1].filter((v) => v && v !== "—" && v !== "Ohne Sub-Rezept");
+  for (const needleRaw of names) {
+    const needle = norm(needleRaw);
+    for (const market of Object.values(recipe.markets)) {
+      if (!market) continue;
+      const match = market.subRecipes.find((sub) => norm(sub.name) === needle || norm(sub.id) === needle);
+      if (match) {
+        return {
+          yieldGrams: match.yield ?? null,
+          yieldUom: match.yieldUom ?? null,
+          methodColor: match.methodColor ?? null,
+          methodType: match.methodType ?? null,
+        };
+      }
+    }
+  }
+  return { yieldGrams: null, yieldUom: null, methodColor: null, methodType: null };
 }
 
 /** Entfernt Market-Tags wie [BNL], [BENL], [DE], [DKSE], [NORD] aus Rezept-Namen. */

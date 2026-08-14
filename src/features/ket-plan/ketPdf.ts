@@ -1,6 +1,7 @@
 // Baut das druckbare HTML/PDF für einen Satz Work Orders (Breakdown-Karten je WO).
-import { EQUIP_DEFAULTS, EQUIP_LABELS, type BatchCalc, type KetRow } from "./ketTypes";
+import { EQUIP_DEFAULTS, EQUIP_LABELS, type BatchCalc, type KetRow, type WoInstruction } from "./ketTypes";
 import { escHtml, fmtKg, fmtNum, parseDateShift, parseSteps } from "./ketLogic";
+import { orderCookingMethods } from "./woInstructionBot";
 
 export function buildPdf(
   rows: KetRow[],
@@ -8,6 +9,7 @@ export function buildPdf(
   caps: Record<string, number>,
   title: string,
   source: "CSV" | "Firestore" | "LiveWMS" | "FirestoreStale" | null = null,
+  woInstructions: Record<string, WoInstruction> = {},
 ): string {
 
   const cards = rows.map((row, i) => {
@@ -21,7 +23,7 @@ export function buildPdf(
     const done = row.woCookedPortions ?? 0;
     const remaining = Math.max(0, row.targetPortions - done);
     const donePct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
-    const cookDisplay = row.cookMethods.join(" · ") || "—";
+    const cookDisplay = orderCookingMethods(calc.resolvedCookMethods).join(" → ") || "—";
 
     const ingRows = calc.ingredients
       .filter(ing => ing.totalKg > 0.0005)
@@ -65,20 +67,36 @@ export function buildPdf(
         </div>`
       : "";
 
-    // Nummerierte Kochanweisungen
-    const instrSteps = calc.subRecipeInstructions ? parseSteps(calc.subRecipeInstructions) : [];
-    const instrHtml = instrSteps.length > 0
-      ? `<div style="margin-top:8px;padding:8px 10px;background:#f0fdf4;border-left:3px solid #22c55e;border-radius:0 6px 6px 0;">
-           <div style="font-size:9px;font-weight:800;color:#166534;margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em;">Kochanweisung – ${row.subRecipeName}</div>
-           ${instrSteps.map((s, si) => `
-             <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:3px;">
-               <span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;background:#16a34a;color:#fff;border-radius:50%;font-size:8px;font-weight:900;flex-shrink:0;margin-top:1px;">${si + 1}</span>
-               <span style="font-size:9px;color:#1a2e1a;line-height:1.4;">${s.replace(/</g,"&lt;")}</span>
-             </div>`).join("")}
-         </div>`
-      : (calc.cookingInstructions
-          ? `<div class="comment instr">📋 Kochmethode: ${calc.cookingInstructions}</div>`
-          : "");
+    // Pro Sub-Rezept immer beide Sprachen ausgeben. Ein fehlender deutscher
+    // Text bleibt sichtbar, damit die PDF keine stillschweigende Übersetzung suggeriert.
+    const renderInstructionLanguage = (label: string, text: string | null, tone: string, missing: string) => {
+      const steps = text ? parseSteps(text) : [];
+      return `<div style="margin-top:6px;padding:7px 9px;background:${tone};border-radius:4px;">
+        <div style="font-size:8px;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">${label}</div>
+        ${steps.length > 0
+          ? steps.map((step, stepIndex) => `
+            <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:3px;">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;background:#166534;color:#fff;border-radius:50%;font-size:8px;font-weight:900;flex-shrink:0;margin-top:1px;">${stepIndex + 1}</span>
+              <span style="font-size:9px;color:#1e293b;line-height:1.4;white-space:pre-wrap;">${escHtml(step)}</span>
+            </div>`).join("")
+          : `<div style="font-size:9px;color:#64748b;font-style:italic;">${missing}</div>`}
+      </div>`;
+    };
+    const generatedInstruction = woInstructions[row.key];
+    const englishInstruction = generatedInstruction?.english || calc.subRecipeInstructions;
+    const germanInstruction = generatedInstruction?.german || calc.subRecipeInstructionsDE;
+    const hasInstructions = !!englishInstruction || !!germanInstruction;
+    const instrHtml = `
+      <div class="instructions-block">
+        <div class="instructions-title">Cooking instructions · ${escHtml(row.subRecipeName)}</div>
+        ${renderInstructionLanguage("English", englishInstruction, "#f0fdf4", "English instructions not available")}
+        ${renderInstructionLanguage(
+          generatedInstruction?.status === "needs_review" ? "Deutsch (Claude draft · review)" : "Deutsch",
+          germanInstruction,
+          "#eff6ff",
+          "Deutsche Übersetzung nicht vorhanden",
+        )}
+      </div>`;
 
     const unlockedEtaStr = row.unlockedEta
       ? (() => { try { return new Date(row.unlockedEta).toLocaleString("de-DE"); } catch { return row.unlockedEta; } })()
@@ -90,7 +108,7 @@ export function buildPdf(
     </div>` : "";
 
     return `
-<section class="card" style="page-break-after:${i < rows.length - 1 ? "always" : "auto"}">
+<section class="card" style="page-break-before:${i > 0 ? "always" : "auto"};page-break-after:auto">
   <div class="card-top">
     <div>
       <div class="wo-num">WO ${row.woNumber}</div>
@@ -155,7 +173,7 @@ export function buildPdf(
 
   ${row.workOrderComment ? `<div class="comment warn">⚠ WO Kommentar: ${row.workOrderComment}</div>` : ""}
   ${row.stagingComment ? `<div class="comment info">💬 Staging: ${row.stagingComment}</div>` : ""}
-  ${instrHtml}
+  ${hasInstructions ? instrHtml : `<div class="comment instr">⚠ Kochanweisung für dieses Sub-Rezept nicht im Meal-/Rezeptkatalog vorhanden.</div>`}
 
   ${ingRows ? `
   <table class="ings">
@@ -233,7 +251,8 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
 .no-data{padding:10px;background:#fef3c7;border-radius:6px;font-size:10px;color:#92400e;margin-top:8px;border-left:3px solid #fbbf24}
 @media print{
   body{font-size:10px}
-  .card{page-break-inside:avoid;margin:4px;border-width:1px;box-shadow:none}
+  .card{page-break-before:always;page-break-inside:avoid;margin:4px;border-width:1px;box-shadow:none}
+  .card:first-of-type{page-break-before:auto}
   .page-header{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .methods,.hi-stat,.stat-green,.stat-red{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @page{size:A4;margin:8mm}

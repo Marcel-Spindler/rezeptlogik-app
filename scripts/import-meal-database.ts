@@ -216,6 +216,24 @@ export async function loadMealDatabase(file = process.env.MEAL_DATABASE_XLSX?.tr
 
       const entry = catalog[mealId] ??= { mealId, sheets: {} };
       entry.sheets[sheetName] = fields;
+      const instructionFields = Object.entries(fields).filter(([key, value]) =>
+        /instruction|koch|anweisung/i.test(key) && value.trim(),
+      );
+      if (instructionFields.length > 0) {
+        entry.instructionsBySubRecipe ??= {};
+        const english = instructionFields.find(([key]) => /english|\ben\b/i.test(key))?.[1]
+          ?? instructionFields.find(([key]) => !/german|deutsch|\bde\b/i.test(key))?.[1];
+        const german = instructionFields.find(([key]) => /german|deutsch|\bde\b/i.test(key))?.[1];
+        const instructionName = fields["Sub Recipe Name"] || fields["Sub-Recipe Name"] || fields["Subrecipe Name"] || sheetName;
+        const instructionId = fields["Sub Recipe ID"] || fields["Sub-Recipe ID"];
+        entry.instructionsBySubRecipe[`${instructionId || instructionName}::${sheetName}`] = {
+          subRecipeName: instructionName,
+          subRecipeId: instructionId,
+          english,
+          german,
+          germanIsFallback: !german && !!english,
+        };
+      }
       if (sheetName === "Meal DB_Culinary") {
         const sourceUrl = hyperlinkOf(row.getCell(headers.indexOf("Photo Link") + 1));
         if (sourceUrl) {

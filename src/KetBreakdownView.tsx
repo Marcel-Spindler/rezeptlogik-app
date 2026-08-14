@@ -6,13 +6,14 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type { DataBundle, WorkOrderEntry } from "./core/types";
 import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow, currentHfWeek } from "./lib/wmsCache";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overview/wmsWeeks";
-import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type WoSortMode } from "./features/ket-plan/ketTypes";
+import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
   calcBatch, fmtDateHeader, fmtKg, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
 } from "./features/ket-plan/ketLogic";
 import { buildPdf } from "./features/ket-plan/ketPdf";
 import { EmptyState, KetWoOverview, MissingDataScreen } from "./features/ket-plan/KetSharedUi";
 import { WoDetail } from "./features/ket-plan/KetWoDetail";
+import { generateWoInstruction, generateWoInstructionsBatch } from "./features/ket-plan/woInstructionBot";
 
 
 export function KetBreakdownView({ data }: { data: DataBundle }) {
@@ -54,6 +55,14 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
       Object.entries({ ...EQUIP_DEFAULTS }).map(([k, v]) => [k, String(v)]),
     ),
   );
+  const [manualEquipment, setManualEquipment] = useState<Record<string, ManualEquipmentOverride>>({});
+  const [woInstructions, setWoInstructions] = useState<Record<string, WoInstruction>>({});
+  const [selectedDayFilter, setSelectedDayFilter] = useState<Set<string> | null>(null);
+  const [selectedInstructionDays, setSelectedInstructionDays] = useState<Set<string> | null>(null);
+  const [batchInstructionBusy, setBatchInstructionBusy] = useState(false);
+  const [batchInstructionStatus, setBatchInstructionStatus] = useState<string | null>(null);
+  const [bulkDlBusy, setBulkDlBusy] = useState(false);
+  const [bulkDlError, setBulkDlError] = useState<string | null>(null);
 
   // "Hat Zeilen" reicht nicht - der GSheet→Firestore-Plan kann 300+ Zeilen für
   // längst vergangene Wochen halten, während die aktuelle Woche darin komplett
@@ -118,9 +127,9 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
 
   const calcMap = useMemo(() => {
     const m = new Map<string, BatchCalc>();
-    for (const row of ketRows) m.set(row.key, calcBatch(row, caps, data));
+    for (const row of ketRows) m.set(row.key, calcBatch(row, caps, data, manualEquipment[row.key]));
     return m;
-  }, [ketRows, caps, data]);
+  }, [ketRows, caps, data, manualEquipment]);
 
   const liveWeekNum = useMemo(() => weekNumFromHfWeek(liveWeek), [liveWeek]);
   const weekFilteredRows = useMemo(() => {
@@ -131,17 +140,29 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
   const groups = useMemo(() => {
     const m = new Map<string, KetRow[]>();
     for (const row of weekFilteredRows) {
-      if (!m.has(row.dateNeeded)) m.set(row.dateNeeded, []);
-      m.get(row.dateNeeded)!.push(row);
+      const day = row.dateNeeded.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? row.dateNeeded;
+      if (!m.has(day)) m.set(day, []);
+      m.get(day)!.push(row);
     }
-    return [...m.entries()].sort((a, b) => parseSortKey(a[0]) - parseSortKey(b[0]));
+    return [...m.entries()]
+      .map(([day, rows]) => [day, [...rows].sort((a, b) => {
+        const shiftOf = (value: string) => Number(value.match(/[-–]\s*(\d+)$/)?.[1] ?? 0);
+        const shiftDelta = shiftOf(a.dateNeeded) - shiftOf(b.dateNeeded);
+        return shiftDelta || a.woNumber.localeCompare(b.woNumber, "de", { numeric: true });
+      })] as [string, KetRow[]])
+      .sort((a, b) => parseSortKey(a[0]) - parseSortKey(b[0]));
   }, [weekFilteredRows]);
+
+  const dayFilteredGroups = useMemo(() => {
+    if (!selectedDayFilter || selectedDayFilter.size === 0) return groups;
+    return groups.filter(([day]) => selectedDayFilter.has(day));
+  }, [groups, selectedDayFilter]);
 
   const needle = woSearch.trim().toLowerCase();
   const filteredGroups = useMemo(() => {
     const base = !needle
-      ? groups
-      : groups
+      ? dayFilteredGroups
+      : dayFilteredGroups
           .map(([k, rows]) => [k, rows.filter((r) =>
             [r.woNumber, r.recipeCode, r.recipeName, r.subRecipeName].join(" ").toLowerCase().includes(needle)
           )] as [string, KetRow[]])
@@ -165,6 +186,12 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
   }, [groups, needle, woSortMode, calcMap]);
 
   const filteredRows = filteredGroups.flatMap(([, rows]) => rows);
+  const availableInstructionDays = groups.map(([day]) => day);
+  const activeInstructionDays = selectedInstructionDays ?? new Set(availableInstructionDays);
+  const instructionRows = weekFilteredRows.filter((row) => {
+    const day = row.dateNeeded.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? row.dateNeeded;
+    return activeInstructionDays.has(day);
+  });
 
   const selectedRow = ketRows.find((r) => r.key === selectedKey) ?? null;
   const selectedCalc = selectedKey ? (calcMap.get(selectedKey) ?? null) : null;
@@ -201,12 +228,55 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
 
   function printPdf(rows: KetRow[]) {
     const title = `KET Breakdown – ${new Date().toLocaleDateString("de-DE")}`;
-    const html = buildPdf(rows, calcMap, caps, title, source);
+    const html = buildPdf(rows, calcMap, caps, title, source, woInstructions);
     const w = window.open("", "_blank", "width=960,height=750");
     if (!w) { alert("Popup blockiert – bitte für diese Seite erlauben."); return; }
     w.document.write(html);
     w.document.close();
     setTimeout(() => { w.focus(); w.print(); }, 450);
+  }
+
+  async function downloadPdf(rows: KetRow[], suggestedName: string) {
+    const title = suggestedName;
+    const html = buildPdf(rows, calcMap, caps, title, source, woInstructions);
+    const safe = suggestedName.replace(/[^\w\-\.]+/g, "_");
+    const resp = await fetch("/api/local-db/generate-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ html, filename: safe + ".pdf" }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` })) as { error?: string };
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = safe + ".pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function generateInstructionsForSelectedDays() {
+    if (instructionRows.length === 0) return;
+    setBatchInstructionBusy(true);
+    setBatchInstructionStatus(`Erzeuge ${instructionRows.length} WO-Instructions …`);
+    try {
+      const generated = await generateWoInstructionsBatch(instructionRows.map((row) => ({
+        key: row.key,
+        row,
+        calc: calcMap.get(row.key)!,
+      })).filter((item) => item.calc));
+      setWoInstructions((current) => ({ ...current, ...generated }));
+      setBatchInstructionStatus(`${Object.keys(generated).length} von ${instructionRows.length} WO-Instructions erzeugt`);
+    } catch (error) {
+      setBatchInstructionStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBatchInstructionBusy(false);
+    }
   }
 
   const totalBatches = weekFilteredRows.reduce((s, row) => s + (calcMap.get(row.key)?.batches ?? 0), 0);
@@ -224,12 +294,12 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-112px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+    <div className="flex min-h-[620px] h-[calc(100vh-180px)] max-h-[900px] min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
 
       {/* ════════════════════════════════════════════════════
           LEFT SIDEBAR
       ════════════════════════════════════════════════════ */}
-      <aside className="w-[280px] shrink-0 flex flex-col border-r border-slate-200 overflow-hidden">
+      <aside className="flex min-h-0 w-[280px] shrink-0 flex-col border-r border-slate-200 overflow-hidden">
 
         {/* Header */}
         <div className="px-4 pt-4 pb-3 bg-gradient-to-b from-[#0f2240] to-[#1e3a5f]">
@@ -390,8 +460,74 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
           ))}
         </div>
 
+        {/* Tag-Filter für WO-Liste */}
+        {groups.length > 1 && (
+          <div className="border-b border-slate-100 px-3 py-2">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Tag-Filter</span>
+              {selectedDayFilter && (
+                <button type="button" onClick={() => setSelectedDayFilter(null)} className="text-[9px] font-bold text-blue-600 hover:text-blue-800">Alle</button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {groups.map(([day]) => {
+                const active = !selectedDayFilter || selectedDayFilter.has(day);
+                return (
+                  <button key={day} type="button"
+                    onClick={() => setSelectedDayFilter((current) => {
+                      if (!current) {
+                        // Erster Klick: nur diesen Tag auswählen
+                        return new Set([day]);
+                      }
+                      const next = new Set(current);
+                      if (next.has(day)) {
+                        next.delete(day);
+                        // Wenn alle abgewählt: Filter aufheben
+                        return next.size === 0 ? null : next;
+                      } else {
+                        next.add(day);
+                        return next;
+                      }
+                    })}
+                    className={`rounded-md px-1.5 py-1 text-[9px] font-bold transition-colors ${
+                      active
+                        ? "bg-[#1e3a5f] text-white"
+                        : "bg-white text-slate-400 ring-1 ring-slate-200 hover:ring-blue-300"
+                    }`}>
+                    {day.slice(8)}.{day.slice(5, 7)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Instruction-Tage */}
+        <div className="border-b border-slate-100 bg-emerald-50/60 px-3 py-2">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-[9px] font-black uppercase tracking-widest text-emerald-800">Instruction-Tage</span>
+            <button type="button" onClick={() => setSelectedInstructionDays(null)} className="text-[9px] font-bold text-emerald-700 hover:text-emerald-900">Alle</button>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {availableInstructionDays.map((day) => {
+              const selected = activeInstructionDays.has(day);
+              return <button key={day} type="button" onClick={() => setSelectedInstructionDays((current) => {
+                const next = new Set(current ?? availableInstructionDays);
+                if (next.has(day)) next.delete(day); else next.add(day);
+                return next;
+              })} className={`rounded-md px-1.5 py-1 text-[9px] font-bold ${selected ? "bg-emerald-700 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200"}`}>
+                {day.slice(8)}.{day.slice(5, 7)}
+              </button>;
+            })}
+          </div>
+          <button type="button" disabled={batchInstructionBusy || instructionRows.length === 0} onClick={() => void generateInstructionsForSelectedDays()} className="mt-2 w-full rounded-lg bg-emerald-700 px-2 py-2 text-[10px] font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
+            {batchInstructionBusy ? "Instructions werden erzeugt …" : `Instructions für ${instructionRows.length} WOs erzeugen`}
+          </button>
+          {batchInstructionStatus && <div className="mt-1 text-[9px] font-semibold text-emerald-800">{batchInstructionStatus}</div>}
+        </div>
+
         {/* WO List */}
-        <div className="flex-1 overflow-y-auto py-1">
+        <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {filteredGroups.length === 0 ? (
             <div className="text-center py-8 text-xs text-slate-400">Keine WOs gefunden</div>
           ) : (
@@ -448,6 +584,9 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
                           {row.subRecipeName || row.recipeName}
                         </div>
                         <div className="flex items-center gap-1.5 mt-1.5">
+                          <span className={`text-[8px] font-semibold ${isSelected ? "text-blue-300" : "text-slate-400"}`}>
+                            Shift {row.dateNeeded.match(/[-–]\s*(\d+)$/)?.[1] ?? "—"}
+                          </span>
                           <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded-md ${isSelected ? `${sc.bg} ${sc.text}` : `${sc.bg} ${sc.text}`}`}>
                             {row.kitchenStatus || "—"}
                           </span>
@@ -469,32 +608,91 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
           )}
         </div>
 
-        {/* Print buttons */}
+        {/* Drucken + Speichern */}
         <div className="px-3 py-2.5 border-t border-slate-100 space-y-1.5 bg-slate-50/50">
-          <button
-            type="button"
-            onClick={() => selectedRow && printPdf([selectedRow])}
-            disabled={!selectedRow}
-            className="w-full flex items-center justify-center gap-2 text-xs font-bold bg-[#1e3a5f] hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed text-white py-2.5 rounded-xl transition-colors shadow-sm"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-            PDF – Ausgewählte WO
-          </button>
-          <button
-            type="button"
-            onClick={() => printPdf(needle ? filteredRows : ketRows)}
-            disabled={ketRows.length === 0}
-            className="w-full text-xs font-bold bg-white hover:bg-slate-100 disabled:opacity-30 text-slate-600 py-2 rounded-xl transition-colors border border-slate-200"
-          >
-            PDF – Alle ({needle ? filteredRows.length : ketRows.length}) WOs
-          </button>
+          {/* Ausgewählte WO */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => selectedRow && printPdf([selectedRow])}
+              disabled={!selectedRow}
+              title="Druckdialog öffnen"
+              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-[#1e3a5f] hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed text-white py-2 rounded-xl transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+              Drucken
+            </button>
+            <button
+              type="button"
+              disabled={!selectedRow}
+              title="Als PDF-Datei speichern (1 WO = 1 Seite)"
+              onClick={() => {
+                if (!selectedRow) return;
+                const name = `WO_${selectedRow.woNumber}_${selectedRow.subRecipeName || selectedRow.recipeName}`;
+                void downloadPdf([selectedRow], name);
+              }}
+              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-700 hover:bg-emerald-800 disabled:opacity-30 disabled:cursor-not-allowed text-white py-2 rounded-xl transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              Speichern
+            </button>
+          </div>
+          <div className="text-[8px] text-slate-400 text-center -mt-0.5">Ausgewählte WO</div>
+
+          {/* Alle / gefilterte WOs */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => printPdf(filteredRows.length > 0 ? filteredRows : weekFilteredRows)}
+              disabled={weekFilteredRows.length === 0}
+              title="Druckdialog – alle sichtbaren WOs (je WO eine Seite)"
+              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 py-2 rounded-xl transition-colors border border-slate-200"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+              Drucken
+            </button>
+            <button
+              type="button"
+              disabled={weekFilteredRows.length === 0 || bulkDlBusy}
+              title="Alle sichtbaren WOs als eine mehrseitige PDF speichern (je WO = 1 Seite)"
+              onClick={async () => {
+                const rows = filteredRows.length > 0 ? filteredRows : weekFilteredRows;
+                setBulkDlBusy(true);
+                setBulkDlError(null);
+                try {
+                  const dateTag = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }).replace(".", "");
+                  await downloadPdf(rows, `KET_Breakdown_${dateTag}_${rows.length}WOs`);
+                } catch (err) {
+                  setBulkDlError(err instanceof Error ? err.message : String(err));
+                } finally {
+                  setBulkDlBusy(false);
+                }
+              }}
+              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 disabled:opacity-30 disabled:cursor-not-allowed text-emerald-800 py-2 rounded-xl transition-colors border border-emerald-200"
+            >
+              {bulkDlBusy ? (
+                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              ) : (
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              )}
+              Speichern
+            </button>
+          </div>
+          <div className="text-[8px] text-slate-400 text-center -mt-0.5">
+            Alle sichtbaren ({filteredRows.length > 0 ? filteredRows.length : weekFilteredRows.length}) WOs
+          </div>
+          {bulkDlError && (
+            <div className="text-[9px] text-red-600 font-semibold bg-red-50 rounded-lg px-2 py-1.5 border border-red-200">
+              {bulkDlError}
+            </div>
+          )}
         </div>
       </aside>
 
       {/* ════════════════════════════════════════════════════
           RIGHT DETAIL AREA
       ════════════════════════════════════════════════════ */}
-      <main className="flex-1 flex flex-col min-w-0 bg-slate-50/30 overflow-hidden">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-slate-50/30 overflow-hidden">
         {/* Detail / Alle WOs toggle — its own bar so it stays visible
             regardless of mode and survives selecting/deselecting a WO. */}
         <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-2 bg-gradient-to-r from-[#0f2240] via-[#1e3a5f] to-[#0f2240] border-b border-white/10">
@@ -516,7 +714,7 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto min-w-0">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           {mainViewMode === "list" ? (
             <KetWoOverview
               groups={filteredGroups}
@@ -532,6 +730,26 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
               calc={selectedCalc}
               onPrint={() => printPdf([selectedRow])}
               onCapChange={saveCap}
+              instruction={woInstructions[selectedRow.key]}
+              onGenerateInstruction={async () => {
+                if (!selectedCalc) throw new Error("Keine Berechnung für diese WO vorhanden");
+                const instruction = await generateWoInstruction(selectedRow, selectedCalc);
+                setWoInstructions((current) => ({ ...current, [selectedRow.key]: instruction }));
+              }}
+              onDownload={async () => {
+                if (!selectedRow) return;
+                const name = `WO_${selectedRow.woNumber}_${selectedRow.subRecipeName || selectedRow.recipeName}`;
+                await downloadPdf([selectedRow], name);
+              }}
+              manualEquipment={manualEquipment[selectedRow.key]}
+              onManualEquipmentChange={(override) => {
+                setManualEquipment((current) => {
+                  const next = { ...current };
+                  if (override) next[selectedRow.key] = override;
+                  else delete next[selectedRow.key];
+                  return next;
+                });
+              }}
             />
           )}
         </div>

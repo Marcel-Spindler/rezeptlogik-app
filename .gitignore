@@ -7,6 +7,8 @@ secrets/
 *.tsbuildinfo
 *.log
 logs/
+local-db/*.sqlite
+local-db/*.sqlite-*
 scratch/
 test-results/
 test_before_search.png

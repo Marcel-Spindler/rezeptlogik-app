@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
@@ -34,6 +34,30 @@ function autoStartWmsPlugin(): Plugin {
         stdio: "inherit",
       });
       console.log("[wms] Lokaler WMS-Server wird automatisch gestartet (Port 3141).");
+
+      server.httpServer?.once("close", () => {
+        if (!child.killed) child.kill();
+      });
+    },
+  };
+}
+
+function autoStartLocalDbPlugin(): Plugin {
+  const env = loadEnv("development", process.cwd(), "");
+  return {
+    name: "auto-start-local-db-server",
+    async configureServer(server: ViteDevServer) {
+      if (await isPortOpen(3142)) return;
+
+      const child = spawn(process.execPath, ["scripts/local-db-server.mjs"], {
+        cwd: process.cwd(),
+        shell: false,
+        env: { ...process.env, FORCE_COLOR: "0" },
+        windowsHide: true,
+        stdio: "inherit",
+      });
+      child.on("error", (error) => console.error(`[local-db] Start fehlgeschlagen: ${error.message}`));
+      console.log("[local-db] SQLite/Gemini-Server wird automatisch gestartet (Port 3142).");
 
       server.httpServer?.once("close", () => {
         if (!child.killed) child.kill();
@@ -96,7 +120,7 @@ function noopRefreshRampUpPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [autoStartWmsPlugin(), importLocalPlugin(), noopRefreshRampUpPlugin(), react()],
+  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), noopRefreshRampUpPlugin(), react()],
   server: {
     port: 5173,
     open: true,
@@ -120,6 +144,10 @@ export default defineConfig({
         target: "http://127.0.0.1:5001",
         changeOrigin: true,
         rewrite: path => path.replace(/^\/api\/rack-inputs/, "/hellofresh-de-problem-solve/europe-west3/rackInputs"),
+      },
+      "/api/local-db": {
+        target: "http://127.0.0.1:3142",
+        changeOrigin: true,
       },
       // WMS-Einzelendpoints → lokaler Snowflake-Server (npm run wms:server)
       // rewrite entfernt "/api" → Server kennt nur "/wms-*"

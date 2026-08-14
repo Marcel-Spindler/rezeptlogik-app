@@ -1,6 +1,6 @@
 import type { DataBundle, EquipBibleEntry } from "./types";
 
-const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "firestore";
+const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "local-db" | "firestore";
 
 function logWarn(context: string, err?: unknown) {
   const msg = err instanceof Error ? err.message : String(err ?? "");
@@ -91,6 +91,16 @@ export function subscribeRampUpHashChanges(onChanged: () => void): () => void {
 }
 
 export async function loadData(): Promise<DataBundle> {
+  if (SOURCE === "local-db") {
+    try {
+      lastDataError = null;
+      return mergeMealCatalog(await loadFromLocalDb());
+    } catch (e) {
+      lastDataError = e instanceof Error ? e.message : String(e);
+      logWarn("Lokale Datenbank nicht erreichbar, Fallback auf data.json", e);
+      return mergeMealCatalog(await loadFromJson());
+    }
+  }
   if (SOURCE === "firestore") {
     try {
       const bundle = await loadFromFirestore();
@@ -131,6 +141,21 @@ async function loadFromJson(): Promise<DataBundle> {
     return await res.json();
   } catch (e) {
     throw new Error(`data.json ist ungültig formatiert: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+async function loadFromLocalDb(): Promise<DataBundle> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/local-db/bundle?ts=${Date.now()}`, { cache: "no-store" });
+  } catch (e) {
+    throw new Error(`Lokale Datenbank nicht erreichbar: ${e instanceof Error ? e.message : e}`);
+  }
+  if (!res.ok) throw new Error(`Lokale Datenbank antwortet nicht (HTTP ${res.status}) – npm run db:build ausführen.`);
+  try {
+    return await res.json() as DataBundle;
+  } catch (e) {
+    throw new Error(`Antwort der lokalen Datenbank ist ungültig: ${e instanceof Error ? e.message : e}`);
   }
 }
 

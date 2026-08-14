@@ -21,6 +21,7 @@ export interface SubRecipe {
   yield?: number;
   yieldUom?: string;
   instructions?: string;
+  instructionsDE?: string;
   methodColor?: string;
   methodType?: string;
 }
@@ -67,7 +68,26 @@ export interface MealCatalogEntry {
   mealId: string;
   photoUrl?: string;
   photoSourceUrl?: string;
+  instructionsBySubRecipe?: Record<string, {
+    subRecipeName: string;
+    subRecipeId?: string;
+    english?: string;
+    german?: string;
+    germanIsFallback?: boolean;
+  }>;
   sheets: Record<string, Record<string, string>>;
+}
+
+export interface SubRecipeInstruction {
+  key: string;
+  recipeCode: string;
+  subRecipeId?: string;
+  subRecipeName: string;
+  market?: string;
+  english: string;
+  german?: string;
+  translationStatus: "source" | "translated" | "needs_translation" | "review";
+  source: string;
 }
 
 export interface GrossIngredient {
@@ -306,6 +326,7 @@ export interface DataBundle {
   processSpecs?: Record<string, ProcessSpec>;     // key = subRecipeId
   shelfLifeBySku?: Record<string, ShelfLifeInfo>; // key = ingredient / SKU code
   structures?: Record<string, RecipeStructure>;   // key = recipe code
+  instructions?: Record<string, SubRecipeInstruction>;
   productionPlan?: ProductionPlan;
   printOrders?: PrintOrderRow[];
   kitchenPriority?: KitchenPriorityRow[];

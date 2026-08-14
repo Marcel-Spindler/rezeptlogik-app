@@ -349,6 +349,7 @@ function loadRecipes(): Record<string, Recipe> {
           yield: num(row["Sub-Recipe Yield"]) || undefined,
           yieldUom: row["Recipe Yield UOM"] || undefined,
           instructions: row["Instructions"] || undefined,
+          instructionsDE: row["Instructions (DE)"] || row["Instructions DE"] || row["Kochanweisung"] || undefined,
           methodColor: row["Method Color"] || undefined,
           methodType: row["Method Type"] || undefined
         });

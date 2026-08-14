@@ -72,6 +72,8 @@ export interface WRBreakdownPlan {
 export interface WRMatchedWorkOrder {
   workOrder: string;
   kitchenDay: string;
+  run?: number;
+  recipeId?: string;
   targetPortions: number | null;
   woCookedPortions: number | null;
   cookedPortionsExcess: number | null;

@@ -5,8 +5,8 @@ import type {
   DataBundle, DetailedIngredient, DetailedSubRecipe, EquipBibleEntry, GrossIngredient,
   Recipe, RecipeStructure, WorkOrderEntry,
 } from "../../core/types";
-import { EQUIP_DEFAULTS, EQUIP_LABELS, EQUIP_PRIORITY, type BatchCalc, type EquipBatch, type IngCalc, type KetRow } from "./ketTypes";
-import { cleanRecipeName, extractCode, fmtNum, parseSteps } from "../../lib/helpers";
+import { EQUIP_DEFAULTS, EQUIP_LABELS, EQUIP_PRIORITY, type BatchCalc, type EquipBatch, type IngCalc, type KetRow, type ManualEquipmentOverride } from "./ketTypes";
+import { cleanRecipeName, codeDigits, extractCode, fmtNum, parseSteps } from "../../lib/helpers";
 
 export { cleanRecipeName, extractCode, fmtNum, parseSteps };
 
@@ -62,6 +62,83 @@ export function findBraiserBibleMatch(
     if (normSub.includes(normItem) && normItem.length > bestLen) {
       best = entry;
       bestLen = normItem.length;
+    }
+  }
+  return best;
+}
+
+const EQUIPMENT_NAMES = [
+  ...EQUIP_PRIORITY,
+  "GRILL",
+  "HAND MIX",
+  "IMMERSION BLENDER",
+  "MARINADE",
+  "HAND MARINADE",
+  "SPICE PORTIONING",
+  "SCOOPER",
+  "BUTTER MACHINE",
+  "SLICER",
+  "THAW",
+  "BLAST CHILLER",
+];
+
+function equipmentNamesFromText(value: string): string[] {
+  const normalized = normBibleStr(value);
+  return EQUIPMENT_NAMES.filter((equipment) => normalized.includes(normBibleStr(equipment)));
+}
+
+function findProcessSpec(data: DataBundle, subRecipeName: string) {
+  const target = normStr(subRecipeName);
+  if (!target) return undefined;
+  return Object.values(data.processSpecs ?? {}).find((spec) => normStr(spec.name) === target);
+}
+
+function resolveCookMethods(row: KetRow, data: DataBundle, structure?: RecipeStructure, recipe?: Recipe): string[] {
+  const methods = new Set<string>();
+  for (const method of row.cookMethods) {
+    const normalized = equipmentNamesFromText(method)[0] ?? method.trim().toUpperCase();
+    if (normalized) methods.add(normalized);
+  }
+
+  const processSpec = findProcessSpec(data, row.subRecipeName);
+  for (const method of equipmentNamesFromText(processSpec?.primaryStation ?? "")) methods.add(method);
+
+  if (structure) {
+    const detailed = findDetailedSub(structure, row.subRecipeName);
+    for (const method of equipmentNamesFromText(detailed?.categories ?? "")) methods.add(method);
+  }
+
+  if (recipe) {
+    for (const market of Object.values(recipe.markets)) {
+      const sub = market?.subRecipes.find((item) => normStr(item.name) === normStr(row.subRecipeName));
+      if (sub) {
+        for (const method of equipmentNamesFromText(sub.category ?? "")) methods.add(method);
+      }
+    }
+  }
+
+  return [...methods];
+}
+
+function findBibleCapacity(
+  subRecipeName: string,
+  equipment: string,
+  entries: EquipBibleEntry[] | undefined,
+): EquipBibleEntry | null {
+  if (!entries?.length) return null;
+  const target = normBibleStr(subRecipeName);
+  if (!target) return null;
+  let best: EquipBibleEntry | null = null;
+  let bestLength = 0;
+  for (const entry of entries) {
+    if (entry.maxKg <= 0 || !normBibleStr(entry.itemName)) continue;
+    const entryEquipment = entry.source === "BRAISER"
+      ? "BRAISER"
+      : equipmentNamesFromText(entry.category)[0];
+    if (entryEquipment !== equipment || !target.includes(normBibleStr(entry.itemName))) continue;
+    if (normBibleStr(entry.itemName).length > bestLength) {
+      best = entry;
+      bestLength = normBibleStr(entry.itemName).length;
     }
   }
   return best;
@@ -126,17 +203,44 @@ function collectDetailedIngredients(sub: DetailedSubRecipe): DetailedIngredient[
 }
 
 // Echte Kochanweisungen aus Recipe.markets SubRecipes
-function findSubRecipeInstructions(recipe: Recipe | undefined, subName: string): string | null {
-  if (!recipe) return null;
+function findSubRecipeInstructions(
+  recipe: Recipe | undefined,
+  mealCatalog: DataBundle["mealCatalog"],
+  instructionCatalog: DataBundle["instructions"],
+  subName: string,
+): { english: string | null; german: string | null; germanIsFallback: boolean } {
+  const recipeDigits = recipe?.code ? codeDigits(recipe.code) : "";
+  const catalogEntry = recipe?.code
+    ? mealCatalog?.[recipe.code]
+      ?? Object.values(mealCatalog ?? {}).find((entry) => codeDigits(entry.mealId) === recipeDigits)
+    : undefined;
+  const subNeedle = normStr(subName);
+  const databaseInstruction = Object.values(instructionCatalog ?? {})
+    .find((entry) => (entry.recipeCode === recipe?.code || codeDigits(entry.recipeCode) === codeDigits(recipe?.code)) && (
+      normStr(entry.subRecipeName) === subNeedle || normStr(entry.subRecipeId ?? "") === subNeedle
+    ));
+  const catalogInstructions = Object.values(catalogEntry?.instructionsBySubRecipe ?? {})
+    .find((entry) => normStr(entry.subRecipeName) === subNeedle || normStr(entry.subRecipeId ?? "") === subNeedle);
   const norm = normStr(subName);
-  for (const mkt of ["DE", "BENL", "DKSE"] as const) {
-    const md = recipe.markets[mkt];
-    if (!md?.subRecipes) continue;
-    for (const sub of md.subRecipes) {
-      if (normStr(sub.name) === norm && sub.instructions) return sub.instructions;
+  if (recipe) {
+    for (const mkt of ["DE", "BENL", "DKSE"] as const) {
+      const md = recipe.markets[mkt];
+      if (!md?.subRecipes) continue;
+      for (const sub of md.subRecipes) {
+        if (normStr(sub.name) !== norm) continue;
+        const english = databaseInstruction?.english || sub.instructions || catalogInstructions?.english || null;
+        const german = databaseInstruction?.german || sub.instructionsDE || catalogInstructions?.german || null;
+        return {
+          english,
+          german: german || english,
+          germanIsFallback: !german && !!english,
+        };
+      }
     }
   }
-  return null;
+  const english = databaseInstruction?.english || catalogInstructions?.english || null;
+  const german = databaseInstruction?.german || catalogInstructions?.german || null;
+  return { english, german: german || english, germanIsFallback: !german && !!english };
 }
 
 // ── Gross-ingredient fallback ──────────────────────────────────────────────
@@ -161,9 +265,16 @@ function matchGrossIngredients(
 
 // ── Batch calculation ──────────────────────────────────────────────────────
 
-export function calcBatch(row: KetRow, caps: Record<string, number>, data: DataBundle): BatchCalc {
+export function calcBatch(
+  row: KetRow,
+  caps: Record<string, number>,
+  data: DataBundle,
+  manualEquipment?: ManualEquipmentOverride | null,
+): BatchCalc {
   const recipe = data.recipes[row.recipeCode];
   const structure = data.structures?.[row.recipeCode];
+  const processSpec = findProcessSpec(data, row.subRecipeName);
+  const resolvedCookMethods = resolveCookMethods(row, data, structure, recipe);
   const ingredients: IngCalc[] = [];
   let totalKg = 0;
   let subRecipeFound = false;
@@ -236,11 +347,18 @@ export function calcBatch(row: KetRow, caps: Record<string, number>, data: DataB
     }
   }
 
-  // BRAISER-only Kuechenbible lookup: matches row.subRecipeName against
-  // data.equipmentBible BRAISER entries (see findBraiserBibleMatch). Never
-  // touches OVEN/PLANETARY MIXER/etc., and never mutates the global caps map —
-  // it only supplies a per-row override for BRAISER's effective capacity.
-  const braiserBibleMatch = findBraiserBibleMatch(row.subRecipeName, data.equipmentBible);
+  const bibleMatches = new Map<string, EquipBibleEntry>();
+  for (const equipment of resolvedCookMethods) {
+    const match = equipment === "BRAISER"
+      ? findBraiserBibleMatch(row.subRecipeName, data.equipmentBible)
+      : findBibleCapacity(row.subRecipeName, equipment, data.equipmentBible);
+    if (match) bibleMatches.set(equipment, match);
+  }
+
+  if (manualEquipment?.equipment && manualEquipment.capacityKg > 0) {
+    const manualName = manualEquipment.equipment.trim().toUpperCase();
+    if (manualName) resolvedCookMethods.push(manualName);
+  }
 
   const effectiveCap = (e: string) => {
     // An explicit manual cap — including an intentional "0" to disable this
@@ -248,7 +366,13 @@ export function calcBatch(row: KetRow, caps: Record<string, number>, data: DataB
     // The Kuechenbible match only fills in when the user hasn't set anything
     // for this equipment; it must never silently override a manual choice.
     if (caps[e] !== undefined) return caps[e];
-    if (e === "BRAISER" && braiserBibleMatch) return braiserBibleMatch.maxKg;
+    const bibleMatch = bibleMatches.get(e);
+    if (bibleMatch) return bibleMatch.maxKg;
+    if (manualEquipment?.equipment.trim().toUpperCase() === e && manualEquipment.capacityKg > 0) return manualEquipment.capacityKg;
+    if (
+      processSpec?.batchSizeKg && processSpec.batchSizeKg > 0
+      && equipmentNamesFromText(processSpec.primaryStation ?? "").includes(e)
+    ) return processSpec.batchSizeKg;
     return EQUIP_DEFAULTS[e] ?? 0;
   };
 
@@ -256,10 +380,10 @@ export function calcBatch(row: KetRow, caps: Record<string, number>, data: DataB
   // (i.e. no manual override is set) — the UI must only show the "📖
   // Kuechenbible" tag when that entry is truly the active capacity, not
   // whenever a match merely exists but a manual cap has taken precedence.
-  const braiserBibleActive = !!braiserBibleMatch && caps["BRAISER"] === undefined;
+  const bibleActive = (equipment: string) => !!bibleMatches.get(equipment) && caps[equipment] === undefined;
 
   // Per-Equipment Batche: jede Cook Method mit bekannter Kapazität berechnet eigenständig
-  const equipBatches: EquipBatch[] = row.cookMethods
+  const equipBatches: EquipBatch[] = resolvedCookMethods
     .filter(m => effectiveCap(m) > 0)
     .map(m => {
       const cap = effectiveCap(m);
@@ -270,31 +394,35 @@ export function calcBatch(row: KetRow, caps: Record<string, number>, data: DataB
         capacityKg: cap,
         batches: b,
         perBatchKg: b > 0 ? totalKg / b : 0,
-        bibleMatch: m === "BRAISER" && braiserBibleActive ? braiserBibleMatch : null,
+        bibleMatch: bibleActive(m) ? bibleMatches.get(m) ?? null : null,
       };
     });
 
   // Primär-Equipment für Ingredient-Aufschlüsselung = erstes aus EQUIP_PRIORITY
   const primaryEquip =
-    EQUIP_PRIORITY.find(e => row.cookMethods.includes(e) && effectiveCap(e) > 0) ??
-    row.cookMethods.find(m => effectiveCap(m) > 0) ??
+    EQUIP_PRIORITY.find(e => resolvedCookMethods.includes(e) && effectiveCap(e) > 0) ??
+    resolvedCookMethods.find(m => effectiveCap(m) > 0) ??
     null;
 
   const capacityKg = primaryEquip ? effectiveCap(primaryEquip) : null;
-  const primaryCapBibleMatch = primaryEquip === "BRAISER" && braiserBibleActive ? braiserBibleMatch : null;
+  const primaryCapBibleMatch = primaryEquip && bibleActive(primaryEquip) ? bibleMatches.get(primaryEquip) ?? null : null;
   const primaryBatch = equipBatches.find(eb => eb.equip === primaryEquip);
-  const batches = primaryBatch?.batches ?? (totalKg > 0 ? 1 : 0);
+  const batches = primaryBatch?.batches ?? 0;
   const perBatchKg = primaryBatch?.perBatchKg ?? (batches > 0 ? totalKg / batches : 0);
 
   for (const ing of ingredients) {
     ing.perBatchKg = batches > 0 ? ing.totalKg / batches : 0;
   }
 
-  const subRecipeInstructions = findSubRecipeInstructions(recipe, row.subRecipeName);
+  const instructionPair = findSubRecipeInstructions(recipe, data.mealCatalog, data.instructions, row.subRecipeName);
 
   return {
     totalKg, equipBatches, primaryEquip, capacityKg, primaryCapBibleMatch, batches, perBatchKg,
-    ingredients, recipeFound: !!(recipe || structure), subRecipeFound, cookingInstructions, subRecipeInstructions,
+    resolvedCookMethods, manualEquipment: manualEquipment ?? null,
+    ingredients, recipeFound: !!(recipe || structure), subRecipeFound, cookingInstructions,
+    subRecipeInstructions: instructionPair.english,
+    subRecipeInstructionsDE: instructionPair.german,
+    subRecipeInstructionsGermanFallback: instructionPair.germanIsFallback,
   };
 }
 

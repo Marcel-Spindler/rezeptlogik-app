@@ -57,6 +57,19 @@ export interface KetRow {
   workOrderComment: string;
 }
 
+export interface ManualEquipmentOverride {
+  equipment: string;
+  capacityKg: number;
+}
+
+export interface WoInstruction {
+  english: string;
+  german: string;
+  status: "generated" | "needs_review" | "failed";
+  generatedAt?: string;
+  model?: string;
+}
+
 export interface IngCalc {
   name: string;
   id: string;
@@ -87,9 +100,13 @@ export interface BatchCalc {
   primaryCapBibleMatch?: EquipBibleEntry | null;
   batches: number;              // Batche des primaryEquip
   perBatchKg: number;
+  resolvedCookMethods: string[];
+  manualEquipment?: ManualEquipmentOverride | null;
   ingredients: IngCalc[];
   recipeFound: boolean;
   subRecipeFound: boolean;
   cookingInstructions: string | null;
   subRecipeInstructions: string | null;
+  subRecipeInstructionsDE: string | null;
+  subRecipeInstructionsGermanFallback: boolean;
 }
