@@ -16,10 +16,17 @@ import { WoDetail } from "./features/ket-plan/KetWoDetail";
 import { generateWoInstruction, generateWoInstructionsBatch } from "./features/ket-plan/woInstructionBot";
 
 
-export function KetBreakdownView({ data }: { data: DataBundle }) {
-  const liveWeek = currentHfWeek();
-  const [csvRows, setCsvRows] = useState<KetRow[] | null>(null);
-  const [csvFileName, setCsvFileName] = useState("");
+export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; selectedWeek?: string }) {
+  const liveWeek = selectedWeek || currentHfWeek();
+  const [csvRows, setCsvRows] = useState<KetRow[] | null>(() => {
+    try {
+      const saved = localStorage.getItem("ket-csv-rows-v1");
+      return saved ? JSON.parse(saved) as KetRow[] : null;
+    } catch { return null; }
+  });
+  const [csvFileName, setCsvFileName] = useState(() => {
+    try { return localStorage.getItem("ket-csv-filename-v1") ?? ""; } catch { return ""; }
+  });
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [showEquip, setShowEquip] = useState(false);
@@ -148,7 +155,10 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
       .map(([day, rows]) => [day, [...rows].sort((a, b) => {
         const shiftOf = (value: string) => Number(value.match(/[-–]\s*(\d+)$/)?.[1] ?? 0);
         const shiftDelta = shiftOf(a.dateNeeded) - shiftOf(b.dateNeeded);
-        return shiftDelta || a.woNumber.localeCompare(b.woNumber, "de", { numeric: true });
+        if (shiftDelta !== 0) return shiftDelta;
+        const ra = (a.subRecipeName || a.recipeName).toLowerCase();
+        const rb = (b.subRecipeName || b.recipeName).toLowerCase();
+        return ra.localeCompare(rb, "de") || a.woNumber.localeCompare(b.woNumber, "de", { numeric: true });
       })] as [string, KetRow[]])
       .sort((a, b) => parseSortKey(a[0]) - parseSortKey(b[0]));
   }, [weekFilteredRows]);
@@ -183,7 +193,7 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
       });
       return [date, sorted] as [string, KetRow[]];
     });
-  }, [groups, needle, woSortMode, calcMap]);
+  }, [dayFilteredGroups, needle, woSortMode, calcMap]);
 
   const filteredRows = filteredGroups.flatMap(([, rows]) => rows);
   const availableInstructionDays = groups.map(([day]) => day);
@@ -203,6 +213,8 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
       const text = e.target?.result as string;
       const parsed = parseKetCsv(text);
       setCsvRows(parsed);
+      try { localStorage.setItem("ket-csv-rows-v1", JSON.stringify(parsed)); } catch { /* */ }
+      try { localStorage.setItem("ket-csv-filename-v1", file.name); } catch { /* */ }
       setSelectedKey(parsed[0]?.key ?? null);
     };
     reader.readAsText(file, "utf-8");
@@ -213,6 +225,26 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
     const next = { ...caps, [equip]: val };
     setCaps(next);
     try { localStorage.setItem(LS_CAPS_KEY, JSON.stringify(next)); } catch { /* */ }
+  }
+
+  function persistCsvRows(next: KetRow[] | null) {
+    setCsvRows(next);
+    try {
+      if (next) localStorage.setItem("ket-csv-rows-v1", JSON.stringify(next));
+      else localStorage.removeItem("ket-csv-rows-v1");
+    } catch { /* */ }
+  }
+
+  function deleteDay(date: string) {
+    const next = (csvRows ?? []).filter(r => (r.dateNeeded.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] ?? r.dateNeeded) !== date);
+    if (selectedKey && !next.some(r => r.key === selectedKey)) setSelectedKey(null);
+    persistCsvRows(next.length > 0 ? next : null);
+  }
+
+  function deleteWo(key: string) {
+    const next = (csvRows ?? []).filter(r => r.key !== key);
+    if (selectedKey === key) setSelectedKey(null);
+    persistCsvRows(next.length > 0 ? next : null);
   }
 
   const source: "CSV" | "Firestore" | "LiveWMS" | "FirestoreStale" | null =
@@ -294,7 +326,7 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
   }
 
   return (
-    <div className="flex min-h-[620px] h-[calc(100vh-180px)] max-h-[900px] min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+    <div className="flex min-h-[620px] h-[calc(100vh-64px)] min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
 
       {/* ════════════════════════════════════════════════════
           LEFT SIDEBAR
@@ -387,7 +419,11 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
           {csvRows && (
             <button
               type="button"
-              onClick={() => { setCsvRows(null); setCsvFileName(""); setSelectedKey(null); }}
+              onClick={() => {
+                setCsvRows(null); setCsvFileName(""); setSelectedKey(null);
+                try { localStorage.removeItem("ket-csv-rows-v1"); } catch { /* */ }
+                try { localStorage.removeItem("ket-csv-filename-v1"); } catch { /* */ }
+              }}
               className="mt-1 w-full text-[9px] text-slate-400 hover:text-red-500 transition-colors"
             >
               × CSV entfernen (zurück zu Firestore)
@@ -510,10 +546,15 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
           </div>
           <div className="flex flex-wrap gap-1">
             {availableInstructionDays.map((day) => {
-              const selected = activeInstructionDays.has(day);
+              const selected = !selectedInstructionDays || selectedInstructionDays.has(day);
               return <button key={day} type="button" onClick={() => setSelectedInstructionDays((current) => {
-                const next = new Set(current ?? availableInstructionDays);
-                if (next.has(day)) next.delete(day); else next.add(day);
+                if (!current) return new Set([day]);
+                const next = new Set(current);
+                if (next.has(day)) {
+                  next.delete(day);
+                  return next.size === 0 ? null : next;
+                }
+                next.add(day);
                 return next;
               })} className={`rounded-md px-1.5 py-1 text-[9px] font-bold ${selected ? "bg-emerald-700 text-white" : "bg-white text-slate-400 ring-1 ring-slate-200"}`}>
                 {day.slice(8)}.{day.slice(5, 7)}
@@ -533,11 +574,20 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
           ) : (
             filteredGroups.map(([date, rows]) => (
               <div key={date} className="mb-1">
-                <div className="sticky top-0 px-3 py-1.5 bg-slate-50/90 backdrop-blur-sm border-y border-slate-100 z-10">
-                  <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
-                    {fmtDateHeader(date)}
-                  </span>
-                  <span className="ml-2 text-[9px] text-slate-300">{rows.length} WOs</span>
+                <div className="sticky top-0 px-3 py-1.5 bg-slate-50/90 backdrop-blur-sm border-y border-slate-100 z-10 flex items-center justify-between gap-1">
+                  <div>
+                    <span className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
+                      {fmtDateHeader(date)}
+                    </span>
+                    <span className="ml-2 text-[9px] text-slate-300">{rows.length} WOs</span>
+                  </div>
+                  {csvRows !== null && (
+                    <button type="button" onClick={() => deleteDay(date)}
+                      title="Alle WOs dieses Tages löschen"
+                      className="text-[9px] font-bold text-red-400 hover:text-red-600 transition-colors px-1 shrink-0">
+                      Tag ×
+                    </button>
+                  )}
                 </div>
                 <div className="px-2 py-1 space-y-1">
                   {rows.map((row) => {
@@ -547,59 +597,70 @@ export function KetBreakdownView({ data }: { data: DataBundle }) {
                     const done = row.woCookedPortions ?? 0;
                     const pct = row.targetPortions > 0 ? (done / row.targetPortions) * 100 : 0;
                     return (
-                      <button
-                        type="button"
-                        key={row.key}
-                        onClick={() => setSelectedKey(row.key)}
-                        className={`w-full text-left rounded-xl px-3 py-2.5 transition-all ${
-                          isSelected
-                            ? "bg-[#1e3a5f] shadow-md ring-2 ring-[#1e3a5f]/30"
-                            : "bg-white hover:bg-slate-50 border border-slate-150 shadow-sm hover:shadow"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-1 mb-1">
-                          <span className={`text-[11px] font-black leading-tight ${isSelected ? "text-white" : "text-[#1e3a5f]"}`}>
-                            WO {row.woNumber}
-                          </span>
-                          <div className="flex items-center gap-1 shrink-0">
-                            {calc && calc.batches > 0 && (
-                              <span
-                                className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${isSelected ? "bg-white/20 text-white" : "bg-blue-100 text-blue-700"}`}
-                                title={calc.primaryCapBibleMatch
-                                  ? `Batche berechnet mit Kuechenbible-Kapazität "${calc.primaryCapBibleMatch.itemName}" (provisorisch)`
-                                  : undefined}
-                              >
-                                {calc.primaryCapBibleMatch && <span aria-hidden="true">📖 </span>}
-                                {calc.batches}×
-                              </span>
-                            )}
-                            {calc && calc.totalKg > 0 && (
-                              <span className={`text-[9px] tabular-nums ${isSelected ? "text-blue-300" : "text-slate-400"}`}>
-                                {fmtKg(calc.totalKg)}
-                              </span>
+                      <div key={row.key} className="flex items-stretch gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedKey(row.key)}
+                          className={`min-w-0 flex-1 text-left rounded-xl px-3 py-2.5 transition-all ${
+                            isSelected
+                              ? "bg-[#1e3a5f] shadow-md ring-2 ring-[#1e3a5f]/30"
+                              : "bg-white hover:bg-slate-50 border border-slate-150 shadow-sm hover:shadow"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-1 mb-1">
+                            <span className={`text-[11px] font-black leading-tight ${isSelected ? "text-white" : "text-[#1e3a5f]"}`}>
+                              WO {row.woNumber}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {calc && calc.batches > 0 && (
+                                <span
+                                  className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${isSelected ? "bg-white/20 text-white" : "bg-blue-100 text-blue-700"}`}
+                                  title={calc.primaryCapBibleMatch
+                                    ? `Batche berechnet mit Kuechenbible-Kapazität "${calc.primaryCapBibleMatch.itemName}" (provisorisch)`
+                                    : undefined}
+                                >
+                                  {calc.primaryCapBibleMatch && <span aria-hidden="true">📖 </span>}
+                                  {calc.batches}×
+                                </span>
+                              )}
+                              {calc && calc.totalKg > 0 && (
+                                <span className={`text-[9px] tabular-nums ${isSelected ? "text-blue-300" : "text-slate-400"}`}>
+                                  {fmtKg(calc.totalKg)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className={`text-[10px] truncate leading-tight ${isSelected ? "text-blue-200" : "text-slate-600"}`}>
+                            {row.subRecipeName || row.recipeName}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            <span className={`text-[8px] font-semibold ${isSelected ? "text-blue-300" : "text-slate-400"}`}>
+                              Shift {row.dateNeeded.match(/[-–]\s*(\d+)$/)?.[1] ?? "—"}
+                            </span>
+                            <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded-md ${isSelected ? `${sc.bg} ${sc.text}` : `${sc.bg} ${sc.text}`}`}>
+                              {row.kitchenStatus || "—"}
+                            </span>
+                            {pct > 0 && (
+                              <div className={`flex-1 h-1 rounded-full overflow-hidden ${isSelected ? "bg-white/20" : "bg-slate-100"}`}>
+                                <div
+                                  className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-emerald-500" : "bg-blue-400"}`}
+                                  style={{ width: `${Math.min(100, pct)}%` }}
+                                />
+                              </div>
                             )}
                           </div>
-                        </div>
-                        <div className={`text-[10px] truncate leading-tight ${isSelected ? "text-blue-200" : "text-slate-600"}`}>
-                          {row.subRecipeName || row.recipeName}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1.5">
-                          <span className={`text-[8px] font-semibold ${isSelected ? "text-blue-300" : "text-slate-400"}`}>
-                            Shift {row.dateNeeded.match(/[-–]\s*(\d+)$/)?.[1] ?? "—"}
-                          </span>
-                          <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded-md ${isSelected ? `${sc.bg} ${sc.text}` : `${sc.bg} ${sc.text}`}`}>
-                            {row.kitchenStatus || "—"}
-                          </span>
-                          {pct > 0 && (
-                            <div className={`flex-1 h-1 rounded-full overflow-hidden ${isSelected ? "bg-white/20" : "bg-slate-100"}`}>
-                              <div
-                                className={`h-full rounded-full transition-all ${pct >= 100 ? "bg-emerald-500" : "bg-blue-400"}`}
-                                style={{ width: `${Math.min(100, pct)}%` }}
-                              />
-                            </div>
-                          )}
-                        </div>
-                      </button>
+                        </button>
+                        {csvRows !== null && (
+                          <button
+                            type="button"
+                            onClick={() => deleteWo(row.key)}
+                            title="Diese WO löschen"
+                            className="shrink-0 self-center w-6 h-6 flex items-center justify-center rounded-lg bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors text-sm font-bold"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

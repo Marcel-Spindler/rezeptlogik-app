@@ -85,7 +85,8 @@ export interface EquipBatch {
   label: string;        // "Braiser"
   capacityKg: number;
   batches: number;
-  perBatchKg: number;
+  perBatchKg: number;   // volle Batch-Kapazität (= capacityKg)
+  remainderKg: number;  // letzter Rest-Batch (0 wenn exakt aufgeht)
   // Set only for BRAISER when capacityKg came from a Kuechenbible match
   // (instead of the manual/default caps value) — lets the UI label the source.
   bibleMatch?: EquipBibleEntry | null;
@@ -98,8 +99,9 @@ export interface BatchCalc {
   capacityKg: number | null;
   // Set when primaryEquip === "BRAISER" and capacityKg came from a Kuechenbible match.
   primaryCapBibleMatch?: EquipBibleEntry | null;
-  batches: number;              // Batche des primaryEquip
-  perBatchKg: number;
+  batches: number;              // Batche des primaryEquip (inkl. Rest-Batch)
+  perBatchKg: number;           // volle Batch-Kapazität
+  remainderKg: number;          // letzter Rest-Batch (0 wenn exakt aufgeht)
   resolvedCookMethods: string[];
   manualEquipment?: ManualEquipmentOverride | null;
   ingredients: IngCalc[];

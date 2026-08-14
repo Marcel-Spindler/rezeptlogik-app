@@ -40,16 +40,40 @@ async function generateGeminiInstruction(context) {
   if (!apiKey) throw new Error("GEMINI_API_KEY fehlt im lokalen Server");
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const requestBody = JSON.stringify({
-      systemInstruction: { parts: [{ text: `You are the production instruction bot for a professional food production kitchen.
-Create a concise, unique work-order instruction for exactly the supplied WO and sub-recipe.
-Use only supplied facts. Never invent temperatures, times, capacities, ingredients, allergens or quality limits.
-If a fact is missing, write [MANUAL CHECK REQUIRED]. Preserve exact quantities and units.
-Return JSON only with this shape: {"english":"...","german":"...","status":"needs_review"}.
-Follow the supplied processFlow in exactly that order. Include every listed station once, in the same order; never omit or reorder a listed cooking method.
-English and German must contain the same numbered station steps. Use at most 3 station headings and at most 2 short numbered steps per station.
-Do not repeat the full ingredient list or every batch quantity; those are already shown in the breakdown table. Include only critical handling quantities, equipment, quality checks and handover.
-Keep each language under 900 characters.
-This is an operational draft and must be reviewed by the responsible kitchen lead before production.` }] },
+      systemInstruction: { parts: [{ text: `You are the production instruction bot for HelloFresh professional food production kitchens (Factor, Verden facility).
+Generate bilingual cooking instructions (English + German) following the HelloFresh KitchenOS recipe card format.
+
+STATION FORMAT — mandatory:
+Label each cooking method in processFlow as a lettered station (A, B, C...) in that exact order.
+Station heading on its own line, then numbered steps below it.
+Use these station name mappings exactly:
+  SPICE PORTIONING  → "A. SPICE ROOM" / "A. GEWÜRZRAUM"
+  VEGGIE DEBOX      → "A. VEGGIE DEBOX" / "A. GEMÜSE-DEBOX"
+  PROTEIN DEBOX     → "A. PROTEIN DEBOX" / "A. PROTEINDEBOX"
+  BRAISER           → "B. BRAISER" / "B. BRAISER"
+  OVEN              → "B. OVEN" / "B. OFEN"
+  GRILL             → "B. GRILL" / "B. GRILL"
+  HORIZONTAL MIXER  → "B. HORIZONTAL MIXER" / "B. HORIZONTALMISCHER"
+  PLANETARY MIXER   → "B. PLANETARY MIXER" / "B. PLANETENMISCHER"
+  PATTY MAKER       → "B. PATTY MAKER" / "B. PATTY-PRESSE"
+  HAND MIX          → "B. HAND MIX" / "B. HANDMISCHUNG"
+  MARINADE          → "B. MARINADE" / "B. MARINADE"
+  HAND MARINADE     → "B. HAND MARINADE" / "B. HANDMARINADE"
+  IMMERSION BLENDER → "B. IMMERSION BLENDER" / "B. STABMIXER"
+  DRAIN             → "C. DRAIN" / "C. ABTROPFEN"
+  BLAST CHILLER     → "C. BLAST CHILLER" / "C. SCHNELLKÜHLER"
+
+STEP RULES:
+- Each station: 1–3 numbered steps
+- Include one concise visual appearance indicator per cooking station (e.g. "golden and tender-crisp", "sauce consistency", "internal temp 75°C")
+- BLAST CHILLER step must always end with: "FSQA CCP1: Verify core temperature ≤5°C." / "FSQA CCP1: Kerntemperatur ≤5°C prüfen."
+- English and German must mirror exactly (same stations, same step count, same order)
+- Use only facts from the supplied context; if temperature/time/quantity is missing write [MANUAL CHECK REQUIRED]
+- Do NOT list all ingredients — only critical handling quantities or equipment settings
+- Keep each language under 1500 characters
+
+Return JSON: {"english":"...","german":"...","status":"needs_review"}
+This is an operational draft and must be reviewed by the kitchen lead before production.` }] },
       contents: [{ role: "user", parts: [{ text: `WO context:\n${context}` }] }],
       generationConfig: {
         responseMimeType: "application/json",
@@ -62,8 +86,9 @@ This is an operational draft and must be reviewed by the responsible kitchen lea
           },
           required: ["english", "german", "status"],
         },
-        maxOutputTokens: 3000,
+        maxOutputTokens: 8192,
         temperature: 0.2,
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
   let response;
@@ -118,12 +143,15 @@ This is an operational draft and must be reviewed by the responsible kitchen lea
 
 async function generateGeminiInstructionBatch(items) {
   const results = {};
-  for (const item of items) {
-    try {
-      results[item.key] = { ok: true, instruction: await generateGeminiInstruction(item.context) };
-    } catch (error) {
-      results[item.key] = { ok: false, error: error instanceof Error ? error.message : String(error) };
-    }
+  const CONCURRENCY = 8;
+  for (let i = 0; i < items.length; i += CONCURRENCY) {
+    await Promise.all(items.slice(i, i + CONCURRENCY).map(async (item) => {
+      try {
+        results[item.key] = { ok: true, instruction: await generateGeminiInstruction(item.context) };
+      } catch (error) {
+        results[item.key] = { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }));
   }
   return results;
 }

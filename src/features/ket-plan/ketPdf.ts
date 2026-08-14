@@ -1,6 +1,6 @@
 // Baut das druckbare HTML/PDF für einen Satz Work Orders (Breakdown-Karten je WO).
 import { EQUIP_DEFAULTS, EQUIP_LABELS, type BatchCalc, type KetRow, type WoInstruction } from "./ketTypes";
-import { escHtml, fmtKg, fmtNum, parseDateShift, parseSteps } from "./ketLogic";
+import { escHtml, fmtKg, fmtNum, parseDateShift } from "./ketLogic";
 import { orderCookingMethods } from "./woInstructionBot";
 
 export function buildPdf(
@@ -25,9 +25,17 @@ export function buildPdf(
     const donePct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
     const cookDisplay = orderCookingMethods(calc.resolvedCookMethods).join(" → ") || "—";
 
+    const ING_CAT_ORDER: Record<string, number> = { SPI: 0, PHF: 1, DAI: 2, PRO: 3 };
     const ingRows = calc.ingredients
       .filter(ing => ing.totalKg > 0.0005)
-      .sort((a, b) => b.totalKg - a.totalKg)
+      .sort((a, b) => {
+        const ca = (a.category ?? "").trim().toUpperCase().slice(0, 3);
+        const cb = (b.category ?? "").trim().toUpperCase().slice(0, 3);
+        const oa = ING_CAT_ORDER[ca] ?? 99;
+        const ob = ING_CAT_ORDER[cb] ?? 99;
+        if (oa !== ob) return oa - ob;
+        return b.totalKg - a.totalKg;
+      })
       .map(ing => {
         const catBg =
           ing.category === "PRO" ? "#fee2e2" :
@@ -61,42 +69,47 @@ export function buildPdf(
               <div style="font-size:8px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">${eb.label}</div>
               <div style="font-size:20px;font-weight:900;line-height:1;">${eb.batches}×</div>
               <div style="font-size:8px;color:#93c5fd;margin-top:1px;">${eb.capacityKg} kg / Batch</div>
-              <div style="font-size:8px;color:#7dd3fc;">à ${eb.perBatchKg.toFixed(1)} kg</div>
+              <div style="font-size:8px;color:#7dd3fc;">à ${eb.perBatchKg.toFixed(1)} kg${eb.remainderKg > 0 ? ` + Rest ${eb.remainderKg.toFixed(1)} kg` : ""}</div>
               ${eb.bibleMatch ? `<div style="font-size:7px;color:#fde68a;font-weight:800;margin-top:2px;">📖 Kuechenbible: ${escHtml(eb.bibleMatch.itemName)}</div>` : ""}
             </div>`).join("")}
         </div>`
       : "";
 
-    // Pro Sub-Rezept immer beide Sprachen ausgeben. Ein fehlender deutscher
-    // Text bleibt sichtbar, damit die PDF keine stillschweigende Übersetzung suggeriert.
-    const renderInstructionLanguage = (label: string, text: string | null, tone: string, missing: string) => {
-      const steps = text ? parseSteps(text) : [];
-      return `<div style="margin-top:6px;padding:7px 9px;background:${tone};border-radius:4px;">
-        <div style="font-size:8px;font-weight:900;color:#334155;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">${label}</div>
-        ${steps.length > 0
-          ? steps.map((step, stepIndex) => `
-            <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:3px;">
-              <span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;background:#166534;color:#fff;border-radius:50%;font-size:8px;font-weight:900;flex-shrink:0;margin-top:1px;">${stepIndex + 1}</span>
-              <span style="font-size:9px;color:#1e293b;line-height:1.4;white-space:pre-wrap;">${escHtml(step)}</span>
-            </div>`).join("")
-          : `<div style="font-size:9px;color:#64748b;font-style:italic;">${missing}</div>`}
-      </div>`;
-    };
     const generatedInstruction = woInstructions[row.key];
-    const englishInstruction = generatedInstruction?.english || calc.subRecipeInstructions;
-    const germanInstruction = generatedInstruction?.german || calc.subRecipeInstructionsDE;
-    const hasInstructions = !!englishInstruction || !!germanInstruction;
-    const instrHtml = `
-      <div class="instructions-block">
-        <div class="instructions-title">Cooking instructions · ${escHtml(row.subRecipeName)}</div>
-        ${renderInstructionLanguage("English", englishInstruction, "#f0fdf4", "English instructions not available")}
-        ${renderInstructionLanguage(
-          generatedInstruction?.status === "needs_review" ? "Deutsch (Claude draft · review)" : "Deutsch",
-          germanInstruction,
-          "#eff6ff",
-          "Deutsche Übersetzung nicht vorhanden",
-        )}
-      </div>`;
+    const renderSteps = (text: string) => {
+      const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+      if (lines.length === 0) return `<div style="font-size:9px;color:#1e293b;white-space:pre-wrap;">${escHtml(text)}</div>`;
+      let stepNum = 0;
+      return lines.map(line => {
+        // Station header: "A. VEGGIE DEBOX" / "B. OFEN" etc.
+        if (/^[A-D]\. /.test(line)) {
+          stepNum = 0;
+          return `<div style="margin-top:5px;margin-bottom:2px;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#166534;border-bottom:1px solid #d1fae5;padding-bottom:1px;">${escHtml(line)}</div>`;
+        }
+        const clean = line.replace(/^\s*[-–•*]\s*/, "").replace(/^\s*\d+[.)]\s*/, "").trim();
+        if (!clean) return "";
+        stepNum++;
+        return `<div style="display:flex;gap:4px;align-items:flex-start;margin-bottom:2px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;background:#166534;color:#fff;border-radius:50%;font-size:7px;font-weight:900;flex-shrink:0;margin-top:1px;">${stepNum}</span><span style="font-size:9px;color:#1e293b;line-height:1.35;white-space:pre-wrap;">${escHtml(clean)}</span></div>`;
+      }).join("");
+    };
+    const instrHtml = generatedInstruction
+      ? `<div style="margin-top:8px;border:1px solid #d1fae5;border-radius:7px;overflow:hidden;">
+          <div style="background:#f0fdf4;padding:4px 10px;border-bottom:1px solid #d1fae5;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#166534;">Kochanweisung · ${escHtml(row.subRecipeName)}</span>
+            ${generatedInstruction.status === "needs_review" ? '<span style="font-size:7px;color:#d97706;font-weight:700;">⚠ Review erforderlich</span>' : ""}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 10px;">
+            <div>
+              <div style="font-size:8px;font-weight:900;color:#166534;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;">English</div>
+              ${renderSteps(generatedInstruction.english)}
+            </div>
+            <div>
+              <div style="font-size:8px;font-weight:900;color:#1e40af;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;">Deutsch</div>
+              ${renderSteps(generatedInstruction.german)}
+            </div>
+          </div>
+        </div>`
+      : "";
 
     const unlockedEtaStr = row.unlockedEta
       ? (() => { try { return new Date(row.unlockedEta).toLocaleString("de-DE"); } catch { return row.unlockedEta; } })()
@@ -173,7 +186,7 @@ export function buildPdf(
 
   ${row.workOrderComment ? `<div class="comment warn">⚠ WO Kommentar: ${row.workOrderComment}</div>` : ""}
   ${row.stagingComment ? `<div class="comment info">💬 Staging: ${row.stagingComment}</div>` : ""}
-  ${hasInstructions ? instrHtml : `<div class="comment instr">⚠ Kochanweisung für dieses Sub-Rezept nicht im Meal-/Rezeptkatalog vorhanden.</div>`}
+  ${instrHtml}
 
   ${ingRows ? `
   <table class="ings">
@@ -250,34 +263,26 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
 .cat{display:inline-block;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;background:#f1f5f9;color:#64748b;margin-right:4px}
 .no-data{padding:10px;background:#fef3c7;border-radius:6px;font-size:10px;color:#92400e;margin-top:8px;border-left:3px solid #fbbf24}
 @media print{
-  body{font-size:10px}
-  .card{page-break-before:always;page-break-inside:avoid;margin:4px;border-width:1px;box-shadow:none}
-  .card:first-of-type{page-break-before:auto}
-  .page-header{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body{font-size:9px}
+  .page-header,.equip-section{display:none}
+  .card{
+    page-break-before:always;page-break-after:always;page-break-inside:avoid;
+    break-before:page;break-after:page;break-inside:avoid;
+    margin:0;border-width:1px;box-shadow:none;border-radius:6px;
+    padding:10px 12px;
+    max-height:281mm;overflow:hidden;
+  }
+  .card:first-of-type{page-break-before:auto;break-before:auto}
+  .wo-num{font-size:22px}.sub{font-size:15px}
+  .sval{font-size:15px}.sval.big{font-size:28px}
+  .stat{padding:5px 8px}.slabel{font-size:7px}
+  .methods{padding:6px 10px;font-size:11px}
   .methods,.hi-stat,.stat-green,.stat-red{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @page{size:A4;margin:8mm}
 }
 </style>
 </head>
 <body>
-<div class="page-header">
-  <div class="page-title">🍳 ${title}</div>
-  <div class="page-meta">Generiert: ${new Date().toLocaleString("de-DE")} · ${rows.length} Work Orders</div>
-  ${source === "LiveWMS"
-    ? `<div class="page-meta" style="color:#f59e0b;font-weight:800;margin-top:2px;">⚠ Quelle: Live WMS (Snowflake) – Feldzuordnung ungeprüft</div>`
-    : source === "FirestoreStale"
-      ? `<div class="page-meta" style="color:#dc2626;font-weight:800;margin-top:2px;">⚠ Quelle: Firestore – veraltet, enthält nicht die aktuelle Woche</div>`
-      : ""}
-</div>
-<div class="equip-section">
-  <div>
-    <div class="equip-label">Equipment-Kapazitäten</div>
-    <div class="equip-grid">
-      ${Object.entries({ ...EQUIP_DEFAULTS, ...caps }).filter(([, v]) => v > 0)
-        .map(([k, v]) => `<span class="equip-chip">${EQUIP_LABELS[k] ?? k}: ${v} kg</span>`).join("")}
-    </div>
-  </div>
-</div>
 ${cards}
 </body>
 </html>`;

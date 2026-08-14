@@ -38,6 +38,9 @@
       { "source": "/api/wms-workorders", "function": "wmsWorkorders", "region": "europe-west3" },
       { "source": "/api/wms-wo-detail", "function": "wmsWoDetail", "region": "europe-west3" },
       { "source": "/api/wms-breakdown", "function": "wmsBreakdown", "region": "europe-west3" },
+      { "source": "/api/local-db/gemini-instruction", "function": "geminiInstruction", "region": "europe-west3" },
+      { "source": "/api/local-db/gemini-instructions-batch", "function": "geminiInstructionsBatch", "region": "europe-west3" },
+      { "source": "/api/local-db/generate-pdf", "function": "generatePdf", "region": "europe-west3" },
       { "source": "**", "destination": "/index.html" }
     ]
   }

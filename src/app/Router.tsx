@@ -73,7 +73,7 @@ function MainPane({ view }: { view: AppView }) {
       );
 
     case "wo":
-      return <KetBreakdownView data={data} />;
+      return <KetBreakdownView data={data} selectedWeek={selectedWeek} />;
 
     case "pet":
       return <PetPlanView data={data} />;

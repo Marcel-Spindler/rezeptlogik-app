@@ -5,7 +5,10 @@ const snowflake = require("snowflake-sdk");
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
+const { defineSecret } = require("firebase-functions/params");
 const ExcelJS = require("exceljs");
+
+const GEMINI_API_KEY_SECRET = defineSecret("GEMINI_API_KEY");
 
 let VisionClientCtor = null;
 try {
@@ -3201,3 +3204,195 @@ exports.wmsBreakdown = onRequest({ region: "europe-west3", timeoutSeconds: 120, 
     });
   }
 });
+
+// ─── Gemini WO-Instruction Bot ───────────────────────────────────────────────
+
+async function generateGeminiInstructionCloud(context) {
+  const apiKey = GEMINI_API_KEY_SECRET.value();
+  if (!apiKey) throw new Error("Firebase Secret GEMINI_API_KEY nicht gesetzt");
+  const model = "gemini-2.5-flash";
+  const requestBody = JSON.stringify({
+    systemInstruction: { parts: [{ text: `You are the production instruction bot for HelloFresh professional food production kitchens (Factor, Verden facility).
+Generate bilingual cooking instructions (English + German) following the HelloFresh KitchenOS recipe card format.
+
+STATION FORMAT — mandatory:
+Label each cooking method in processFlow as a lettered station (A, B, C...) in that exact order.
+Station heading on its own line, then numbered steps below it.
+Use these station name mappings exactly:
+  SPICE PORTIONING  → "A. SPICE ROOM" / "A. GEWÜRZRAUM"
+  VEGGIE DEBOX      → "A. VEGGIE DEBOX" / "A. GEMÜSE-DEBOX"
+  PROTEIN DEBOX     → "A. PROTEIN DEBOX" / "A. PROTEINDEBOX"
+  BRAISER           → "B. BRAISER" / "B. BRAISER"
+  OVEN              → "B. OVEN" / "B. OFEN"
+  GRILL             → "B. GRILL" / "B. GRILL"
+  HORIZONTAL MIXER  → "B. HORIZONTAL MIXER" / "B. HORIZONTALMISCHER"
+  PLANETARY MIXER   → "B. PLANETARY MIXER" / "B. PLANETENMISCHER"
+  PATTY MAKER       → "B. PATTY MAKER" / "B. PATTY-PRESSE"
+  HAND MIX          → "B. HAND MIX" / "B. HANDMISCHUNG"
+  MARINADE          → "B. MARINADE" / "B. MARINADE"
+  HAND MARINADE     → "B. HAND MARINADE" / "B. HANDMARINADE"
+  IMMERSION BLENDER → "B. IMMERSION BLENDER" / "B. STABMIXER"
+  DRAIN             → "C. DRAIN" / "C. ABTROPFEN"
+  BLAST CHILLER     → "C. BLAST CHILLER" / "C. SCHNELLKÜHLER"
+
+STEP RULES:
+- Each station: 1–3 numbered steps
+- Include one concise visual appearance indicator per cooking station (e.g. "golden and tender-crisp", "sauce consistency", "internal temp 75°C")
+- BLAST CHILLER step must always end with: "FSQA CCP1: Verify core temperature ≤5°C." / "FSQA CCP1: Kerntemperatur ≤5°C prüfen."
+- English and German must mirror exactly (same stations, same step count, same order)
+- Use only facts from the supplied context; if temperature/time/quantity is missing write [MANUAL CHECK REQUIRED]
+- Do NOT list all ingredients — only critical handling quantities or equipment settings
+- Keep each language under 1500 characters
+
+Return JSON: {"english":"...","german":"...","status":"needs_review"}
+This is an operational draft and must be reviewed by the kitchen lead before production.` }] },
+    contents: [{ role: "user", parts: [{ text: `WO context:\n${context}` }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          english: { type: "STRING" },
+          german: { type: "STRING" },
+          status: { type: "STRING", enum: ["generated", "needs_review"] },
+        },
+        required: ["english", "german", "status"],
+      },
+      maxOutputTokens: 8192,
+      temperature: 0.2,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  });
+
+  let response;
+  let payload;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      { method: "POST", headers: { "content-type": "application/json" }, body: requestBody },
+    );
+    payload = await response.json().catch(() => ({}));
+    if (response.ok || response.status < 500 || attempt === 1) break;
+  }
+  if (!response.ok) throw new Error(payload?.error?.message || `Gemini HTTP ${response.status}`);
+  const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
+  if (!text) throw new Error(`Gemini lieferte keine Instructions (${payload.promptFeedback?.blockReason || payload.candidates?.[0]?.finishReason || "unbekannter Grund"})`);
+
+  const candidate = text.replace(/^\s*```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  const objectStart = candidate.indexOf("{");
+  const objectEnd = candidate.lastIndexOf("}");
+  if (objectStart < 0 || objectEnd <= objectStart) throw new Error(`Gemini lieferte kein JSON-Objekt (${text.slice(0, 120)})`);
+  const jsonText = candidate.slice(objectStart, objectEnd + 1);
+  let inString = false;
+  let safeJson = "";
+  for (let i = 0; i < jsonText.length; i++) {
+    const c = jsonText[i];
+    const prev = jsonText[i - 1];
+    const escaped = prev === "\\" && jsonText[i - 2] !== "\\";
+    if (c === '"' && !escaped) inString = !inString;
+    if (inString && c === "\n") safeJson += "\\n";
+    else if (inString && c === "\r") continue;
+    else if (inString && c === "\t") safeJson += "\\t";
+    else safeJson += c;
+  }
+  let instruction;
+  try {
+    instruction = JSON.parse(safeJson);
+  } catch (err) {
+    throw new Error(`Gemini JSON ungültig: ${err instanceof Error ? err.message : String(err)} · Anfang: ${safeJson.slice(0, 180)}`);
+  }
+  if (!instruction.english || !instruction.german) throw new Error("Gemini lieferte unvollständige Instructions");
+  return {
+    english: instruction.english,
+    german: instruction.german,
+    status: instruction.status === "generated" ? "generated" : "needs_review",
+    generatedAt: new Date().toISOString(),
+    model,
+  };
+}
+
+exports.geminiInstruction = onRequest(
+  { region: "europe-west3", timeoutSeconds: 60, secrets: [GEMINI_API_KEY_SECRET] },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+    try {
+      const body = req.body || {};
+      if (!body.context) { res.status(400).json({ error: "context fehlt" }); return; }
+      const instruction = await generateGeminiInstructionCloud(body.context);
+      res.status(200).json({ instruction });
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+exports.geminiInstructionsBatch = onRequest(
+  { region: "europe-west3", timeoutSeconds: 540, memory: "512MiB", concurrency: 1, secrets: [GEMINI_API_KEY_SECRET] },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+    try {
+      const body = req.body || {};
+      const items = Array.isArray(body.items) ? body.items : [];
+      const results = {};
+      // Process up to 12 WOs in parallel to stay well within the 540s timeout.
+      const CONCURRENCY = 12;
+      for (let i = 0; i < items.length; i += CONCURRENCY) {
+        await Promise.all(items.slice(i, i + CONCURRENCY).map(async (item) => {
+          try {
+            results[item.key] = { ok: true, instruction: await generateGeminiInstructionCloud(item.context) };
+          } catch (err) {
+            results[item.key] = { ok: false, error: err instanceof Error ? err.message : String(err) };
+          }
+        }));
+      }
+      res.status(200).json({ results });
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
+// ─── PDF-Generierung via Chromium ────────────────────────────────────────────
+
+const CHROMIUM_PACK_URL = "https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar";
+
+async function htmlToPdfCloud(html) {
+  const chromium = require("@sparticuz/chromium-min");
+  const puppeteer = require("puppeteer-core");
+  const browser = await puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath: await chromium.executablePath(CHROMIUM_PACK_URL),
+    headless: chromium.headless,
+  });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+    return await page.pdf({
+      format: "A4",
+      margin: { top: "8mm", right: "8mm", bottom: "8mm", left: "8mm" },
+      printBackground: true,
+    });
+  } finally {
+    await browser.close();
+  }
+}
+
+exports.generatePdf = onRequest(
+  { region: "europe-west3", timeoutSeconds: 120, memory: "2GiB" },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+    try {
+      const body = req.body || {};
+      if (!body.html) { res.status(400).json({ error: "html fehlt" }); return; }
+      const pdf = await htmlToPdfCloud(body.html);
+      const filename = (body.filename || "wo-breakdown.pdf").replace(/[^\w\-.]+/g, "_");
+      res.set("Content-Type", "application/pdf");
+      res.set("Content-Disposition", `attachment; filename="${filename}"`);
+      res.set("Cache-Control", "no-store");
+      res.status(200).end(Buffer.from(pdf));
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);

@@ -2,7 +2,7 @@
 // (inline editierbar), Zutaten-Tabelle, Kochanweisungen.
 import { useEffect, useState } from "react";
 import { EQUIP_LABELS, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction } from "./ketTypes";
-import { catColor, fmtDateHeader, fmtKg, fmtNum, parseSteps } from "./ketLogic";
+import { catColor, fmtDateHeader, fmtKg, fmtNum } from "./ketLogic";
 import { StatCard, StatusChip } from "./KetSharedUi";
 import { orderCookingMethods } from "./woInstructionBot";
 
@@ -47,8 +47,6 @@ export function WoDetail({
   const remaining = Math.max(0, row.targetPortions - done);
   const donePct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
   const equip = calc.primaryEquip ? (EQUIP_LABELS[calc.primaryEquip] ?? calc.primaryEquip) : null;
-
-  const instrSteps = calc.subRecipeInstructions ? parseSteps(calc.subRecipeInstructions) : [];
 
   function commitCap(e: string) {
     if (capDraft.trim()) onCapChange(e, capDraft);
@@ -310,10 +308,11 @@ export function WoDetail({
               badgeTitle={calc.primaryCapBibleMatch ? `Kapazität aus Kuechenbible: "${calc.primaryCapBibleMatch.itemName}" (provisorisch)` : undefined} />
           )}
           <StatCard label="Batche" value={calc.batches > 0 ? String(calc.batches) : "—"} highlight
-            sub={calc.perBatchKg > 0 ? `à ${fmtKg(calc.perBatchKg)}` : undefined}
+            sub={calc.perBatchKg > 0 ? `à ${fmtKg(calc.perBatchKg)}${calc.remainderKg > 0 ? ` + Rest ${fmtKg(calc.remainderKg)}` : ""}` : undefined}
             badge={calc.primaryCapBibleMatch ? "📖" : undefined}
             badgeTitle={calc.primaryCapBibleMatch ? `Batch-Anzahl basiert auf Kuechenbible-Kapazität: "${calc.primaryCapBibleMatch.itemName}" (provisorisch, noch nicht vollständig produktionsvalidiert)` : undefined} />
-          <StatCard label="Pro Batch" value={calc.perBatchKg > 0 ? fmtKg(calc.perBatchKg) : "—"} />
+          <StatCard label="Pro Batch" value={calc.perBatchKg > 0 ? fmtKg(calc.perBatchKg) : "—"}
+            sub={calc.remainderKg > 0 ? `Rest: ${fmtKg(calc.remainderKg)}` : undefined} />
         </div>
 
         {/* Progress bar */}
@@ -371,39 +370,6 @@ export function WoDetail({
           </div>
         )}
 
-        {/* Kochanweisungen – immer sichtbar, nummerierte Schritte */}
-        {(instrSteps.length > 0 || calc.cookingInstructions) && (
-          <div className="rounded-2xl border border-green-200 overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-2.5 bg-green-50 border-b border-green-200">
-              <span className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center shrink-0">
-                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" d="M9 5l7 7-7 7"/>
-                </svg>
-              </span>
-              <span className="text-[10px] font-black text-green-800 uppercase tracking-[.1em]">
-                Kochanweisung · {row.subRecipeName}
-              </span>
-              {instrSteps.length > 0 && (
-                <span className="ml-auto text-[9px] font-bold text-green-600">{instrSteps.length} Schritte</span>
-              )}
-            </div>
-            <div className="px-4 py-3 space-y-2 bg-green-50/40">
-              {instrSteps.length > 0 ? instrSteps.map((step, si) => (
-                <div key={si} className="flex gap-3 items-start">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-green-600 text-white text-[9px] font-black shrink-0 mt-0.5">
-                    {si + 1}
-                  </span>
-                  <span className="text-[11px] leading-snug text-slate-700 flex-1">{step}</span>
-                </div>
-              )) : (
-                <div className="text-xs text-slate-500 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                  📋 {calc.cookingInstructions}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Batch visualization */}
         {calc.batches > 1 && calc.perBatchKg > 0 && (
           <div>
@@ -411,13 +377,17 @@ export function WoDetail({
               Batch-Übersicht ({calc.batches} Batche)
             </div>
             <div className="flex flex-wrap gap-2">
-              {Array.from({ length: Math.min(calc.batches, 20) }, (_, i) => (
-                <div key={i} className="flex flex-col items-center bg-white border border-slate-200 rounded-xl px-3 py-2 min-w-[64px] shadow-sm">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase">Batch</span>
-                  <span className="text-lg font-black text-[#1e3a5f]">{i + 1}</span>
-                  <span className="text-[9px] font-semibold text-slate-500 tabular-nums">{fmtKg(calc.perBatchKg)}</span>
-                </div>
-              ))}
+              {Array.from({ length: Math.min(calc.batches, 20) }, (_, i) => {
+                const isRest = calc.remainderKg > 0 && i === calc.batches - 1;
+                const batchKg = isRest ? calc.remainderKg : calc.perBatchKg;
+                return (
+                  <div key={i} className={`flex flex-col items-center rounded-xl px-3 py-2 min-w-[64px] shadow-sm border ${isRest ? "bg-amber-50 border-amber-200" : "bg-white border-slate-200"}`}>
+                    <span className={`text-[8px] font-bold uppercase ${isRest ? "text-amber-600" : "text-slate-400"}`}>{isRest ? "Rest" : "Batch"}</span>
+                    <span className={`text-lg font-black ${isRest ? "text-amber-700" : "text-[#1e3a5f]"}`}>{i + 1}</span>
+                    <span className={`text-[9px] font-semibold tabular-nums ${isRest ? "text-amber-600" : "text-slate-500"}`}>{fmtKg(batchKg)}</span>
+                  </div>
+                );
+              })}
               {calc.batches > 20 && (
                 <div className="flex items-center px-3 text-xs text-slate-400 font-semibold">
                   +{calc.batches - 20} weitere

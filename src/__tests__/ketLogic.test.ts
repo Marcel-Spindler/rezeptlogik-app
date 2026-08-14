@@ -89,7 +89,8 @@ describe("calcBatch equipment resolution", () => {
     expect(calc.resolvedCookMethods).toContain("OVEN");
     expect(calc.primaryEquip).toBe("OVEN");
     expect(calc.batches).toBe(5);
-    expect(calc.perBatchKg).toBe(40);
+    expect(calc.perBatchKg).toBe(45);   // volle Batch-Kapazität, kein Durchschnitt
+    expect(calc.remainderKg).toBeCloseTo(20); // 200 - 4×45 = 20 kg Rest-Batch
   });
 
   it("uses a manual equipment override when no automatic source exists", () => {
@@ -116,18 +117,21 @@ describe("calcBatch equipment resolution", () => {
         capacityKg: null,
         batches: 0,
         perBatchKg: 0,
+        remainderKg: 0,
         resolvedCookMethods: [],
         manualEquipment: null,
         ingredients: [],
         recipeFound: true,
         subRecipeFound: true,
         cookingInstructions: null,
-        subRecipeInstructions: "Mix thoroughly.",
-        subRecipeInstructionsDE: "Gründlich mischen.",
+        subRecipeInstructions: null,
+        subRecipeInstructionsDE: null,
         subRecipeInstructionsGermanFallback: false,
       }]]),
       {},
       "WO test",
+      null,
+      { [row.key]: { english: "Mix thoroughly.", german: "Gründlich mischen.", status: "generated" } },
     );
 
     expect(pdf).toContain("English");
@@ -144,6 +148,7 @@ describe("calcBatch equipment resolution", () => {
       capacityKg: null,
       batches: 0,
       perBatchKg: 0,
+      remainderKg: 0,
       resolvedCookMethods: ["OVEN", "SPICE PORTIONING"],
       manualEquipment: null,
       ingredients: [],

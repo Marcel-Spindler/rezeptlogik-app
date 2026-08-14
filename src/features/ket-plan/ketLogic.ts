@@ -337,12 +337,26 @@ export function calcBatch(
       }
     }
 
-    // Merge categories from gross into structure-sourced ingredients
+    // Merge categories from gross into structure-sourced ingredients.
+    // Structure ingredient names often carry a country prefix ("FA-DE Spice, Sea Salt")
+    // while gross ingredients may not ("Spice, Sea Salt") — index both forms so the
+    // lookup succeeds regardless of which side has the prefix.
     if (subRecipeFound && structure && recipe) {
       const grossHits = matchGrossIngredients(recipe.grossIngredients, row.subRecipeName);
-      const catLookup = new Map(grossHits.map(g => [normStr(g.ingredient), g.ingredientCategory ?? ""]));
+      const stripPrefix = (s: string) => s.replace(/^[A-Z]{2}-[A-Z]{2}\s+/i, "");
+      const catLookup = new Map<string, string>();
+      for (const g of grossHits) {
+        const cat = g.ingredientCategory ?? "";
+        catLookup.set(normStr(g.ingredient), cat);
+        catLookup.set(normStr(stripPrefix(g.ingredient)), cat);
+      }
       for (const ing of ingredients) {
-        if (!ing.category) ing.category = catLookup.get(normStr(ing.name)) ?? "";
+        if (!ing.category) {
+          ing.category =
+            catLookup.get(normStr(ing.name)) ||
+            catLookup.get(normStr(stripPrefix(ing.name))) ||
+            "";
+        }
       }
     }
   }
@@ -387,13 +401,16 @@ export function calcBatch(
     .filter(m => effectiveCap(m) > 0)
     .map(m => {
       const cap = effectiveCap(m);
-      const b = totalKg > 0 ? Math.max(1, Math.ceil(totalKg / cap)) : 0;
+      const fullBatches = totalKg > 0 ? Math.floor(totalKg / cap) : 0;
+      const remainder = totalKg > 0 ? +(totalKg - fullBatches * cap).toFixed(3) : 0;
+      const b = fullBatches + (remainder > 0 ? 1 : 0);
       return {
         equip: m,
         label: EQUIP_LABELS[m] ?? m,
         capacityKg: cap,
-        batches: b,
-        perBatchKg: b > 0 ? totalKg / b : 0,
+        batches: Math.max(b, totalKg > 0 ? 1 : 0),
+        perBatchKg: cap,
+        remainderKg: remainder,
         bibleMatch: bibleActive(m) ? bibleMatches.get(m) ?? null : null,
       };
     });
@@ -408,16 +425,27 @@ export function calcBatch(
   const primaryCapBibleMatch = primaryEquip && bibleActive(primaryEquip) ? bibleMatches.get(primaryEquip) ?? null : null;
   const primaryBatch = equipBatches.find(eb => eb.equip === primaryEquip);
   const batches = primaryBatch?.batches ?? 0;
-  const perBatchKg = primaryBatch?.perBatchKg ?? (batches > 0 ? totalKg / batches : 0);
+  const perBatchKg = primaryBatch?.perBatchKg ?? (capacityKg ?? 0);
+  const remainderKg = primaryBatch?.remainderKg ?? 0;
 
+  const ING_CAT_ORDER: Record<string, number> = { SPI: 0, PHF: 1, DAI: 2, PRO: 3 };
   for (const ing of ingredients) {
-    ing.perBatchKg = batches > 0 ? ing.totalKg / batches : 0;
+    // Zutaten-Menge für einen vollen Batch (proportional zur Batch-Kapazität)
+    ing.perBatchKg = totalKg > 0 && perBatchKg > 0
+      ? +(ing.totalKg / totalKg * perBatchKg).toFixed(3)
+      : 0;
   }
+  ingredients.sort((a, b) => {
+    const ao = ING_CAT_ORDER[a.category.trim().toUpperCase().slice(0, 3)] ?? 99;
+    const bo = ING_CAT_ORDER[b.category.trim().toUpperCase().slice(0, 3)] ?? 99;
+    if (ao !== bo) return ao - bo;
+    return b.totalKg - a.totalKg; // innerhalb Kategorie: schwerste zuerst
+  });
 
   const instructionPair = findSubRecipeInstructions(recipe, data.mealCatalog, data.instructions, row.subRecipeName);
 
   return {
-    totalKg, equipBatches, primaryEquip, capacityKg, primaryCapBibleMatch, batches, perBatchKg,
+    totalKg, equipBatches, primaryEquip, capacityKg, primaryCapBibleMatch, batches, perBatchKg, remainderKg,
     resolvedCookMethods, manualEquipment: manualEquipment ?? null,
     ingredients, recipeFound: !!(recipe || structure), subRecipeFound, cookingInstructions,
     subRecipeInstructions: instructionPair.english,
