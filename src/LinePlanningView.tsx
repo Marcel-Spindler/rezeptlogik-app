@@ -28,6 +28,8 @@ import {
   runWindowScore, scheduleReducer, schedulesEqual, slotFitsRemaining,
 } from "./features/planning-oasis/lines/linePlanningLogic";
 import { DeltaBadge, DropCell, RecipePill, VolumeBar } from "./features/planning-oasis/lines/LineWidgets";
+import { LinePlatingSheet } from "./features/planning-oasis/lines/LinePlatingSheet";
+import { autoPlating, parsePetCsv } from "./features/planning-oasis/lines/autoPlatingAlgorithm";
 
 // Modul-weite Drag-Payload (vermeidet Stale-Closures über Handler-Callbacks hinweg).
 // Bewusst nicht ausgelagert: eng an die Drag-Handler der Hauptkomponente gekoppelt.
@@ -78,6 +80,10 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   const [rampUpHistoryMap, setRampUpHistoryMap] = useState<Map<string, RampUpSnapshot[]>>(new Map());
   const [rampUpChanges, setRampUpChanges] = useState<RampUpChangeEvent[]>([]);
   const [rampUpBannerDismissed, setRampUpBannerDismissed] = useState(false);
+  const [viewTab, setViewTab] = useState<"grid" | "sheet">("grid");
+  const [cuppingBySlot, setCuppingBySlot] = useState<Record<string, string>>({});
+  const [autoPlatingNotice, setAutoPlatingNotice] = useState("");
+  const petFileRef = useRef<HTMLInputElement>(null);
   const dragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAutoPlanTriggerRef = useRef<number | undefined>(autoPlanTrigger);
   const lastLinePlanAutosaveSignatureRef = useRef<string>("");
@@ -1548,6 +1554,36 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
               🤖 Auto-Plan
             </button>
             <button
+              onClick={() => petFileRef.current?.click()}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-violet-600 text-white hover:bg-violet-700"
+              title="PET-CSV hochladen → Optimale Linienbelegung nach Allergenen berechnen"
+            >
+              🧬 Smart Plating (PET)
+            </button>
+            <input
+              ref={petFileRef}
+              type="file"
+              accept=".csv"
+              className="sr-only"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file || !appData) return;
+                e.target.value = "";
+                try {
+                  const text = await file.text();
+                  const petByDay = parsePetCsv(text);
+                  const result = autoPlating(petByDay, appData, lineCapacityByLane);
+                  dispatch({ type: "load", schedule: { ...schedule, ...result.schedule } });
+                  setCuppingBySlot(result.cuppingBySlot);
+                  setAutoPlatingNotice(`Smart Plating: ${result.summary}`);
+                  setViewTab("sheet");
+                  setTimeout(() => setAutoPlatingNotice(""), 15000);
+                } catch (err) {
+                  alert(`Smart Plating fehlgeschlagen: ${(err as Error).message}`);
+                }
+              }}
+            />
+            <button
               onClick={async () => {
                 setSaving(true);
                 try {
@@ -1635,6 +1671,11 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
         {autoPlanNotice && (
           <div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
             {autoPlanNotice}
+          </div>
+        )}
+        {autoPlatingNotice && (
+          <div className="mt-2 rounded-lg bg-violet-50 px-3 py-2 text-xs font-semibold text-violet-800 ring-1 ring-violet-200 whitespace-pre-line">
+            {autoPlatingNotice}
           </div>
         )}
         {forecastVarianceRows.length > 0 && (
@@ -1871,6 +1912,34 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             </div>
           </section>
 
+          {/* ── View Tab Switcher ────────────────────────────────────────── */}
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 ring-1 ring-slate-200 w-fit">
+            <button
+              onClick={() => setViewTab("grid")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewTab === "grid" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Drag & Drop
+            </button>
+            <button
+              onClick={() => setViewTab("sheet")}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewTab === "sheet" ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Sheet-Ansicht (Copy-Paste)
+            </button>
+          </div>
+
+          {viewTab === "sheet" && (
+            <LinePlatingSheet
+              schedule={schedule}
+              lineCapacity={lineCapacityByLane}
+              comments={comments}
+              dayLineCount={dayLineCount}
+              week={week}
+              cuppingBySlot={cuppingBySlot}
+            />
+          )}
+
+          {viewTab === "grid" && <>
           {/* ── Schedule Grid ─────────────────────────────────────────────── */}
           <div className="min-w-0 overflow-x-auto pb-2">
           <div className="min-w-[980px] space-y-3 pr-2">
@@ -2009,6 +2078,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             ))}
           </div>
           </div>
+          </>}
 
           {/* ── Right Panel: Recipe Pool + Volume Balance ─────────────────── */}
           <div className="w-full min-w-0 space-y-3 xl:sticky xl:top-4">

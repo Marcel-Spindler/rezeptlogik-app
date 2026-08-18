@@ -3342,6 +3342,139 @@ exports.geminiInstructionsBatch = onRequest(
   },
 );
 
+// ─── Gemini Planning Chat (Cockpit AI-Assistent) ─────────────────────────────
+
+exports.geminiPlanningChat = onRequest(
+  { region: "europe-west3", timeoutSeconds: 60, secrets: [GEMINI_API_KEY_SECRET] },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+    try {
+      const body = req.body || {};
+      const { context, history, message } = body;
+      if (!message) { res.status(400).json({ error: "message fehlt" }); return; }
+
+      const apiKey = GEMINI_API_KEY_SECRET.value();
+      if (!apiKey) throw new Error("Firebase Secret GEMINI_API_KEY nicht gesetzt");
+      const model = "gemini-2.5-flash";
+
+      const systemPrompt = [
+        "Du bist KI-Planungsassistent für die Verden-Wochenplanung bei HelloFresh.",
+        "Du kennst den aktuellen Plan und alle Regeln vollständig (sieh den Planstand unten).",
+        "Antworte immer auf Deutsch, direkt und präzise.",
+        "Du darfst Planänderungen vorschlagen (propose_plan_change) und Probleme melden (check_plan_issues).",
+        "Änderungen werden dem Nutzer zur Bestätigung angezeigt — du änderst NIE direkt.",
+        "Wenn der Nutzer keine Änderung braucht, antworte einfach mit Text.",
+        "",
+        context || "",
+      ].join("\n");
+
+      const contents = [
+        ...(Array.isArray(history) ? history : []).map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content || "(Planvorschlag / Analyse)" }],
+        })),
+        { role: "user", parts: [{ text: message }] },
+      ];
+
+      const tools = [{
+        functionDeclarations: [
+          {
+            name: "propose_plan_change",
+            description: "Schlägt Änderungen am Wochenplan vor. Der Nutzer sieht eine Vorschau und muss bestätigen.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                changes: {
+                  type: "ARRAY",
+                  description: "Liste der vorgeschlagenen Assignments-Änderungen",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      recipeCode: { type: "STRING", description: "Rezept-Code, z.B. FE1234A" },
+                      subRecipeId: { type: "STRING", description: "Nur bei Sub-Rezepten: Sub-Rezept-ID" },
+                      day: { type: "STRING", description: "Produktionstag (Mo/Di/Mi/Do/Fr/Sa)" },
+                      shift: { type: "STRING", description: "S1=Frühschicht, S2=Spätschicht" },
+                      targetPortions: { type: "NUMBER", description: "Optional: Ziel-Portionszahl" },
+                      splitSpec: { type: "STRING", description: "Optional: Split-Spec, z.B. Do:400|Fr:1200|Sa:800" },
+                      reason: { type: "STRING", description: "Kurze Begründung für diese Änderung" },
+                    },
+                    required: ["recipeCode", "day", "shift", "reason"],
+                  },
+                },
+                summary: { type: "STRING", description: "Zusammenfassung: was wird geändert und warum" },
+              },
+              required: ["changes", "summary"],
+            },
+          },
+          {
+            name: "check_plan_issues",
+            description: "Meldet Probleme, Risiken oder Optimierungspotenziale im aktuellen Plan.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                issues: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      severity: { type: "STRING", description: "critical, warning oder info" },
+                      description: { type: "STRING" },
+                      affectedRecipes: { type: "ARRAY", items: { type: "STRING" } },
+                      suggestion: { type: "STRING" },
+                    },
+                    required: ["severity", "description"],
+                  },
+                },
+              },
+              required: ["issues"],
+            },
+          },
+        ],
+      }];
+
+      const requestBody = JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents,
+        tools,
+        generationConfig: { maxOutputTokens: 4096 },
+      });
+
+      let response;
+      let payload;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: requestBody }
+        );
+        payload = await response.json().catch(() => ({}));
+        if (response.ok) break;
+        if (response.status === 429 && attempt < 1) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        throw new Error(payload?.error?.message || `Gemini HTTP ${response.status}`);
+      }
+
+      const parts = payload?.candidates?.[0]?.content?.parts ?? [];
+      let text = "";
+      let toolName = null;
+      let toolInput = null;
+
+      for (const part of parts) {
+        if (part.text) text += part.text;
+        if (part.functionCall) {
+          toolName = part.functionCall.name;
+          toolInput = part.functionCall.args;
+        }
+      }
+
+      res.status(200).json({ text: text.trim(), toolName, toolInput });
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
 // ─── PDF-Generierung via Chromium ────────────────────────────────────────────
 
 const CHROMIUM_PACK_URL = "https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar";

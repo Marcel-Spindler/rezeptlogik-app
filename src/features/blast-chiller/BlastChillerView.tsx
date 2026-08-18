@@ -332,171 +332,247 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
 
   // ─────────────────────────────────────────────────────────────────────────
 
+  // ── Print via window.open ────────────────────────────────────────────────
+
+  function allergenPillHtml(a: string): string {
+    const p = allergenPillStyle(a || "KEINE");
+    return `<span style="display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;border:1.5px solid ${p.border};background:${p.bg};color:${p.color}">${a || "KEINE"}</span>`;
+  }
+
+  function printChillers() {
+    const pages = showResult ? CHILLER_KEYS.filter(k => (byChiller[k] ?? []).length > 0) : [];
+    if (!pages.length) { showToast("Keine Daten zum Drucken"); return; }
+    const dayLabel   = activeDay === "all" ? "Alle Tage" : fmtDate(activeDay);
+    const printedAt  = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+    const pageHtml = pages.map((k, idx) => {
+      const cfg   = CHILLER_CFG[k];
+      const items = byChiller[k] ?? [];
+      const rows  = items.map((d, i) => `
+        <tr style="background:${i % 2 === 0 ? "#fff" : "#f7f8fb"}">
+          <td style="padding:8px 10px;font-weight:800;color:#1F3864;font-size:12px;white-space:nowrap;border:1px solid #c5cde0;vertical-align:top">${d.wo}</td>
+          <td style="padding:8px 10px;border:1px solid #c5cde0;vertical-align:top">
+            <div style="font-weight:700;font-size:12px">${d.name}</div>
+            ${d.recipe && extractRecipeCode(d.recipe) ? `<div style="font-size:10px;color:#888;margin-top:1px">${extractRecipeCode(d.recipe)}</div>` : ""}
+          </td>
+          <td style="padding:8px 10px;border:1px solid #c5cde0;vertical-align:top">${allergenPillHtml(d.allergen)}</td>
+        </tr>`).join("");
+
+      return `
+        <div style="${idx > 0 ? "page-break-before:always;" : ""}width:100%;min-height:99vh;display:flex;flex-direction:column;font-family:Arial,sans-serif">
+          <div style="background:${cfg.headBg};border-bottom:4px solid ${cfg.cntBg};padding:18px 20px 14px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between">
+              <div>
+                <div style="font-size:11px;font-weight:700;color:${cfg.headColor};opacity:.7;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">HelloFresh Verden — Produktionsküche</div>
+                <div style="font-size:28px;font-weight:900;color:${cfg.headColor};line-height:1.1">❄️ ${cfg.label}</div>
+                <div style="font-size:16px;font-weight:700;color:${cfg.headColor};margin-top:4px;opacity:.85">${cfg.sub}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:22px;font-weight:900;color:${cfg.headColor}">${weekLabel}</div>
+                <div style="font-size:12px;color:${cfg.headColor};opacity:.75;margin-top:2px">${dayLabel}</div>
+                <div style="margin-top:6px;display:inline-block;background:${cfg.cntBg};color:${cfg.cntColor};border-radius:20px;padding:3px 12px;font-size:12px;font-weight:800">${items.length} Work Orders</div>
+              </div>
+            </div>
+          </div>
+          <div style="flex:1;padding:0 20px">
+            <table style="border-collapse:collapse;width:100%;font-size:12px;margin-top:12px">
+              <thead>
+                <tr>
+                  <th style="background:#1F3864;color:#fff;padding:9px 10px;text-align:left;font-weight:800;font-size:11px;width:8%;white-space:nowrap;border:1px solid #1F3864">WO</th>
+                  <th style="background:#1F3864;color:#fff;padding:9px 10px;text-align:left;font-weight:800;font-size:11px;width:56%;border:1px solid #1F3864">Sub-Rezept / Komponente</th>
+                  <th style="background:#1F3864;color:#fff;padding:9px 10px;text-align:left;font-weight:800;font-size:11px;width:36%;border:1px solid #1F3864">Allergene</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+          <div style="border-top:1px solid #dde3ee;padding:8px 20px;display:flex;justify-content:space-between;font-size:9px;color:#aaa;margin-top:12px">
+            <span>Gedruckt: ${printedAt}</span>
+            <span>Blast Chiller Bot · HelloFresh Verden</span>
+            <span>${weekLabel} — ${dayLabel}</span>
+          </div>
+        </div>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Blast Chiller Handout ${weekLabel}</title>
+      <style>@page{margin:8mm 12mm;size:A4 portrait}*{box-sizing:border-box;margin:0;padding:0}body{background:#fff}</style>
+      </head><body>${pageHtml}</body></html>`;
+
+    const w = window.open("", "_blank", "width=900,height=700");
+    if (!w) { showToast("Popup blockiert — Popup-Blocker deaktivieren"); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 500);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <div style={{ fontFamily: "Arial, sans-serif", fontSize: 13, color: "#222" }}>
 
-      {/* Header */}
-      <div style={{ background: "#1F3864", color: "#fff", padding: "13px 20px", display: "flex", alignItems: "center", gap: 11, borderRadius: "10px 10px 0 0" }}>
-        <div style={{ width: 32, height: 32, background: "rgba(255,255,255,.15)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>❄️</div>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>
-            Blast Chiller Bot
-            <span style={{ background: "rgba(255,255,255,.18)", borderRadius: 4, padding: "1px 7px", fontSize: 10, marginLeft: 8 }}>{weekLabel}</span>
+        {/* Header */}
+        <div style={{ background: "#1F3864", color: "#fff", padding: "13px 20px", display: "flex", alignItems: "center", gap: 11, borderRadius: "10px 10px 0 0" }}>
+          <div style={{ width: 32, height: 32, background: "rgba(255,255,255,.15)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>❄️</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>
+              Blast Chiller Bot
+              <span style={{ background: "rgba(255,255,255,.18)", borderRadius: 4, padding: "1px 7px", fontSize: 10, marginLeft: 8 }}>{weekLabel}</span>
+            </div>
+            <div style={{ fontSize: 11, opacity: .7, marginTop: 1 }}>KET-CSV hochladen → Allergen-Zuteilung auf Chiller 1–6 aus MSKU-Strukturdaten</div>
           </div>
-          <div style={{ fontSize: 11, opacity: .7, marginTop: 1 }}>KET-CSV hochladen → Allergen-Zuteilung auf Chiller 1–6 aus MSKU-Strukturdaten</div>
-        </div>
-      </div>
-
-      <div style={{ padding: "14px 4px" }}>
-
-        {/* Info banner */}
-        <div style={{ marginBottom: 12, borderRadius: 9, border: "1px solid #A5D6A7", background: "#E8F5E9", padding: "10px 14px", fontSize: 11.5, color: "#1B5E20" }}>
-          <strong>✓ Kein Excel-Upload nötig</strong> — Allergene werden direkt aus den MSKU-Strukturdaten berechnet (Ingredientebene je Sub-Rezept). Du brauchst nur noch den <strong>KET-CSV</strong> mit den Work Order Nummern und Sub-Rezept-Namen.
         </div>
 
-        {/* CSV Upload */}
-        <div style={{ ...s.card, marginBottom: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#1F3864", marginBottom: 9 }}>📋 KET-CSV hochladen (Work Orders + Sub-Rezept-Namen)</div>
-          <div
-            onDragOver={e => { e.preventDefault(); setDrag(true); }}
-            onDragLeave={() => setDrag(false)}
-            onDrop={onDrop}
-            style={{
-              border: `2px ${csvLoaded ? "solid" : "dashed"} ${csvLoaded ? "#4CAF50" : drag ? "#2E5AAC" : "#BDD5FF"}`,
-              borderRadius: 9, padding: "20px 14px", textAlign: "center", cursor: "pointer",
-              position: "relative", background: csvLoaded ? "#E8F5E9" : drag ? "#EDF4FF" : "#F7FAFF",
-            }}
-          >
-            <input type="file" accept=".csv" style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }}
-              onChange={e => e.target.files?.[0] && handleCSV(e.target.files[0])} />
-            <div style={{ fontSize: 22, marginBottom: 4 }}>{csvLoaded ? "✅" : "📊"}</div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: csvLoaded ? "#2E7D32" : "#2E5AAC" }}>
-              {csvLoaded ? `${csvRows.length} Work Orders eingelesen — ${weekLabel}` : "KET-CSV hier ablegen oder klicken"}
-            </div>
-            <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-              Benötigte Spalten: Work Order · Sub Recipe · Date Needed · Recipe Name
-            </div>
+        <div style={{ padding: "14px 4px" }}>
+
+          {/* Info banner */}
+          <div style={{ marginBottom: 12, borderRadius: 9, border: "1px solid #A5D6A7", background: "#E8F5E9", padding: "10px 14px", fontSize: 11.5, color: "#1B5E20" }}>
+            <strong>✓ Kein Excel-Upload nötig</strong> — Allergene werden direkt aus den MSKU-Strukturdaten berechnet (Ingredientebene je Sub-Rezept). Du brauchst nur noch den <strong>KET-CSV</strong> mit den Work Order Nummern und Sub-Rezept-Namen.
           </div>
 
-          {/* Preview rows */}
-          {csvLoaded && (
-            <div style={{ marginTop: 8, maxHeight: 110, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
-              {csvRows.slice(0, 5).map(r => (
-                <div key={r.wo} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 7px", borderRadius: 5, fontSize: 11, background: "#E8F5E9" }}>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4CAF50", flexShrink: 0 }} />
-                  <span style={{ fontWeight: 700, color: "#1F3864", minWidth: 50 }}>{r.wo}</span>
-                  <span style={{ color: "#555" }}>{r.name.substring(0, 55)}</span>
-                  {r.recipe && <span style={{ color: "#aaa", fontSize: 10, marginLeft: "auto" }}>{extractRecipeCode(r.recipe) || r.recipe.substring(0, 10)}</span>}
-                </div>
-              ))}
-              {csvRows.length > 5 && <div style={{ fontSize: 10, color: "#888", padding: "2px 7px" }}>… +{csvRows.length - 5} weitere</div>}
-            </div>
-          )}
-        </div>
-
-        {/* Process button */}
-        <div style={{ textAlign: "center", marginBottom: 14 }}>
-          <button
-            onClick={processData}
-            disabled={!csvLoaded}
-            style={{ padding: "7px 14px", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: csvLoaded ? "pointer" : "not-allowed", background: csvLoaded ? "#2E5AAC" : "#ccc", color: "#fff", opacity: csvLoaded ? 1 : .4 }}
-          >⚡ Chiller-Zuteilung berechnen</button>
-        </div>
-
-        {/* Results */}
-        {showResult && (
-          <>
-            {/* Stats */}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-              <StatBox label="Woche" value={weekLabel} />
-              {CHILLER_KEYS.map(k => <StatBox key={k} label={CHILLER_CFG[k].label} value={String(byChiller[k]?.length ?? 0)} />)}
-              <StatBox label="WOs gesamt" value={String(filteredData.length)} />
+          {/* CSV Upload */}
+          <div style={{ ...s.card, marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#1F3864", marginBottom: 9 }}>📋 KET-CSV hochladen (Work Orders + Sub-Rezept-Namen)</div>
+            <div
+              onDragOver={e => { e.preventDefault(); setDrag(true); }}
+              onDragLeave={() => setDrag(false)}
+              onDrop={onDrop}
+              style={{
+                border: `2px ${csvLoaded ? "solid" : "dashed"} ${csvLoaded ? "#4CAF50" : drag ? "#2E5AAC" : "#BDD5FF"}`,
+                borderRadius: 9, padding: "20px 14px", textAlign: "center", cursor: "pointer",
+                position: "relative", background: csvLoaded ? "#E8F5E9" : drag ? "#EDF4FF" : "#F7FAFF",
+              }}
+            >
+              <input type="file" accept=".csv" style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }}
+                onChange={e => e.target.files?.[0] && handleCSV(e.target.files[0])} />
+              <div style={{ fontSize: 22, marginBottom: 4 }}>{csvLoaded ? "✅" : "📊"}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: csvLoaded ? "#2E7D32" : "#2E5AAC" }}>
+                {csvLoaded ? `${csvRows.length} Work Orders eingelesen — ${weekLabel}` : "KET-CSV hier ablegen oder klicken"}
+              </div>
+              <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                Benötigte Spalten: Work Order · Sub Recipe · Date Needed · Recipe Name
+              </div>
             </div>
 
-            {/* Day tabs */}
-            {days.length > 1 && (
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: "#1F3864", marginRight: 2 }}>Tag:</span>
-                {["all", ...days].map(d => (
-                  <button key={d} onClick={() => setActiveDay(d)}
-                    style={{ padding: "4px 12px", borderRadius: 20, fontSize: 11, border: "1px solid #dde3ee", cursor: "pointer", fontWeight: 700,
-                      background: activeDay === d ? "#1F3864" : "#fff", color: activeDay === d ? "#fff" : "#555" }}>
-                    {d === "all" ? "Alle" : fmtDate(d)}
-                  </button>
+            {/* Preview rows */}
+            {csvLoaded && (
+              <div style={{ marginTop: 8, maxHeight: 110, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+                {csvRows.slice(0, 5).map(r => (
+                  <div key={r.wo} style={{ display: "flex", alignItems: "center", gap: 7, padding: "3px 7px", borderRadius: 5, fontSize: 11, background: "#E8F5E9" }}>
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4CAF50", flexShrink: 0 }} />
+                    <span style={{ fontWeight: 700, color: "#1F3864", minWidth: 50 }}>{r.wo}</span>
+                    <span style={{ color: "#555" }}>{r.name.substring(0, 55)}</span>
+                    {r.recipe && <span style={{ color: "#aaa", fontSize: 10, marginLeft: "auto" }}>{extractRecipeCode(r.recipe) || r.recipe.substring(0, 10)}</span>}
+                  </div>
                 ))}
+                {csvRows.length > 5 && <div style={{ fontSize: 10, color: "#888", padding: "2px 7px" }}>… +{csvRows.length - 5} weitere</div>}
               </div>
             )}
+          </div>
 
-            {/* Export bar */}
-            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 12, padding: "9px 13px", background: "#fff", borderRadius: 9, border: "0.5px solid #dde3ee" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#1F3864", marginRight: 3 }}>Exportieren:</span>
-              <button style={s.btnSm("#2E7D32")} onClick={exportExcel}>📥 Excel (.xlsx)</button>
-              <button style={s.btnSm("#0F9D58")} onClick={exportGSheet}>🟩 Google Sheets</button>
-              <button style={s.btnSm("#6D4C41")} onClick={exportCSV}>📄 CSV</button>
-              <button style={s.btnSm("#37474F")} onClick={() => window.print()}>🖨 Drucken / PDF</button>
-            </div>
+          {/* Process button */}
+          <div style={{ textAlign: "center", marginBottom: 14 }}>
+            <button
+              onClick={processData}
+              disabled={!csvLoaded}
+              style={{ padding: "7px 14px", border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: csvLoaded ? "pointer" : "not-allowed", background: csvLoaded ? "#2E5AAC" : "#ccc", color: "#fff", opacity: csvLoaded ? 1 : .4 }}
+            >⚡ Chiller-Zuteilung berechnen</button>
+          </div>
 
-            {/* Chiller sections */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-              {CHILLER_KEYS.map(k => {
-                const cfg = CHILLER_CFG[k];
-                const items = byChiller[k] ?? [];
-                const open = !collapsed[k];
-                return (
-                  <div key={k} style={{ borderRadius: 9, border: "0.5px solid #dde3ee", overflow: "hidden" }}>
-                    <div
-                      onClick={() => setCollapsed(c => ({ ...c, [k]: !c[k] }))}
-                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", background: cfg.headBg, color: cfg.headColor, userSelect: "none" }}
-                    >
-                      <span>{cfg.label}</span>
-                      <span style={{ fontSize: 11, fontWeight: 400, opacity: .75 }}>&nbsp;— {cfg.sub}</span>
-                      <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: cfg.cntBg, color: cfg.cntColor }}>{items.length} WOs</span>
-                      <span style={{ fontSize: 11, color: "rgba(0,0,0,.35)", transition: "transform .18s", transform: open ? "rotate(180deg)" : "none" }}>▼</span>
-                    </div>
-                    {open && (
-                      <div style={{ borderTop: "1px solid rgba(0,0,0,.07)" }}>
-                        {items.length === 0 ? (
-                          <div style={{ textAlign: "center", padding: 18, color: "#aaa", fontSize: 11 }}>Keine Work Orders für diesen Tag</div>
-                        ) : (
-                          <div style={{ overflowX: "auto" }}>
-                            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
-                              <thead>
-                                <tr>
-                                  {["WO", "Sub-Rezept / Komponente", "Allergene (aus MSKU-Struktur)"].map((h, i) => (
-                                    <th key={i} style={{ background: "#1F3864", color: "#fff", padding: "7px 8px", fontSize: 10, fontWeight: 700, textAlign: "left", border: "0.5px solid rgba(255,255,255,.1)", whiteSpace: "nowrap" }}>{h}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {items.map(d => (
-                                  <tr key={d.wo}>
-                                    <td style={{ padding: "6px 8px", border: "0.5px solid rgba(0,0,0,.07)", fontSize: 11, fontWeight: 700, color: "#1F3864", whiteSpace: "nowrap" }}>{d.wo}</td>
-                                    <td style={{ padding: "6px 8px", border: "0.5px solid rgba(0,0,0,.07)" }}>
-                                      <div style={{ fontSize: 11.5, fontWeight: 600 }}>{d.name}</div>
-                                      {d.recipe && (
-                                        <div style={{ fontSize: 10, color: "#888", marginTop: 1 }}>
-                                          {extractRecipeCode(d.recipe) || d.recipe}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td style={{ padding: "6px 8px", border: "0.5px solid rgba(0,0,0,.07)" }}>
-                                      <span style={s.pill(d.allergen)}>{d.allergen || "KEINE"}</span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
+          {/* Results */}
+          {showResult && (
+            <>
+              {/* Stats */}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                <StatBox label="Woche" value={weekLabel} />
+                {CHILLER_KEYS.map(k => <StatBox key={k} label={CHILLER_CFG[k].label} value={String(byChiller[k]?.length ?? 0)} />)}
+                <StatBox label="WOs gesamt" value={String(filteredData.length)} />
+              </div>
+
+              {/* Day tabs */}
+              {days.length > 1 && (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#1F3864", marginRight: 2 }}>Tag:</span>
+                  {["all", ...days].map(d => (
+                    <button key={d} onClick={() => setActiveDay(d)}
+                      style={{ padding: "4px 12px", borderRadius: 20, fontSize: 11, border: "1px solid #dde3ee", cursor: "pointer", fontWeight: 700,
+                        background: activeDay === d ? "#1F3864" : "#fff", color: activeDay === d ? "#fff" : "#555" }}>
+                      {d === "all" ? "Alle" : fmtDate(d)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Export bar */}
+              <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 12, padding: "9px 13px", background: "#fff", borderRadius: 9, border: "0.5px solid #dde3ee" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#1F3864", marginRight: 3 }}>Exportieren:</span>
+                <button style={s.btnSm("#2E7D32")} onClick={exportExcel}>📥 Excel (.xlsx)</button>
+                <button style={s.btnSm("#0F9D58")} onClick={exportGSheet}>🟩 Google Sheets</button>
+                <button style={s.btnSm("#6D4C41")} onClick={exportCSV}>📄 CSV</button>
+                <button style={s.btnSm("#37474F")} onClick={printChillers}>🖨 Drucken / PDF</button>
+              </div>
+
+              {/* Chiller sections */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+                {CHILLER_KEYS.map(k => {
+                  const cfg = CHILLER_CFG[k];
+                  const items = byChiller[k] ?? [];
+                  const open = !collapsed[k];
+                  return (
+                    <div key={k} style={{ borderRadius: 9, border: "0.5px solid #dde3ee", overflow: "hidden" }}>
+                      <div
+                        onClick={() => setCollapsed(c => ({ ...c, [k]: !c[k] }))}
+                        style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", background: cfg.headBg, color: cfg.headColor, userSelect: "none" }}
+                      >
+                        <span>{cfg.label}</span>
+                        <span style={{ fontSize: 11, fontWeight: 400, opacity: .75 }}>&nbsp;— {cfg.sub}</span>
+                        <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: cfg.cntBg, color: cfg.cntColor }}>{items.length} WOs</span>
+                        <span style={{ fontSize: 11, color: "rgba(0,0,0,.35)", transition: "transform .18s", transform: open ? "rotate(180deg)" : "none" }}>▼</span>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </div>
+                      {open && (
+                        <div style={{ borderTop: "1px solid rgba(0,0,0,.07)" }}>
+                          {items.length === 0 ? (
+                            <div style={{ textAlign: "center", padding: 18, color: "#aaa", fontSize: 11 }}>Keine Work Orders für diesen Tag</div>
+                          ) : (
+                            <div style={{ overflowX: "auto" }}>
+                              <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
+                                <thead>
+                                  <tr>
+                                    {["WO", "Sub-Rezept / Komponente", "Allergene (aus MSKU-Struktur)"].map((h, i) => (
+                                      <th key={i} style={{ background: "#1F3864", color: "#fff", padding: "7px 8px", fontSize: 10, fontWeight: 700, textAlign: "left", border: "0.5px solid rgba(255,255,255,.1)", whiteSpace: "nowrap" }}>{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {items.map(d => (
+                                    <tr key={d.wo}>
+                                      <td style={{ padding: "6px 8px", border: "0.5px solid rgba(0,0,0,.07)", fontSize: 11, fontWeight: 700, color: "#1F3864", whiteSpace: "nowrap" }}>{d.wo}</td>
+                                      <td style={{ padding: "6px 8px", border: "0.5px solid rgba(0,0,0,.07)" }}>
+                                        <div style={{ fontSize: 11.5, fontWeight: 600 }}>{d.name}</div>
+                                        {d.recipe && (
+                                          <div style={{ fontSize: 10, color: "#888", marginTop: 1 }}>
+                                            {extractRecipeCode(d.recipe) || d.recipe}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td style={{ padding: "6px 8px", border: "0.5px solid rgba(0,0,0,.07)" }}>
+                                        <span style={s.pill(d.allergen)}>{d.allergen || "KEINE"}</span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
 
       {toast && (
         <div style={{ position: "fixed", bottom: 16, right: 16, background: "#1F3864", color: "#fff", padding: "10px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, boxShadow: "0 3px 16px rgba(0,0,0,.22)", zIndex: 9999 }}>
