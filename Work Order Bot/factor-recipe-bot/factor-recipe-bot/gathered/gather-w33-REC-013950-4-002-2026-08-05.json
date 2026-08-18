@@ -1,0 +1,381 @@
+{
+ "rec": {
+  "name": "FV0713A - Cabbage in cheese sauce with minced beef [DE]",
+  "skuCode": "REC-013950-4-002",
+  "totalPortions": 618,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)",
+    "Mustard / Senf"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Cabbage - Cheesy Cabbage Casserole",
+   "id": "ff609d96-2a62-43ea-9be3-9ee081d4b195",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 69.2,
+   "portionA": 100,
+   "portionU": "grams",
+   "scoop": "beige",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 61800,
+   "ings": [
+    {
+     "name": "FA-DE Cheese, Red Cheddar/Käse, Roter Cheddar",
+     "g": 5693.47,
+     "manuf": false,
+     "id": "68c9f3db-ff94-400c-ae7d-6448d4b392bc",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Diced 5mm /Zwiebel, Spanisch, gewürfelt 5 mm",
+     "g": 5175.88,
+     "manuf": false,
+     "id": "f11b2445-91bf-437e-9ba2-1602b9c2d910",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+     "g": 170.5,
+     "manuf": false,
+     "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 170.5,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 170.5,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+     "g": 347.09,
+     "manuf": false,
+     "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 170.5,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Cream, 13% Fat (Milk) /Käse, Sahne, 13% Fett",
+     "g": 4487.79,
+     "manuf": false,
+     "id": "360cffe0-1558-4a42-84f2-8c8c3d7c4473",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 4140.7,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Sour Cream /Sauerrahm",
+     "g": 7422.82,
+     "manuf": false,
+     "id": "355ba8ec-49f8-42c5-9b7d-143e3ecc640b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Heavy Cream 35% /Sahne 35%",
+     "g": 8975.58,
+     "manuf": false,
+     "id": "060f39d6-76dd-4493-96f1-896650b2af7b",
+     "children": []
+    },
+    {
+     "name": "Steamed Cabbage",
+     "g": 32273.13,
+     "manuf": true,
+     "id": "9549be18-84c3-43d1-84d0-d685c6b1c5fe",
+     "children": [
+      {
+       "name": "FA-DE Cabbage, Green, Shredded 5mm / Wirsing, geschnitten, 5 mm",
+       "g": 35859.03,
+       "manuf": false,
+       "id": "cbe83fac-0c65-48d3-8576-84bdd4c34a4c",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Tomato Ground Beef Mix",
+   "id": "f0715f1f-b3d6-4dcf-8681-ca872ececb3f",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 103.42,
+   "portionA": 130,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": [
+     "Mustard / Senf",
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 80340,
+   "ings": [
+    {
+     "name": "FA-DE Tomatoes, Crushed /Tomaten, zerkleinert",
+     "g": 28701.57,
+     "manuf": false,
+     "id": "ae4b5b13-0f1d-4ef5-9b4c-f2181e5f70e4",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Diced 10mm /Zwiebel, Spanisch, gewürfelt 10 mm",
+     "g": 10252.2,
+     "manuf": false,
+     "id": "43e4e30c-1eb1-4c82-8324-83d7b08c9b6a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 203.06,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 406.13,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+     "g": 1911.52,
+     "manuf": false,
+     "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+     "children": []
+    },
+    {
+     "name": "Ground Beef - cooked",
+     "g": 58991.05,
+     "manuf": true,
+     "id": "64b7a183-aa93-4d39-8005-44b2a633a2d0",
+     "children": [
+      {
+       "name": "FA-DE Beef, Ground, 80/20 /Rindfleisch, gemahlen, 80/20",
+       "g": 82704.22,
+       "manuf": false,
+       "id": "c0338ea9-ef5f-45cd-bd77-a04875562b7b",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 81.08,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Mustard Seed Ground, Dry /Gewürz, Senfkörner gemahlen, Trockenmasse",
+     "g": 121.98,
+     "manuf": false,
+     "id": "321caab2-eed7-46e5-b8b0-b428893474f6",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben",
+     "g": 1097.84,
+     "manuf": false,
+     "id": "e2445b9f-221b-4402-b5ab-ab53eb5364de",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Crushed Red Pepper Flakes /Gewürz, zerkleinerte rote Pfefferflocken",
+     "g": 60.99,
+     "manuf": false,
+     "id": "ee752e38-5ede-4f0e-b623-77a102aee499",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+     "g": 304.95,
+     "manuf": false,
+     "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 1291.57,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben",
+   "id": "af05f6e1-7a71-4475-ac85-bc5310277154",
+   "wo": null,
+   "cook": [],
+   "paths": [],
+   "batchCount": null,
+   "batchQuantity": null,
+   "portionA": 25,
+   "portionU": "grams",
+   "scoop": "yellow",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": true,
+   "totalNeeded": 15450,
+   "ings": []
+  },
+  {
+   "name": "Mixed veg - Garlic Chili Green Beans & Red Bell Peppers",
+   "id": "13d4512d-675e-4a54-ae3c-c3d367ee4c31",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 40.19,
+   "portionA": 100,
+   "portionU": "grams",
+   "scoop": "blue",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 61800,
+   "ings": [
+    {
+     "name": "FA-DE Green Beans, Fresh, Cut 40mm /Grüne Bohnen, frisch, geschnitten 40mm",
+     "g": 38010.6,
+     "manuf": false,
+     "id": "f51808b3-752a-49d2-8855-c95ae01e7a40",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Red, Sliced 10mm /Paprika, rot, in Scheiben geschnitten, 10 mm",
+     "g": 38010.6,
+     "manuf": false,
+     "id": "bfdc9088-0ca8-4aa2-be4a-2e7487a6d883",
+     "children": []
+    },
+    {
+     "name": "Mixed veg - Garlic Chili Green Beans & Red Bell Peppers Marinade",
+     "g": 4364.19,
+     "manuf": true,
+     "id": "ba46be72-cb0b-4710-8c71-527782a472c3",
+     "children": [
+      {
+       "name": "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken",
+       "g": 63.89,
+       "manuf": false,
+       "id": "5d0ad372-49db-472d-9bf3-3f505e3caaa8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 404.4,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 2876.64,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+       "g": 852.39,
+       "manuf": false,
+       "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Minced Garlic, Toasted, Dry /Gewürz, gehackter Knoblauch, geröstet, trocken",
+       "g": 191.68,
+       "manuf": false,
+       "id": "7133bc69-1d05-424e-a969-5a4f7da96794",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 63.89,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "ff609d96-2a62-43ea-9be3-9ee081d4b195": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix ingredients together.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [50 total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Heat olive oil. Sweat the onions until tender. Add spices and heat until fragrant.\n\n4. Add the chicken stock. \n\n5.Add in heavy cream, sour cream, cheddar cheese and cream cheese. Whisk until everything is melted and smooth.\n\n6. Add cabbage; cook and stir until tender.\n\n7. Stir in salt and pepper.\n\n8. FSQA CCP1 Check\n\n9. Transfer speed rack to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Fassungsvermögen von insgesamt 50 kg pro Schmorpfanne]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Olivenöl erhitzen. Die Zwiebeln anschwitzen, bis sie weich sind. Gewürze hinzufügen und erhitzen, bis es duftet.\n\n4. Fügen Sie die Hühnerbrühe hinzu. \n\n5. Fügen Sie Sahne, Sauerrahm, Cheddar-Käse und Frischkäse hinzu. Verquirlen, bis alles geschmolzen und glatt ist.\n\n6. Kohl hinzufügen; kochen und rühren, bis alles weich ist.\n\n7. Salz und Pfeffer einrühren.\n\n8. FQA CCP1-Überprüfung\n\n9. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast"
+  },
+  "9549be18-84c3-43d1-84d0-d685c6b1c5fe": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove cabbage from the packaging material.\n\n2. Add cabbage to GN 1/1 perforated tray 2.5 - 5kg per tray\n\n3. Put on oven rack and transfer to the oven.\n\nB. Oven\n\n1. Steam in the oven according to Steamed Cabbage oven setting.\n\n2. FSQA CCP1 check\n\n3. Transfer to the Braiser",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kohl aus dem Verpackungsmaterial nehmen.\n\n2. Kohl in die perforierte Schale GN 1/1 geben, 2,5 - 5 kg pro Schale\n\n3. Auf den Ofenrost legen und in den Ofen geben.\n\nB. Ofen\n\n1. Im Ofen entsprechend der Einstellung des Dampfkohlofens dämpfen.\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer zum Braiser"
+  },
+  "f0715f1f-b3d6-4dcf-8681-ca872ececb3f": {
+   "en": "\"A. PROTEIN DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix ingredients together.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER (ALL IN ONE)\n\n1. Divide and organize ingredients into braiser batches [105 kg total capacity]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Complete sub-recipe for \"\"Cooked Ground Meat\"\" (ensure raw weight of meat is added, NOT cooked). Drain fat/liquid before continuing. Reserve Braiser Liquid.\n\n4. To the same braiser, add oil. Sweat the onions until translucent, deglaze with Chicken Stock.\n\n5. Add Crushed Tomatos. Bring to a simmer, cook until thickened \n\n6. Add the spices and Parmesan. Mix well to incorporate.\n\n7. FSQA CCP1 Check .\n\n8. Transfer to GN 1/1 65mm (2 scoops per tray).\n\n9. Transfer to pre blast Associates",
+   "de": "„A. PROTEINDEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. BRATPFANNE (ALLES IN EINEM)\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Schmorportionen an [105 kg Gesamtkapazität]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Vollständiges Unterrezept für „\" Gekochtes Hackfleisch \"“ (achten Sie darauf, dass das Fleisch roh und NICHT gekocht wird). Lassen Sie Fett/Flüssigkeit ab, bevor Sie fortfahren. Braiser Liquid aufbewahren.\n\n4. In den gleichen Topf Öl geben. Die Zwiebeln darin glasig dünsten und mit Hühnerbrühe ablöschen.\n\n5. Zerkleinerte Tomaten hinzufügen. Zum Köcheln bringen und kochen, bis es eingedickt ist \n\n6. Fügen Sie die Gewürze und den Parmesan hinzu. Zum Einarbeiten gut vermischen.\n\n7. FQA CCP1-Überprüfung.\n\n8. Auf GN 1/1 65 mm umfüllen (2 Messlöffel pro Schale).\n\n9. Übertragung an Pre Blast Associates"
+  },
+  "64b7a183-aa93-4d39-8005-44b2a633a2d0": {
+   "en": "A. PROTEIN DEBOX\n\n1. Remove all ingredients from outer packaging\n\n2. Place ground beef in Vmag \n\n3.  Deliver ingredients to the braiser station  \n\nB. BRAISER\n\n1.  Add ground beef to a braiser\n\n2. Add water to cover the beef in a braiser.\n\n3. Cook the ground beef until the internal temperature is 72 °C\n\n4. FSQA CCP1 Check \n\n5. Drain the liquid\n\n6. Use as required in the recipe",
+   "de": "A. PROTEINDEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n\n2. Hackfleisch in Vmag legen \n\n3. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Hackfleisch in einen Schmorbraten geben\n\n2. Fügen Sie Wasser hinzu, um das Rindfleisch in einem Schmorbraten zu bedecken.\n\n3. Das Hackfleisch kochen, bis die Innentemperatur 72 °C beträgt\n\n4. FQA CCP1-Überprüfung \n\n5. Lassen Sie die Flüssigkeit ab\n\n6. Verwenden Sie nach Bedarf im Rezept"
+  },
+  "af05f6e1-7a71-4475-ac85-bc5310277154": {
+   "en": "",
+   "de": ""
+  },
+  "13d4512d-675e-4a54-ae3c-c3d367ee4c31": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n45 kg green beans\n45 kg red bell peppers\n5 kg marinade\n\n3. Transfer to GN 2/1 sheet trays (2.7 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting: Roasted Mixed veg - Garlic Chili Green Beans & Red Bell Peppers\nAppearance: Roasty \n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n45 kg grüne Bohnen\n45 kg rote Paprika\n5 kg Marinade\n\n3. Transfer in GN 2/1-Blattfächer (2,7 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Gebratenes gemischtes Gemüse — Knoblauch, Chili, grüne Bohnen und rote Paprika\nAussehen: Röstig \n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "ba46be72-cb0b-4710-8c71-527782a472c3": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from packaging material\n\n2. Blend together olive oil, green onions, sea salt, minced dried garlic flakes, black pepper and gochugaru in cambros to make marinade.\n\n3. Use as directed in the recipe",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Inhaltsstoffe aus dem Verpackungsmaterial entfernen\n\n2. Olivenöl, Frühlingszwiebeln, Meersalz, gehackte getrocknete Knoblauchflocken, schwarzen Pfeffer und Gochugaru in Cambros zu einer Marinade vermischen.\n\n3. Wie im Rezept angegeben verwenden"
+  }
+ }
+}

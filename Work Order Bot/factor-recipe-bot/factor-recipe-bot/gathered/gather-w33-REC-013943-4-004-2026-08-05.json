@@ -1,0 +1,627 @@
+{
+ "rec": {
+  "name": "FV0257A - Greek style ground beef and feta [DE]",
+  "skuCode": "REC-013943-4-004",
+  "totalPortions": 1401,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)",
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Ground beef - Red Wine & Garlic Beef Ragu",
+   "id": "899ac4bd-36e6-4f1e-8d0a-3b8c9074a430",
+   "wo": "33-26",
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 241.67,
+   "portionA": 130,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 182130,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+     "g": 33.88,
+     "manuf": false,
+     "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 1596.81,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+     "g": 1140.78,
+     "manuf": false,
+     "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+     "children": []
+    },
+    {
+     "name": "FA-DE Tomato Paste /Tomatenmark",
+     "g": 9126.27,
+     "manuf": false,
+     "id": "a66adf20-abd0-4ac7-99fd-5574a8a4d193",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1129.49,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Diced 5mm /Zwiebel, Spanisch, gewürfelt 5 mm",
+     "g": 23042.97,
+     "manuf": false,
+     "id": "f11b2445-91bf-437e-9ba2-1602b9c2d910",
+     "children": []
+    },
+    {
+     "name": "Ground Beef - cooked",
+     "g": 184953.72,
+     "manuf": true,
+     "id": "64b7a183-aa93-4d39-8005-44b2a633a2d0",
+     "children": [
+      {
+       "name": "FA-DE Beef, Ground, 80/20 /Rindfleisch, gemahlen, 80/20",
+       "g": 259301.23,
+       "manuf": false,
+       "id": "c0338ea9-ef5f-45cd-bd77-a04875562b7b",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Wine, Red/Wein, rot",
+     "g": 11407.83,
+     "manuf": false,
+     "id": "d3f77b12-0420-46f2-9eb0-51b2ce11e64d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 2395.93,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+     "g": 2281.57,
+     "manuf": false,
+     "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+     "children": []
+    },
+    {
+     "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+     "g": 4563.13,
+     "manuf": false,
+     "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Spinach - Garlic Spinach - Frzn Spinach - less garlic",
+   "id": "e8f4e648-79fa-4b62-8f90-b9e5e5b5b529",
+   "wo": "33-30",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 69.47,
+   "portionA": 40,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 56040,
+   "ings": [
+    {
+     "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+     "g": 1376.17,
+     "manuf": false,
+     "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 231.67,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "Thawed & Squeezed Frozen Spinach",
+     "g": 64353.78,
+     "manuf": true,
+     "id": "1903910f-065a-437d-a78e-c74ef2de831c",
+     "children": [
+      {
+       "name": "FA-DE Spinach, Frozen Leaf/Spinat, gefrorener Blattspinat",
+       "g": 106947.65,
+       "manuf": false,
+       "id": "bfe37631-3cb1-4b44-8f73-edcafaed8ca5",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 3511.37,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Red peppers - Roasted diced ¼\" red bell peppers",
+   "id": "3faf671c-3d81-4870-930c-ba4e33568913",
+   "wo": "33-28",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 40.59,
+   "portionA": 20,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 28020,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Italian Seasoning /Gewürze, italienische Gewürze",
+     "g": 12.8,
+     "manuf": false,
+     "id": "babc1c23-46dd-46dc-b4ed-ed1c2e42c0d6",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 103.3,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 181.01,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 1296.32,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 117.02,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm",
+     "g": 38875.12,
+     "manuf": false,
+     "id": "304b0fb7-c6f4-4164-a8bb-def20f32459a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Tomatoes - Roasted cherry tomatoes",
+   "id": "b983a3dc-a724-4760-840e-b274f96878d3",
+   "wo": "33-31",
+   "cook": [
+    "Oven"
+   ],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 49.94,
+   "portionA": 30,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 42030,
+   "ings": [
+    {
+     "name": "FA-DE Tomatoes, Cherry/Tomaten, Kirsche",
+     "g": 49430.41,
+     "manuf": false,
+     "id": "da6f7480-5191-4292-8928-8dd524d49104",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 494.02,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 16.27,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Herbed feta",
+   "id": "05bea711-eb6c-4c16-b501-e40ef6e7a85b",
+   "wo": "33-27",
+   "cook": [],
+   "paths": [
+    "HAND MIX"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 21.14,
+   "portionA": 15,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 21015,
+   "ings": [
+    {
+     "name": "FA-DE Cheese, Feta /Käse, Feta",
+     "g": 20024.39,
+     "manuf": false,
+     "id": "2af076f7-1552-46f2-bf94-6f1f5adcbb6e",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 100.33,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+     "g": 200.6,
+     "manuf": false,
+     "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+     "children": []
+    },
+    {
+     "name": "Steamed Parsley",
+     "g": 816.54,
+     "manuf": true,
+     "id": "91029724-7101-4de2-b665-5e4a46315be0",
+     "children": [
+      {
+       "name": "FA-DE Parsley, Chopped /Petersilie, gehackt",
+       "g": 878,
+       "manuf": false,
+       "id": "1a2d8c37-3b80-46fb-bc06-8f16ef05546f",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Zucchini - Garlic Roasted Zucchini",
+   "id": "c0d7e1db-8a56-4ec1-81e6-e0f89f852094",
+   "wo": "33-32",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 3,
+   "batchQuantity": 60.46,
+   "portionA": 85,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 119085,
+   "ings": [
+    {
+     "name": "FA-DE Zucchini, Diced 10mm /Zucchini, gewürfelt 10 mm",
+     "g": 177267.86,
+     "manuf": false,
+     "id": "eba34919-f320-4209-911f-56cc5c27b47a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 354.54,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 503.44,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 2513.66,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Powder, Toasted /Gewürz, Knoblauchpulver, geröstet",
+     "g": 753.39,
+     "manuf": false,
+     "id": "93038dca-9a79-4ee1-a5b5-0b7b9c5681c9",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Compound butter - Oregano-Tomato",
+   "id": "68231ad0-5d1d-4adc-ae39-3a220542fc15",
+   "wo": "33-25",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 11.84,
+   "portionA": 8,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 11208,
+   "ings": [
+    {
+     "name": "FA-DE Tomato Paste /Tomatenmark",
+     "g": 691.45,
+     "manuf": false,
+     "id": "a66adf20-abd0-4ac7-99fd-5574a8a4d193",
+     "children": []
+    },
+    {
+     "name": "FA-DE Butter, Unsalted /Butter, ungesalzen",
+     "g": 11062.88,
+     "manuf": false,
+     "id": "31f0cdc7-65bd-4602-9a4d-a535488e389c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+     "g": 34.63,
+     "manuf": false,
+     "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 48.78,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Sauce - Yia Yia's Creamy Greek Sauce - sour cream",
+   "id": "82edc54b-a62d-4a38-a301-71fa383f43cb",
+   "wo": "33-29",
+   "cook": [],
+   "paths": [
+    "HAND MIX"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 57.84,
+   "portionA": 40,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 56040,
+   "ings": [
+    {
+     "name": "FA-DE Sour Cream /Sauerrahm",
+     "g": 49462.35,
+     "manuf": false,
+     "id": "355ba8ec-49f8-42c5-9b7d-143e3ecc640b",
+     "children": []
+    },
+    {
+     "name": "Factor Garam Masala Spice Blend",
+     "g": 401.21,
+     "manuf": true,
+     "id": "4300d4ab-343b-44b8-9972-c586ac348920",
+     "children": [
+      {
+       "name": "FA-DE Spice, Fennel Ground /Gewürz, Fenchel gemahlen",
+       "g": 12.79,
+       "manuf": false,
+       "id": "e7bf46ad-c2bb-49a8-82e1-4ae008c73eec",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Nutmeg Ground /Gewürz, gemahlene Muskatnuss",
+       "g": 25.59,
+       "manuf": false,
+       "id": "db21d9ed-ecb2-43e0-aa3e-dfed3306e6c6",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Coriander Ground /Gewürz, gemahlener Koriander",
+       "g": 79.96,
+       "manuf": false,
+       "id": "9bf888cd-b01e-47a6-baf5-afbbe2f3d976",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Cinnamon Ground /Gewürz, gemahlener Zimt",
+       "g": 52.77,
+       "manuf": false,
+       "id": "a33ab18c-ed42-4e41-a945-ddb35ff42daf",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel",
+       "g": 159.92,
+       "manuf": false,
+       "id": "b334a9ad-c05f-43e4-b8f9-f7f6780a8b7b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Cloves Ground /Gewürze, gemahlene Nelken",
+       "g": 25.59,
+       "manuf": false,
+       "id": "f548846d-c3bf-4ed3-a501-edd98cf3d892",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 39.98,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Turmeric /Gewürz, Kurkuma",
+       "g": 12.79,
+       "manuf": false,
+       "id": "6b872e1c-edc7-412f-93ed-5a99abb145cc",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Juice, Lemon /Saft, Zitrone",
+     "g": 1401.42,
+     "manuf": false,
+     "id": "0b6b5f66-8187-4cce-b414-bccc16699cd5",
+     "children": []
+    },
+    {
+     "name": "FA-DE Coriander, Chopped /Koriander, gehackt",
+     "g": 1401.42,
+     "manuf": false,
+     "id": "c6d3fb11-b3db-44da-b44d-03b07ba5cb89",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 211.91,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 4965.73,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "899ac4bd-36e6-4f1e-8d0a-3b8c9074a430": {
+   "en": "\"A. PROTEIN DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix ingredients together.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER (ALL IN ONE)\n\n1. Divide and organize ingredients into braiser batches [105 kg total capacity]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Complete sub-recipe for \"\"Cooked Ground Meat\"\" (ensure raw weight of meat is added, NOT cooked). Drain fat/liquid before continuing. Reserve Braiser Liquid.\n\n4. To the same braiser, add olive oil. Sweat the onions until caramelized  and add tomato paste, garlic, spices, salt and pepper and cook until fragrant.\n\n5. Deglaze with Red wine.\n \n6.  Add chicken stock. Bring to a simmer, cook until thickened.\n\n6. Add the Cooked Ground beef and Mix well to incorporate.\n\n7. FSQA CCP1 Check.\n\n8. Transfer to sheet trays (2 scoops per tray).\n\n9. Transfer speed rack to pre-blast associates.\"",
+   "de": "„A. PROTEINDEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. BRATPFANNE (ALLES IN EINEM)\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Schmorportionen an [105 kg Gesamtkapazität]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Vollständiges Unterrezept für „\" Gekochtes Hackfleisch \"“ (achten Sie darauf, dass das Fleisch roh und NICHT gekocht wird). Lassen Sie Fett/Flüssigkeit ab, bevor Sie fortfahren. Braiser Liquid aufbewahren.\n\n4. Zum gleichen Schmorbraten Olivenöl hinzufügen. Die Zwiebeln anschwitzen, bis sie karamellisiert sind, Tomatenpaste, Knoblauch, Gewürze, Salz und Pfeffer hinzufügen und kochen, bis sie duften.\n\n5. Mit Rotwein ablöschen.\n \n6. Hühnerbrühe hinzufügen. Zum Köcheln bringen und kochen, bis es eingedickt ist.\n\n6. Das gekochte Hackfleisch dazugeben und gut vermischen, um es einzuarbeiten.\n\n7. FQA CCP1-Überprüfung.\n\n8. Auf Blechschalen umfüllen (2 Messlöffel pro Schale).\n\n9. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast.“"
+  },
+  "64b7a183-aa93-4d39-8005-44b2a633a2d0": {
+   "en": "A. PROTEIN DEBOX\n\n1. Remove all ingredients from outer packaging\n\n2. Place ground beef in Vmag \n\n3.  Deliver ingredients to the braiser station  \n\nB. BRAISER\n\n1.  Add ground beef to a braiser\n\n2. Add water to cover the beef in a braiser.\n\n3. Cook the ground beef until the internal temperature is 72 °C\n\n4. FSQA CCP1 Check \n\n5. Drain the liquid\n\n6. Use as required in the recipe",
+   "de": "A. PROTEINDEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n\n2. Hackfleisch in Vmag legen \n\n3. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Hackfleisch in einen Schmorbraten geben\n\n2. Fügen Sie Wasser hinzu, um das Rindfleisch in einem Schmorbraten zu bedecken.\n\n3. Das Hackfleisch kochen, bis die Innentemperatur 72 °C beträgt\n\n4. FQA CCP1-Überprüfung \n\n5. Lassen Sie die Flüssigkeit ab\n\n6. Verwenden Sie nach Bedarf im Rezept"
+  },
+  "e8f4e648-79fa-4b62-8f90-b9e5e5b5b529": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n\n2. Drain spinach\n\n3. Transfer all ingredients to the braiser in GN 1/1 7 Liter pans.\n\nB. Braiser\n\n1. Heat oil in a braiser\n\n2. Add garlic and cook until toasted. \n\n3. Add spinach, salt, and stir to mix the seasoning.\n\n3. Bring to 75 °C temperature \n\n4. FSQA CCP1 Check\n\n5. Use as directed in the recipe",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n\n2. Spinat abtropfen lassen\n\n3. Alle Zutaten in GN 1/1 7-Liter-Pfannen in den Schmortopf geben.\n\nB. Schmorbraten\n\n1. Öl in einem Schmortopf erhitzen\n\n2. Fügen Sie Knoblauch hinzu und kochen Sie, bis er geröstet ist. \n\n3. Spinat hinzufügen, salzen und umrühren, um die Gewürze zu vermischen.\n\n3. Auf 75 °C Temperatur bringen \n\n4. FQA CCP1-Überprüfung\n\n5. Wie im Rezept angegeben verwenden"
+  },
+  "1903910f-065a-437d-a78e-c74ef2de831c": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients.\n\n2. Transfer spinach to perforated GN 1/1 pans, 3kg per pan\n\n3. Place pans on oven rack, transfer to oven\n\nB. Oven\n\n1. Place the frozen spinach in the Rational on the Spinach IQF Defrost setting.\n\n2. FSQA CCP1 check.\n\n3. Place the thawed spinach in a perforated GN tray with holes and squeeze out ALL the excess water.\n\n4. Hold to be mixed warm\n\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Zutaten NICHT vermischen.\n\n2. Spinat in perforierte GN 1/1-Pfannen geben, 3 kg pro Pfanne\n\n3. Stellen Sie die Pfannen auf den Ofenrost und geben Sie sie in den Ofen\n\nB. Ofen\n\n1. Platzieren Sie den gefrorenen Spinat im Rational auf der Spinat-IQF-Defrost-Einstellung.\n\n2. FQA CCP1-Überprüfung.\n\n3. Legen Sie den aufgetauten Spinat in eine perforierte GN-Schale mit Löchern und drücken Sie DAS GESAMTE überschüssige Wasser heraus.\n\n4. Zum Mischen warm halten\n\n"
+  },
+  "3faf671c-3d81-4870-930c-ba4e33568913": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting: Roasted Diced Bell Pepper\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Geröstete gewürfelte Paprika\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "b983a3dc-a724-4760-840e-b274f96878d3": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; \n\n2. Place the tomatoes in a Wanne and mix them with oil and salt until they are properly marinated.\n\n3. Distribute the marinated tomatoes in GN2/1 trays, 4 kg per tray.\n\n4. Load the trays onto the oven trolley and transfer to the oven section.\n\nB. OVEN\n\n1. Cook on \"Roasted Cherry Tomatoes\" program\nVisual: burst open and slumped, with blistered, shriveled skins and a deep red, syrupy juice caramelizing in the pan.\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung entfernen; \n\n2. Die Tomaten in eine Wanne geben und mit Öl und Salz vermischen, bis sie richtig mariniert sind.\n\n3. Die marinierten Tomaten in GN2/1-Schalen verteilen, 4 kg pro Schale.\n\n4. Laden Sie die Bleche auf den Ofenwagen und stellen Sie sie in den Ofenbereich.\n\nB. OFEN\n\n1. Kochen Sie im Programm „Geröstete Kirschtomaten“\nOptik: aufgeplatzt und zusammengesunken, mit blasenförmiger, geschrumpelter Schale und einem tiefroten, sirupartigen Saft, der in der Pfanne karamellisiert.\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "05bea711-eb6c-4c16-b501-e40ef6e7a85b": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros.\n\n2. Combine all ingredients in cambros.\n\n3. Mix until thoroughly combined.\n\n4. Use as directed in the recipe.\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten in Cambros umfüllen.\n\n2. Kombiniere alle Zutaten in Cambros.\n\n3. Mischen, bis alles gut vermischt ist.\n\n4. Wie im Rezept angegeben verwenden.\n"
+  },
+  "91029724-7101-4de2-b665-5e4a46315be0": {
+   "en": "A. VEGGIE DEBOX\n\n1. Debox in Veggie Prep on Perforated trays and put on Oven Racks\n\n2. Move Racks to Ovens\n\nB. OVEN\n\n1. Pre-heat Oven on Fresh Veggie Kill step  program\n\n2. Steam (fresh veggie) Fresh Veggie Kill step oven program\n\n3. FSQA CCP1 Check\n\n4. Use as described in the recipe ",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. In Veggie Prep auf perforierten Blechen entpacken und auf Ofenroste legen\n\n2. Stellen Sie die Regale in die Öfen\n\nB. OFEN\n\n1. Heizen Sie den Ofen im Step-Programm Fresh Veggie Kill vor\n\n2. Step Ofenprogramm Steam (frisches Gemüse) Fresh Veggie Kill\n\n3. FQA CCP1-Überprüfung\n\n4. Wie im Rezept beschrieben verwenden "
+  },
+  "c0d7e1db-8a56-4ec1-81e6-e0f89f852094": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting :-  \"Roasted Zucchini Diced\"\nShould be al dente with slight roast browning \n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: - „Gebratene Zucchini, gewürfelt“\nSollte bissfest sein und leicht gebräunt sein \n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "68231ad0-5d1d-4adc-ae39-3a220542fc15": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix ingredients together.\n\n2. Deliver required volumes to Middle Kitchen\n\nB. MIDDLE KITCHEN\n\n1. Weigh and divide ingredients into capacity per stand mixer [X kg capacity per batch]\n\n2. Soften butter before starting\n\n3. Add butter to stand mixer, whip butter with paddle attachment until soft and smooth\n\n4. Slowly add tomato paste and oregano to mixer with whipped butter, mix until fully incorporated\n\n5. Scoop into balls using onto sheet trays, weight per meal quantity\n\n6. Transfer speed rack to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefert die benötigten Mengen an Middle Kitchen\n\nB. MITTLERE KÜCHE\n\n1. Wiegen Sie die Zutaten und teilen Sie sie nach Fassungsvermögen pro Standmixer auf [X kg Fassungsvermögen pro Charge]\n\n2. Butter einweichen, bevor Sie beginnen\n\n3. Butter in den Standmixer geben, Butter mit Rühraufsatz aufschlagen, bis sie weich und glatt ist\n\n4. Tomatenpaste und Oregano langsam mit geschlagener Butter in den Mixer geben und mischen, bis alles vollständig eingearbeitet ist\n\n5. Auf einem Blech zu Kugeln formen, Gewicht pro Mahlzeit/Menge\n\n6. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast\n"
+  },
+  "82edc54b-a62d-4a38-a301-71fa383f43cb": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using immersion blender, blend until smooth.\nwhisk this mixture into the sour cream and ensure to mix well\n\n3. Cover and transfer to staging room\n\n4. Cup 40 g in the cup machine",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer glatt rühren.\nDiese Mischung in den Sauerrahm einrühren und darauf achten, dass alles gut vermischt ist\n\n3. Cover und Transfer zum Inszenierungsraum\n\n4. 40 g in die Tassenmaschine geben"
+  },
+  "4300d4ab-343b-44b8-9972-c586ac348920": {
+   "en": "A. SPICE ROOM\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros.\n\n2. Combine spices in Cambros using paddles.\n\n3. Mix until thoroughly combined.\n\n4. Use as directed in the recipe.\n\n5. Store leftover spices in covered Cambros.",
+   "de": "A. GEWÜRZRAUM\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten in Cambros umfüllen.\n\n2. Kombinieren Sie die Gewürze in Cambros mit Hilfe von Paddeln.\n\n3. Mischen, bis alles gut vermischt ist.\n\n4. Wie im Rezept angegeben verwenden.\n\n5. Bewahren Sie übrig gebliebene Gewürze in abgedeckten Cambros auf."
+  }
+ }
+}

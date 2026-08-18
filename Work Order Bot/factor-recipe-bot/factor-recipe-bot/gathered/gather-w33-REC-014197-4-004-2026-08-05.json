@@ -1,0 +1,440 @@
+{
+ "rec": {
+  "name": "FV0281A - Baja Salmon [DE]",
+  "skuCode": "REC-014197-4-004",
+  "totalPortions": 3523,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)",
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+    "Fish / Fisch"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Mexican Cauliflower Rice",
+   "id": "15c15cfa-1215-42ec-a098-084dfad529f9",
+   "wo": "33-41",
+   "cook": [],
+   "paths": [
+    "OVEN"
+   ],
+   "batchCount": 6,
+   "batchQuantity": 99.56,
+   "portionA": 120,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 422760,
+   "ings": [
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 11499.88,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1418.49,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Chili Powder /Gewürz, Chilipulver",
+     "g": 1418.49,
+     "manuf": false,
+     "id": "12c4996d-606c-46ab-91a0-3c6a72ceac0d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Green, Diced 10mm /Paprika, grün, gewürfelt 10 mm",
+     "g": 25836.74,
+     "manuf": false,
+     "id": "29feb242-2ac4-4508-b5e4-f2a0f9fd131c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm",
+     "g": 78979.37,
+     "manuf": false,
+     "id": "304b0fb7-c6f4-4164-a8bb-def20f32459a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Paprika /Gewürze, Paprika",
+     "g": 1418.49,
+     "manuf": false,
+     "id": "5a01fd94-793a-4820-a03a-20643e215bac",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cauliflower, Riced, IQF /Blumenkohl, Reis, IQF",
+     "g": 423671.88,
+     "manuf": false,
+     "id": "8b12f245-2661-4ce4-9a41-a6fa63c96579",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel",
+     "g": 1418.49,
+     "manuf": false,
+     "id": "b334a9ad-c05f-43e4-b8f9-f7f6780a8b7b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Red, Diced 5mm /Zwiebeln, rot, gewürfelt 5 mm",
+     "g": 51724.14,
+     "manuf": false,
+     "id": "ff253908-754f-4e4e-8955-509746ee7dbe",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Salmon - BAJA Salmon - Batch",
+   "id": "98071ec6-2d01-4d9e-b383-b1d316e9247f",
+   "wo": "33-42",
+   "cook": [],
+   "paths": [
+    "THAW / HAND MARINADE / OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 576.36,
+   "portionA": 1,
+   "portionU": "each",
+   "scoop": "Hand Portioned",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+     "Fish / Fisch"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 3523,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 2113.8,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "Marinade - Baja Marinade",
+     "g": 35230,
+     "manuf": true,
+     "id": "bbe42597-5466-418b-b937-5421b4af3332",
+     "children": [
+      {
+       "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+       "g": 1898.9,
+       "manuf": false,
+       "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+       "children": []
+      },
+      {
+       "name": "FA-DE Juice, Lime /Saft, Limette",
+       "g": 1299.99,
+       "manuf": false,
+       "id": "ba358f19-32da-4554-a344-aab81d8335a6",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Smoked Paprika /Gewürz, geräucherter Paprika",
+       "g": 398.1,
+       "manuf": false,
+       "id": "8c068775-50a6-4d71-af4b-56e0716ce913",
+       "children": []
+      },
+      {
+       "name": "FA-DE Juice, Orange /Saft, Orange",
+       "g": 1299.99,
+       "manuf": false,
+       "id": "ed0bb058-98ec-462e-9aab-1e342670f07b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 18576.78,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Ancho Chili Powder /Gewürz, Ancho-Chili-Pulver",
+       "g": 2994.55,
+       "manuf": false,
+       "id": "fa8c56b9-52ef-4997-b074-387813d689c5",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 7391.25,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel",
+       "g": 1898.9,
+       "manuf": false,
+       "id": "b334a9ad-c05f-43e4-b8f9-f7f6780a8b7b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1099.18,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 697.55,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Salmon, Skinless, Boneless, Filet/Lachs, ohne Haut, ohne Knochen, Filet - IQF",
+     "g": 539019,
+     "manuf": false,
+     "id": "f8b7838f-b9f2-48cb-b76c-c225004d0a7c",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Compound butter - Chili-Garlic Butter - master batch",
+   "id": "5b75a8d8-4555-48be-a12b-67b0216fa867",
+   "wo": "33-40",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 46.4,
+   "portionA": 12,
+   "portionU": "grams",
+   "scoop": "silver #110",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 42276,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Minced Garlic, Toasted, Dry /Gewürz, gehackter Knoblauch, geröstet, trocken",
+     "g": 1602.72,
+     "manuf": false,
+     "id": "7133bc69-1d05-424e-a969-5a4f7da96794",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken",
+     "g": 533.39,
+     "manuf": false,
+     "id": "5d0ad372-49db-472d-9bf3-3f505e3caaa8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 533.39,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 533.39,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Butter, Unsalted /Butter, ungesalzen",
+     "g": 42668.15,
+     "manuf": false,
+     "id": "31f0cdc7-65bd-4602-9a4d-a535488e389c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Guajillo Peppers, Ground /Gewürze, Guajillo-Paprikaschoten, gemahlen",
+     "g": 533.39,
+     "manuf": false,
+     "id": "c1f54d76-21cd-489e-aed6-17b09819c15a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Broccoli - S&P Broccoli FLORETS - less salt",
+   "id": "e08c7cf0-46cf-4fbf-b109-f87ae89e842a",
+   "wo": "33-39",
+   "cook": [],
+   "paths": [
+    "HAND MIX"
+   ],
+   "batchCount": 7,
+   "batchQuantity": 61.45,
+   "portionA": 85,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 299455,
+   "ings": [
+    {
+     "name": "FA-DE Broccoli, Florets, /Brokkoli, Röschen",
+     "g": 393696.76,
+     "manuf": false,
+     "id": "e1ab5a78-1c7d-46d2-bd82-28a839ae16c4",
+     "children": []
+    },
+    {
+     "name": "Broccoli Marinade",
+     "g": 36433.85,
+     "manuf": true,
+     "id": "4e306d1e-a77c-42cd-92f0-cc86894c382d",
+     "children": [
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1465.85,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 33072.24,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Powder, Toasted /Gewürz, Knoblauchpulver, geröstet",
+       "g": 1175.79,
+       "manuf": false,
+       "id": "93038dca-9a79-4ee1-a5b5-0b7b9c5681c9",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 1465.85,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Sauce - Cilantro Sour Cream",
+   "id": "c85b2345-8465-430a-a724-be1edc9ddd0c",
+   "wo": "33-43",
+   "cook": [],
+   "paths": [
+    "IMMERSION BLENDER / CUPPING"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 79.06,
+   "portionA": 40,
+   "portionU": "grams",
+   "scoop": "Cup",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 140920,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1107.81,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Jalapeno Peppers, Diced 5mm /Jalapeno-Paprikaschoten, gewürfelt, 5 mm",
+     "g": 5767.13,
+     "manuf": false,
+     "id": "74b1a0f9-93c9-48ca-89e5-87216824a96c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Juice, Lime /Saft, Limette",
+     "g": 5767.13,
+     "manuf": false,
+     "id": "ba358f19-32da-4554-a344-aab81d8335a6",
+     "children": []
+    },
+    {
+     "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+     "g": 1140.39,
+     "manuf": false,
+     "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+     "children": []
+    },
+    {
+     "name": "FA-DE Sour Cream /Sauerrahm",
+     "g": 115472.94,
+     "manuf": false,
+     "id": "355ba8ec-49f8-42c5-9b7d-143e3ecc640b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Coriander, Chopped /Koriander, gehackt",
+     "g": 28868.24,
+     "manuf": false,
+     "id": "c6d3fb11-b3db-44da-b44d-03b07ba5cb89",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "15c15cfa-1215-42ec-a098-084dfad529f9": {
+   "en": "A. VEGGIE DEBOX\n\n1. Mix together cauliflower, bell pell peppers, poblano, red onion, in wanne until evenly coated.\n\n2. In cambro, Puree spices with olive oil until fully combined\n\n3. Pour marinade over veg in a wanne and mix until coated \n\n4. Transfer to GN 1/1 7 Liters - 2 kg per tray\n\n5. Place sheet trays on oven racks. Deliver to Oven Associates.\n\nB. OVEN\n\n1. Roast per Oven Setting: Roasted IQF Cauliflower Rice\n [Visual Appearance Indicator] - Dry, toasted grains with golden-brown \"crispy bits\" and a fluffy, separate texture instead of a wet clump\n\n2.FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Blumenkohl, Paprika, Poblano und rote Zwiebel in einer Pfanne vermischen, bis sie gleichmäßig bedeckt sind.\n\n2. In Cambro die Gewürze mit Olivenöl pürieren, bis alles gut vermischt ist\n\n3. Gießen Sie die Marinade über das Gemüse in einer Pfanne und mischen Sie, bis es überzogen ist \n\n4. Umfüllen auf GN 1/1 7 Liter - 2 kg pro Schale\n\n5. Stellen Sie die Bleche auf die Ofenroste. Liefern Sie an Oven Associates.\n\nB. OFEN\n\n1. Einstellung Braten pro Ofen: Gebratener IQF-Blumenkohlreis\n [Optischer Aussehensindikator] — Trockene, geröstete Körner mit goldbraunen „knusprigen Stücken“ und einer lockeren, separaten Textur anstelle eines feuchten Klumpens\n\n2.FSA CCP1-Prüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "98071ec6-2d01-4d9e-b383-b1d316e9247f": {
+   "en": "A. PROTEIN DEBOX\n\n1. Open the necessary packages of salmon.\n\n2. In Wanne, toss Salmon with remaining salt and marinade mix until fully coated and evenly distributed. Keep as much marinade on the salmon as possible\n\n3. Arrange the salmon in a single layer on parchment-lined GN 2/1  sheet tray, 28 pieces per tray, and load the trays onto the oven trolley.\n\n4. Marinate for 2 hours.\n\n5. Transfer salmon to the oven.\n\nB. OVEN\n\n1. Pre-heat Oven on Salmon program\n\n2. Roast per \"Salmon\" Oven Setting:\n\n3. FSQA CCP1 Check\n\n4. Transfer to pre-Blast associates\n",
+   "de": "A. PROTEINDEBOX\n\n1. Öffnen Sie die erforderlichen Lachspackungen.\n\n2. In einer Wanne den Lachs mit dem restlichen Salz und der Marinade vermischen, bis er vollständig bedeckt und gleichmäßig verteilt ist. So viel Marinade wie möglich auf dem Lachs belassen\n\n3. Den Lachs in einer einzigen Schicht auf einem mit Pergament ausgekleideten Blech GN 2/1 anrichten, 28 Stück pro Blech, und die Bleche auf den Ofenwagen legen.\n\n4. 2 Stunden marinieren.\n\n5. Lachs in den Ofen geben.\n\nB. OFEN\n\n1. Ofen im Lachs-Programm vorheizen\n\n2. Braten pro Ofeneinstellung „Lachs“:\n\n3. FQA CCP1-Überprüfung\n\n4. Übertragung an Mitarbeiter von Pre-BLAST\n"
+  },
+  "bbe42597-5466-418b-b937-5421b4af3332": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging.\n\n2. Transfer ingredients to GN trays individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1:  Sauté onion and garlic in oil.\n\n2:  Add in remaining spices and toast until aromatic.\n\n3: Add orange juice, lime juice, and salt, and bring to 80 °C.\n\n4: Using an immersion blender, PUREE UNTIL VERY SMOOTH.\n\n5: Check CCP1 \n\n6: Put on oven trays and send to pre-blast chiller.\n\n8: reserve for production as marinade base.",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung.\n\n2. Zutaten einzeln in GN-Schalen umfüllen. Zutaten NICHT mischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1: Zwiebel und Knoblauch in Öl anbraten.\n\n2: Restliche Gewürze dazugeben und rösten, bis sie aromatisch sind.\n\n3: Orangensaft, Limettensaft und Salz dazugeben und auf 80 °C bringen.\n\n4: Mit einem Stabmixer PÜRIEREN, BIS ALLES SEHR GLATT IST.\n\n5: Überprüfen Sie CCP1 \n\n6: Auf die Ofenbleche legen und zum Vorstrahlkühler schicken.\n\n8: Reserve für die Produktion als Marinadenbasis."
+  },
+  "5b75a8d8-4555-48be-a12b-67b0216fa867": {
+   "en": "A. VEGGIE DEBOX\n\n1: Remove all ingredients from packaging materials.\n\n2. Transfer butter to GN trays and place on the speed rack; \n\n3. Transfer to the middle kitchen 1-2 hours before needed\n\nB. MIDDLE KITCHEN\n\n1. Add the butter to the mixer, attach the wide paddle, and whip with the Butter setting. Butter should look “fluffy”. \nMixer capacity: 105kg\n\n2. Once butter is whipped properly, add inclusions. Continue whipping with Butter setting until fully and evenly incorporated\n\n4. Place compound butter onto GN 2/1 trays (10kg per tray); place trays on speed racks, and transfer to blast chiller \n\n5. Scoop per quantity required in recipe, place scoops on GN 2/1 trays. 108 scoops per tray. \n\n6. Transfer to plating",
+   "de": "A. VEGETARISCHE DEBOX\n\n1: Entfernen Sie alle Inhaltsstoffe aus den Verpackungsmaterialien.\n\n2. Butter in GN-Schalen füllen und auf das Speed-Rack legen; \n\n3. Transfer in die mittlere Küche 1-2 Stunden vor Bedarf\n\nB. MITTLERE KÜCHE\n\n1. Die Butter in den Mixer geben, das breite Paddel anbringen und mit der Einstellung Butter aufschlagen. Butter sollte „flauschig“ aussehen. \nFassungsvermögen des Mixers: 105 kg\n\n2. Sobald die Butter richtig geschlagen ist, fügen Sie die Einschlüsse hinzu. Schlagen Sie mit der Butter weiter, bis alles vollständig und gleichmäßig eingearbeitet ist\n\n4. Butter auf GN 2/1-Schalen geben (10 kg pro Schale); Schalen auf Schnellregale stellen und in den Schockkühler umfüllen \n\n5. Messlöffel je nach Rezeptur, Messlöffel auf GN 2/1-Schalen legen. 108 Messlöffel pro Schale. \n\n6. Zur Plattierung übertragen"
+  },
+  "e08c7cf0-46cf-4fbf-b109-f87ae89e842a": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging.\n\n2. Toss the broccoli in the wanne. \n\n3. Toss broccoli with marinade in wanne following the ratio below:\n45.4 kg broccoli\n3.85 kg marinade\n\n4. Mix until very well combined.\n\n5. Scoop on GN 1/1 peforated 100mm pans 2kg per pan and load on oven racks.\n\n6. Transfer to the oven.\n\nB. OVEN\n\n1. Steam per Oven Setting: Steamed Broccoli\nAppearance- Bright, vibrant, tender-crisp\n\n2. FSQA CCP1 Check\n\n3. Deliver oven racks to pre-blast associates at Blast Chiller.",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung.\n\n2. Wirf den Brokkoli in die Pfanne. \n\n3. Brokkoli mit Marinade in eine Pfanne geben und dabei das folgende Verhältnis einhalten:\n45,4 kg Brokkoli\n3,85 kg Marinade\n\n4. Mischen, bis alles gut vermischt ist.\n\n5. Auf perforierte 100-mm-Pfannen GN 1/1 schöpfen und 2 kg pro Pfanne auffüllen und auf Ofenroste legen.\n\n6. Transfer in den Ofen.\n\nB. OFEN\n\n1. Dampf pro Ofeneinstellung: Gedünsteter Brokkoli\nAussehen: Hell, lebendig, zart, knusprig\n\n2. FQA CCP1-Überprüfung\n\n3. Liefern Sie die Ofengestelle an die Mitarbeiter vor dem Blast Chiller."
+  },
+  "4e306d1e-a77c-42cd-92f0-cc86894c382d": {
+   "en": "A. VEGGIE DEBOX\n\n1.  Remove all ingredients from the outer packaging. \n\n2. In cambro, combine all ingredients \n\n3. Using immersion blender, blend until [smooth/chunky] (as applicable)\n\n4. Using an immersion blender, Blend olive oil, sea salt, and toasted onion powder in a Cambro\n\n5. Use as described in the recipe",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung. \n\n2. Kombinieren Sie in Cambro alle Zutaten \n\n3. Mit einem Stabmixer mixen, bis [glatt/klobig] (je nach Bedarf)\n\n4. Mischen Sie Olivenöl, Meersalz und geröstetes Zwiebelpulver mit einem Stabmixer in einem Cambro\n\n5. Wie im Rezept beschrieben verwenden"
+  },
+  "c85b2345-8465-430a-a724-be1edc9ddd0c": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. In a mixer, add garlic, Jalapenos, coriander and lime juice\n\n2. Using an immersion blender, blend until smooth. \n\n3. Add sour cream and whip in the mixer until combined.\n\n4. FSQA CCP 1  Check\n\n5. Cover and transfer to the staging room\n\n6. Cup in the cup machine.",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. Knoblauch, Jalapenos, Koriander und Limettensaft in einen Mixer geben\n\n2. Mit einem Stabmixer glatt rühren. \n\n3. Sauerrahm hinzufügen und im Mixer verrühren, bis alles gut vermischt ist.\n\n4. FSQA CCP 1 Scheck\n\n5. Cover und Transfer in den Inszenierungsraum\n\n6. Tasse in der Tassenmaschine."
+  }
+ }
+}

@@ -1,0 +1,540 @@
+{
+ "rec": {
+  "name": "FV0565A - [DE] - Bacon & Onion Pork Tenderloin",
+  "skuCode": "REC-014040-4-004",
+  "totalPortions": 1384,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Mash - Swiss Cauliflower Mash - Rice",
+   "id": "2ed07cd0-0b7b-47cc-ba77-8258a1e26f39",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "IMMERSION BLENDER / OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 73.69,
+   "portionA": 100,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 138400,
+   "ings": [
+    {
+     "name": "FA-DE Cheese, Cream, 13% Fat (Milk) /Käse, Sahne, 13% Fett",
+     "g": 13422.66,
+     "manuf": false,
+     "id": "360cffe0-1558-4a42-84f2-8c8c3d7c4473",
+     "children": []
+    },
+    {
+     "name": "FA-DE Heavy Cream 35% /Sahne 35%",
+     "g": 20461.09,
+     "manuf": false,
+     "id": "060f39d6-76dd-4493-96f1-896650b2af7b",
+     "children": []
+    },
+    {
+     "name": "Steamed Cauliflower Rice",
+     "g": 85070.32,
+     "manuf": true,
+     "id": "f9f5d8a2-0d99-4a89-a99c-8d22935fb0e7",
+     "children": [
+      {
+       "name": "FA-DE Cauliflower, Riced, IQF /Blumenkohl, Reis, IQF",
+       "g": 89583.77,
+       "manuf": false,
+       "id": "8b12f245-2661-4ce4-9a41-a6fa63c96579",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 496.3,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "Roasted Garlic (use)",
+     "g": 3203.39,
+     "manuf": true,
+     "id": "aba8b6fb-cc27-44b4-9604-edefe4de30bc",
+     "children": [
+      {
+       "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+       "g": 3531.05,
+       "manuf": false,
+       "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 2648.27,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Cheese, Emmentaler, Shredded /Käse, Emmentaler, gerieben",
+     "g": 10241.83,
+     "manuf": false,
+     "id": "51073af1-0ced-4e7a-8c3e-b7f3227f2d6a",
+     "children": []
+    },
+    {
+     "name": "Green Onion Steam",
+     "g": 3203.39,
+     "manuf": true,
+     "id": "f03163ff-96f4-471c-a834-0738714cc74d",
+     "children": [
+      {
+       "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+       "g": 3268.77,
+       "manuf": false,
+       "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Oil, Olive, Extra Virgin /Öl, Olivenöl, Natives Extra",
+     "g": 11279.54,
+     "manuf": false,
+     "id": "a0ced37b-e273-4555-a3d2-23414b444a60",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Pork tenderloin - herb marinade",
+   "id": "499b00e8-6011-454a-ab6c-4a848e58ff48",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "MARINADE / GRILL / OVEN / SLICER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 313.44,
+   "portionA": 130,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 179920,
+   "ings": [
+    {
+     "name": "Pork Tenderloin - HERB BRINED",
+     "g": 292776.87,
+     "manuf": true,
+     "id": "946fa1ba-6b23-4be2-aac5-b7a071ec963b",
+     "children": [
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 292776.87,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Thyme Dry /Gewürz, Thymian trocken",
+       "g": 488.25,
+       "manuf": false,
+       "id": "153913f4-09c5-4061-842f-dc16e0c6de5e",
+       "children": []
+      },
+      {
+       "name": "FA-DE Pork, Tenderloin /Schweinefleisch, Filet",
+       "g": 292776.87,
+       "manuf": false,
+       "id": "dd06df1e-e649-436d-97c3-230220994313",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sage, Rubbed /Gewürz, Salbei, gerieben",
+       "g": 488.25,
+       "manuf": false,
+       "id": "f696dd44-4dc2-422a-b61a-bc53e126cac0",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 2587.63,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Dried Rosemary/Rosmarin getrocknet",
+       "g": 488.25,
+       "manuf": false,
+       "id": "18385fc8-5509-47b6-adc1-e3120ead5208",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Herb Marinade for Pork Tenderloin",
+     "g": 20666.6,
+     "manuf": true,
+     "id": "af3d1ef7-298a-4ab1-9387-6799ef40ea98",
+     "children": [
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 19119.61,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+       "g": 45.06,
+       "manuf": false,
+       "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+       "g": 405.52,
+       "manuf": false,
+       "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie",
+       "g": 45.06,
+       "manuf": false,
+       "id": "770b5b73-a50c-437d-8f36-f63463bbda29",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+       "g": 90.12,
+       "manuf": false,
+       "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 525.68,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+       "g": 210.27,
+       "manuf": false,
+       "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 315.41,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Bacon Onion Jam - No sweetener",
+   "id": "6ef24b7f-3d2c-4792-a0b0-6ebfc5a54f90",
+   "wo": null,
+   "cook": [
+    "Braiser"
+   ],
+   "paths": [
+    "SPICE PORTIONING / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 49.46,
+   "portionA": 30,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 41520,
+   "ings": [
+    {
+     "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+     "g": 862.93,
+     "manuf": false,
+     "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Diced 10mm /Zwiebel, Spanisch, gewürfelt 10 mm",
+     "g": 36151.5,
+     "manuf": false,
+     "id": "43e4e30c-1eb1-4c82-8324-83d7b08c9b6a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 106.91,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "Extra Crispy Diced Bacon",
+     "g": 8010.76,
+     "manuf": true,
+     "id": "866bc3be-0edc-42b4-a37d-b15d1b058faf",
+     "children": [
+      {
+       "name": "FA-DE Bacon, Diced /Speck, gewürfelt",
+       "g": 18210.34,
+       "manuf": false,
+       "id": "cb2e2bdc-6031-44e7-8756-d3561c2f3743",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Bacon, Fat / Speck, Fett",
+     "g": 4329.93,
+     "manuf": false,
+     "id": "aee50d68-f3e1-44c7-9162-466bb15a84cb",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Garlic Chili Marinated Green Beans",
+   "id": "9ad7a86b-d289-40f9-9eb5-9f500316463d",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "UNCATEGORIZED BOM"
+   ],
+   "batchCount": 3,
+   "batchQuantity": 54.46,
+   "portionA": 90,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 124560,
+   "ings": [
+    {
+     "name": "FA-DE Green Beans, Fresh, Cut 40mm /Grüne Bohnen, frisch, geschnitten 40mm",
+     "g": 144807.92,
+     "manuf": false,
+     "id": "f51808b3-752a-49d2-8855-c95ae01e7a40",
+     "children": []
+    },
+    {
+     "name": "Garlic Chili Vegetable Marinade less salt",
+     "g": 18573.28,
+     "manuf": true,
+     "id": "9588a890-5065-4df3-9a0b-611ec5aa333b",
+     "children": [
+      {
+       "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+       "g": 2042.84,
+       "manuf": false,
+       "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Minced Garlic, Toasted, Dry /Gewürz, gehackter Knoblauch, geröstet, trocken",
+       "g": 463.21,
+       "manuf": false,
+       "id": "7133bc69-1d05-424e-a969-5a4f7da96794",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 15441.11,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken",
+       "g": 139.64,
+       "manuf": false,
+       "id": "5d0ad372-49db-472d-9bf3-3f505e3caaa8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 463.21,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 335.66,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Sauce - Roasted Mushroom Cream (thick sliced)",
+   "id": "2b3c1510-b6d7-45bf-8090-da8ebc9b1911",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "IMMERSION BLENDER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 60.76,
+   "portionA": 40,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 55360,
+   "ings": [
+    {
+     "name": "FA-DE Cheese, Cream, 13% Fat (Milk) /Käse, Sahne, 13% Fett",
+     "g": 17532.9,
+     "manuf": false,
+     "id": "360cffe0-1558-4a42-84f2-8c8c3d7c4473",
+     "children": []
+    },
+    {
+     "name": "Roasted Mushrooms",
+     "g": 17532.9,
+     "manuf": true,
+     "id": "5ae4fb92-8120-4cb8-bd33-20293b9fbdd6",
+     "children": [
+      {
+       "name": "FA-DE Mushroom, Button, Sliced, Washed /Pilz, Knopf, geschnitten, gewaschen",
+       "g": 29586.4,
+       "manuf": false,
+       "id": "405ed808-bb58-4af7-bdb8-d88c48284d28",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 2958.64,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Spice, Porcini Mushroom Powder /Gewürz, Steinpilzpulver",
+     "g": 894.17,
+     "manuf": false,
+     "id": "1e775d80-636d-42c9-ba8b-52292a9af215",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 236.35,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Heavy Cream 35% /Sahne 35%",
+     "g": 23394.27,
+     "manuf": false,
+     "id": "060f39d6-76dd-4493-96f1-896650b2af7b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 334.82,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+     "g": 837.06,
+     "manuf": false,
+     "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "2ed07cd0-0b7b-47cc-ba77-8258a1e26f39": {
+   "en": "A. VEGGIE DEBOX\n\n1: Place cauliflower in perforated hotel pans - 2.5 scoops  per GN 1/1 perforated\n\nB. OVEN\n\n1. Steam per Oven Setting: Steamed IQF Cauliflower Rice\n- [Visual Appearance Indicator]\n\nC. MIDDLE KITCHEN\n\n1: Drain all water out of the cauliflower, transfer to Wanne and bring to BRAISERS.\n\nD. BRAISER\n\n1.  add heavy cream, cream cheese, sea salt, and roasted garlic to braiser.\n\n2.  heat to 85 degrees and bring to a simmer, stirring occasionally, until cream cheese has melted. \n\n3. Add Cauliflower rice\n\n4. Using an immersion blender, mix until smooth. \n\n5.  Add Emmentaler Cheese and heat until melted, stirring occasionally, until mixture reaches 72 degrees.\n\n8. FSQA CCP1 Check\n\n9. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1: Blumenkohl in perforierte Hotelpfannen geben — 2,5 Messlöffel pro GN, 1/1 perforiert\n\nB. OFEN\n\n1. Dampf pro Ofeneinstellung: Gedünsteter IQF-Blumenkohlreis\n- [Optischer Darstellungsindikator]\n\nC. MITTLERE KÜCHE\n\n1: Das gesamte Wasser aus dem Blumenkohl abgießen, in eine Wanne geben und zum BRAISERS bringen.\n\nD. BRATPFANNE\n\n1. Schlagsahne, Frischkäse, Meersalz und gerösteten Knoblauch in den Schmorbraten geben.\n\n2. Auf 85 Grad erhitzen und unter gelegentlichem Rühren zum Köcheln bringen, bis der Frischkäse geschmolzen ist. \n\n3. Blumenkohlreis hinzufügen\n\n4. Mit einem Stabmixer glatt rühren. \n\n5. Emmentaler Käse dazugeben und erhitzen, bis er geschmolzen ist, dabei gelegentlich umrühren, bis die Mischung 72 Grad erreicht hat.\n\n8. FQA CCP1-Überprüfung\n\n9. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "f9f5d8a2-0d99-4a89-a99c-8d22935fb0e7": {
+   "en": "\"A. VEGGIE DEBOX\n\n1: Place cauliflower in perforated hotel pans -2 kg per hotel pan\n\n2. Transfer to the oven section\n\nB. OVEN\n\n1. Steam per Oven Setting: 'Steamed IQF Cauliflower rice'\n\n2. FSQA CCP1 Check\n\n3. Transfer to middle kitchen.\n\nC. MIDDLE KITCHEN\n\n1: Drain all water out of the cauliflower, transfer to Wanne\n\n2. Hold for use as described in the recipe",
+   "de": "„A. GEMÜSE-DEBOX\n\n1: Blumenkohl in perforierte Hotelpfannen geben — 2 kg pro Hotelpfanne\n\n2. In den Ofenbereich überführen\n\nB. OFEN\n\n1. Einstellung Dampf pro Ofen: „Gedünsteter IQF-Blumenkohlreis“\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer in die mittlere Küche.\n\nC. MITTLERE KÜCHE\n\n1: Das gesamte Wasser aus dem Blumenkohl abgießen und in die Wanne geben\n\n2. Halten Sie die Taste gedrückt, um sie wie im Rezept beschrieben zu verwenden"
+  },
+  "f03163ff-96f4-471c-a834-0738714cc74d": {
+   "en": "A. VEGGIE DEBOX\n\n1. Debox in Veggie Prep \n\n2. Place 2kg per perforated GN 1/1pans, place pans on oven racks\n\n3. Move Racks to Ovens.\n\nB. OVEN\n\n1. Cook on \"Steamed Sliced Scallion\" Oven setting\nAppearance: Vibrant green, limp ribbons with tender, translucent white bases and a glistening, moist sheen\n\n2. FSQA CCP Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Debox im Veggie Prep \n\n2. Geben Sie 2 kg pro perforierten GN 1/1-Pfannen und stellen Sie die Pfannen auf Ofenroste\n\n3. Stellen Sie die Regale in die Öfen.\n\nB. OFEN\n\n1. Auf der Ofeneinstellung „Gedünstete Schalotte in Scheiben“ garen\nAussehen: Leuchtend grüne, schlaffe Bänder mit zarten, durchscheinenden weißen Untergründen und einem glitzernden, feuchten Glanz\n\n2. FQA CCP-Check\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "499b00e8-6011-454a-ab6c-4a848e58ff48": {
+   "en": "\"A. PROTEIN DEBOX\n\n1. In Wanne, toss Pork Tenderloin with Marinade until fully coated and evenly distributed.\n\n2. Marinate for 2 hours.\n\n3. Transfer pork tenderloin to Grill Team.\n\nB. GRILL\n\n1. Grill mark pork tenderloin on all sides until grill mark is medium to dark golden brown but pork is still raw.\n\n2. Transfer pork to sheet trays, grill mark side down. 10 pieces per sheet tray.\n\n3. Place sheet trays on oven racks; deliver racks to Oven Team.\n\nC. OVEN\n\n1. Roast per \"\"Pork Tenderloin, Grilled\"\" Oven Setting:\n\n2. FSQA CCP1 Check\n3. Transfer to pre-blast associates\n\nD. PLATING\n\n1. Slice before plating - 1/2 inch thick slices.",
+   "de": "„A. PROTEINDEBOX\n\n1. In der Wanne das Schweinefilet mit der Marinade schwenken, bis es vollständig bedeckt und gleichmäßig verteilt ist.\n\n2. 2 Stunden marinieren.\n\n3. Schweinefilet zum Grillteam übertragen.\n\nB. GRILLEN\n\n1. Schweinefilet von allen Seiten grillen, bis die Grillmarke mittel- bis dunkelgoldbraun ist, das Schweinefleisch jedoch noch roh ist.\n\n2. Schweinefleisch mit der Grillmarkierung nach unten auf Bleche legen. 10 Stück pro Blech.\n\n3. Stellen Sie die Bleche auf die Ofenroste; liefern Sie die Roste an das Ofenteam.\n\nC. OFEN\n\n1. Braten pro „Schweinefilet, gegrillt“. Ofeneinstellung:\n\n2. FQA CCP1-Überprüfung\n3. Transfer an die Mitarbeiter von Pre-Blast\n\nD. PLATTIEREN\n\n1. Vor dem Plattieren in Scheiben schneiden - 1/2 Zoll dicke Scheiben."
+  },
+  "946fa1ba-6b23-4be2-aac5-b7a071ec963b": {
+   "en": "A. PROTEIN DEBOX\n\n1. Dissolve salt and herbs in water\n(ensure water is cold)\n\n2. Add pork allow meat to sit for 4 hours\n\n3. Drain \n\n4. Use as described in the recipe",
+   "de": "A. PROTEINDEBOX\n\n1. Salz und Kräuter in Wasser auflösen\n(stellen Sie sicher, dass das Wasser kalt ist)\n\n2. Fügen Sie Schweinefleisch hinzu, lassen Sie das Fleisch 4 Stunden ruhen.\n\n3. Abtropfen lassen \n\n4. Wie im Rezept beschrieben verwenden"
+  },
+  "af3d1ef7-298a-4ab1-9387-6799ef40ea98": {
+   "en": "A. DEBOX\n\n1. In cambros, combine all ingredients \n\n2. Using immersion blender, blend until smooth\n\n3. Transfer to Protein Debox",
+   "de": "A. DEBOX\n\n1. Kombinieren Sie in Cambros alle Zutaten \n\n2. Mit einem Stabmixer glatt rühren\n\n3. Transfer zur Protein Debox"
+  },
+  "6ef24b7f-3d2c-4792-a0b0-6ebfc5a54f90": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to GN Trays individually. Do not combine ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER \n\n1. Add the onions and bacon fat in braiser over medium to low heat. Stirr regularly, until onions are deeply caramelized - rich golden brow, soft and naturally sweet. DO NOT RUSH THIS STEP.\n\n2. Deglaze with Chicken stock, reduce until liquid is fully incorporated.\n\n3. Add the pepper and diced bacon while stirring continuously. Bring to 85 degrees.\n\n4. FSQA CCP1 check\n\n5. Move to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in GN-Schalen umfüllen. Zutaten nicht kombinieren.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN \n\n1. Zwiebeln und Speckfett bei mittlerer bis niedriger Hitze in einen Schmorbraten geben. Regelmäßig umrühren, bis die Zwiebeln tief karamellisiert sind - satte Goldbraun, weich und natürlich süß. BEEILE DICH NICHT MIT DIESEM SCHRITT.\n\n2. Mit Hühnerbrühe ablöschen, einkochen lassen, bis die Flüssigkeit vollständig eingearbeitet ist.\n\n3. Paprika und Speckwürfel unter ständigem Rühren dazugeben. Auf 85 Grad bringen.\n\n4. FQA CCP1-Überprüfung\n\n5. Wechseln Sie zu Pre-Blast Associates"
+  },
+  "866bc3be-0edc-42b4-a37d-b15d1b058faf": {
+   "en": "A. PROTEIN DEBOX\n\n1. Remove from packaging.\n\n2. Place bacon on GN2/1 trays, 2 kg per tray.\n\n3. Transfer tray to oven rack and deliver to oven stations\n\nB. OVEN\n\n1. Cook on \"Crispy Bacon.\"\nAppearance: deeply mahogany-red with rippled, golden-brown fat that has rendered into a brittle, glass-like crunch.\n\n2. Drain and reserve bacon fat\n\n3. FSQA CCP1 Check\n\n4. Transfer to pre-blast associates",
+   "de": "A. PROTEINDEBOX\n\n1. Aus der Verpackung nehmen.\n\n2. Speck auf GN2/1-Schalen legen, 2 kg pro Tablett.\n\n3. Das Blech auf den Ofenrost legen und an die Ofenstationen liefern\n\nB. OFEN\n\n1. Kochen Sie auf „Crispy Bacon“.\nAussehen: tiefes Mahagonirot mit gewelltem, goldbraunem Fett, das sich in einen spröden, glasartigen Crunch verwandelt hat.\n\n2. Speckfett abgießen und aufbewahren\n\n3. FQA CCP1-Überprüfung\n\n4. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "9ad7a86b-d289-40f9-9eb5-9f500316463d": {
+   "en": "A. VEGGIE DEBOX\n\n1. toss together marinade with green beans in a Wanne. \n\n2. Transfer to GN 2/1 Tray - 5 kg per tray. Place trays on oven rack, transfer to oven\n\nOVEN\n\n1. Roast on oven setting \"Roasted Green Beans\"\nVisual: tender and golden brown\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre Blast Associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Marinade mit grünen Bohnen in einer Wanne vermischen. \n\n2. Auf ein Tablett GN 2/1 umfüllen — 5 kg pro Schale. Bleche auf den Ofenrost stellen und in den Ofen stellen\n\nOFEN\n\n1. Auf Ofenstufe „Geröstete grüne Bohnen“ rösten\nOptisch: zart und goldbraun\n\n2. FQA CCP1-Überprüfung\n\n3. Übertragung an Pre Blast Associates"
+  },
+  "9588a890-5065-4df3-9a0b-611ec5aa333b": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using immersion blender, blend until smooth.\n\n3. Transfer to protein Debox\"",
+   "de": "„A. GEMÜSEDEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer glatt rühren.\n\n3. Transfer zu Protein „Debox“"
+  },
+  "2b3c1510-b6d7-45bf-8090-da8ebc9b1911": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients together.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [320 total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n4. Heat heavy cream in braiser until simmering.\n\n5. Add in cream cheese, stirring continuously to melt and fully incorporate.\n\n6. Add in porcini powder, toasted onion powder, black pepper, salt, and mushrooms\n\n7. Puree until smooth using an immersion blender to break up remaining lumps of cream cheese. \n\n8. Bring up to 72 C before removing from braiser.\n\n9. Mix well to incorporate.\n\n10. FSQA  CCP1 Check.\n\n11. Transfer speed rack to pre blast associates at Blast Chiller.\"",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 320 kg pro Bratpfanne]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n4. Sahne im Schmorbraten erhitzen, bis sie köchelt.\n\n5. Frischkäse dazugeben, dabei ständig umrühren, bis er geschmolzen ist, und vollständig einarbeiten.\n\n6. Steinpilzpulver, geröstetes Zwiebelpulver, schwarzen Pfeffer, Salz und Champignons dazugeben\n\n7. Mit einem Stabmixer glatt pürieren, um die restlichen Frischkäseklumpen aufzubrechen. \n\n8. Vor dem Herausnehmen aus dem Kochtopf auf 72 °C erhitzen.\n\n9. Zum Einarbeiten gut vermischen.\n\n10. FQA CCP1-Überprüfung.\n\n11. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast Chiller.“"
+  },
+  "5ae4fb92-8120-4cb8-bd33-20293b9fbdd6": {
+   "en": "A. VEGGIE DEBOX\n\n1. Mix all ingredients together in Wanne, mix carefully to avoid damaging mushrooms\n\n2. Place on GN 2/1 trays; 2kg per tray\n\n3. Transfer trays to oven racks and deliver racks to oven \n\nB. OVEN\n\n1. Cook per oven setting \"Cremini Mushroom\"\nVisually: Roasted brown\n\n2. FSQA CCP1 Check\n\n3. Move to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten in der Wanne vermischen, vorsichtig vermischen, um Pilze nicht zu schädigen\n\n2. Auf GN 2/1-Schalen legen; 2 kg pro Schale\n\n3. Stellen Sie die Bleche auf die Ofenroste und bringen Sie die Roste in den Ofen \n\nB. OFEN\n\n1. Pro Ofeneinstellung „Cremini Mushroom“ garen\nOptisch: Braun gebraten\n\n2. FQA CCP1-Überprüfung\n\n3. Wechseln Sie zu Pre-Blast Associates"
+  }
+ }
+}

@@ -80,7 +80,7 @@ export interface WoBatchResult {
 // vom timeoutSeconds der Function selbst. Ein Batch mit vielen WOs (~20-25s je WO)
 // überschreitet das schnell, deshalb wird hier in kleine, garantiert schnelle
 // Häppchen aufgeteilt statt alle Items in einem einzigen HTTP-Request zu senden.
-const BATCH_CHUNK_SIZE = 3;
+const BATCH_CHUNK_SIZE = 5;
 
 async function generateWoInstructionsChunk(
   items: Array<{ key: string; row: KetRow; calc: BatchCalc }>,

@@ -1,0 +1,571 @@
+{
+ "rec": {
+  "name": "FV1481B - [DE] - Thai Coconut Curry Barramundi",
+  "skuCode": "REC-032214-4-005",
+  "totalPortions": 1715,
+  "alg": {
+   "c": [
+    "Sesame seeds / Sesamsamen",
+    "Tree nuts / Schalenfrüchte",
+    "Cashew nuts / Kaschunüsse",
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+    "Soya / Soja",
+    "Fish / Fisch"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Asian Brown Jasmine with GGS",
+   "id": "e0b167fa-867b-4d9f-8724-b5334afd6700",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "HAND MIX / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 87.51,
+   "portionA": 100,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+     "Sesame seeds / Sesamsamen"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 171500,
+   "ings": [
+    {
+     "name": "Brown Jasmine Rice with GGS - No Salt",
+     "g": 159112.17,
+     "manuf": true,
+     "id": "8bb6854e-97e1-4b16-9ec4-a407158dac84",
+     "children": [
+      {
+       "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+       "g": 7138.63,
+       "manuf": false,
+       "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Ginger, IQF, Diced 4 mm [250g] /Ingwer, IQF, gewürfelt 4 mm [250g]",
+       "g": 5287.88,
+       "manuf": false,
+       "id": "09e5309d-dd17-47e6-94b1-4b6bf3996249",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 3525.25,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      },
+      {
+       "name": "FA-DE Rice, Jasmine, Brown/Reis, Jasmin, braun",
+       "g": 56069.11,
+       "manuf": false,
+       "id": "88dbb189-969c-4ff0-830f-1bdff408a758",
+       "children": []
+      },
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 82931.51,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Asian GGS rice - Spice and veg mix",
+     "g": 15899.64,
+     "manuf": true,
+     "id": "d70185e1-ca8e-4f28-8b74-f30431699e48",
+     "children": [
+      {
+       "name": "FA-DE Oil, Sesame Seed, Toasted /Öl, Sesamsamen, geröstet",
+       "g": 1069.01,
+       "manuf": false,
+       "id": "c17c7ae1-c613-4822-ac32-3b0f39c1ac61",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 265.59,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Onion, Spanish, Diced 5mm /Zwiebel, Spanisch, gewürfelt 5 mm",
+       "g": 4302.58,
+       "manuf": false,
+       "id": "f11b2445-91bf-437e-9ba2-1602b9c2d910",
+       "children": []
+      },
+      {
+       "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+       "g": 4302.58,
+       "manuf": false,
+       "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 2145.98,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      },
+      {
+       "name": "FA-DE Ginger, IQF, Diced 4 mm [250g] /Ingwer, IQF, gewürfelt 4 mm [250g]",
+       "g": 2144.65,
+       "manuf": false,
+       "id": "09e5309d-dd17-47e6-94b1-4b6bf3996249",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 346.6,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Coriander, Chopped /Koriander, gehackt",
+       "g": 976.05,
+       "manuf": false,
+       "id": "c6d3fb11-b3db-44da-b44d-03b07ba5cb89",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+       "g": 995.97,
+       "manuf": false,
+       "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Lemongrass Powder /Gewürz, Zitronengraspulver",
+       "g": 66.4,
+       "manuf": false,
+       "id": "5ce74174-6529-4d7b-94bf-561777af6dc0",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Asian Spiced Barramundi Batch",
+   "id": "747c7034-2c22-4936-a216-708297d81cb7",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "DEBOX / HAND MARINADE / OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 242.24,
+   "portionA": 1,
+   "portionU": "each",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Fish / Fisch"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 1715,
+   "ings": [
+    {
+     "name": "Asian Seafood Spice - no salt",
+     "g": 1269.1,
+     "manuf": true,
+     "id": "9cd0a51c-286b-4859-bf2c-4a0f1939c7ec",
+     "children": [
+      {
+       "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+       "g": 456.88,
+       "manuf": false,
+       "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Powder, Toasted /Gewürz, Knoblauchpulver, geröstet",
+       "g": 236.9,
+       "manuf": false,
+       "id": "93038dca-9a79-4ee1-a5b5-0b7b9c5681c9",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Ginger Ground /Gewürze, gemahlener Ingwer",
+       "g": 236.9,
+       "manuf": false,
+       "id": "0d5897fb-4464-4aac-bdf3-3b3c74e6e413",
+       "children": []
+      },
+      {
+       "name": "FA-DE Sugar, Coconut /Zucker, Kokosnuss",
+       "g": 236.9,
+       "manuf": false,
+       "id": "180953c1-0e18-49fe-b423-7033564b8a76",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Green Onion Granulated /Gewürz, grüne Zwiebel granuliert",
+       "g": 50.76,
+       "manuf": false,
+       "id": "15a41003-4b62-42f1-b01a-6932f243c2f1",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, White Pepper /Gewürz, weißer Pfeffer",
+       "g": 50.76,
+       "manuf": false,
+       "id": "247c8269-2161-4887-9c87-a34173626a37",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 874.65,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "Frozen Barramundi - thawed",
+     "g": 240100,
+     "manuf": true,
+     "id": "85af5f4e-c631-4fdf-be9d-619733e3d936",
+     "children": [
+      {
+       "name": "FA-DE Barramundi Fillet, Skinless, 140g",
+       "g": 278591.47,
+       "manuf": false,
+       "id": "823ef826-b773-4067-9a95-6f35d7a7d751",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Thai Yellow Curry Sauce",
+   "id": "c7195f83-b3fa-46df-80c4-6b537526625c",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "UNCATEGORIZED BOM"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 62.14,
+   "portionA": 60,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+     "Soya / Soja"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 102900,
+   "ings": [
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 936,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Diced 10mm /Zwiebel, Spanisch, gewürfelt 10 mm",
+     "g": 5323.49,
+     "manuf": false,
+     "id": "43e4e30c-1eb1-4c82-8324-83d7b08c9b6a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+     "g": 5323.49,
+     "manuf": false,
+     "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+     "children": []
+    },
+    {
+     "name": "FA-DE Ginger, IQF, Diced 4 mm [250g] /Ingwer, IQF, gewürfelt 4 mm [250g]",
+     "g": 5323.49,
+     "manuf": false,
+     "id": "09e5309d-dd17-47e6-94b1-4b6bf3996249",
+     "children": []
+    },
+    {
+     "name": "FA-DE Yellow Curry Paste/ Gelbe Curry paste",
+     "g": 11130.94,
+     "manuf": false,
+     "id": "f841d878-496b-477b-88bf-2cbc1d22436d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Turmeric /Gewürz, Kurkuma",
+     "g": 132.95,
+     "manuf": false,
+     "id": "6b872e1c-edc7-412f-93ed-5a99abb145cc",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Lemongrass Powder /Gewürz, Zitronengraspulver",
+     "g": 188.8,
+     "manuf": false,
+     "id": "5ce74174-6529-4d7b-94bf-561777af6dc0",
+     "children": []
+    },
+    {
+     "name": "FA-DE Milk, Coconut /Milch, Kokosnuss",
+     "g": 91738.48,
+     "manuf": false,
+     "id": "e030dd97-44fb-4ce2-8104-10979367719c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Tamari, Reduced Sodium Soy Sauce /Tamari, natriumreduzierte Sojasauce",
+     "g": 445.4,
+     "manuf": false,
+     "id": "dfa6ad55-240b-40e8-98ec-c4bf10909cab",
+     "children": []
+    },
+    {
+     "name": "FA-DE Sugar, Coconut /Zucker, Kokosnuss",
+     "g": 529.16,
+     "manuf": false,
+     "id": "180953c1-0e18-49fe-b423-7033564b8a76",
+     "children": []
+    },
+    {
+     "name": "FA-DE Coriander, Chopped /Koriander, gehackt",
+     "g": 707.32,
+     "manuf": false,
+     "id": "c6d3fb11-b3db-44da-b44d-03b07ba5cb89",
+     "children": []
+    },
+    {
+     "name": "FA-DE Vinegar, Rice /Essig, Reis",
+     "g": 1329.54,
+     "manuf": false,
+     "id": "332a3649-fe58-4b07-be4e-7844313c6a79",
+     "children": []
+    },
+    {
+     "name": "FA-DE Gum, Xanthan /Gummi, Xanthan",
+     "g": 224.69,
+     "manuf": false,
+     "id": "5c06126f-bfe4-4971-89aa-17277959109e",
+     "children": []
+    },
+    {
+     "name": "FA-DE Juice, Lime /Saft, Limette",
+     "g": 941.32,
+     "manuf": false,
+     "id": "ba358f19-32da-4554-a344-aab81d8335a6",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Gochugaru - Lemon - Green Onion roasted Cashews",
+   "id": "a3cbf81e-5637-43fd-bfb2-6ed983ddee4f",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 28.11,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Tree nuts / Schalenfrüchte",
+     "Cashew nuts / Kaschunüsse"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 17150,
+   "ings": [
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 1683.73,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Maple Syrup/Ahornsirup",
+     "g": 2104.66,
+     "manuf": false,
+     "id": "44e336d1-f763-44e3-8656-9489b73c4364",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken",
+     "g": 625.39,
+     "manuf": false,
+     "id": "5d0ad372-49db-472d-9bf3-3f505e3caaa8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 48.11,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Lemon Powder /Gewürz, Zitronenpulver",
+     "g": 60.13,
+     "manuf": false,
+     "id": "d440ad4f-1685-4400-a6db-5eb465456968",
+     "children": []
+    },
+    {
+     "name": "FA-DE Nut, Cashew /Nuss, Cashew",
+     "g": 16512.59,
+     "manuf": false,
+     "id": "bb211e2f-2428-48e3-9a80-7562d1bca6c2",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+     "g": 7071.67,
+     "manuf": false,
+     "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Lemongrass Broccoli Florets",
+   "id": "731fba1e-07cb-418d-81cb-8df467777c39",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 3,
+   "batchQuantity": 46.16,
+   "portionA": 70,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Sesame seeds / Sesamsamen"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 120050,
+   "ings": [
+    {
+     "name": "FA-DE Broccoli, Florets, /Brokkoli, Röschen",
+     "g": 127181.23,
+     "manuf": false,
+     "id": "e1ab5a78-1c7d-46d2-bd82-28a839ae16c4",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Sesame Seed, Toasted /Öl, Sesamsamen, geröstet",
+     "g": 4542.19,
+     "manuf": false,
+     "id": "c17c7ae1-c613-4822-ac32-3b0f39c1ac61",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 1090.12,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, White Pepper /Gewürz, weißer Pfeffer",
+     "g": 363.37,
+     "manuf": false,
+     "id": "247c8269-2161-4887-9c87-a34173626a37",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+     "g": 908.44,
+     "manuf": false,
+     "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 336.12,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sesame Seeds, Black /Gewürz, Sesamsamen, Schwarz",
+     "g": 3333.97,
+     "manuf": false,
+     "id": "ab487c4e-83c4-4c88-8372-63594bbabf66",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Lemongrass Powder /Gewürz, Zitronengraspulver",
+     "g": 726.75,
+     "manuf": false,
+     "id": "5ce74174-6529-4d7b-94bf-561777af6dc0",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "e0b167fa-867b-4d9f-8724-b5334afd6700": {
+   "en": "1. Mix together until evenly combined. \n2. Place onto sheet trays and cool in blast chiller. \n\nRatio:\nRice: 41235.64 g\nSpice and Veg Mix: 4123.56 g\n\n3. Reserve for production",
+   "de": "1. Alles vermischen, bis alles gleichmäßig vermischt ist. \n2. Auf Blechschalen legen und im Schnellkühler abkühlen lassen. \n\nVerhältnis:\nReis: 41235,64 g\nGewürz- und Gemüsemischung: 4123,56 g\n\n3. Reserve für die Produktion"
+  },
+  "8bb6854e-97e1-4b16-9ec4-a407158dac84": {
+   "en": "A. VEGGIE DEBOX\n1. Combine ginger, garlic, green onion, and salt in cambros; toss to combine. \n\n2. Combine 1 kg rice with 1.5 kg liquid in each hotel pan.\n\n3. Distribute 470 g ginger/garlic/ green onion/salt mix evenly among each pans.\n\n4. Place hotel pans in oven carts and transfer to the oven section\n\nB. OVEN\n\n1. Cook in oven according to location guidelines: \"Steamed Brown Rice\" oven spec - until all liquid is absorbed.\n\n6. Cool in pans.\n\n7(a). Turn out onto sheet trays and fluff\n reserve for production.\n\nOR \n\n7(b). Continue with mix-ins as directed in recipe.",
+   "de": "A. VEGETARISCHE DEBOX\n1. Ingwer, Knoblauch, Frühlingszwiebeln und Salz in Cambros vermischen; vermengen. \n\n2. Kombinieren Sie 1 kg Reis mit 1,5 kg Flüssigkeit in jeder Hotelpfanne.\n\n3. 470 g Ingwer-Knoblauch-Frühlingszwiebel-Salz-Mischung gleichmäßig auf die einzelnen Pfannen verteilen.\n\n4. Stellen Sie die Hotelpfannen in die Ofenwagen und stellen Sie sie in den Ofenbereich\n\nB. OFEN\n\n1. Im Ofen gemäß den Standortrichtlinien garen: Ofenspezifikation „Gedünsteter brauner Reis“ — bis die gesamte Flüssigkeit aufgenommen ist.\n\n6. In Pfannen abkühlen lassen.\n\n7 (a). Auf ein Papierfach legen und auflockern\n für die Produktion reservieren.\n\nODER \n\n7 (b). Fahren Sie mit den Mix-ins fort, wie im Rezept angegeben."
+  },
+  "d70185e1-ca8e-4f28-8b74-f30431699e48": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. Do not combine ingredients.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [105 total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Heat the oil over medium heat. \n\n4. Add spanish onion, garlic and ginger, Cook until soft.\n\n5. Add spices. Stir until combined \n\n6. Add Corriander, green onion and sesame seed. Heat until 72°C\n\n7. FSQA CCP1 check\n\n8. Transfer to sheet trays; (2 scoops per tray). Place trays on speed rack\n\n9. Transfer speed rack to pre-blast associates\"",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Kombinieren Sie die Zutaten nicht.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 105 kg pro Schmorbraten]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Erhitzen Sie das Öl bei mittlerer Hitze. \n\n4. Spanische Zwiebel, Knoblauch und Ingwer dazugeben und weich kochen.\n\n5. Gewürze hinzufügen. Rühre bis alles gut vermischt ist \n\n6. Fügen Sie Koriander, grüne Zwiebel und Sesam hinzu. Auf 72 °C erhitzen\n\n7. FQA CCP1-Überprüfung\n\n8. Auf Blechschalen verteilen; (2 Messlöffel pro Tablett). Stellen Sie die Tabletts auf das Speed Rack\n\n9. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast“"
+  },
+  "747c7034-2c22-4936-a216-708297d81cb7": {
+   "en": "A. PROTEIN DEBOX\n1. Open the necessary packages of Barramundi.\n\n2. Sprinkle Barramundi with Salt until fully coated and evenly distributed.\n\n3. Follow salt with Asian Seafood Seasoning - ensure a steady and consistent coating\n\n4. Arrange the Barramundi in GN 2/1  sheet tray, X pieces per tray, load the trays onto the oven trolley\n\n5. Marinate fish for 30 minutes on sheet trays.\n\n6. Transfer Barramundi to the oven.\n\nB. OVEN\n1. Pre-heat Oven on Barramundi program\n\n2. Roast per Barramundi  Oven Setting:\n\n3. FSQA CCP1 Check\n\n4. Transfer to pre-blast associates\n",
+   "de": "A. PROTEINDEBOX\n1. Öffne die notwendigen Pakete von Barramundi.\n\n2. Barramundi mit Salz bestreuen, bis es vollständig bedeckt und gleichmäßig verteilt ist.\n\n3. Anschließend mit asiatischem Meeresfrüchtegewürz salzen — sorgen Sie für eine gleichmäßige und gleichmäßige Beschichtung\n\n4. Den Barramundi in einem Blech GN 2/1 anrichten, X Stück pro Blech, die Bleche auf den Ofenwagen laden\n\n5. Marinieren Sie den Fisch 30 Minuten lang auf Blechen.\n\n6. Barramundi in den Ofen geben.\n\nB. OFEN\n1. Ofen im Barramundi-Programm vorheizen\n\n2. Braten pro Barramundi. Einstellung im Ofen:\n\n3. FQA CCP1-Überprüfung\n\n4. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "9cd0a51c-286b-4859-bf2c-4a0f1939c7ec": {
+   "en": "SPICE ROOM\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros.\n\n2. Combine spices in Cambros using paddles.\n\n3. Mix until thoroughly combined.\n\n4. Use as directed in the recipe.\n\n5. Store leftover spices in covered Cambros.",
+   "de": "GEWÜRZZIMMER\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten in Cambros umfüllen.\n\n2. Kombinieren Sie die Gewürze in Cambros mit Paddeln.\n\n3. Mischen, bis alles gut vermischt ist.\n\n4. Wie im Rezept angegeben verwenden.\n\n5. Lagern Sie übrig gebliebene Gewürze in abgedeckten Cambros."
+  },
+  "85af5f4e-c631-4fdf-be9d-619733e3d936": {
+   "en": "A. PROTEIN DEBOX\n\n1. Remove frozen barramundi from boxes (secondary packaging)\n\n2. Place in a Wanne and cover with cold water in the ratio below. \n100 kg frozen barramundi\n200 kg COLD water, until completely thawed.  \n\n***Run this process overnight***\n\n3: Drain water from wanne. ",
+   "de": "A. PROTEINDEBOX\n\n1. Nehmen Sie gefrorenen Barramundi aus den Kartons (Sekundärverpackung)\n\n2. In eine Wanne geben und mit kaltem Wasser im unten angegebenen Verhältnis abdecken. \n100 kg gefrorener Barramundi\n200 kg KALTES Wasser, bis es vollständig aufgetaut ist. \n\n***Führen Sie diesen Vorgang über Nacht durch***\n\n3: Wasser aus der Wanne ablassen. "
+  },
+  "c7195f83-b3fa-46df-80c4-6b537526625c": {
+   "en": "A.  VEGGIE DEBOX\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [105 total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Heat oil. Sweat the onion, garlic and ginger until soft.\nAdd in curry paste, spices and lemongrass powder, sugar and break up curry paste and sauté for 5 min.\n\n4. Rice vinegar, miso, tamari;  bring to a simmer.\n\n5. Add  Coconut milk Heat to 150.  Blend with immersion blender until smooth.\n\n6. Add cilantro. Mix well to incorporate.\n\n7. FSQA CCP1 Check\n\n8. Transfer to pre-blast associates\n\n",
+   "de": "A. VEGETARISCHE DEBOX\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Zutaten NICHT vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 105 kg pro Schmorbraten]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Öl erhitzen. Zwiebel, Knoblauch und Ingwer anschwitzen, bis sie weich sind.\nCurrypaste, Gewürze und Zitronengraspulver dazugeben, Zucker dazugeben und die Currypaste zerkleinern und 5 Minuten anbraten.\n\n4. Reisessig, Miso, Tamari; zum Köcheln bringen.\n\n5. Kokosmilch hinzufügen und auf 150 erhitzen. Mit einem Stabmixer glatt rühren.\n\n6. Koriander hinzufügen. Zum Einarbeiten gut vermischen.\n\n7. FQA CCP1-Überprüfung\n\n8. Transfer an die Mitarbeiter von Pre-Blast\n\n"
+  },
+  "a3cbf81e-5637-43fd-bfb2-6ed983ddee4f": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting:  Roasted Cashew Nut and Green Onion\n  - until cashews are roasted \n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Geröstete Cashewnüsse und Frühlingszwiebeln\n - bis die Cashewkerne geröstet sind \n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "731fba1e-07cb-418d-81cb-8df467777c39": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting: Roasted Broccoli Florets\n- [Visual Appearance Indicator]\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Gebratene Brokkoliröschen\n- [Optischer Darstellungsindikator]\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n"
+  }
+ }
+}

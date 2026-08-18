@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factor — Automated Production Recipe Sheets · IT Handover</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: #1c2b1c; margin: 0; background: #f4f7f4; line-height: 1.5; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 24px; }
+  header { background: #2e7d32; color: #fff; padding: 26px 24px; border-radius: 10px; }
+  header h1 { margin: 0 0 6px; font-size: 24px; }
+  header p { margin: 0; opacity: .92; font-size: 14px; }
+  h2 { color: #2e7d32; border-bottom: 2px solid #cfe0cf; padding-bottom: 6px; margin-top: 34px; font-size: 19px; }
+  h3 { color: #276b2b; font-size: 15px; margin-bottom: 4px; }
+  .card { background: #fff; border: 1px solid #dfe8df; border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+  .summary { background: #eef4ee; border-left: 5px solid #2e7d32; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  th { background: #eef4ee; color: #444; font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+  code { background: #eef2ee; padding: 1px 6px; border-radius: 4px; font-size: 13px; }
+  pre { background: #1e2b1e; color: #d7ecd7; padding: 12px 14px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+  ol.steps { padding-left: 20px; } ol.steps li { margin: 10px 0; }
+  .badge { display: inline-block; background: #2e7d32; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; }
+  .warn { background: #fff8f0; border-left: 5px solid #e0a94f; }
+  .ok { color: #2e7d32; font-weight: 700; }
+  ul li { margin: 4px 0; }
+  .foot { color: #7a887a; font-size: 12px; margin-top: 30px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Factor — Automated Production Recipe Sheets</h1>
+  <p>Project handover for IT · prepared by Matteo Spessotto (Executive Chef) · for Osama (IT Manager)</p>
+</header>
+
+<div class="card summary">
+  <p style="margin:0"><strong>In one line:</strong> a small tool that reads the daily plan in HelloFresh (RTE Execution Tracking + Manufactured SKU) and automatically generates the kitchen's production recipe sheets (PDF) — batches, work orders, ingredients, EN/DE cooking instructions, allergens — saving them to a shared Drive. It should run unattended <strong>every day at 13:00 and 17:00</strong>. The logic is built and validated; it needs an environment set up (this document) to run on its own.</p>
+</div>
+
+<h2>1. The goal</h2>
+<div class="card">
+  <p>Today the chef manually reads the planning department's daily work orders, calculates how to split each recipe into batches (by equipment capacity), and prints a production sheet per work order. This is repetitive and time-sensitive (new work orders and <em>reworks</em> appear through the day). We automated it end-to-end.</p>
+</div>
+
+<h2>2. What it produces</h2>
+<div class="card">
+  <p>One clean production sheet per <strong>Work Order (WO)</strong>, one WO per page (for the Spice Room), in an English layout. Each sheet contains:</p>
+  <ul>
+    <li><strong>Batches</strong> (count × kg, rounded up) — computed by HelloFresh</li>
+    <li><strong>WO number</strong> and cook method / station sequence</li>
+    <li><strong>Ingredients</strong> with quantity per batch &amp; total (grams when &lt; 1 kg)</li>
+    <li><strong>Nested sub-recipes</strong> expanded with their own ingredients &amp; instructions</li>
+    <li><strong>Cooking instructions in English + German</strong></li>
+    <li><strong>Allergens</strong> highlighted (red = contains, amber = traces)</li>
+    <li>Spice-room ingredients underlined; "SEPARATE" tags; RTI (ready-to-eat) items flagged</li>
+  </ul>
+  <p>Validated examples were generated on the chef's Desktop (recipe FV4064A "Ginger Garlic Chicken", plus a partial-rework sheet for FV4063A "Cheddar Pulled Beef").</p>
+</div>
+
+<h2>3. How it works (technical)</h2>
+<div class="card">
+  <ul>
+    <li>A small <strong>Node.js + Playwright</strong> script (folder <code>factor-recipe-bot</code>).</li>
+    <li>It reuses <strong>a HelloFresh login (Azure AD) in a persistent browser profile</strong> — it stores no password and creates no new credentials.</li>
+    <li>On HelloFresh it only <strong>reads</strong> planning/recipe data via the site's own internal APIs (<code>rte-execution-tracker</code>, <code>manufactured-sku-service</code>, incl. the existing <code>bulk/pdf-export</code> endpoint) — it does <strong>not modify</strong> anything.</li>
+    <li>It renders each sheet to <strong>PDF locally</strong> (headless Chromium) and saves it to a <strong>shared Google Drive</strong> folder. All data stays internal: HelloFresh → local machine → company Drive.</li>
+    <li><strong>Reworks:</strong> a state file records already-generated WOs; each run only creates sheets for <em>new</em> WOs (full re-cooks and partial reworks), labeled Run 1, Run 2…</li>
+    <li><strong>Schedule:</strong> Windows Task Scheduler triggers the script at 13:00 and 17:00.</li>
+  </ul>
+</div>
+
+<h2>4. Current status</h2>
+<div class="card">
+  <p><span class="ok">✔ Logic built and validated in-browser</span> on real recipes (recipe data, batch calculation, EN/DE instructions, allergens, reworks).<br>
+  <span class="ok">✔ Standalone bot written</span> (<code>factor-recipe-bot/</code>: <code>bot.mjs</code>, <code>capacity-rules.js</code>, <code>package.json</code>, <code>run.bat</code>, <code>README.md</code>).<br>
+  <strong>◻ Not yet deployed</strong> — needs the environment below (no Node on the machine yet; shared Drive to be created).</p>
+</div>
+
+<h2>5. What we need from IT <span class="badge">action</span></h2>
+<div class="card">
+  <ol class="steps">
+    <li><strong>A machine that stays on</strong> during the day to run the task at 13:00 and 17:00 (Matteo's PC is fine, or a small VM/server if preferred).</li>
+    <li><strong>Install Node.js 18+</strong> on it (needs admin rights). Verify with <code>node -v</code>.</li>
+    <li>In the <code>factor-recipe-bot</code> folder: <pre>npm install
+npx playwright install chromium</pre></li>
+    <li><strong>One-time HelloFresh login:</strong> <code>node bot.mjs --login</code> → a browser opens, sign in to HelloFresh (Azure AD, incl. MFA), then close. The session is saved locally and reused.</li>
+    <li><strong>Create a Google Shared Drive</strong> named <em>"Kitchen Recipes Workload"</em> for the team, and make sure <strong>Google Drive for Desktop</strong> is installed on the machine so the tool can save PDFs into the synced folder. Set that path in <code>bot.mjs</code> (<code>CONFIG.outDir</code>).</li>
+    <li><strong>Windows Task Scheduler:</strong> two daily jobs (13:00 and 17:00) that run <code>run.bat</code> in the folder.</li>
+    <li><strong>Confirm</strong> it is acceptable to keep a persistent HelloFresh session on that machine — or advise if a dedicated service account is preferred.</li>
+  </ol>
+  <p style="margin:6px 0 0">Estimated setup: ~30 minutes together for install + first run + tuning.</p>
+</div>
+
+<h2>6. Security &amp; data notes</h2>
+<div class="card warn">
+  <ul>
+    <li>Uses the chef's <strong>own HelloFresh access</strong> — same as him using the site in a browser. No passwords are stored by the tool; it reuses the browser's Azure AD session.</li>
+    <li><strong>Read-only</strong> on HelloFresh (planning/recipe data + the existing PDF-export endpoint). It does not change any HelloFresh data.</li>
+    <li>Output (PDFs) stays <strong>inside the company</strong> — saved to the company Google Shared Drive. Nothing is sent to third parties.</li>
+    <li>Open questions for IT: preferred host machine, and whether a service account should be used instead of a personal session.</li>
+  </ul>
+</div>
+
+<h2>7. Files delivered</h2>
+<div class="card">
+  <table>
+    <tr><th>File (in <code>factor-recipe-bot/</code>)</th><th>Purpose</th></tr>
+    <tr><td><code>bot.mjs</code></td><td>Main service: read plan → find new WOs → generate PDFs</td></tr>
+    <tr><td><code>capacity-rules.js</code></td><td>Batch capacity / RTI / "separate" rules (editable)</td></tr>
+    <tr><td><code>README.md</code></td><td>Setup &amp; usage</td></tr>
+    <tr><td><code>package.json</code> / <code>run.bat</code></td><td>Dependencies &amp; scheduler entry point</td></tr>
+    <tr><td><code>MODIFICHE_FUTURE.md</code></td><td>Pending future tweaks (not yet applied)</td></tr>
+  </table>
+  <p>Supporting reference (chef side): <code>capacita_lookup.md</code> (capacity rules), <code>PIANO_automazione_ricette.md</code> (project plan), example PDFs on the Desktop.</p>
+</div>
+
+<h2>8. Next step</h2>
+<div class="card">
+  <p>Once the machine + Node + Shared Drive are ready, we do a short session to install, run the one-time login, point it at the Drive folder, and schedule it. A couple of edge cases (partial reworks) will be fine-tuned during that first live run.</p>
+  <p style="margin-top:10px">Thanks a lot — happy to walk through any of this.<br><strong>Matteo Spessotto</strong> · Executive Chef, Factor</p>
+</div>
+
+<p class="foot">Document generated as a project handover summarising the automation work. Contains no credentials.</p>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,381 @@
+{
+ "rec": {
+  "name": "FV4053A - Gochugaru Chicken [DE]",
+  "skuCode": "REC-013455-4-002",
+  "totalPortions": 1562,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)",
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Sauce - Creamy Gochugaru Sauce",
+   "id": "9e679d44-08f4-4431-ae82-29fd9f4bf43d",
+   "wo": "33-152",
+   "cook": [
+    "Braiser",
+    "Immersion Blender",
+    "Spice Portioning"
+   ],
+   "paths": [
+    "SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 3,
+   "batchQuantity": 70.73,
+   "portionA": 115,
+   "portionU": "grams",
+   "scoop": "white",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 179630,
+   "ings": [
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 11737.04,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Diced 5mm /Zwiebel, Spanisch, gewürfelt 5 mm",
+     "g": 20596.97,
+     "manuf": false,
+     "id": "f11b2445-91bf-437e-9ba2-1602b9c2d910",
+     "children": []
+    },
+    {
+     "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+     "g": 4691,
+     "manuf": false,
+     "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+     "children": []
+    },
+    {
+     "name": "FA-DE Heavy Cream 20% /Sahne 20%",
+     "g": 128093.74,
+     "manuf": false,
+     "id": "5453d563-18b8-4183-87e7-08cea4674f03",
+     "children": []
+    },
+    {
+     "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+     "g": 2313.11,
+     "manuf": false,
+     "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben",
+     "g": 20596.97,
+     "manuf": false,
+     "id": "e2445b9f-221b-4402-b5ab-ab53eb5364de",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 457.29,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spinach, Fresh, Stem Off /Spinat, frisch, ohne Stiel",
+     "g": 16477.58,
+     "manuf": false,
+     "id": "6a547d7f-d8aa-4a1d-835d-892b58bb6dd2",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken",
+     "g": 2667.51,
+     "manuf": false,
+     "id": "5d0ad372-49db-472d-9bf3-3f505e3caaa8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Tomato Paste /Tomatenmark",
+     "g": 4572.87,
+     "manuf": false,
+     "id": "a66adf20-abd0-4ac7-99fd-5574a8a4d193",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Diced Chicken - Garlic & Herb Marinade",
+   "id": "475b31b2-9c3f-48a2-a1fd-1410d7ad7e98",
+   "wo": "33-149",
+   "cook": [
+    "Marinade",
+    "Oven",
+    "Brine",
+    "Immersion Blender"
+   ],
+   "paths": [
+    "MARINADE / OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 206.66,
+   "portionA": 100,
+   "portionU": "grams",
+   "scoop": "black",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 156200,
+   "ings": [
+    {
+     "name": "Chicken CHUNKS - BRINED",
+     "g": 199731.15,
+     "manuf": true,
+     "id": "f842d6af-4935-4c0c-af36-51c32b028640",
+     "children": [
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 199731.15,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1762.33,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Chicken Breast, Chunked, Boneless Skinless /Hähnchenbrust, in Stücken, ohne Knochen und ohne Haut",
+       "g": 199731.15,
+       "manuf": false,
+       "id": "4bee1e06-1fd2-4539-9b7d-ca566cb75df3",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Mod Marinade #4 - Garlic and Herb",
+     "g": 6932.98,
+     "manuf": true,
+     "id": "6238681f-9e91-463e-980b-99bad7db69db",
+     "children": [
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 3774.41,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Vinegar, Red Wine /Essig, Rotwein",
+       "g": 1270.09,
+       "manuf": false,
+       "id": "b903d922-a18d-46b3-ab11-5aabc57bb62b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 1270.09,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+       "g": 290.63,
+       "manuf": false,
+       "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie",
+       "g": 181.81,
+       "manuf": false,
+       "id": "770b5b73-a50c-437d-8f36-f63463bbda29",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 72.98,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 144.68,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Roasted Green Onions",
+   "id": "f1e2f038-3a5c-4307-a43e-38eb55b492bd",
+   "wo": "33-151",
+   "cook": [
+    "Oven"
+   ],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 46.67,
+   "portionA": 15,
+   "portionU": "grams",
+   "scoop": "purple",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 23430,
+   "ings": [
+    {
+     "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+     "g": 46673.31,
+     "manuf": false,
+     "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Cauliflower - Chili-Garlic Cauliflower Florets",
+   "id": "5996983a-1de2-466a-97bd-7f57b2e5f1c5",
+   "wo": "33-148",
+   "cook": [
+    "Oven"
+   ],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 4,
+   "batchQuantity": 74.8,
+   "portionA": 135,
+   "portionU": "grams",
+   "scoop": "Hand Portioned",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 210870,
+   "ings": [
+    {
+     "name": "FA-DE Cauliflower, Florets /Blumenkohl, Röschen",
+     "g": 267938.16,
+     "manuf": false,
+     "id": "f1237eb0-7e59-4ae0-ad9b-2fb1a08b081c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 19530.39,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+     "g": 8891.7,
+     "manuf": false,
+     "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1276.64,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+     "g": 627.12,
+     "manuf": false,
+     "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 313.56,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken",
+     "g": 627.12,
+     "manuf": false,
+     "id": "5d0ad372-49db-472d-9bf3-3f505e3caaa8",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "FA-DE Cheese, Mozzarella, Shredded /Käse, Mozzarella, gerieben",
+   "id": "8bd42c56-f1f2-4071-8621-e5bb9ed78566",
+   "wo": "33-150",
+   "cook": [],
+   "paths": [],
+   "batchCount": null,
+   "batchQuantity": null,
+   "portionA": 15,
+   "portionU": "grams",
+   "scoop": "Hand Portioned",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": true,
+   "totalNeeded": 23430,
+   "ings": []
+  }
+ ],
+ "cache": {
+  "9e679d44-08f4-4431-ae82-29fd9f4bf43d": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to GN 1/1 7 Liter pans individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. Sauté onion and garlic in oil.\n\n2. Add gochugaru, tomato paste, heavy cream, and chicken stock base; bring to a 80 °C.\n\n3. Blend with an immersion blender until fully smooth\n\n4. Add parmesan cheese and salt. Whisk until the cheese melts and the sauce thickens.\n\n5. Blend again if needed\n\n6. Add spinach.\n\n7. Let it reach 80 °C until spinach wilts. \n\n8. FSQA CCP1 check\n\n9. Store in GN 1/1 65 mm pan; \n\n9. Transfer to pre-blast associates.",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in GN 1/1 7-Liter-Pfannen umfüllen. Zutaten NICHT vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Zwiebel und Knoblauch in Öl anbraten.\n\n2. Gochugaru, Tomatenpaste, Schlagsahne und Hühnerbrühe dazugeben; auf 80 °C erhitzen.\n\n3. Mit einem Stabmixer pürieren, bis alles glatt ist\n\n4. Parmesankäse und Salz hinzufügen. Verquirlen, bis der Käse schmilzt und die Sauce dicker wird.\n\n5. Bei Bedarf erneut mischen\n\n6. Spinat hinzufügen.\n\n7. 80 °C erreichen lassen, bis der Spinat welkt. \n\n8. FQA CCP1-Überprüfung\n\n9. In einer Pfanne GN 1/1 65 mm aufbewahren; \n\n9. Transfer an Mitarbeiter vor dem Blast."
+  },
+  "475b31b2-9c3f-48a2-a1fd-1410d7ad7e98": {
+   "en": "A. PROTEIN DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros.\n\n2. Mix yogurt and seasonings\n\n3. Using an immersion blender, blend until smooth\n\n4. In Wanne, toss Chicken with Marinade until fully coated and evenly distributed.\n\n5. Transfer chicken chunks to GN 2/1 sheet trays, 4kg per sheet tray. Place sheet trays on the oven rack\n\n6. Marinate for [2 Hours]\n\n7. Deliver racks to the Oven Team.\n\nB. OVEN\n\n1. Roast per \"Grilled Chicken Chunks\" Oven Setting:\n\n2. FSQA CCP1 Check \n\n3. Transfer to pre-blast associates",
+   "de": "A. PROTEINDEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten in Cambros umfüllen.\n\n2. Joghurt und Gewürze vermischen\n\n3. Mit einem Stabmixer glatt rühren\n\n4. In einer Wanne das Hähnchen mit der Marinade schwenken, bis es vollständig bedeckt und gleichmäßig verteilt ist.\n\n5. Hähnchenstücke auf GN 2/1-Bleche geben, 4 kg pro Blech. Legen Sie die Bleche auf den Ofenrost\n\n6. [2 Stunden] marinieren\n\n7. Liefert die Regale an das Ofenteam.\n\nB. OFEN\n\n1. Braten Sie nach Ofeneinstellung „Gegrillte Hähnchenstücke“:\n\n2. FQA CCP1-Überprüfung \n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "f842d6af-4935-4c0c-af36-51c32b028640": {
+   "en": "A. PROTEIN DEBOX\n\n1. In a Cambro, dissolve salt in HOT water; transfer to wanne (water can be hot from the tap)\n\n2. Add the remaining COLD water volume to the wanne, ensuring water is cold. Brine temp should be below 3 °C\n\n3. Add weighed Chicken thighs\n\n4. Allow the chicken chunks to sit for a minimum of 4 hours. Hold up to 6 hours.\n\n5. Drain\n\n6. Hold for marination",
+   "de": "A. PROTEINDEBOX\n\n1. In einem Cambro Salz in HEISSEM Wasser auflösen; in eine Wanne geben (Wasser kann heiß aus dem Wasserhahn sein)\n\n2. Füllen Sie das restliche KALTE Wasservolumen in die Wanne und stellen Sie sicher, dass das Wasser kalt ist. Die Soletemperatur sollte unter 3 °C liegen\n\n3. Fügen Sie gewogene Hähnchenschenkel hinzu\n\n4. Lassen Sie die Hähnchenstücke mindestens 4 Stunden ruhen. Halten Sie bis zu 6 Stunden.\n\n5. Abtropfen lassen\n\n6. Zum Marinieren gedrückt halten"
+  },
+  "6238681f-9e91-463e-980b-99bad7db69db": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using an immersion blender, blend until smooth\n\n3. Use as directed in the recipe",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer glatt rühren\n\n3. Wie im Rezept angegeben verwenden"
+  },
+  "f1e2f038-3a5c-4307-a43e-38eb55b492bd": {
+   "en": "A. VEGGIE DEBOX\n\n1.  Remove vegetables from the outer packaging\n\n2. Place 2kg per GN 2/1 sheet trays, place trays on oven racks\n\n3. Move Racks to Ovens.\n\nB. OVEN\n\n1. Cook on \"Roasted Sliced Scallions\" Oven setting\nAppearance: charred, caramelized edges and a vibrant, slightly shriveled skin:\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Nehmen Sie das Gemüse aus der Außenverpackung\n\n2. Legen Sie 2 kg pro GN 2/1-Blech und legen Sie die Bleche auf die Ofenroste\n\n3. Stellen Sie die Regale in die Öfen.\n\nB. OFEN\n\n1. Auf der Ofeneinstellung „Gebratene, in Scheiben geschnittene Frühlingszwiebeln“ garen\nAussehen: verkohlte, karamellisierte Ränder und eine lebendige, leicht geschrumpfte Haut:\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "5996983a-1de2-466a-97bd-7f57b2e5f1c5": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting: Roasted Cauliflower Florets\nAppearance: deeply golden-brown, caramelized edges and occasional crispy charred spots.\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n\"",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Gebratene Blumenkohlröschen\nAussehen: tief goldbraune, karamellisierte Ränder und gelegentlich knusprige verkohlte Stellen.\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n“"
+  },
+  "8bd42c56-f1f2-4071-8621-e5bb9ed78566": {
+   "en": "",
+   "de": ""
+  }
+ }
+}

@@ -1,0 +1,597 @@
+{
+ "rec": {
+  "name": "FV0401A - Pulled chicken with cheddar and bacon [DE]",
+  "skuCode": "REC-013941-4-003",
+  "totalPortions": 2995,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Sauce - Crack Chicken Cheese Mix",
+   "id": "591a0be3-3cef-457f-8b6a-19eb33bc19ea",
+   "wo": "33-54",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 76.4,
+   "portionA": 50,
+   "portionU": "grams",
+   "scoop": "yellow",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 149750,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 1376.64,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "DRY Ranch Seasoning",
+     "g": 6883.19,
+     "manuf": true,
+     "id": "0779bfc4-7b5d-480a-bf82-4b3e0dbbe659",
+     "children": [
+      {
+       "name": "FA-DE Spice, Buttermilk Powder/Gewürz, Buttermilchpulver",
+       "g": 4244.89,
+       "manuf": false,
+       "id": "4b2d4173-7de1-45bd-9716-db1625e59d54",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+       "g": 889.93,
+       "manuf": false,
+       "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+       "g": 779.67,
+       "manuf": false,
+       "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 448.9,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Dill Dried /Gewürz, Dill getrocknet",
+       "g": 275.64,
+       "manuf": false,
+       "id": "744059df-2e1b-4d76-b347-da15978b4656",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+       "g": 275.64,
+       "manuf": false,
+       "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie",
+       "g": 110.26,
+       "manuf": false,
+       "id": "770b5b73-a50c-437d-8f36-f63463bbda29",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Cheese, Cream, 13% Fat (Milk) /Käse, Sahne, 13% Fett",
+     "g": 68831.88,
+     "manuf": false,
+     "id": "360cffe0-1558-4a42-84f2-8c8c3d7c4473",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Red Cheddar/Käse, Roter Cheddar",
+     "g": 55065.5,
+     "manuf": false,
+     "id": "68c9f3db-ff94-400c-ae7d-6448d4b392bc",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 20649.56,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Shredded chicken - Keto Crack Chicken Thigh Batch - Shredder",
+   "id": "5c55987d-1d51-49e1-b6ad-404c4e0bd6ac",
+   "wo": "33-55",
+   "cook": [],
+   "paths": [
+    "MARINADE / OVEN / HOT SHREDDER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 642.7,
+   "portionA": 140,
+   "portionU": "grams",
+   "scoop": "white",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 419300,
+   "ings": [
+    {
+     "name": "Shredded Chicken Thighs - BRINED",
+     "g": 454415.86,
+     "manuf": true,
+     "id": "889af67f-9822-4a89-9859-2daf750c75de",
+     "children": [
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 319217.75,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 2816.63,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Chicken, Thighs, Boneless Skinless /Hähnchen, Oberschenkel, ohne Knochen und ohne Haut",
+       "g": 319217.75,
+       "manuf": false,
+       "id": "de33f895-f4e5-4973-9108-f11160cf6c58",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Dry Ranch Marinade",
+     "g": 64415.2,
+     "manuf": true,
+     "id": "22238366-5a04-4d3e-9e42-c7ffe0e960cc",
+     "children": [
+      {
+       "name": "Roasted Garlic (use)",
+       "g": 5057.91,
+       "manuf": true,
+       "id": "aba8b6fb-cc27-44b4-9604-edefe4de30bc",
+       "children": [
+        {
+         "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+         "g": 5575.25,
+         "manuf": false,
+         "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+         "children": []
+        },
+        {
+         "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+         "g": 4181.41,
+         "manuf": false,
+         "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+         "children": []
+        }
+       ]
+      },
+      {
+       "name": "DRY Ranch Seasoning",
+       "g": 10112.25,
+       "manuf": true,
+       "id": "0779bfc4-7b5d-480a-bf82-4b3e0dbbe659",
+       "children": [
+        {
+         "name": "FA-DE Spice, Buttermilk Powder/Gewürz, Buttermilchpulver",
+         "g": 6236.27,
+         "manuf": false,
+         "id": "4b2d4173-7de1-45bd-9716-db1625e59d54",
+         "children": []
+        },
+        {
+         "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+         "g": 1307.42,
+         "manuf": false,
+         "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+         "children": []
+        },
+        {
+         "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+         "g": 1145.44,
+         "manuf": false,
+         "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+         "children": []
+        },
+        {
+         "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+         "g": 659.49,
+         "manuf": false,
+         "id": "d62df615-205d-476e-8c73-be80be34de4c",
+         "children": []
+        },
+        {
+         "name": "FA-DE Spice, Dill Dried /Gewürz, Dill getrocknet",
+         "g": 404.95,
+         "manuf": false,
+         "id": "744059df-2e1b-4d76-b347-da15978b4656",
+         "children": []
+        },
+        {
+         "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+         "g": 404.95,
+         "manuf": false,
+         "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+         "children": []
+        },
+        {
+         "name": "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie",
+         "g": 161.98,
+         "manuf": false,
+         "id": "770b5b73-a50c-437d-8f36-f63463bbda29",
+         "children": []
+        }
+       ]
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 50561.24,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Reserved Braising Liquid / Zurückgehaltene Schmorfllüssigkeit",
+     "g": 118913.64,
+     "manuf": false,
+     "id": "2c8eb5db-f421-4e84-afff-9de5b05e0564",
+     "children": []
+    },
+    {
+     "name": "DRY Ranch Seasoning",
+     "g": 4956.63,
+     "manuf": true,
+     "id": "0779bfc4-7b5d-480a-bf82-4b3e0dbbe659",
+     "children": [
+      {
+       "name": "FA-DE Spice, Buttermilk Powder/Gewürz, Buttermilchpulver",
+       "g": 3056.78,
+       "manuf": false,
+       "id": "4b2d4173-7de1-45bd-9716-db1625e59d54",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+       "g": 640.85,
+       "manuf": false,
+       "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+       "g": 561.45,
+       "manuf": false,
+       "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 323.26,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Dill Dried /Gewürz, Dill getrocknet",
+       "g": 198.49,
+       "manuf": false,
+       "id": "744059df-2e1b-4d76-b347-da15978b4656",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+       "g": 198.49,
+       "manuf": false,
+       "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie",
+       "g": 79.4,
+       "manuf": false,
+       "id": "770b5b73-a50c-437d-8f36-f63463bbda29",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "FA-DE Cheese, Red Cheddar/Käse, Roter Cheddar",
+   "id": "68c9f3db-ff94-400c-ae7d-6448d4b392bc",
+   "wo": "33-50",
+   "cook": [],
+   "paths": [],
+   "batchCount": null,
+   "batchQuantity": null,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "Hand Portioned",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": true,
+   "totalNeeded": 29950,
+   "ings": []
+  },
+  {
+   "name": "Extra Crispy Diced Bacon",
+   "id": "866bc3be-0edc-42b4-a37d-b15d1b058faf",
+   "wo": "33-49",
+   "cook": [
+    "Oven",
+    "Drain"
+   ],
+   "paths": [
+    "OVEN / DRAIN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 68.08,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "purple",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 29950,
+   "ings": [
+    {
+     "name": "FA-DE Bacon, Diced /Speck, gewürfelt",
+     "g": 68083.44,
+     "manuf": false,
+     "id": "cb2e2bdc-6031-44e7-8756-d3561c2f3743",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Roasted Green Onions",
+   "id": "f1e2f038-3a5c-4307-a43e-38eb55b492bd",
+   "wo": "33-53",
+   "cook": [
+    "Oven"
+   ],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 59.66,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "purple",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 29950,
+   "ings": [
+    {
+     "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+     "g": 59661.35,
+     "manuf": false,
+     "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Garlic Broccoli - less salt",
+   "id": "4208f414-ef2e-4dfc-8250-d596526dd3e5",
+   "wo": "33-51",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 4,
+   "batchQuantity": 64.87,
+   "portionA": 55,
+   "portionU": "grams",
+   "scoop": "blue",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 164725,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 700.68,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Broccoli, Florets, /Brokkoli, Röschen",
+     "g": 234226.09,
+     "manuf": false,
+     "id": "e1ab5a78-1c7d-46d2-bd82-28a839ae16c4",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 12271.85,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "Roasted Garlic (use)",
+     "g": 12291.86,
+     "manuf": true,
+     "id": "aba8b6fb-cc27-44b4-9604-edefe4de30bc",
+     "children": [
+      {
+       "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+       "g": 13549.13,
+       "manuf": false,
+       "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 10161.77,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Portobello - CBRSC Roasted Portobello's",
+   "id": "eab2d848-f2bc-43fe-8599-ec64a5cd7919",
+   "wo": "33-52",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 4,
+   "batchQuantity": 66.47,
+   "portionA": 55,
+   "portionU": "grams",
+   "scoop": "green",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 164725,
+   "ings": [
+    {
+     "name": "Roasted Garlic (use)",
+     "g": 4623.72,
+     "manuf": true,
+     "id": "aba8b6fb-cc27-44b4-9604-edefe4de30bc",
+     "children": [
+      {
+       "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+       "g": 5096.65,
+       "manuf": false,
+       "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 3822.46,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Thyme, IQF /Thymian, IQF",
+     "g": 924.74,
+     "manuf": false,
+     "id": "418023d7-7677-4c49-b04c-4b282c840e2d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1156.34,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 924.74,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 18494.87,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Mushroom, Portobello, Sliced, Washed /Pilze, Portobello, in Scheiben geschnitten, gewaschen",
+     "g": 239748.27,
+     "manuf": false,
+     "id": "6867d8f2-9624-4efb-97d5-82f8f22e434e",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "591a0be3-3cef-457f-8b6a-19eb33bc19ea": {
+   "en": "A. VEGGIE DEBOX\n\n1.  Remove all ingredients from the packaging, DO NO MIX.\n\n2. Move to the middle kitchen\n\nB. MIDDLE KITCHEN\n\n1. Place all ingredients in a mixer and mix until well incorporated\n\n2.  Make sure the olive oil is emulsified properly.\n\n3. FSQA  CCP 1 Check\n\n4. Cover and transfer to the staging room\n\n5. Reserve for plating\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Verpackung nehmen, NICHT MISCHEN.\n\n2. Gehe in die mittlere Küche\n\nB. MITTLERE KÜCHE\n\n1. Alle Zutaten in einen Mixer geben und mischen, bis alles gut eingearbeitet ist\n\n2. Stellen Sie sicher, dass das Olivenöl richtig emulgiert ist.\n\n3. FSQA CCP 1 Scheck\n\n4. Cover und Transfer in den Inszenierungsraum\n\n5. Zum Plattieren reservieren\n"
+  },
+  "0779bfc4-7b5d-480a-bf82-4b3e0dbbe659": {
+   "en": "A. SPICE ROOM\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros.\n\n2. Combine spices in Cambros using paddles.\n\n3. Mix until thoroughly combined.\n\n4. Use as directed in the recipe.\n\n4. Store leftover spices in covered Cambros.",
+   "de": "A. GEWÜRZRAUM\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten in Cambros umfüllen.\n\n2. Kombinieren Sie die Gewürze in Cambros mit Hilfe von Paddeln.\n\n3. Mischen, bis alles gut vermischt ist.\n\n4. Wie im Rezept angegeben verwenden.\n\n4. Bewahren Sie übrig gebliebene Gewürze in abgedeckten Cambros auf."
+  },
+  "5c55987d-1d51-49e1-b6ad-404c4e0bd6ac": {
+   "en": "A. PROTEIN DEBOX \n\n1. Remove all ingredients from packaging material\n\n2. Combine the brined chicken and marinade in Vemag.\n\n3. Marinate for  2 hours.\n\n4. Spread 3.5 kg evenly on each GN 1/1 65 mm pan and put in oven racks .\n\n5. Transfer to Oven associates\n\nB. OVEN\n\n1. Cook in oven per location guidelines:\n\"Chicken Thigh\" oven program.\n\n2. FSQA CCP1 check.\n\n3. Move to the middle kitchen.\n\nC. MIDDLE KITCHEN\n\n1. Let it rest for 10 minutes, seperate and RESERVE JUS*\n\n2. Shred the chicken in the shredder at shredding speed 6, output speed 10 and input speed 3.\n\n3. Sort and seprate non shredded piece and return to the shredder for shredding.\n\n4. Add reserved jus back and the 2nd input of dry ranch seasoning to the chicken following the ratio\nbelow: BATCH- #100\nFor every  100 kg of chicken, add 25 kg jus and 1.3 kg Ranch Seasoning-.\n\n5. Mix well; place back on sheet trays.\n\n6. FSQA CCP1 Check\n\n7. Transfer to pre-blast associate",
+   "de": "A. PROTEINDEBOX \n\n1. Alle Inhaltsstoffe aus dem Verpackungsmaterial entfernen\n\n2. Kombinieren Sie das eingelegte Huhn und die Marinade in Vemag.\n\n3. 2 Stunden marinieren.\n\n4. 3,5 kg gleichmäßig auf jede Pfanne GN 1/1 65 mm verteilen und in die Ofenroste stellen.\n\n5. Übertragung an Oven Associates\n\nB. OFEN\n\n1. Im Ofen gemäß den Richtlinien des Standorts garen:\nOfenprogramm „Hähnchenschenkel“.\n\n2. FQA CCP1-Überprüfung.\n\n3. Gehe in die mittlere Küche.\n\nC. MITTLERE KÜCHE\n\n1. 10 Minuten ruhen lassen, trennen und JUS* RESERVIEREN\n\n2. Zerkleinern Sie das Huhn im Schredder mit Zerkleinerungsgeschwindigkeit 6, Ausgangsgeschwindigkeit 10 und Eingangsgeschwindigkeit 3.\n\n3. Sortieren und trennen Sie das nicht geschredderte Stück und geben Sie es zum Zerkleinern in den Schredder zurück.\n\n4. Geben Sie den reservierten Jus zurück und geben Sie die zweite Menge an trockenem Ranchgewürz zum Huhn hinzu, wobei das Verhältnis eingehalten wird\nunten: BATCH- #100\nFür jeweils 100 kg Hühnchen 25 kg Jus und 1,3 kg Ranch Seasoning- hinzufügen.\n\n5. Gut vermischen; wieder auf Blechschalen legen.\n\n6. Häufig gestellte Fragen (CCP1) überprüfen\n\n7. Transfer zum Mitarbeiter vor dem Blast"
+  },
+  "889af67f-9822-4a89-9859-2daf750c75de": {
+   "en": "A. PROTEIN DEBOX\n\n1. In a Vemag, dissolve salt in HOT water; transfer to Vemag  (water can be hot from the tap)\n\n2. Add the remaining COLD water volume to Wanne, ensuring water is cold. Brine temp should be below 3 °C\n\n3. Add Chicken thighs\n\n4. Allow Chicken thighs to sit for a minimum 4 hours. Hold up to 6 hours.\n\n5. Drain",
+   "de": "A. PROTEINDEBOX\n\n1. In einem Vemag Salz in HEISSEM Wasser auflösen; nach Vemag überführen (Wasser kann heiß aus dem Wasserhahn sein)\n\n2. Das restliche KALTE Wasservolumen in die Wanne geben und sicherstellen, dass das Wasser kalt ist. Die Soletemperatur sollte unter 3 °C liegen\n\n3. Hähnchenschenkel hinzufügen\n\n4. Lassen Sie die Hähnchenschenkel mindestens 4 Stunden ruhen. Bis zu 6 Stunden halten.\n\n5. Abtropfen lassen"
+  },
+  "22238366-5a04-4d3e-9e42-c7ffe0e960cc": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using immersion blender, blend until [smooth/chunky] (as applicable)\n\n3. Transfer to protein Debox",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer mixen, bis [glatt/klobig] (je nach Bedarf)\n\n3. Transfer zur Protein-Debox"
+  },
+  "68c9f3db-ff94-400c-ae7d-6448d4b392bc": {
+   "en": "",
+   "de": ""
+  },
+  "866bc3be-0edc-42b4-a37d-b15d1b058faf": {
+   "en": "A. PROTEIN DEBOX\n\n1. Remove from packaging.\n\n2. Place bacon on GN2/1 trays, 2 kg per tray.\n\n3. Transfer tray to oven rack and deliver to oven stations\n\nB. OVEN\n\n1. Cook on \"Crispy Bacon.\"\nAppearance: deeply mahogany-red with rippled, golden-brown fat that has rendered into a brittle, glass-like crunch.\n\n2. Drain and reserve bacon fat\n\n3. FSQA CCP1 Check\n\n4. Transfer to pre-blast associates",
+   "de": "A. PROTEINDEBOX\n\n1. Aus der Verpackung nehmen.\n\n2. Speck auf GN2/1-Schalen legen, 2 kg pro Tablett.\n\n3. Das Blech auf den Ofenrost legen und an die Ofenstationen liefern\n\nB. OFEN\n\n1. Kochen Sie auf „Crispy Bacon“.\nAussehen: tiefes Mahagonirot mit gewelltem, goldbraunem Fett, das sich in einen spröden, glasartigen Crunch verwandelt hat.\n\n2. Speckfett abgießen und aufbewahren\n\n3. FQA CCP1-Überprüfung\n\n4. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "f1e2f038-3a5c-4307-a43e-38eb55b492bd": {
+   "en": "A. VEGGIE DEBOX\n\n1.  Remove vegetables from the outer packaging\n\n2. Place 2kg per GN 2/1 sheet trays, place trays on oven racks\n\n3. Move Racks to Ovens.\n\nB. OVEN\n\n1. Cook on \"Roasted Sliced Scallions\" Oven setting\nAppearance: charred, caramelized edges and a vibrant, slightly shriveled skin:\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Nehmen Sie das Gemüse aus der Außenverpackung\n\n2. Legen Sie 2 kg pro GN 2/1-Blech und legen Sie die Bleche auf die Ofenroste\n\n3. Stellen Sie die Regale in die Öfen.\n\nB. OFEN\n\n1. Auf der Ofeneinstellung „Gebratene, in Scheiben geschnittene Frühlingszwiebeln“ garen\nAussehen: verkohlte, karamellisierte Ränder und eine lebendige, leicht geschrumpfte Haut:\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "4208f414-ef2e-4dfc-8250-d596526dd3e5": {
+   "en": "A. VEGGIE DEBOX\n\n1. In wanne, mix roasted garlic, oil and salt. Use an immersion blender to PUREE until smooth.\n\n2. Mix broccoli florets with puree mixture.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n\nB. OVEN\n\n1. Roast per Oven Setting \"Roasted Broccoli Florets\"-Broccoli should be tender with dark brown spots.\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. In einer Pfanne gerösteten Knoblauch, Öl und Salz vermischen. Mit einem Stabmixer pürieren, bis alles glatt ist.\n\n2. Brokkoliröschen mit der Püreemischung vermischen.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n\nB. OFEN\n\n1. Braten pro Ofeneinstellung „Geröstete Brokkoliröschen“ — Brokkoli sollte zart sein und dunkelbraune Flecken aufweisen.\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "eab2d848-f2bc-43fe-8599-ec64a5cd7919": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. Blend the olive oil and roasted garlic\n\n2. Toss all ingredients together.\n\n3. Transfer to sheet trays - 6 kg  per tray\n\n5. Place sheet trays on oven racks. Deliver to Oven Associates.\n\n\nB. OVEN\n\n1. Roast per Oven Setting: Roasted Portobello Mushrooms\n- well-rounded roasted look.\n\n2. FSQA CCP1 Check\n\n3. Deliver to Pre-blast Associates at Blast Chiller.\"\n\n4. Reserve for production.",
+   "de": "„A. GEMÜSEDEBOX\n\n1. Olivenöl und gerösteten Knoblauch vermischen\n\n2. Alle Zutaten zusammen vermengen.\n\n3. Auf Blechfächer umfüllen - 6 kg pro Schale\n\n5. Stellen Sie die Bleche auf die Ofenroste. Liefern Sie an Oven Associates.\n\n\nB. OFEN\n\n1. Einstellung Braten pro Ofen: Gebratene Portobello-Pilze\n- Abgerundeter Röstlook.\n\n2. FQA CCP1-Überprüfung\n\n3. Liefern Sie an Pre-Blast Associates bei Blast Chiller.“\n\n4. Reserve für die Produktion."
+  }
+ }
+}

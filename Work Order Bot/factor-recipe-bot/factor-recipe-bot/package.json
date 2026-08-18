@@ -1,0 +1,15 @@
+{
+  "name": "factor-recipe-bot",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Auto-generates Factor production recipe sheets from HelloFresh planning into the shared Drive.",
+  "scripts": {
+    "login": "node bot.mjs --login",
+    "run": "node bot.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "playwright": "^1.47.0"
+  }
+}

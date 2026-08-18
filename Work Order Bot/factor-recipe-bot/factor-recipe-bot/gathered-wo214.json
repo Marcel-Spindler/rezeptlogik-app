@@ -1,0 +1,46 @@
+[
+  {
+    "recId": "REC-014094-4-002",
+    "recName": "FV0849A - Courgette-spaghetti Bolognese - [DE]",
+    "date": "2026-08-14",
+    "newWOs": ["34-214"],
+    "runN": 9,
+    "rec": {
+      "name": "FV0849A - Courgette-spaghetti Bolognese - [DE]",
+      "skuCode": "FV0849A",
+      "totalPortions": 900,
+      "alg": { "c": ["MILK / MILCH"], "t": [] }
+    },
+    "subs": [
+      {
+        "name": "Courgette - Parmesan Roasted Courgetti",
+        "id": "69b5f4c3-1502-4af1-a976-bd8c2bf4a9a1",
+        "wo": "34-214",
+        "cook": ["OVEN"],
+        "paths": ["Veggie Debox", "Oven"],
+        "batchCount": 2,
+        "batchQuantity": 62,
+        "portionA": 136,
+        "portionU": "g",
+        "scoop": null,
+        "alg": { "c": ["MILK / MILCH"], "t": [] },
+        "rti": false,
+        "totalNeeded": 122715,
+        "totalPortions": 900,
+        "ings": [
+          { "name": "FA-DE Oil, Olive /Öl, Olivenöl",            "g": 7650,   "manuf": false, "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8", "children": [] },
+          { "name": "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben", "g": 6120, "manuf": false, "id": "e2445b9f-221b-4402-b5ab-ab53eb5364de", "children": [] },
+          { "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",  "g": 513,    "manuf": false, "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68", "children": [] },
+          { "name": "FA-DE Zucchini, Spiralized Noodles /Zucchini, Spiralnudeln", "g": 108180, "manuf": false, "id": "1e43d9a9-eb93-484a-9bbc-40ee197aaf39", "children": [] },
+          { "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen", "g": 252, "manuf": false, "id": "d62df615-205d-476e-8c73-be80be34de4c", "children": [] }
+        ]
+      }
+    ],
+    "cache": {
+      "69b5f4c3-1502-4af1-a976-bd8c2bf4a9a1": {
+        "en": "A. VEGGIE DEBOX\n\n1. In cambros, mix together olive oil and salt, pepper, and parmesan.\n\n2. Transfer to sheet trays - 2 scoops per tray\n\n3. Place sheet trays on oven racks. Deliver to Oven Associates.\n\nB. OVEN\n\n1. Roast per Oven Setting 'Zucchini noodles'\n- [Visual Appearance Indicator]\n\n2. Transfer sheet trays to speed racks\n\n3. Deliver to QA Associates at Blast Chiller",
+        "de": "A. GEMÜSEDEBOX\n\n1. In Cambros Olivenöl, Salz, Pfeffer und Parmesan vermischen.\n\n2. Auf Blechschalen umfüllen — 2 Messlöffel pro Schale\n\n3. Stellen Sie die Bleche auf die Ofenroste. Liefern Sie an Oven Associates.\n\nB. OFEN\n\n1. Braten Sie pro Ofeneinstellung 'Zucchini-Nudeln'\n- [Optischer Darstellungsindikator]\n\n2. Übertragen Sie die Blattfächer auf Schnellregale\n\n3. Liefern Sie an QA Associates bei Blast Chiller"
+      }
+    }
+  }
+]

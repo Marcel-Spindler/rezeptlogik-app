@@ -1,0 +1,583 @@
+{
+ "rec": {
+  "name": "FV4012A - Souvlaki style pork tenderloin  [DE}",
+  "skuCode": "REC-013637-4-004",
+  "totalPortions": 1542,
+  "alg": {
+   "c": [
+    "Tree nuts / Schalenfrüchte",
+    "Almonds / Mandeln",
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Rice - Lemon Brown Basmati Rice with Almonds + Apricots",
+   "id": "1b4c352c-3525-4301-a9c7-4bd432e56aef",
+   "wo": "33-155",
+   "cook": [],
+   "paths": [
+    "HAND MIX / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 179.56,
+   "portionA": 100,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Tree nuts / Schalenfrüchte",
+     "Almonds / Mandeln",
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 154200,
+   "ings": [
+    {
+     "name": "Toasted Sliced Almonds",
+     "g": 5062.17,
+     "manuf": true,
+     "id": "5e019d7e-6bff-4680-9110-542789a80550",
+     "children": [
+      {
+       "name": "FA-DE Almond, Sliced, Blanched /Mandeln, geschnitten, blanchiert",
+       "g": 6561.69,
+       "manuf": false,
+       "id": "0cfd0323-0d52-430b-90a0-d3b71f65517c",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Lemon Brown Basmati Rice",
+     "g": 148050.54,
+     "manuf": true,
+     "id": "c73dfd1d-99f0-401e-aac8-19ab6b19a24d",
+     "children": [
+      {
+       "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+       "g": 4017.82,
+       "manuf": false,
+       "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+       "children": []
+      },
+      {
+       "name": "FA-DE Rice, Basmati, Brown /Reis, Basmati, braun",
+       "g": 58096.04,
+       "manuf": false,
+       "id": "ea3effe2-f727-431a-9ad6-fbd96b4d52a7",
+       "children": []
+      },
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 83197.26,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Zest IQF, Lemon/Gewürz, Zitronenschale IQF",
+       "g": 1724.82,
+       "manuf": false,
+       "id": "77de65db-8ffc-462e-b41e-5198105d39fd",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1014.6,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Diced Apricots, Dried/getrocknete, gewürfelte Aprikosen",
+     "g": 5062.17,
+     "manuf": false,
+     "id": "5535f7d5-8229-4f45-99ef-c846d96fc6a2",
+     "children": []
+    },
+    {
+     "name": "Cooked Shallots, Garlic, Parsley",
+     "g": 21389.43,
+     "manuf": true,
+     "id": "e59a32cc-3719-47b8-b859-a347f45bc9ad",
+     "children": [
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 3290.68,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Shallots, Diced 5mm /Schalotten, gewürfelt, 5 mm",
+       "g": 19744.09,
+       "manuf": false,
+       "id": "a76a9868-b92b-492c-8dad-d711e8c51e8a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 8226.71,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      },
+      {
+       "name": "FA-DE Parsley, Chopped /Petersilie, gehackt",
+       "g": 1645.34,
+       "manuf": false,
+       "id": "1a2d8c37-3b80-46fb-bc06-8f16ef05546f",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Souvlaki Pork Tenderloin Batch",
+   "id": "a266fdc0-f8f4-421c-bfbf-346e50820f86",
+   "wo": "33-157",
+   "cook": [],
+   "paths": [
+    "MARINADE / GRILL / OVEN / SLICER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 354.3,
+   "portionA": 130,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 200460,
+   "ings": [
+    {
+     "name": "Pork Tenderloin - BRINED",
+     "g": 330954.54,
+     "manuf": true,
+     "id": "c4f66e45-1986-49e4-b3d6-f1c8a6559742",
+     "children": [
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 2926.03,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 330954.54,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Pork, Tenderloin /Schweinefleisch, Filet",
+       "g": 330954.54,
+       "manuf": false,
+       "id": "dd06df1e-e649-436d-97c3-230220994313",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Souvlaki Marinade",
+     "g": 23347.76,
+     "manuf": true,
+     "id": "c38af973-d50e-4924-b1a5-e5c1fc91a66b",
+     "children": [
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 15170.74,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 4551.22,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+       "g": 1517.07,
+       "manuf": false,
+       "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+       "children": []
+      },
+      {
+       "name": "FA-DE Dried Rosemary/Rosmarin getrocknet",
+       "g": 910.24,
+       "manuf": false,
+       "id": "18385fc8-5509-47b6-adc1-e3120ead5208",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Paprika /Gewürze, Paprika",
+       "g": 758.54,
+       "manuf": false,
+       "id": "5a01fd94-793a-4820-a03a-20643e215bac",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 303.41,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 606.83,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Tomatoes - Roasted cherry tomatoes",
+   "id": "b983a3dc-a724-4760-840e-b274f96878d3",
+   "wo": "33-158",
+   "cook": [
+    "Oven"
+   ],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 73.29,
+   "portionA": 40,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 61680,
+   "ings": [
+    {
+     "name": "FA-DE Tomatoes, Cherry/Tomaten, Kirsche",
+     "g": 72540.27,
+     "manuf": false,
+     "id": "da6f7480-5191-4292-8928-8dd524d49104",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 724.98,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 23.88,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Compound butter - Oregano-Tomato",
+   "id": "68231ad0-5d1d-4adc-ae39-3a220542fc15",
+   "wo": "33-153",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 16.29,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 15420,
+   "ings": [
+    {
+     "name": "FA-DE Tomato Paste /Tomatenmark",
+     "g": 951.29,
+     "manuf": false,
+     "id": "a66adf20-abd0-4ac7-99fd-5574a8a4d193",
+     "children": []
+    },
+    {
+     "name": "FA-DE Butter, Unsalted /Butter, ungesalzen",
+     "g": 15220.35,
+     "manuf": false,
+     "id": "31f0cdc7-65bd-4602-9a4d-a535488e389c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+     "g": 47.65,
+     "manuf": false,
+     "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 67.11,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Zucchini - Garlic Roasted Zucchini",
+   "id": "c0d7e1db-8a56-4ec1-81e6-e0f89f852094",
+   "wo": "33-159",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 58.72,
+   "portionA": 50,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 77100,
+   "ings": [
+    {
+     "name": "FA-DE Zucchini, Diced 10mm /Zucchini, gewürfelt 10 mm",
+     "g": 114769.72,
+     "manuf": false,
+     "id": "eba34919-f320-4209-911f-56cc5c27b47a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 229.54,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 325.95,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 1627.43,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Powder, Toasted /Gewürz, Knoblauchpulver, geröstet",
+     "g": 487.77,
+     "manuf": false,
+     "id": "93038dca-9a79-4ee1-a5b5-0b7b9c5681c9",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Mixed peppers - Roasted diced red and green bell peppers",
+   "id": "aa30ff7a-b226-4c14-b4c5-41372a477a22",
+   "wo": "33-154",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 44.7,
+   "portionA": 20,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 30840,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 293.41,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 293.41,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+     "g": 1488.03,
+     "manuf": false,
+     "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 1488.03,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 146.71,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Green, Diced 10mm /Paprika, grün, gewürfelt 10 mm",
+     "g": 20497.13,
+     "manuf": false,
+     "id": "29feb242-2ac4-4508-b5e4-f2a0f9fd131c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm",
+     "g": 20497.13,
+     "manuf": false,
+     "id": "304b0fb7-c6f4-4164-a8bb-def20f32459a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Sauce - Lemon Dill Yogurt",
+   "id": "2ad2660c-4881-4c26-b089-f1eaaf2d7b1e",
+   "wo": "33-156",
+   "cook": [],
+   "paths": [
+    "HAND MIX"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 64.93,
+   "portionA": 40,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 61680,
+   "ings": [
+    {
+     "name": "FA-DE Yogurt, Greek, Plain /Joghurt, Griechisch, Natur",
+     "g": 60678.8,
+     "manuf": false,
+     "id": "821cbdf4-6265-453f-b4a8-a408b1d55dd2",
+     "children": []
+    },
+    {
+     "name": "FA-DE Juice, Lemon /Saft, Zitrone",
+     "g": 606.79,
+     "manuf": false,
+     "id": "0b6b5f66-8187-4cce-b414-bccc16699cd5",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 303.39,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Dill, Fresh/Dill, frisch",
+     "g": 3033.94,
+     "manuf": false,
+     "id": "894d0bd0-8187-420c-8fae-7bdd40da9920",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 303.39,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "1b4c352c-3525-4301-a9c7-4bd432e56aef": {
+   "en": "MIDDLE KITCHEN\n\nIn Wannes, while hot, combine:\nRice\nAlmonds\nApricots\nShallots + Garlic\n\nMove to blast chiller",
+   "de": "MITTLERE KÜCHE\n\nKombinieren Sie in Wannes, solange es heiß ist:\nReis\nMandeln\nAprikosen\nSchalotten + Knoblauch\n\nGehen Sie zum Schnellkühler"
+  },
+  "5e019d7e-6bff-4680-9110-542789a80550": {
+   "en": "A. VEGGIE DEBOX:\n1. Debox in Veggie Prep \n\n2. Place 1 kg on GN 2/1 sheet trays and then place the trays on oven racks\n\n3. Move Racks to Ovens\n\nB. OVEN\n\n1. Set Oven on Toasted Almond  program\n\n2. Put the almonds in the oven after preheating.\n\n3. FSQA CCP1 Check\n\n4. Transfer to pre blas associates ",
+   "de": "A. GEMÜSEDEBOX:\n1. Debox im Veggie Prep \n\n2. 1 kg auf GN 2/1-Bleche legen und die Bleche dann auf Ofenroste stellen\n\n3. Stellen Sie die Regale in die Öfen\n\nB. OFEN\n\n1. Stellen Sie den Ofen auf das Programm „Geröstete Mandeln“\n\n2. Die Mandeln nach dem Vorheizen in den Ofen geben.\n\n3. Häufig gestellte Fragen (CCP1) überprüfen\n\n4. Übertragung an Mitarbeiter von Pre Blast "
+  },
+  "c73dfd1d-99f0-401e-aac8-19ab6b19a24d": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambros, combine water, stock, lemon zest, salt. Ensure salt is fully dissolved.\n\n2. Divide batches into hotel pans, per hotel pan:\nRice - 1.5 kg per hotel pan\nLiquid - 2.25 kg per hotel pan\n\n3. Cover hotel pan with lids and transfer to oven racks\n    ** If all oven racks are in-use, place hotel pans on speed rack **\n\n4. Transfer to Oven station\n\nB. OVEN\n\n1. Steam per Oven Setting \"Brown Basmati Rice\":\n- Rice should be tender and all liquid absorbed\n\n2. Fluff rice.\n\n3. FSQA CCP1 Check.\n\n4. Transfer oven rack to pre-blast associates or middle kitchen as needed",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. In Cambros Wasser, Brühe, Zitronenschale und Salz vermischen. Stellen Sie sicher, dass das Salz vollständig aufgelöst ist.\n\n2. Teilen Sie die Chargen pro Hotelplan in Hotelpläne auf:\nReis - 1,5 kg pro Hotelpfanne\nFlüssigkeit - 2,25 kg pro Hotelpfanne\n\n3. Die Hotelpfanne mit Deckeln abdecken und auf die Ofenroste stellen\n ** Wenn alle Ofenroste in Gebrauch sind, stellen Sie die Hotelpfannen auf das Schnellregal **\n\n4. Transfer zur Oven-Station\n\nB. OFEN\n\n1. Dampf pro Ofeneinstellung „Brauner Basmatireis“:\n- Reis sollte zart sein und die gesamte Flüssigkeit aufgesogen sein\n\n2. Fluffiger Reis.\n\n3. FQA CCP1-Überprüfung.\n\n4. Stellen Sie den Ofenrost je nach Bedarf in die Küche vor dem Blast oder in die mittlere Küche"
+  },
+  "e59a32cc-3719-47b8-b859-a347f45bc9ad": {
+   "en": "A. VEGGIE DEBOX\n\n1. In Wannes, mix shallot, garlic, parsley, and oil until completely combined and evenly distributed.\n\n2. Transfer to sheet trays - 2 scoops per tray\n\n3. Place sheet trays on oven racks. Deliver to Oven Associates.\n\nB. OVEN\n\n1. Roast per Oven Setting Cooked Shallot:\n- Tender and slightly browned\n\n2. Transfer sheet trays to speed racks\n\n3. Deliver to QA Associates at Blast Chiller or middle kitchen as needed ",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. In Wannes Schalotte, Knoblauch, Petersilie und Öl vermischen, bis alles gut vermischt und gleichmäßig verteilt ist.\n\n2. Auf Blechschalen umfüllen — 2 Messlöffel pro Schale\n\n3. Stellen Sie die Bleche auf die Ofenroste. Liefern Sie an Oven Associates.\n\nB. OFEN\n\n1. Gekochte Schalotte pro Ofenstufe braten:\n- Zart und leicht gebräunt\n\n2. Übertragen Sie die Blattfächer auf Schnellregale\n\n3. Bei Bedarf an QA Associates im Blast Chiller oder in der mittleren Küche liefern "
+  },
+  "a266fdc0-f8f4-421c-bfbf-346e50820f86": {
+   "en": "A. PROTEIN DEBOX\n\n1. In Wanne, toss Pork Tenderloin with Marinade until fully coated and evenly distributed.\n\n2. Marinated for 2-4 Hours\n\n3. Transfer pork tenderloin to Grill Team.\n\nB. GRILL\n\n1. Grill mark pork tenderloin on all sides until grill mark is medium to dark golden brown but pork is still raw.\n\n2. Transfer pork to sheet trays, grill mark side down. 10 pieces per sheet tray.\n\n3. Place sheet trays on oven racks; deliver racks to Oven Team.\n\nC. OVEN\n\n1. Roast per \"\"Pork Tenderloin 2\"\" Oven Setting:\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n\nD. PLATING\n\n1. Slice before plating \n\n",
+   "de": "A. PROTEINDEBOX\n\n1. In der Wanne das Schweinefilet mit der Marinade schwenken, bis es vollständig bedeckt und gleichmäßig verteilt ist.\n\n2. 2-4 Stunden mariniert\n\n3. Schweinefilet zum Grillteam übertragen.\n\nB. GRILLEN\n\n1. Schweinefilet von allen Seiten grillen, bis die Grillmarke mittel- bis dunkelgoldbraun ist, das Schweinefleisch jedoch noch roh ist.\n\n2. Schweinefleisch mit der Grillmarkierung nach unten auf Bleche legen. 10 Stück pro Blech.\n\n3. Stellen Sie die Bleche auf die Ofenroste; liefern Sie die Roste an das Ofenteam.\n\nC. OFEN\n\n1. Braten nach „Schweinefilet 2\"“, Ofeneinstellung:\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n\nD. PLATTIEREN\n\n1. Vor dem Plattieren aufschneiden \n\n"
+  },
+  "c4f66e45-1986-49e4-b3d6-f1c8a6559742": {
+   "en": "A. DEBOX\n1. In a Cambro, dissolve salt in HOT water; transfer to chalupa (water can be hot from the tap)\n\n2. Add the remaining COLD water volume to the chalupa, ensuring water is cold. Brine temp should be below 3 degrees C\n\n3. Add Pork Tenderloin\n\n4. Allow the pork tenderloin brine to sit for a minimum of 4 hours. Hold up to 6 hours.\n\n5. Drain",
+   "de": "A. DEBOX\n1. In einem Cambro Salz in HEISSEM Wasser auflösen; auf Chalupa geben (Wasser kann heiß aus dem Wasserhahn sein)\n\n2. Das restliche KALTE Wasservolumen in die Chalupa geben und sicherstellen, dass das Wasser kalt ist. Die Soletemperatur sollte unter 3 Grad C liegen\n\n3. Schweinefilet hinzufügen\n\n4. Lassen Sie das Schweinefilet mindestens 4 Stunden ruhen. Halten Sie bis zu 6 Stunden.\n\n5. Abtropfen lassen"
+  },
+  "c38af973-d50e-4924-b1a5-e5c1fc91a66b": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using immersion blender, blend until smooth\n\n3. Transfer to protein Debox",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer glatt rühren\n\n3. Transfer zur Protein-Debox"
+  },
+  "b983a3dc-a724-4760-840e-b274f96878d3": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; \n\n2. Place the tomatoes in a Wanne and mix them with oil and salt until they are properly marinated.\n\n3. Distribute the marinated tomatoes in GN2/1 trays, 4 kg per tray.\n\n4. Load the trays onto the oven trolley and transfer to the oven section.\n\nB. OVEN\n\n1. Cook on \"Roasted Cherry Tomatoes\" program\nVisual: burst open and slumped, with blistered, shriveled skins and a deep red, syrupy juice caramelizing in the pan.\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung entfernen; \n\n2. Die Tomaten in eine Wanne geben und mit Öl und Salz vermischen, bis sie richtig mariniert sind.\n\n3. Die marinierten Tomaten in GN2/1-Schalen verteilen, 4 kg pro Schale.\n\n4. Laden Sie die Bleche auf den Ofenwagen und stellen Sie sie in den Ofenbereich.\n\nB. OFEN\n\n1. Kochen Sie im Programm „Geröstete Kirschtomaten“\nOptik: aufgeplatzt und zusammengesunken, mit blasenförmiger, geschrumpelter Schale und einem tiefroten, sirupartigen Saft, der in der Pfanne karamellisiert.\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "68231ad0-5d1d-4adc-ae39-3a220542fc15": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix ingredients together.\n\n2. Deliver required volumes to Middle Kitchen\n\nB. MIDDLE KITCHEN\n\n1. Weigh and divide ingredients into capacity per stand mixer [X kg capacity per batch]\n\n2. Soften butter before starting\n\n3. Add butter to stand mixer, whip butter with paddle attachment until soft and smooth\n\n4. Slowly add tomato paste and oregano to mixer with whipped butter, mix until fully incorporated\n\n5. Scoop into balls using onto sheet trays, weight per meal quantity\n\n6. Transfer speed rack to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefert die benötigten Mengen an Middle Kitchen\n\nB. MITTLERE KÜCHE\n\n1. Wiegen Sie die Zutaten und teilen Sie sie nach Fassungsvermögen pro Standmixer auf [X kg Fassungsvermögen pro Charge]\n\n2. Butter einweichen, bevor Sie beginnen\n\n3. Butter in den Standmixer geben, Butter mit Rühraufsatz aufschlagen, bis sie weich und glatt ist\n\n4. Tomatenpaste und Oregano langsam mit geschlagener Butter in den Mixer geben und mischen, bis alles vollständig eingearbeitet ist\n\n5. Auf einem Blech zu Kugeln formen, Gewicht pro Mahlzeit/Menge\n\n6. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast\n"
+  },
+  "c0d7e1db-8a56-4ec1-81e6-e0f89f852094": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting :-  \"Roasted Zucchini Diced\"\nShould be al dente with slight roast browning \n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: - „Gebratene Zucchini, gewürfelt“\nSollte bissfest sein und leicht gebräunt sein \n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "aa30ff7a-b226-4c14-b4c5-41372a477a22": {
+   "en": "\"A. VEGGIE DEBOX\n\n\n1. In cambros, mix together olive oil and salt, pepper, garlic, and granulated garlic. \n\n2. In Wannes, mix both peppers and seasoning mix until completely combined and evenly distributed.\n\n3. Transfer to sheet trays - 2 scoops per tray\n\n4. Place sheet trays on oven racks. Deliver to Oven Associates.\n\n\nB. OVEN\n\n1. Roast per Oven Setting Steamed peppers\n\n2. FSQA CCP1 Check\n\n3. Hold to be mixed warm in the middle kitchen",
+   "de": "„A. GEMÜSE-DEBOX\n\n\n1. In Cambros Olivenöl und Salz, Pfeffer, Knoblauch und granulierten Knoblauch vermischen. \n\n2. In Wannes Paprika und Gewürzmischung vermischen, bis alles gut vermischt und gleichmäßig verteilt ist.\n\n3. Auf Blechschalen umfüllen — 2 Messlöffel pro Schale\n\n4. Stellen Sie die Bleche auf die Ofenroste. Liefern Sie an Oven Associates.\n\n\nB. OFEN\n\n1. Pro Ofenstufe rösten, gedämpfte Paprika\n\n2. FQA CCP1-Überprüfung\n\n3. In der mittleren Küche warm rühren"
+  },
+  "2ad2660c-4881-4c26-b089-f1eaaf2d7b1e": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using immersion blender, blend until combined but not completely smooth\n\n3. FSQA CCP1 check \n\n4. Cover and transfer to staging room\n\n5. Cup as needed",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer mixen, bis alles gut vermischt, aber nicht ganz glatt ist\n\n3. FQA CCP1-Überprüfung \n\n4. Cover und Transfer zum Inszenierungsraum\n\n5. Tasse nach Bedarf"
+  }
+ }
+}

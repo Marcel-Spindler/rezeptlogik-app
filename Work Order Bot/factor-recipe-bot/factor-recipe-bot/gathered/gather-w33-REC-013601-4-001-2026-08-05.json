@@ -1,0 +1,512 @@
+{
+ "rec": {
+  "name": "FV1347A - Pot Roast Shredded Beef & Mash [DE]",
+  "skuCode": "REC-013601-4-001",
+  "totalPortions": 2009,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "French Onion Mashed Potatoes",
+   "id": "881f4f74-cdac-43e1-ac0c-be23d90f69fa",
+   "wo": "33-132",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER / BLAST CHILLER"
+   ],
+   "batchCount": 3,
+   "batchQuantity": 77.54,
+   "portionA": 110,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 220990,
+   "ings": [
+    {
+     "name": "Cooked Diced Potato",
+     "g": 192209.74,
+     "manuf": true,
+     "id": "1c147f21-d87a-4056-91cc-a5dcfd1a33da",
+     "children": [
+      {
+       "name": "FA-DE Potatoes, Diced 10mm /Kartoffeln, gewürfelt, 10 mm",
+       "g": 196132.39,
+       "manuf": false,
+       "id": "059e585f-7727-4d5d-af46-08f8e7e01e75",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "French Onion Mashed Potatoes - Heat Treated Dairy",
+     "g": 40398.3,
+     "manuf": true,
+     "id": "26460500-c173-49ac-83e3-7d5ae78aa03a",
+     "children": [
+      {
+       "name": "FA-DE Spice, Dried Onion Flakes /Gewürze, getrocknete Zwiebelflocken",
+       "g": 1433.71,
+       "manuf": false,
+       "id": "7389d2ea-6fd1-479d-a1e3-84972bf266e2",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+       "g": 955.81,
+       "manuf": false,
+       "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+       "children": []
+      },
+      {
+       "name": "Roasted Garlic (use)",
+       "g": 955.81,
+       "manuf": true,
+       "id": "aba8b6fb-cc27-44b4-9604-edefe4de30bc",
+       "children": [
+        {
+         "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+         "g": 1053.57,
+         "manuf": false,
+         "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+         "children": []
+        },
+        {
+         "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+         "g": 790.17,
+         "manuf": false,
+         "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+         "children": []
+        }
+       ]
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1196.9,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+       "g": 955.81,
+       "manuf": false,
+       "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 238.97,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Milk, Whole /Milch, voll",
+       "g": 14345.67,
+       "manuf": false,
+       "id": "37c33673-04b7-4614-a01f-4f3731647e42",
+       "children": []
+      },
+      {
+       "name": "FA-DE Butter, Unsalted /Butter, ungesalzen",
+       "g": 2867.42,
+       "manuf": false,
+       "id": "31f0cdc7-65bd-4602-9a4d-a535488e389c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Sour Cream /Sauerrahm",
+       "g": 19585.93,
+       "manuf": false,
+       "id": "355ba8ec-49f8-42c5-9b7d-143e3ecc640b",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Shredded Sous Vide Beef",
+   "id": "797cf0dd-8bfc-470e-bbd2-654a5e67c2db",
+   "wo": "33-135",
+   "cook": [
+    "Cold Shredder",
+    "Hand Mix"
+   ],
+   "paths": [
+    "HAND MIX / COLD SHREDDER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 235.44,
+   "portionA": 110,
+   "portionU": "grams",
+   "scoop": "beige",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 220990,
+   "ings": [
+    {
+     "name": "FA-DE Beef, Pulled, Sous Vide/Rindfleisch, Pulled, Sous Vide",
+     "g": 235437.18,
+     "manuf": false,
+     "id": "34ab75aa-ff5d-4964-aa85-32169adcc017",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Chicken Jus Lie + cream cheese",
+   "id": "cfb32d63-cfa7-4eb7-832d-5fa9b60ebc98",
+   "wo": "33-130",
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 76.01,
+   "portionA": 35,
+   "portionU": "grams",
+   "scoop": "red",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 70315,
+   "ings": [
+    {
+     "name": "FA-DE Water / Wasser",
+     "g": 57551.55,
+     "manuf": false,
+     "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+     "g": 329.06,
+     "manuf": false,
+     "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Gum, Xanthan /Gummi, Xanthan",
+     "g": 127.63,
+     "manuf": false,
+     "id": "5c06126f-bfe4-4971-89aa-17277959109e",
+     "children": []
+    },
+    {
+     "name": "FA-DE Thyme, IQF /Thymian, IQF",
+     "g": 197.25,
+     "manuf": false,
+     "id": "418023d7-7677-4c49-b04c-4b282c840e2d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Powder, Toasted /Gewürz, Knoblauchpulver, geröstet",
+     "g": 329.06,
+     "manuf": false,
+     "id": "93038dca-9a79-4ee1-a5b5-0b7b9c5681c9",
+     "children": []
+    },
+    {
+     "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+     "g": 13157.72,
+     "manuf": false,
+     "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Italian Seasoning /Gewürze, italienische Gewürze",
+     "g": 45.95,
+     "manuf": false,
+     "id": "babc1c23-46dd-46dc-b4ed-ed1c2e42c0d6",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Minced Garlic, Toasted, Dry /Gewürz, gehackter Knoblauch, geröstet, trocken",
+     "g": 329.06,
+     "manuf": false,
+     "id": "7133bc69-1d05-424e-a969-5a4f7da96794",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Cream, 13% Fat (Milk) /Käse, Sahne, 13% Fett",
+     "g": 3947.39,
+     "manuf": false,
+     "id": "360cffe0-1558-4a42-84f2-8c8c3d7c4473",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Pearl onions - Roasted Pearl Onions",
+   "id": "c3250777-ea2c-4a19-9b82-8dcfc3c9f1e1",
+   "wo": "33-133",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 95.36,
+   "portionA": 35,
+   "portionU": "grams",
+   "scoop": "red",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 70315,
+   "ings": [
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 2819.23,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 663.35,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Thyme, IQF /Thymian, IQF",
+     "g": 663.35,
+     "manuf": false,
+     "id": "418023d7-7677-4c49-b04c-4b282c840e2d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Pearl, IQF /Zwiebeln, Perlen, IQF",
+     "g": 91210.5,
+     "manuf": false,
+     "id": "0b892e7f-09a0-49fc-9e55-2e3f67da1daf",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Broccoli - Onion Powder Broccoli FLORETS - More Salt",
+   "id": "1dec9663-98d3-4f4e-aafd-1eb1693e35c2",
+   "wo": "33-129",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 3,
+   "batchQuantity": 52.94,
+   "portionA": 60,
+   "portionU": "grams",
+   "scoop": "blue",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 120540,
+   "ings": [
+    {
+     "name": "FA-DE Broccoli, Florets, /Brokkoli, Röschen",
+     "g": 146142.94,
+     "manuf": false,
+     "id": "e1ab5a78-1c7d-46d2-bd82-28a839ae16c4",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 979.44,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+     "g": 979.44,
+     "manuf": false,
+     "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 10722.3,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Rosemary Carrot Coins",
+   "id": "b4c62138-7be7-4749-bcde-6b41cb9540b0",
+   "wo": "33-134",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 82.58,
+   "portionA": 60,
+   "portionU": "grams",
+   "scoop": "blue",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 120540,
+   "ings": [
+    {
+     "name": "FA-DE Carrots, Coin Cut 5mm /Karotten, Münzschnitt 5 mm",
+     "g": 158854.5,
+     "manuf": false,
+     "id": "32e76fc0-fdfa-48e2-8b14-c3a1fd2e013b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 4283.91,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Rosemary, IQF /Rosmarin, IQF",
+     "g": 731.42,
+     "manuf": false,
+     "id": "130ed64e-5bf9-4531-9dcf-ab7203932349",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 508.85,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 387.45,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 270.35,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+     "g": 127,
+     "manuf": false,
+     "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Compound butter - Parmesan-Chive",
+   "id": "939a3461-312b-41f8-898c-a8712ce57e12",
+   "wo": "33-131",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 22.19,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "silver #60",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 20090,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie",
+     "g": 217.52,
+     "manuf": false,
+     "id": "770b5b73-a50c-437d-8f36-f63463bbda29",
+     "children": []
+    },
+    {
+     "name": "FA-DE Butter, Unsalted /Butter, ungesalzen",
+     "g": 16313.53,
+     "manuf": false,
+     "id": "31f0cdc7-65bd-4602-9a4d-a535488e389c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+     "g": 217.52,
+     "manuf": false,
+     "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben",
+     "g": 5437.97,
+     "manuf": false,
+     "id": "e2445b9f-221b-4402-b5ab-ab53eb5364de",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "881f4f74-cdac-43e1-ac0c-be23d90f69fa": {
+   "en": "A. MIDDLE KITCHEN\n\n1. Drain liquid from potatoes.\n\n2. Add remaining ingredients and steamed potatoes to the mixer. Mash with the Potato Mash mixer setting. \n\n3. Place on GN 1/1 7 Liter pans.\n\n4. FSQA CCP1 Check\n\n5. Transfer to pre-blast associates",
+   "de": "A. MITTLERE KÜCHE\n\n1. Flüssigkeit aus den Kartoffeln abtropfen lassen.\n\n2. Restliche Zutaten und gedämpfte Kartoffeln in den Mixer geben. Mit der Einstellung Kartoffelpüree im Mixer pürieren. \n\n3. Auf GN 1/1 7-Liter-Pfannen legen.\n\n4. FQA CCP1-Überprüfung\n\n5. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "1c147f21-d87a-4056-91cc-a5dcfd1a33da": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n\n2. Place potatoes in perforated GN 1/1 pans, 3 kg per pan\n\n3. Transfer to oven section.\n\nB. OVEN\n\n1. Steam on \"Steamed Diced Potatoes\" setting until tender\nAppearance: Pale, creamy-white cubes with soft, rounded edges and a moist, fork-tender interior\n\n2. FSQA CCP1 Check\n\n3. Use as directed in the recipe",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n\n2. Kartoffeln in perforierte GN 1/1-Pfannen legen, 3 kg pro Pfanne\n\n3. In den Ofenbereich überführen.\n\nB. OFEN\n\n1. Auf der Einstellung „Gedünstete, gewürfelte Kartoffeln“ dünsten, bis sie weich sind\nAussehen: Blasse, cremeweiße Würfel mit weichen, abgerundeten Kanten und einem feuchten, gabelzarten Inneren\n\n2. FQA CCP1-Überprüfung\n\n3. Wie im Rezept angegeben verwenden"
+  },
+  "26460500-c173-49ac-83e3-7d5ae78aa03a": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [105 total kg capacity per braiser]\n\n2. Deliver ingredients to each braiser\n\n3. Add butter, milk, roasted garlic, and spices to the braiser.\n\n4. Heat, stirring occasionally, just until mixture reaches 75 °C\n\n5. Add sour cream and bring back to 75 °C\n\n6. FSQA CCP1 Check\n\n7. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Zutaten NICHT vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 105 kg pro Schmorpfanne]\n\n2. Geben Sie die Zutaten zu jedem Schmorbraten\n\n3. Butter, Milch, gerösteten Knoblauch und Gewürze in den Schmorbraten geben.\n\n4. Unter gelegentlichem Rühren erhitzen, bis die Mischung 75 °C erreicht\n\n5. Sauerrahm dazugeben und wieder auf 75 °C bringen\n\n6. Häufig gestellte Fragen (CCP1) überprüfen\n\n7. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "797cf0dd-8bfc-470e-bbd2-654a5e67c2db": {
+   "en": "\nA. PROTEIN DEBOX\n\n1. Remove from packaging\n\n2. Drain liquid and reserve in hotel pans (10kg per  GN 1/1 26.0 Liter)\n\n3. Cut the whole muscle into 2.5 cm pieces and plate 10kg per GN 1/1 26.0 Liter\n\n4. Transfer to production\n\nB. PRODUCTION\n\n1. Place 50 kg of beef in the Hobart mixer with the paddle attachment\n\n2. Add 1 kg of  beef  jus \n\n3. Start the mixer at 77 rpm for 2 minutes\n\n5.  Add 9 kg of beef jus to the shreds and mix gently with your hands. Separate the shreds from the lumps. Add the remaining beef lumps to the new batch to reach another 50 kg.\n\n6. Keep  the shreds chilled and reserve for plating",
+   "de": "\nA. PROTEINDEBOX\n\n1. Aus der Verpackung nehmen\n\n2. Flüssigkeit ablassen und in Hotelpfannen aufbewahren (10 kg pro GN 1/1 26,0 Liter)\n\n3. Den ganzen Muskel in 2,5 cm große Stücke schneiden und 10 kg pro GN 1/1 26,0 Liter in einer Platte anrichten\n\n4. Übertragung in die Produktion\n\nB. PRODUKTION\n\n1. Geben Sie 50 kg Rindfleisch mit dem Paddelaufsatz in den Hobart-Mixer\n\n2. Füge 1 kg Rinderjus hinzu \n\n3. Starten Sie den Mixer bei 77 U/min für 2 Minuten\n\n5. 9 kg Rinderjus zu den Fetzen geben und vorsichtig mit den Händen vermischen. Trennen Sie die Fetzen von den Klumpen. Fügen Sie die restlichen Rinderklumpen zu der neuen Charge hinzu, um weitere 50 kg zu erreichen.\n\n6. Bewahren Sie die Fetzen gekühlt auf und bewahren Sie sie zum Plattieren auf"
+  },
+  "cfb32d63-cfa7-4eb7-832d-5fa9b60ebc98": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [105 total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Puree water, stock concentrate, and xanthan gum in Cambros until thickened\n\n4. Place thickened water mixture in braiser along with spices; bring to a simmer.\n\n5. Add cream cheese.\n\n6. Using an immersion blender, puree all ingredients until smooth in the braiser.\n\n7. Turn off the heat.\n\n8. FSQA CCP1 Check\n\n9. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Zutaten NICHT vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 105 kg pro Schmorpfanne]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Wasser, Stammkonzentrat und Xanthangummi in Cambros pürieren, bis sie eingedickt sind\n\n4. Die eingedickte Wassermischung zusammen mit den Gewürzen in den Schmortopf geben und zum Köcheln bringen.\n\n5. Frischkäse hinzufügen.\n\n6. Alle Zutaten mit einem Stabmixer pürieren, bis sie im Schmorbraten glatt sind.\n\n7. Schalte die Heizung aus.\n\n8. FQA CCP1-Überprüfung\n\n9. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "c3250777-ea2c-4a19-9b82-8dcfc3c9f1e1": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. In a wanne, add oil and vinegar to pearl onions, sprinkle evenly with dried thyme, dried parsley, and salt. \n\n2. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n3. Place sheet trays on oven racks; deliver to oven associates.\n\nB. OVEN\n\n1. Roast per Oven Setting: Roasted pearl Onion\nAppearance - Glossy, amber-colored globes with charred, papery outer layers and creamy, jammy centers\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. In einer Wanne Öl und Essig zu den Perlzwiebeln geben und gleichmäßig mit getrocknetem Thymian, getrockneter Petersilie und Salz bestreuen. \n\n2. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n3. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens.\n\nB. OFEN\n\n1. Einstellung Braten pro Ofen: Gebratene Perlzwiebel\nAussehen: Glänzende, bernsteinfarbene Kugeln mit verkohlten, papierartigen Außenschichten und cremigen, marmeladigen Mittelteilen\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "1dec9663-98d3-4f4e-aafd-1eb1693e35c2": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging.\n\n2. Using an immersion blender, Blend olive oil, sea salt, and toasted onion powder in a Cambro\n\n3. Slack the broccoli for 4 hours in the cooler.\n\n4. Toss the broccoli in the wanne. \n\n5. Toss broccoli with marinade in wanne following the ratio below:\n45.4 kg broccoli\n3.85 kg marinade\n\n6. Mix until very well combined.\n\n7. Transfer to GN 2/1 Sheet trays 2kg per tray  and put on oven racks\n\n8.  Transfer to the oven section.\n\nB. OVEN\n\n1. Roast per Oven Setting: Roasted Broccoli Florets\n[Visual Appearance Indicator] -  Deeply charred, frizzy tips with vibrant forest-green stalks and a nutty, tender-crisp bite\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung.\n\n2. Mischen Sie Olivenöl, Meersalz und geröstetes Zwiebelpulver mit einem Stabmixer in einem Cambro\n\n3. Den Brokkoli 4 Stunden im Kühler ruhen lassen.\n\n4. Wirf den Brokkoli in die Pfanne. \n\n5. Brokkoli mit Marinade in eine Pfanne geben und dabei das folgende Verhältnis einhalten:\n45,4 kg Brokkoli\n3,85 kg Marinade\n\n6. Mischen, bis alles gut vermischt ist.\n\n7. Auf GN 2/1 Bleche geben (2 kg pro Blech) und auf Ofenroste legen\n\n8. In den Ofenbereich übertragen.\n\nB. OFEN\n\n1. Einstellung Braten pro Ofen: Gebratene Brokkoliröschen\n[Optischer Indikator] — Tief verkohlte, krause Spitzen mit leuchtend waldgrünen Stielen und einem nussigen, zartknusprigen Biss\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "b4c62138-7be7-4749-bcde-6b41cb9540b0": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, blend all ingredients EXCEPT the carrots in a Cambro.\n\n3. Toss oil/seasoning mixture with carrots\n\n4. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n5. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting : Roasted Carrot Coins 5mm\n[Visual Appearance Indicator] - Shriveled, mahogany-orange discs with caramelized, blistered edges and a dense, candy-like sweetness\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten AUSSER den Karotten in einem Cambro vermischen.\n\n3. Öl-Gewürzmischung mit Karotten vermischen\n\n4. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n5. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Geröstete Karottenmünzen 5 mm\n[Optischer Indikator] — Geschrumpfte, mahagoni-orange Scheiben mit karamellisierten, blasigen Rändern und einer dichten, bonbonähnlichen Süße\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "939a3461-312b-41f8-898c-a8712ce57e12": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging. Transfer to Cambros individually. DO NOT combine ingredients.\n\n2. Deliver required volumes to the Middle Kitchen\n\nB. MIDDLE KITCHEN\n\n1. Weigh and divide ingredients into the capacity of the stand mixer (105kg)\n\n2. Soften butter completely before starting.\n\n3. Add SOFTENED butter to the stand mixer, whip butter with the paddle attachment until soft and smooth.\n\n4. Slowly add parmesan, dried parsley, and dried chives to the mixer with whipped butter, mix until fully incorporated.\n\n5. Scoop into 10-12g balls using [Purple Scoop] onto GN 2/1 sheet trays\n\n6. FSQA CCP1 Check\n\n7. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung. Individueller Transfer nach Cambros. Zutaten NICHT kombinieren.\n\n2. Liefert die benötigten Mengen in die Mittlere Küche\n\nB. MITTLERE KÜCHE\n\n1. Wiegen Sie die Zutaten ab und teilen Sie sie auf das Fassungsvermögen des Standmixers auf (105 kg)\n\n2. Butter vor dem Start vollständig einweichen.\n\n3. Geben Sie WEICHE Butter in den Standmixer und schlagen Sie die Butter mit dem Rühraufsatz auf, bis sie weich und glatt ist.\n\n4. Langsam Parmesan, getrocknete Petersilie und getrockneten Schnittlauch mit geschlagener Butter in den Mixer geben und mischen, bis alles vollständig eingearbeitet ist.\n\n5. Mit [Purple Scoop] in 10—12 g-Kugeln auf GN 2/1-Blechschalen schöpfen\n\n6. Häufig gestellte Fragen (CCP1) überprüfen\n\n7. Transfer an die Mitarbeiter von Pre-Blast"
+  }
+ }
+}

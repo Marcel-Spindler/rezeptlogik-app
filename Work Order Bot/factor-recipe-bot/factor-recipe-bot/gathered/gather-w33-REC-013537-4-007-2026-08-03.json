@@ -1,0 +1,393 @@
+{
+ "rec": {
+  "name": "FV0485A - Rosemary-tomato chicken - [DE]",
+  "skuCode": "REC-013537-4-007",
+  "totalPortions": 1836,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)",
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Sauce - Creamy Tomato Rosemary Marinara - keto",
+   "id": "3e26fd65-58f2-4663-80fb-b618ae63d8bb",
+   "wo": "33-119",
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 86.07,
+   "portionA": 85,
+   "portionU": "grams",
+   "scoop": "beige",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 156060,
+   "ings": [
+    {
+     "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+     "g": 5161.36,
+     "manuf": false,
+     "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+     "children": []
+    },
+    {
+     "name": "FA-DE Fennel, Diced 10mm /Fenchel, gewürfelt 10 mm",
+     "g": 6912.16,
+     "manuf": false,
+     "id": "df2cc3c9-db35-435c-8146-378088f7f25c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Cream, 13% Fat (Milk) /Käse, Sahne, 13% Fett",
+     "g": 34471.38,
+     "manuf": false,
+     "id": "360cffe0-1558-4a42-84f2-8c8c3d7c4473",
+     "children": []
+    },
+    {
+     "name": "FA-DE Heavy Cream 20% /Sahne 20%",
+     "g": 43090.44,
+     "manuf": false,
+     "id": "5453d563-18b8-4183-87e7-08cea4674f03",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 4332.29,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Diced 5mm /Zwiebel, Spanisch, gewürfelt 5 mm",
+     "g": 6912.16,
+     "manuf": false,
+     "id": "f11b2445-91bf-437e-9ba2-1602b9c2d910",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 507.19,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Rosemary, Powder /Gewürz, Rosmarin, Pulver",
+     "g": 183.7,
+     "manuf": false,
+     "id": "dbc96609-bb6f-4b57-8e9b-15b934a1933d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Tomato Paste /Tomatenmark",
+     "g": 8617.44,
+     "manuf": false,
+     "id": "a66adf20-abd0-4ac7-99fd-5574a8a4d193",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Italian Seasoning /Gewürze, italienische Gewürze",
+     "g": 183.7,
+     "manuf": false,
+     "id": "babc1c23-46dd-46dc-b4ed-ed1c2e42c0d6",
+     "children": []
+    },
+    {
+     "name": "FA-DE Tomatoes, Concentrated Crushed /Tomaten, konzentriert, zerkleinert",
+     "g": 61773.75,
+     "manuf": false,
+     "id": "959fd26c-b165-4541-94e3-abed48551a85",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Shredded Chicken - naturel",
+   "id": "abccb4d2-70f2-4518-9c20-1abdcbbdee4e",
+   "wo": "33-120",
+   "cook": [],
+   "paths": [
+    "MARINADE / OVEN / HOT SHREDDER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 327.06,
+   "portionA": 110,
+   "portionU": "grams",
+   "scoop": "beige",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 201960,
+   "ings": [
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 8176.52,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "Chicken Thighs - BRINED",
+     "g": 318884.21,
+     "manuf": true,
+     "id": "fce473c1-e82e-40c4-b279-1b91e4727622",
+     "children": [
+      {
+       "name": "FA-DE Chicken, Thighs, Boneless Skinless /Hähnchen, Oberschenkel, ohne Knochen und ohne Haut",
+       "g": 318884.21,
+       "manuf": false,
+       "id": "de33f895-f4e5-4973-9108-f11160cf6c58",
+       "children": []
+      },
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 318884.21,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 2813.68,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Red peppers - Roasted diced ¼\" red bell peppers",
+   "id": "3faf671c-3d81-4870-930c-ba4e33568913",
+   "wo": "33-118",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 106.37,
+   "portionA": 40,
+   "portionU": "grams",
+   "scoop": "silver #60",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 73440,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Italian Seasoning /Gewürze, italienische Gewürze",
+     "g": 33.55,
+     "manuf": false,
+     "id": "babc1c23-46dd-46dc-b4ed-ed1c2e42c0d6",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 270.76,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 474.42,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 3397.65,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 306.7,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm",
+     "g": 101891.11,
+     "manuf": false,
+     "id": "304b0fb7-c6f4-4164-a8bb-def20f32459a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben",
+   "id": "e2445b9f-221b-4402-b5ab-ab53eb5364de",
+   "wo": "33-117",
+   "cook": [],
+   "paths": [],
+   "batchCount": null,
+   "batchQuantity": null,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": true,
+   "totalNeeded": 18360,
+   "ings": []
+  },
+  {
+   "name": "Courgette - Herb Roasted Zucchini + more salt",
+   "id": "8dc59ed0-0e5e-4fe0-8741-912bb0da970a",
+   "wo": "33-116",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 4,
+   "batchQuantity": 66.19,
+   "portionA": 110,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 201960,
+   "ings": [
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 3667.96,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Italian Seasoning /Gewürze, italienische Gewürze",
+     "g": 734.63,
+     "manuf": false,
+     "id": "babc1c23-46dd-46dc-b4ed-ed1c2e42c0d6",
+     "children": []
+    },
+    {
+     "name": "FA-DE Zucchini, Diced 10mm /Zucchini, gewürfelt 10 mm",
+     "g": 258671.04,
+     "manuf": false,
+     "id": "eba34919-f320-4209-911f-56cc5c27b47a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 367.31,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1319.22,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Compound butter - Parmesan-Chive",
+   "id": "939a3461-312b-41f8-898c-a8712ce57e12",
+   "wo": "33-115",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER / SCOOPER (BUTTER) / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 20.28,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 18360,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie",
+     "g": 198.79,
+     "manuf": false,
+     "id": "770b5b73-a50c-437d-8f36-f63463bbda29",
+     "children": []
+    },
+    {
+     "name": "FA-DE Butter, Unsalted /Butter, ungesalzen",
+     "g": 14908.74,
+     "manuf": false,
+     "id": "31f0cdc7-65bd-4602-9a4d-a535488e389c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+     "g": 198.79,
+     "manuf": false,
+     "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben",
+     "g": 4969.7,
+     "manuf": false,
+     "id": "e2445b9f-221b-4402-b5ab-ab53eb5364de",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "3e26fd65-58f2-4663-80fb-b618ae63d8bb": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to GN Trays individually. Do not combine ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER \n\n1. Sauté the onion, garlic and fennel in the oil until tender and very soft.\n\n2. Add spices and  Tomato paste and caramelize.\n\n3. Add concentrated tomatoes and\nremaining ingredients and bring to 80 °C.\n\n4. Add cream cheese and heavy cream while stirring continuously at the end,\n\n5. Blend with an immersion blender until smooth\n\n6. FSQA CCP1 check\n\n7. Move to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in GN-Schalen umfüllen. Zutaten nicht kombinieren.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN \n\n1. Zwiebel, Knoblauch und Fenchel im Öl anbraten, bis sie weich und sehr weich sind.\n\n2. Gewürze und Tomatenmark dazugeben und karamellisieren.\n\n3. Konzentrierte Tomaten hinzufügen und\nrestliche Zutaten und auf 80 °C bringen.\n\n4. Am Ende unter ständigem Rühren Frischkäse und Sahne dazugeben,\n\n5. Mit einem Stabmixer glatt rühren\n\n6. FQA CCP1-Überprüfung\n\n7. Wechseln Sie zu Pre-Blast Associates\n"
+  },
+  "abccb4d2-70f2-4518-9c20-1abdcbbdee4e": {
+   "en": "A. PROTEIN DEBOX\n\n1. In Wanne, toss chicken with olive oil until fully coated and evenly distributed.\n\n2. Marinate for 2 hours.\n\n3. Transfer chicken to sheet trays. X per Sheet tray.\n\n4. Transfer sheet trays to speed rack; transfer to Oven team.\n\nB. OVEN\n\n5. Roast per \"\"Diced Chicken\"\" Oven Setting:\n\n6. FSQA  CCP1 Check\n\n7. Drain liquid off pans; RESERVE LIQUID. Transfer to Associate at Shredder Machine in Middle Kitchen\n\nC. MIDDLE KITCHEN\n\n1. SHRED on speed 4.5\n\n2. Mix in reserved liquid amount following the ratio listed below:\n\n***LARGE SCALE***\n\n- 150 # shredded chicken\n- 20 # pan liquid\n\n3. Transfer to sheet trays. Transfer sheet trays to speed rack\n\n4. Transfer to  pre-blast associates\"\n",
+   "de": "A. PROTEINDEBOX\n\n1. In der Wanne das Hähnchen mit Olivenöl vermischen, bis es vollständig bedeckt und gleichmäßig verteilt ist.\n\n2. 2 Stunden marinieren.\n\n3. Hähnchen auf Blechschalen legen. X pro Blattschale.\n\n4. Die Bleche auf die Schnellablage übertragen; zum Ofenteam überführen.\n\nB. OFEN\n\n5. Braten nach Ofeneinstellung „Hühnchen in Würfelform“:\n\n6. Häufig gestellte Fragen (CCP1) überprüfen\n\n7. Flüssigkeit aus den Pfannen ablassen; FLÜSSIGKEIT AUFBEWAHREN. Transfer zum Mitarbeiter bei Shredder Machine in Middle Kitchen\n\nC. MITTLERE KÜCHE\n\n1. SHRED auf Geschwindigkeit 4,5\n\n2. Die reservierte Flüssigkeitsmenge unter Einhaltung des unten angegebenen Verhältnisses einrühren:\n\n***GROSSER MASSSTAB***\n\n- 150 # zerkleinertes Hühnchen\n- 20 # Pfannenflüssigkeit\n\n3. Auf Blechfächer übertragen. Übertragen Sie die Blattfächer in das Schnellregal\n\n4. Transfer an die Mitarbeiter von Pre-Blast“\n"
+  },
+  "fce473c1-e82e-40c4-b279-1b91e4727622": {
+   "en": "A. DEBOX\n\n1. In a wanne, dissolve salt in HOT water; transfer to Wanne (water can be hot from the tap)\n\n2. Add the remaining COLD water volume to Wanne, ensuring water is cold. Brine temp should be below 3 °C\n\n3. Add Chicken thighs\n\n4. Allow Chicken thighs to sit for a minimum 4 hours. Hold up to 6 hours.\n\n5. Drain",
+   "de": "A. DEBOX\n\n1. In einer Wanne das Salz in HEISSEM Wasser auflösen; in die Wanne geben (Wasser kann heiß aus dem Wasserhahn sein)\n\n2. Das restliche KALTE Wasservolumen in die Wanne geben und sicherstellen, dass das Wasser kalt ist. Die Soletemperatur sollte unter 3 °C liegen\n\n3. Hähnchenschenkel hinzufügen\n\n4. Lassen Sie die Hähnchenschenkel mindestens 4 Stunden ruhen. Halten Sie bis zu 6 Stunden.\n\n5. Abtropfen lassen"
+  },
+  "3faf671c-3d81-4870-930c-ba4e33568913": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting: Roasted Diced Bell Pepper\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Geröstete gewürfelte Paprika\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "e2445b9f-221b-4402-b5ab-ab53eb5364de": {
+   "en": "",
+   "de": ""
+  },
+  "8dc59ed0-0e5e-4fe0-8741-912bb0da970a": {
+   "en": "A. VEGGIE DEBOX\n\n1. Mix zucchini with oil in Wanne. Add spices and mix gently until evenly mixed\n\n2. Transfer to GN 2/1 trays; 3 kg per tray\n\n3. Place trays on the oven rack and deliver to the ovens\n\nOVEN\n\n1. Cook in oven on setting \"Roasted Zucchini Diced.\"\nShould be al dente with slight roast browning \n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Zucchini mit Öl in der Wanne vermischen. Gewürze dazugeben und vorsichtig vermischen, bis alles gleichmäßig vermischt ist\n\n2. Auf GN 2/1-Schalen umfüllen; 3 kg pro Schale\n\n3. Stellen Sie die Bleche auf den Ofenrost und geben Sie sie in die Öfen\n\nOFEN\n\n1. Im Ofen bei Einstellung „Gebratene Zucchini gewürfelt“ garen.\nSollte bissfest sein und leicht gebräunt sein \n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "939a3461-312b-41f8-898c-a8712ce57e12": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging. Transfer to Cambros individually. DO NOT combine ingredients.\n\n2. Deliver required volumes to the Middle Kitchen\n\nB. MIDDLE KITCHEN\n\n1. Weigh and divide ingredients into the capacity of the stand mixer (105kg)\n\n2. Soften butter completely before starting.\n\n3. Add SOFTENED butter to the stand mixer, whip butter with the paddle attachment until soft and smooth.\n\n4. Slowly add parmesan, dried parsley, and dried chives to the mixer with whipped butter, mix until fully incorporated.\n\n5. Scoop into 10-12g balls using [Purple Scoop] onto GN 2/1 sheet trays\n\n6. FSQA CCP1 Check\n\n7. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung. Individueller Transfer nach Cambros. Zutaten NICHT kombinieren.\n\n2. Liefert die benötigten Mengen in die Mittlere Küche\n\nB. MITTLERE KÜCHE\n\n1. Wiegen Sie die Zutaten ab und teilen Sie sie auf das Fassungsvermögen des Standmixers auf (105 kg)\n\n2. Butter vor dem Start vollständig einweichen.\n\n3. Geben Sie WEICHE Butter in den Standmixer und schlagen Sie die Butter mit dem Rühraufsatz auf, bis sie weich und glatt ist.\n\n4. Langsam Parmesan, getrocknete Petersilie und getrockneten Schnittlauch mit geschlagener Butter in den Mixer geben und mischen, bis alles vollständig eingearbeitet ist.\n\n5. Mit [Purple Scoop] in 10—12 g-Kugeln auf GN 2/1-Blechschalen schöpfen\n\n6. Häufig gestellte Fragen (CCP1) überprüfen\n\n7. Transfer an die Mitarbeiter von Pre-Blast"
+  }
+ }
+}

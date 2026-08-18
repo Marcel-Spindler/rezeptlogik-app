@@ -1,0 +1,305 @@
+{
+ "rec": {
+  "name": "FV0090A - Ratatouille of zucchini and pepper [DE]",
+  "skuCode": "REC-013827-4-004",
+  "totalPortions": 684,
+  "alg": {
+   "c": [
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Mixed veg - Ratatouille Vegetable Batch",
+   "id": "5779ebb9-d610-44ef-aab5-ae0bec7d6961",
+   "wo": "33-82",
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 97.17,
+   "portionA": 255,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 174420,
+   "ings": [
+    {
+     "name": "FA-DE Parsley, Chopped /Petersilie, gehackt",
+     "g": 1633.52,
+     "manuf": false,
+     "id": "1a2d8c37-3b80-46fb-bc06-8f16ef05546f",
+     "children": []
+    },
+    {
+     "name": "FA-DE Rosemary, IQF /Rosmarin, IQF",
+     "g": 201.49,
+     "manuf": false,
+     "id": "130ed64e-5bf9-4531-9dcf-ab7203932349",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Diced 10mm /Zwiebel, Spanisch, gewürfelt 10 mm",
+     "g": 15910.66,
+     "manuf": false,
+     "id": "43e4e30c-1eb1-4c82-8324-83d7b08c9b6a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Fennel, Diced 10mm /Fenchel, gewürfelt 10 mm",
+     "g": 7469.59,
+     "manuf": false,
+     "id": "df2cc3c9-db35-435c-8146-378088f7f25c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Zucchini, Diced 10mm /Zucchini, gewürfelt 10 mm",
+     "g": 52229.57,
+     "manuf": false,
+     "id": "eba34919-f320-4209-911f-56cc5c27b47a",
+     "children": []
+    },
+    {
+     "name": "Basil - Picked Basil Leaves",
+     "g": 1633.52,
+     "manuf": true,
+     "id": "5f1b4f2c-e56f-44a6-999a-40a754163b3e",
+     "children": [
+      {
+       "name": "FA-DE Basil, Fresh /Basilikum, frisch",
+       "g": 2917.74,
+       "manuf": false,
+       "id": "3597a341-57d5-4871-a0c2-aab26287fe48",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Tomatoes, Diced, BiB/Tomaten, gewürfelt, BiB",
+     "g": 50387.36,
+     "manuf": false,
+     "id": "e7ba7852-2b97-470b-a408-a36b8db62872",
+     "children": []
+    },
+    {
+     "name": "FA-DE Tomato Paste /Tomatenmark",
+     "g": 9894.69,
+     "manuf": false,
+     "id": "a66adf20-abd0-4ac7-99fd-5574a8a4d193",
+     "children": []
+    },
+    {
+     "name": "Roasted Garlic oil",
+     "g": 3670.03,
+     "manuf": true,
+     "id": "2cc2d1ba-6abf-4500-92a6-f4687e5bcfe1",
+     "children": [
+      {
+       "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+       "g": 5053.39,
+       "manuf": false,
+       "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 3790.02,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Onion, Red, Diced 10mm/Zwiebeln, rot, gewürfelt, 10 mm",
+     "g": 15910.66,
+     "manuf": false,
+     "id": "1ce8b213-1b49-44a3-94c6-5a40ae3a26e1",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 57.57,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 863.54,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm",
+     "g": 29784.82,
+     "manuf": false,
+     "id": "304b0fb7-c6f4-4164-a8bb-def20f32459a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+     "g": 4691.88,
+     "manuf": false,
+     "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Polenta less fat",
+   "id": "896187b9-3910-4898-96dd-3d106d4cdee8",
+   "wo": "33-83",
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 63.2,
+   "portionA": 140,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 95760,
+   "ings": [
+    {
+     "name": "FA-DE Grits, Cereal Hot, Quick /Grütze, Müsli, heiß, schnell",
+     "g": 19643.08,
+     "manuf": false,
+     "id": "afcd9b00-984a-4d8f-a408-78fbb85f4326",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 451.91,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Milk, Semi-Skimmed /Milch, teilentrahmt",
+     "g": 90382.26,
+     "manuf": false,
+     "id": "667f6be8-548d-41cc-874c-704ce51779d8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben",
+     "g": 4519.11,
+     "manuf": false,
+     "id": "e2445b9f-221b-4402-b5ab-ab53eb5364de",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+     "g": 105.45,
+     "manuf": false,
+     "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+     "children": []
+    },
+    {
+     "name": "FA-DE Mascarpone /Mascarpone",
+     "g": 7531.85,
+     "manuf": false,
+     "id": "bf93646c-16b8-451c-8668-8f06b64b0db1",
+     "children": []
+    },
+    {
+     "name": "FA-DE Butter, Unsalted /Butter, ungesalzen",
+     "g": 3765.93,
+     "manuf": false,
+     "id": "31f0cdc7-65bd-4602-9a4d-a535488e389c",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Sunflower seeds - Vegetable Ratatouille Toasted Seed Garnish",
+   "id": "4d03b3ff-15ab-4fdb-afd8-931e8cdb0618",
+   "wo": "33-84",
+   "cook": [],
+   "paths": [
+    "HAND MARINADE / OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 6.97,
+   "portionA": 10,
+   "portionU": "grams",
+   "scoop": "Cup",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 6840,
+   "ings": [
+    {
+     "name": "FA-DE Honey /Honig – Masse",
+     "g": 390.07,
+     "manuf": false,
+     "id": "a9667386-697a-4630-919e-869179cfa61f",
+     "children": []
+    },
+    {
+     "name": "FA-DE Sunflower Seeds /Sonnenblumenkerne",
+     "g": 6149.82,
+     "manuf": false,
+     "id": "4c31f5a5-0fba-4848-9a88-3bf46d97e447",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 29.29,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 253.72,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 146.19,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "5779ebb9-d610-44ef-aab5-ae0bec7d6961": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix ingredients together.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER\n\n1. Heat oil in braiser, saute onion and garlic until beginning to soften\n\n2. Add fennel and red bell pepper, saute 5 minutes until beginning to brown \n\n3. Add zucchini and continue cooking for 5 more minutes.\n\n4. Add tomato paste and cook for 2 minutes.\n\n5. Add in the seasonings, heat 2 minutes. Add in the diced tomatoes, and bring to 80 °C.\n\n6. Once the mixture has reached 80 °C and flavored developed, stir in the CHOPPED basil and parsley\n\n7. FSQA CCP1 Check\n\n8. Transfer to GN 1/1 65 mm place on racks and Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Öl im Schmorbraten erhitzen, Zwiebel und Knoblauch darin anbraten, bis sie weich werden\n\n2. Fenchel und rote Paprika dazugeben und 5 Minuten anbraten, bis sie anfangen zu bräunen \n\n3. Zucchini hinzufügen und weitere 5 Minuten kochen lassen.\n\n4. Tomatenpaste hinzufügen und 2 Minuten kochen lassen.\n\n5. Die Gewürze dazugeben und 2 Minuten erhitzen. Die gewürfelten Tomaten dazugeben und auf 80 °C bringen.\n\n6. Sobald die Mischung 80 °C erreicht hat und sich das Aroma entwickelt hat, das gehackte Basilikum und die Petersilie einrühren\n\n7. FQA CCP1-Überprüfung\n\n8. Transfer auf GN 1/1 65 mm, auf Gestellen platzieren und an die Mitarbeiter vor dem Blast übergeben"
+  },
+  "5f1b4f2c-e56f-44a6-999a-40a754163b3e": {
+   "en": "A. VEGGIE DEBOX\n\n1.  Remove all ingredients from the outer packaging\n\n2. Remove the leaves from the stems, discarding any dark or black leaves.\n\n3. Discard the stems.\n\n4. Either keep leaves whole OR chiffonade, depending on recipe application ",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n\n2. Entfernen Sie die Blätter von den Stielen und werfen Sie alle dunklen oder schwarzen Blätter weg.\n\n3. Wirf die Stängel weg.\n\n4. Blätter entweder ganz ODER Chiffonade aufbewahren, je nach Rezeptanwendung "
+  },
+  "896187b9-3910-4898-96dd-3d106d4cdee8": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. Do not combine ingredients.\n\n2.  Divide and organize ingredients into braiser batches [105 total kg capacity per braiser]\n\n3. Place ingredients on GN trays and put on speed racks\n\n4. Deliver ingredients to braiser station \n\nB. BRAISER\n\n1. Heat the milk and salt until it comes to 80 °C.\n\n2. Slowly whisk in the polenta and constantly stir.\n\n3. Cook 10-15 minutes STIRRING CONSTANTLY until polenta is cooked and tender.\n\n4. Add the cheeses and butter and mix until melted and incorporated. Stir in dried chives\n\n5. FSQA CCP1 check.\n\n6. Scoop onto GN 1/1 pans.\n\n6. Transfer to  pre-blast associates immediately",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Zutaten nicht kombinieren.\n\n2. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 105 kg pro Schmorbraten]\n\n3. Zutaten auf GN-Schalen legen und auf Speed Racks legen\n\n4. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Milch und Salz erhitzen, bis sie 80 °C erreicht haben.\n\n2. Polenta langsam einrühren und ständig umrühren.\n\n3. 10-15 Minuten unter STÄNDIGEM RÜHREN kochen, bis die Polenta gar und zart ist.\n\n4. Fügen Sie den Käse und die Butter hinzu und mischen Sie, bis sie geschmolzen und eingearbeitet sind. Getrockneten Schnittlauch einrühren\n\n5. FQA CCP1-Überprüfung.\n\n6. Auf Pfannen GN 1/1 schöpfen.\n\n6. Sofortige Übertragung an die Mitarbeiter vor dem Blast"
+  },
+  "4d03b3ff-15ab-4fdb-afd8-931e8cdb0618": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. \n\n2. Combine all ingredients together and spread on N 2/1 sheet trays and put on oven rack.\n\n3. Transfer to the oven\n\nB. OVEN\n\n1. Load in the oven and roast with the Garnish oven setting.\nAppearance - Caramelized\n\n2. FSQA CCP1 check\n\n3. Transfer to pre blast associates.\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. \n\n2. Alle Zutaten vermischen und auf Bleche N 2/1 verteilen und auf den Ofenrost stellen.\n\n3. Transfer in den Ofen\n\nB. OFEN\n\n1. In den Ofen geben und mit der Garnier-Einstellung im Ofen rösten.\nAussehen: Karamellisiert\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre Blast.\n"
+  }
+ }
+}

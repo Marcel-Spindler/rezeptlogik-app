@@ -1,0 +1,454 @@
+{
+ "rec": {
+  "name": "FV4065B- Spicy Beef & Black Bean Chili [DE]",
+  "skuCode": "REC-029397-4-005",
+  "totalPortions": 2476,
+  "alg": {
+   "c": [
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Beef & Black Bean Chili Batch [Aji Amarillo Sub]",
+   "id": "48aae284-991b-4638-8d7b-46a35f92fa75",
+   "wo": "33-170",
+   "cook": [],
+   "paths": [
+    "UNCATEGORIZED BOM"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 1028.04,
+   "portionA": 290,
+   "portionU": "grams",
+   "scoop": "yellow",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 718040,
+   "ings": [
+    {
+     "name": "FA-DE Beef, Ground, 80/20 /Rindfleisch, gemahlen, 80/20",
+     "g": 352380.49,
+     "manuf": false,
+     "id": "c0338ea9-ef5f-45cd-bd77-a04875562b7b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Cracked /Gewürz, schwarzer Pfeffer, gebrochen",
+     "g": 1144.74,
+     "manuf": false,
+     "id": "e8291112-9305-4120-b2f5-a7fd918b2292",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Smoked Paprika /Gewürz, geräucherter Paprika",
+     "g": 7040.17,
+     "manuf": false,
+     "id": "8c068775-50a6-4d71-af4b-56e0716ce913",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Ancho Chili Powder /Gewürz, Ancho-Chili-Pulver",
+     "g": 3605.94,
+     "manuf": false,
+     "id": "fa8c56b9-52ef-4997-b074-387813d689c5",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Jalapeno Powder /Gewürz, Jalapeno-Pulver",
+     "g": 1717.11,
+     "manuf": false,
+     "id": "39d1106b-6784-4fb2-8354-dd0d30b5661a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel",
+     "g": 3863.51,
+     "manuf": false,
+     "id": "b334a9ad-c05f-43e4-b8f9-f7f6780a8b7b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+     "g": 915.79,
+     "manuf": false,
+     "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+     "children": []
+    },
+    {
+     "name": "FA-DE Tomato Paste /Tomatenmark",
+     "g": 2031.92,
+     "manuf": false,
+     "id": "a66adf20-abd0-4ac7-99fd-5574a8a4d193",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 2547.05,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+     "g": 8843.14,
+     "manuf": false,
+     "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+     "children": []
+    },
+    {
+     "name": "Concentrated Tomatoes- Diluted",
+     "g": 290707.47,
+     "manuf": true,
+     "id": "dcf0de3c-53c9-4179-83f2-a98c700bc617",
+     "children": [
+      {
+       "name": "FA-DE Tomatoes, Concentrated Crushed /Tomaten, konzentriert, zerkleinert",
+       "g": 218799.82,
+       "manuf": false,
+       "id": "959fd26c-b165-4541-94e3-abed48551a85",
+       "children": []
+      },
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 72934.13,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Roasted Garlic oil",
+     "g": 14108.96,
+     "manuf": true,
+     "id": "2cc2d1ba-6abf-4500-92a6-f4687e5bcfe1",
+     "children": [
+      {
+       "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+       "g": 19427.12,
+       "manuf": false,
+       "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 14570.23,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Water / Wasser",
+     "g": 35258.08,
+     "manuf": false,
+     "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+     "children": []
+    },
+    {
+     "name": "Beef Chili Vegetables",
+     "g": 154168.25,
+     "manuf": true,
+     "id": "baf291b9-4a08-40ec-aece-90d5cc509187",
+     "children": [
+      {
+       "name": "FA-DE Onion, Spanish, Diced 10mm /Zwiebel, Spanisch, gewürfelt 10 mm",
+       "g": 63933.89,
+       "manuf": false,
+       "id": "43e4e30c-1eb1-4c82-8324-83d7b08c9b6a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Bell Peppers, Green, Diced 10mm /Paprika, grün, gewürfelt 10 mm",
+       "g": 51227.25,
+       "manuf": false,
+       "id": "29feb242-2ac4-4508-b5e4-f2a0f9fd131c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm",
+       "g": 51227.25,
+       "manuf": false,
+       "id": "304b0fb7-c6f4-4164-a8bb-def20f32459a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 9587.22,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 19231.68,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Beans, Black, Low Sodium, Aseptic /Bohnen, schwarz, natriumarm, aseptisch",
+     "g": 132131.95,
+     "manuf": false,
+     "id": "031d4573-a7bd-4db0-9331-3c6d25f29beb",
+     "children": []
+    },
+    {
+     "name": "FA-DE Coriander, Chopped /Koriander, gehackt",
+     "g": 17571.8,
+     "manuf": false,
+     "id": "c6d3fb11-b3db-44da-b44d-03b07ba5cb89",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Roasted Green Onions",
+   "id": "f1e2f038-3a5c-4307-a43e-38eb55b492bd",
+   "wo": "33-173",
+   "cook": [
+    "Oven"
+   ],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 24.66,
+   "portionA": 5,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 12380,
+   "ings": [
+    {
+     "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+     "g": 24661.35,
+     "manuf": false,
+     "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Corn Salsa - Less Salt",
+   "id": "17dbc65c-b902-4e46-a34c-120c88e9fa34",
+   "wo": "33-172",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 98.79,
+   "portionA": 55,
+   "portionU": "grams",
+   "scoop": "yellow",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 136180,
+   "ings": [
+    {
+     "name": "FA-DE Sweetcorn Supersweet Kernels, IQF /Zuckermais-Supersüßkörner, IQF",
+     "g": 137934.18,
+     "manuf": false,
+     "id": "8b356c41-c651-4411-85b5-ac011072e26b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm",
+     "g": 17172.53,
+     "manuf": false,
+     "id": "304b0fb7-c6f4-4164-a8bb-def20f32459a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 3831.51,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 300.06,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Bell Peppers, Green, Diced 10mm /Paprika, grün, gewürfelt 10 mm",
+     "g": 17172.53,
+     "manuf": false,
+     "id": "29feb242-2ac4-4508-b5e4-f2a0f9fd131c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Red, Diced 5mm /Zwiebeln, rot, gewürfelt 5 mm",
+     "g": 17172.53,
+     "manuf": false,
+     "id": "ff253908-754f-4e4e-8955-509746ee7dbe",
+     "children": []
+    },
+    {
+     "name": "FA-DE Coriander, Chopped /Koriander, gehackt",
+     "g": 2285.05,
+     "manuf": false,
+     "id": "c6d3fb11-b3db-44da-b44d-03b07ba5cb89",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel",
+     "g": 646.28,
+     "manuf": false,
+     "id": "b334a9ad-c05f-43e4-b8f9-f7f6780a8b7b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Paprika /Gewürze, Paprika",
+     "g": 646.28,
+     "manuf": false,
+     "id": "5a01fd94-793a-4820-a03a-20643e215bac",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Chili Powder /Gewürz, Chilipulver",
+     "g": 415.46,
+     "manuf": false,
+     "id": "12c4996d-606c-46ab-91a0-3c6a72ceac0d",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Coriander-Jalapeno Sweet Potatoes",
+   "id": "de2f1c67-bf02-4a50-ad6c-c619087750a7",
+   "wo": "33-171",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 3,
+   "batchQuantity": 103.03,
+   "portionA": 85,
+   "portionU": "grams",
+   "scoop": "green",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 210460,
+   "ings": [
+    {
+     "name": "FA-DE Potatoes, Sweet, Diced 10mm /Kartoffeln, süß, gewürfelt 10 mm",
+     "g": 277404.85,
+     "manuf": false,
+     "id": "f8f6e109-fb86-45c2-a328-127b964f2d0f",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 13865.6,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1083.25,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 1392.75,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel",
+     "g": 1392.75,
+     "manuf": false,
+     "id": "b334a9ad-c05f-43e4-b8f9-f7f6780a8b7b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Coriander, Chopped /Koriander, gehackt",
+     "g": 3497.35,
+     "manuf": false,
+     "id": "c6d3fb11-b3db-44da-b44d-03b07ba5cb89",
+     "children": []
+    },
+    {
+     "name": "Roasted Garlic oil",
+     "g": 6963.75,
+     "manuf": true,
+     "id": "2cc2d1ba-6abf-4500-92a6-f4687e5bcfe1",
+     "children": [
+      {
+       "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+       "g": 9588.63,
+       "manuf": false,
+       "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 7191.42,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Jalapeno Peppers, Diced 5mm /Jalapeno-Paprikaschoten, gewürfelt, 5 mm",
+     "g": 3497.35,
+     "manuf": false,
+     "id": "74b1a0f9-93c9-48ca-89e5-87216824a96c",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "48aae284-991b-4638-8d7b-46a35f92fa75": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix together.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER (All-In One Method)\n\n1. Divide ingredients per braiser. (100kg total capacity)\n\n2. On medium heat, add ground beef to braiser. Cook, adding SMALL AMOUNTS of water as needed to assist with breaking up meat, mixing with paddle until beef is fully cooked.\n\n3. Drain all fat and liquid. RESERVE.\n\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. NICHT zusammen mischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. BRAISER (All-In-One-Methode)\n\n1. Teilen Sie die Zutaten pro Bratpfanne auf. (100 kg Gesamtkapazität)\n\n2. Bei mittlerer Hitze Hackfleisch zum Schmorbraten geben. Kochen Sie, fügen Sie nach Bedarf KLEINE MENGEN Wasser hinzu, um das Aufbrechen des Fleisches zu unterstützen, und mischen Sie es mit dem Paddel, bis das Rindfleisch vollständig gegart ist.\n\n3. Alles Fett und Flüssigkeit abtropfen lassen. RESERVIEREN.\n\n"
+  },
+  "dcf0de3c-53c9-4179-83f2-a98c700bc617": {
+   "en": "\nA. VEGGIE DEBOX\n\n1. Mix concentrated tomatoes and water in CAMBROS following the ratio below:\n100 Kg concentrated tomatoes\n33 Kg water\n\n2. Whisk together in cambros until fully combined. \n\n3. Use as directed in recipe \n",
+   "de": "\nA. VEGETARISCHE DEBOX\n\n1. Konzentrierte Tomaten und Wasser in CAMBROS mischen und dabei das folgende Verhältnis einhalten:\n100 kg konzentrierte Tomaten\n33 kg Wasser\n\n2. In Cambros verquirlen, bis alles vollständig vermischt ist. \n\n3. Wie im Rezept angegeben verwenden \n"
+  },
+  "baf291b9-4a08-40ec-aece-90d5cc509187": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambros, mix together olive oil and garlic, onions and poblano peppers until completely combined and evenly distributed.\n\n2. Transfer to sheet trays - 2 kg per sheet tray.\n\n3. Place sheet trays on oven racks. Deliver to Oven Associates.\n\nB. OVEN\n\n1. Roast per Oven Setting \"Roasted Pepper and Onion Diced\":\n- Vegetables should be tender and slightly golden\n\n2. FSQA CCP1 Check\n\n3. Deliver to Pre-Blast Associates \n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. In Cambros Olivenöl und Knoblauch, Zwiebeln und Poblano-Paprika vermischen, bis alles gut vermischt und gleichmäßig verteilt ist.\n\n2. Auf Blattfächer umfüllen - 2 kg pro Blattschale.\n\n3. Stellen Sie die Bleche auf die Ofenroste. Liefern Sie an Oven Associates.\n\nB. OFEN\n\n1. Braten pro Ofen, Einstellung „Gerösteter Pfeffer und Zwiebel, gewürfelt“:\n- Das Gemüse sollte zart und leicht golden sein\n\n2. FQA CCP1-Überprüfung\n\n3. An Pre-Blast Associates liefern \n"
+  },
+  "f1e2f038-3a5c-4307-a43e-38eb55b492bd": {
+   "en": "A. VEGGIE DEBOX\n\n1.  Remove vegetables from the outer packaging\n\n2. Place 2kg per GN 2/1 sheet trays, place trays on oven racks\n\n3. Move Racks to Ovens.\n\nB. OVEN\n\n1. Cook on \"Roasted Sliced Scallions\" Oven setting\nAppearance: charred, caramelized edges and a vibrant, slightly shriveled skin:\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Nehmen Sie das Gemüse aus der Außenverpackung\n\n2. Legen Sie 2 kg pro GN 2/1-Blech und legen Sie die Bleche auf die Ofenroste\n\n3. Stellen Sie die Regale in die Öfen.\n\nB. OFEN\n\n1. Auf der Ofeneinstellung „Gebratene, in Scheiben geschnittene Frühlingszwiebeln“ garen\nAussehen: verkohlte, karamellisierte Ränder und eine lebendige, leicht geschrumpfte Haut:\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "17dbc65c-b902-4e46-a34c-120c88e9fa34": {
+   "en": "A. VEGGIE DEBOX\n\n1. In wanne, mix all ingredients until completely combined and evenly distributed.\n\n2. Transfer to sheet trays (2 KG per sheet tray)\n\n3. Place sheet trays on oven racks; deliver to oven associates\n\nB. OVEN\n\n1. Roast per Oven Setting \"Corn Salsa\":\n- Vegetables should be cooked through and slightly golden. Tender not mushy. DO NOT OVERCOOK\n\n2. FSQA CCP1 Check\n\n3. Transfer to Pre Blast associates \n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. In einer Wanne alle Zutaten vermischen, bis alles gut vermischt und gleichmäßig verteilt ist.\n\n2. Auf Blattfächer umfüllen (2 kg pro Blattfach)\n\n3. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n\nB. OFEN\n\n1. Braten pro Ofeneinstellung „Corn Salsa“:\n- Gemüse sollte durchgegart und leicht goldbraun sein. Zart, nicht matschig. NICHT ZU LANGE KOCHEN\n\n2. FQA CCP1-Überprüfung\n\n3. Übertragung an Mitarbeiter von Pre Blast \n"
+  },
+  "de2f1c67-bf02-4a50-ad6c-c619087750a7": {
+   "en": "\nA. VEGGIE DEBOX\n\n1. In wanne, mix all ingredients until completely combined and evenly distributed.\n\n2. Transfer to sheet trays - 2 kg per tray\n\n3. Place sheet trays on oven racks. \n\n4. Deliver to Oven Associates.\n\nB. OVEN\n\n1. Roast per Roasted Sweet Potatoes Oven Setting:\n- Sweet potatoes should be fully tender and lightly browned\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre blast associates",
+   "de": "\nA. VEGETARISCHE DEBOX\n\n1. In einer Wanne alle Zutaten vermischen, bis alles gut vermischt und gleichmäßig verteilt ist.\n\n2. Auf Blechfächer umfüllen - 2 kg pro Schale\n\n3. Stellen Sie die Bleche auf die Ofenroste. \n\n4. Liefern Sie an Oven Associates.\n\nB. OFEN\n\n1. Braten nach gerösteten Süßkartoffeln. Ofeneinstellung:\n- Süßkartoffeln sollten vollständig zart und leicht gebräunt sein\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre Blast"
+  }
+ }
+}

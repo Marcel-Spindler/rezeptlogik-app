@@ -1,0 +1,579 @@
+{
+ "rec": {
+  "name": "FV1169A - [DE] -Salmon and sweet soy dressing",
+  "skuCode": "REC-014250-4-004",
+  "totalPortions": 5829,
+  "alg": {
+   "c": [
+    "Soya / Soja",
+    "Sesame seeds / Sesamsamen",
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+    "Celery / Sellerie",
+    "Fish / Fisch"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Rice - Garlic and Ginger Brown Rice",
+   "id": "af2ed3f6-3b45-4b5e-8af3-903a61dd574c",
+   "wo": "33-17",
+   "cook": [],
+   "paths": [
+    "HAND MIX / BLAST CHILLER"
+   ],
+   "batchCount": 8,
+   "batchQuantity": 96.66,
+   "portionA": 130,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+     "Celery / Sellerie"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 757770,
+   "ings": [
+    {
+     "name": "Garlic and Ginger Steeped Coconut Milk",
+     "g": 207368.64,
+     "manuf": true,
+     "id": "603241a9-28b4-49b4-9998-69e7fa61281b",
+     "children": [
+      {
+       "name": "FA-DE Ginger, IQF, Diced 4 mm [250g] /Ingwer, IQF, gewürfelt 4 mm [250g]",
+       "g": 4443.61,
+       "manuf": false,
+       "id": "09e5309d-dd17-47e6-94b1-4b6bf3996249",
+       "children": []
+      },
+      {
+       "name": "FA-DE Milk, Coconut /Milch, Kokosnuss",
+       "g": 118496.37,
+       "manuf": false,
+       "id": "e030dd97-44fb-4ce2-8104-10979367719c",
+       "children": []
+      },
+      {
+       "name": "Roasted Garlic oil",
+       "g": 24588,
+       "manuf": true,
+       "id": "2cc2d1ba-6abf-4500-92a6-f4687e5bcfe1",
+       "children": [
+        {
+         "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+         "g": 33856.08,
+         "manuf": false,
+         "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+         "children": []
+        },
+        {
+         "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+         "g": 25391.87,
+         "manuf": false,
+         "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+         "children": []
+        }
+       ]
+      },
+      {
+       "name": "Roasted Garlic (use)",
+       "g": 19551.9,
+       "manuf": true,
+       "id": "aba8b6fb-cc27-44b4-9604-edefe4de30bc",
+       "children": [
+        {
+         "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+         "g": 21551.75,
+         "manuf": false,
+         "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+         "children": []
+        },
+        {
+         "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+         "g": 16163.7,
+         "manuf": false,
+         "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+         "children": []
+        }
+       ]
+      },
+      {
+       "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+       "g": 70060.98,
+       "manuf": false,
+       "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1209.4,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Cooked Brown Rice with Mirepoix",
+     "g": 565891.54,
+     "manuf": true,
+     "id": "348bf823-946e-4535-9974-f7b834e57ee1",
+     "children": [
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 319995.28,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Rice, Basmati, Brown /Reis, Basmati, braun",
+       "g": 213248.67,
+       "manuf": false,
+       "id": "ea3effe2-f727-431a-9ad6-fbd96b4d52a7",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 5792.44,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Stock Concentrate, Mirepoix /Stammkonzentrat, Mirepoix",
+       "g": 13694.87,
+       "manuf": false,
+       "id": "f0ccd622-59fd-4adf-a8fa-62dd41fd9ee6",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+       "g": 662,
+       "manuf": false,
+       "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1428.18,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Ginger Cabbage",
+   "id": "6056d598-22eb-4b83-b0fa-ff2012e1d119",
+   "wo": "33-15",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 5,
+   "batchQuantity": 90.26,
+   "portionA": 60,
+   "portionU": "grams",
+   "scoop": "red",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 349740,
+   "ings": [
+    {
+     "name": "FA-DE Cabbage, Green, Shredded 5mm / Wirsing, geschnitten, 5 mm",
+     "g": 409993.83,
+     "manuf": false,
+     "id": "cbe83fac-0c65-48d3-8576-84bdd4c34a4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+     "g": 2499.42,
+     "manuf": false,
+     "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+     "children": []
+    },
+    {
+     "name": "FA-DE Ginger, IQF, Diced 4 mm [250g] /Ingwer, IQF, gewürfelt 4 mm [250g]",
+     "g": 17674.46,
+     "manuf": false,
+     "id": "09e5309d-dd17-47e6-94b1-4b6bf3996249",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 892.65,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+     "g": 20263.14,
+     "manuf": false,
+     "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Salmon - Blackened Salmon Batch",
+   "id": "2bb143fe-b582-451e-8ea4-0e2fdf301977",
+   "wo": "33-18",
+   "cook": [],
+   "paths": [
+    "THAW / HAND MARINADE / OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 834.25,
+   "portionA": 1,
+   "portionU": "each",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Fish / Fisch"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 5829,
+   "ings": [
+    {
+     "name": "Factor 75 No Sugar Blackened Seasoning",
+     "g": 18186.48,
+     "manuf": true,
+     "id": "a8774928-6af1-453c-ba90-4d149b992763",
+     "children": [
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 2364.24,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 4667.86,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Paprika /Gewürze, Paprika",
+       "g": 4304.13,
+       "manuf": false,
+       "id": "5a01fd94-793a-4820-a03a-20643e215bac",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+       "g": 1576.16,
+       "manuf": false,
+       "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, White Pepper /Gewürz, weißer Pfeffer",
+       "g": 2364.24,
+       "manuf": false,
+       "id": "247c8269-2161-4887-9c87-a34173626a37",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+       "g": 1576.16,
+       "manuf": false,
+       "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+       "g": 484.97,
+       "manuf": false,
+       "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Smoked Paprika /Gewürz, geräucherter Paprika",
+       "g": 6183.4,
+       "manuf": false,
+       "id": "8c068775-50a6-4d71-af4b-56e0716ce913",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Cayenne Pepper /Gewürz, Cayennepfeffer",
+       "g": 242.49,
+       "manuf": false,
+       "id": "387f5760-d006-46c8-84bb-38d42c1efda6",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Salmon, Skinless, Boneless, Filet/Lachs, ohne Haut, ohne Knochen, Filet - IQF",
+     "g": 816060,
+     "manuf": false,
+     "id": "f8b7838f-b9f2-48cb-b76c-c225004d0a7c",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "B&W sesame seeds 30/70",
+   "id": "84d85ae7-b534-4449-a2d5-ea6edb43ba6d",
+   "wo": "33-14",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 19.43,
+   "portionA": 3,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Sesame seeds / Sesamsamen"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 17487,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Sesame Seed, White /Gewürz, Sesam, Weiß",
+     "g": 13601,
+     "manuf": false,
+     "id": "c668c3a0-15a8-4796-9779-89cdeb785c23",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sesame Seeds, Black /Gewürz, Sesamsamen, Schwarz",
+     "g": 5829,
+     "manuf": false,
+     "id": "ab487c4e-83c4-4c88-8372-63594bbabf66",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Green beans - Sesame roasted CUT green beans with onion slices",
+   "id": "15d0ae89-604a-4434-a707-64bf0d18f355",
+   "wo": "33-16",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 10,
+   "batchQuantity": 63.27,
+   "portionA": 80,
+   "portionU": "grams",
+   "scoop": "white",
+   "alg": {
+    "c": [
+     "Sesame seeds / Sesamsamen"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 466320,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1865.28,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+     "g": 7286.81,
+     "manuf": false,
+     "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Sesame Seed, Toasted /Öl, Sesamsamen, geröstet",
+     "g": 20518.08,
+     "manuf": false,
+     "id": "c17c7ae1-c613-4822-ac32-3b0f39c1ac61",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 290.8,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Minced Garlic, Toasted, Dry /Gewürz, gehackter Knoblauch, geröstet, trocken",
+     "g": 2913.66,
+     "manuf": false,
+     "id": "7133bc69-1d05-424e-a969-5a4f7da96794",
+     "children": []
+    },
+    {
+     "name": "FA-DE Green Beans, Fresh, Cut 40mm /Grüne Bohnen, frisch, geschnitten 40mm",
+     "g": 545594.4,
+     "manuf": false,
+     "id": "f51808b3-752a-49d2-8855-c95ae01e7a40",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sesame Seed, White /Gewürz, Sesam, Weiß",
+     "g": 2913.66,
+     "manuf": false,
+     "id": "c668c3a0-15a8-4796-9779-89cdeb785c23",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Sliced 5mm /Zwiebel, spanisch, in Scheiben geschnitten, 5 mm",
+     "g": 51295.2,
+     "manuf": false,
+     "id": "43f2a12d-2caa-4bc2-9ae4-4dcd08beba23",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Teriyaki - Sweet Soy",
+   "id": "ec32392c-5046-42d1-bcf1-763ecb9ab3f5",
+   "wo": "33-19",
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 94.91,
+   "portionA": 31,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Soya / Soja",
+     "Sesame seeds / Sesamsamen"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 180699,
+   "ings": [
+    {
+     "name": "FA-DE Spice, Garlic Powder, Toasted /Gewürz, Knoblauchpulver, geröstet",
+     "g": 2319.84,
+     "manuf": false,
+     "id": "93038dca-9a79-4ee1-a5b5-0b7b9c5681c9",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Powder, Toasted /Gewürze, Zwiebelpulver, geröstet",
+     "g": 4722.53,
+     "manuf": false,
+     "id": "d1017327-2643-4da4-b4d7-6bedb18b5b8d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Vinegar, Rice /Essig, Reis",
+     "g": 14084.75,
+     "manuf": false,
+     "id": "332a3649-fe58-4b07-be4e-7844313c6a79",
+     "children": []
+    },
+    {
+     "name": "FA-DE Honey /Honig – Masse",
+     "g": 11764.91,
+     "manuf": false,
+     "id": "a9667386-697a-4630-919e-869179cfa61f",
+     "children": []
+    },
+    {
+     "name": "FA-DE Syrup, Date /Sirup, Dattel - Großpackung",
+     "g": 58741.67,
+     "manuf": false,
+     "id": "e3af4ca5-83af-4156-b406-5ff318ac6887",
+     "children": []
+    },
+    {
+     "name": "FA-DE Tamari, Reduced Sodium Soy Sauce /Tamari, natriumreduzierte Sojasauce",
+     "g": 24855.43,
+     "manuf": false,
+     "id": "dfa6ad55-240b-40e8-98ec-c4bf10909cab",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Ginger Ground /Gewürze, gemahlener Ingwer",
+     "g": 2319.84,
+     "manuf": false,
+     "id": "0d5897fb-4464-4aac-bdf3-3b3c74e6e413",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Sesame Seed, Toasted /Öl, Sesamsamen, geröstet",
+     "g": 9942.17,
+     "manuf": false,
+     "id": "c17c7ae1-c613-4822-ac32-3b0f39c1ac61",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cornstarch /Maisstärke (Maisstärke)",
+     "g": 4722.53,
+     "manuf": false,
+     "id": "b95f4b95-8ffe-45f8-ad2a-7077a2e65fa2",
+     "children": []
+    },
+    {
+     "name": "FA-DE Water / Wasser",
+     "g": 56338.98,
+     "manuf": false,
+     "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "af2ed3f6-3b45-4b5e-8af3-903a61dd574c": {
+   "en": "MIDDLE KITCHEN\n\n1. Add steeped coconut milk mixture to cooked brown rice according to ratio listed below:\n\n16.6 KG rice\n45.3 KG steeped coconut milk\n\n2. Mix well to ensure even distribution.\n\n3. Transfer to sheet pans to cool.",
+   "de": "MITTLERE KÜCHE\n\n1. Fügen Sie dem gekochten braunen Reis die eingeweichte Kokosmilchmischung gemäß dem unten angegebenen Verhältnis hinzu:\n\n16,6 KG Reis\n45,3 KG eingeweichte Kokosmilch\n\n2. Gut mischen, um eine gleichmäßige Verteilung zu gewährleisten.\n\n3. Zum Abkühlen in Blechpfannen geben."
+  },
+  "603241a9-28b4-49b4-9998-69e7fa61281b": {
+   "en": "\"A.  VEGGIE DEBOX\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [105 total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Heat roasted garlic oil. Sweat the  green onions, ginger and garlic until tender\n\n4. Add coconut milk. Bring to a simmer, cook  for flavors to combine\n\n5. Using an immersion blender, puree until smooth\n\n6. Add salt . Mix well to incorporate.\n\n7. FSQA CCP1 Check\n\n8. Transfer to pre-blast associates",
+   "de": "„A. GEMÜSE-DEBOX\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Zutaten NICHT vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 105 kg pro Schmorbraten]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Geröstetes Knoblauchöl erhitzen. Frühlingszwiebeln, Ingwer und Knoblauch anschwitzen, bis sie weich sind\n\n4. Kokosmilch hinzufügen. Zum Köcheln bringen und kochen lassen, bis sich die Aromen verbinden\n\n5. Mit einem Stabmixer pürieren, bis alles glatt ist\n\n6. Salz hinzufügen. Zum Einarbeiten gut vermischen.\n\n7. FQA CCP1-Überprüfung\n\n8. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "348bf823-946e-4535-9974-f7b834e57ee1": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. In cambros, combine mirepoix, salt, granulated garlic and olive oil  and blend until evenly incorporated, ensuring there are no lumps.\n\n2. Divide batches into hotel pans, per hotel pan:\nRice - 1.5 kg per hotel pan\nLiquid - 2.25 kg per hotel pan\n\n3. Cover hotel pan with lids and transfer to oven racks\n    ** If all oven racks are in-use, place hotel pans on speed rack **\n\n4. Transfer to Oven station\n\nB. OVEN\n\n1. Steam per Oven Setting  'Brown Basmati Rice'\n- Rice should be tender and all liquid absorbed\n\n2. Fluff rice.\n\n3. FSQA CCP1 Check.\n\n4. Transfer oven rack to pre-blast associates\"",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. In Cambros Mirepoix, Salz, granulierten Knoblauch und Olivenöl vermischen und mischen, bis alles gleichmäßig eingearbeitet ist, wobei darauf zu achten ist, dass keine Klumpen entstehen.\n\n2. Teilen Sie die Chargen pro Hotelplan in Hotelpläne auf:\nReis - 1,5 kg pro Hotelpfanne\nFlüssigkeit - 2,25 kg pro Hotelpfanne\n\n3. Die Hotelpfanne mit Deckeln abdecken und auf die Ofenroste stellen\n ** Wenn alle Ofenroste in Gebrauch sind, stellen Sie die Hotelpfannen auf das Schnellregal **\n\n4. Transfer zur Oven-Station\n\nB. OFEN\n\n1. Dampf pro Ofeneinstellung „Brauner Basmatireis“\n- Der Reis sollte zart sein und die gesamte Flüssigkeit aufgesogen sein\n\n2. Fluffiger Reis.\n\n3. FQA CCP1-Überprüfung.\n\n4. Übergeben Sie das Ofengestell an die Mitarbeiter vor dem Blast“"
+  },
+  "6056d598-22eb-4b83-b0fa-ff2012e1d119": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. In chalupas, mix all ingredients until completely combined and evenly distributed.\n\n2. Transfer to sheet trays (2 KG per sheet tray)\n\n3. Place sheet trays on oven racks; deliver to oven associates\n\nB. OVEN\n\n1. Roast per Oven Setting: Roasted Cabbage\n- slight roasty brown\n\n2. Transfer sheet trays to speed racks\n\n3. Deliver speed racks to QA associates at Blast Chiller\"\n",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. In Chalupas alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n2. Auf Blattfächer umfüllen (2 kg pro Blattfach)\n\n3. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n\nB. OFEN\n\n1. Einstellung Braten pro Ofen: Gebratener Kohl\n- leicht gebräunt\n\n2. Übertragen Sie die Blattfächer auf Schnellregale\n\n3. Liefern Sie Speed-Racks an die QA-Mitarbeiter von Blast Chiller“\n"
+  },
+  "2bb143fe-b582-451e-8ea4-0e2fdf301977": {
+   "en": "\"A. DEBOX\n1. Open the necessary packages of salmon.\n\n2. In Wanne, top salmon with the Blackened seasoning until evenly coated\n\n3. Arrange the salmon in GN 2/1  sheet tray, 35 pieces per tray, load the trays onto the oven trolley\n\n4. Transfer salmon to the oven.\n\nB. OVEN\n1. Pre-heat Oven on Salmon program\n\n2. Roast per \"\"Salmon\"\" Oven Setting:\n\n3. FSQA CCP1 Check\n\n4. Transfer to pre-blast associates\n\"",
+   "de": "„A. DEBOX\n1. Öffnen Sie die erforderlichen Lachspackungen.\n\n2. In der Wanne den Lachs mit dem geschwärzten Gewürz belegen, bis er gleichmäßig überzogen ist\n\n3. Den Lachs in einem Blech GN 2/1 anrichten, 35 Stück pro Blech, die Bleche auf den Ofenwagen laden\n\n4. Lachs in den Ofen geben.\n\nB. OFEN\n1. Ofen im Lachs-Programm vorheizen\n\n2. Braten nach Ofeneinstellung „Lachs“:\n\n3. FQA CCP1-Überprüfung\n\n4. Transfer an die Mitarbeiter von Pre-Blast\n“"
+  },
+  "a8774928-6af1-453c-ba90-4d149b992763": {
+   "en": "\"A. SPICE ROOM\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros.\n\n2. Combine spices in Cambros using paddles.\n\n3. Mix until thoroughly combined.\n\n4. Use as directed in the recipe.\n\n5. Store leftover spices in covered Cambros.\"",
+   "de": "„A. GEWÜRZRAUM\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten in Cambros umfüllen.\n\n2. Kombinieren Sie die Gewürze in Cambros mit Hilfe von Paddeln.\n\n3. Mischen, bis alles gut vermischt ist.\n\n4. Wie im Rezept angegeben verwenden.\n\n5. Lagern Sie übrig gebliebene Gewürze in abgedeckten Cambros.“"
+  },
+  "84d85ae7-b534-4449-a2d5-ea6edb43ba6d": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. In cambros, mix all ingredients until completely combined and evenly distributed.\n\n2. Transfer to sheet trays\n\n3. Place sheet trays on oven racks; deliver to oven associates\n\nB. OVEN\n\n1. Roast per Oven Setting: Toasted Sesame seeds\n- They should be fragrant, with the white one's slightly golden\n\n2. FSQA CCP1 Check\n\n3. Store at room temperature - until needed for plating",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. Mischen Sie in Cambros alle Zutaten, bis sie vollständig vermischt und gleichmäßig verteilt sind.\n\n2. In Blechfächer umfüllen\n\n3. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n\nB. OFEN\n\n1. Einstellung Braten pro Ofen: Geröstete Sesamkörner\n- Sie sollten duften, wobei die weißen leicht golden sein sollten\n\n2. FQA CCP1-Überprüfung\n\n3. Bei Raumtemperatur lagern - bis es für die Beschichtung benötigt wird"
+  },
+  "15d0ae89-604a-4434-a707-64bf0d18f355": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n\n2. To make marinade, puree the oil, green onions, salt and pepper, and minced dried toasted garlic, and sesame seeds together in cambros\nusing immersion blenders.\n\n3. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n4. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n5. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting X: Roasted Cut Green Beans\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n\"",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n\n2. Für die Marinade das Öl, die Frühlingszwiebeln, Salz und Pfeffer sowie den gehackten, getrockneten gerösteten Knoblauch und die Sesamsamen zusammen in Cambros pürieren\nunter Verwendung von Stabmixern.\n\n3. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n4. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n5. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Braten pro Ofen, Einstellung X: Geröstete, geschnittene grüne Bohnen\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n“"
+  },
+  "ec32392c-5046-42d1-bcf1-763ecb9ab3f5": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [105 total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Mix water and cornstarch into a slurry\n\n4. Combine remaining ingredients in a braiser and bring to a simmer\n\n5. Stream in slurry while blending\n\n6. Bring to a boil to activate the cornstarch. \n\n7. pure with an immersion blender until fully incorporated\n\n8. FSQA Check CCP1.\n\n9. Transfer speed rack to PRE BLAST associates at Blast Chiller.\"",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Zutaten NICHT vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 105 kg pro Schmorbraten]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Wasser und Maisstärke zu einer Masse verrühren\n\n4. Die restlichen Zutaten in einem Schmortopf vermengen und zum Köcheln bringen\n\n5. Während des Mixens Gülle einstreuen\n\n6. Zum Kochen bringen, um die Maisstärke zu aktivieren. \n\n7. Mit einem Stabmixer pürieren, bis alles vollständig eingearbeitet ist\n\n8. Häufig gestellte Fragen (FAQs) CCP1 überprüfen.\n\n9. Übergeben Sie das Speed Rack an die Mitarbeiter von PRE BLAST bei Blast Chiller.“"
+  }
+ }
+}

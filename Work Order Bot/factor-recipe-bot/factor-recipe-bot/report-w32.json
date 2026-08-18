@@ -1,0 +1,171 @@
+[
+ {
+  "recCode": "REC-013537-4-007",
+  "recName": "FV0485A - Rosemary-tomato chicken - [DE]",
+  "date": "2026-07-29 - 2",
+  "runN": 5,
+  "isRework": true,
+  "subs": [
+   "Sauce - Creamy Tomato Rosemary Marinara - keto (WO 32-198)"
+  ]
+ },
+ {
+  "recCode": "REC-029854-4-001",
+  "recName": "FV0846A - Stroganoff-Style Beef Burger [DE]",
+  "date": "2026-07-29 - 2",
+  "runN": 6,
+  "isRework": true,
+  "subs": [
+   "Green Beans CUT 1-1/2 - Fresh - Less Salt (WO 32-200)"
+  ]
+ },
+ {
+  "recCode": "REC-030452-4-003",
+  "recName": "FV4078A -[DE]  Moussaka-Style Ground Beef, Eggplant & Bechamel",
+  "date": "2026-07-29 - 2",
+  "runN": 3,
+  "isRework": true,
+  "subs": [
+   "Moussaka Beef (V2) (WO 32-197)"
+  ]
+ },
+ {
+  "recCode": "REC-030480-4-001",
+  "recName": "[DE] - FV1351A - Cheddar & Red Pepper Chicken Thigh Pasta",
+  "date": "2026-07-29 - 2",
+  "runN": 3,
+  "isRework": true,
+  "subs": [
+   "Shredded Chicken Thighs - Mod Marinade #3 -SW/MEX (less marinade) (WO 32-202)",
+   "Low Fat Red Pepper Fondue (WO 32-201)"
+  ]
+ },
+ {
+  "recCode": "REC-030889-4-002",
+  "recName": "FV4095A Salmon with Fasolakia [DE]",
+  "date": "2026-07-30 - 1",
+  "runN": 3,
+  "isRework": true,
+  "subs": [
+   "Greek Style Tomato Sauce (WO 32-182)",
+   "Short steamed potatoes (WO 32-183)",
+   "Crumbled feta (WO 32-180)",
+   "Fasolakia - Green Beans (WO 32-181)",
+   "Tomato Dry - Rub Salmon (WO 32-184)"
+  ]
+ },
+ {
+  "recCode": "REC-014279-4-002",
+  "recName": "FV1398A - Indian-Style Chicken Curry [DE]",
+  "date": "2026-07-30 - 1",
+  "runN": 2,
+  "isRework": true,
+  "subs": [
+   "Toasted Garlic Zucchini - Half Moons 3 - less salt (WO 32-46)",
+   "Cumin Cauliflower Florets (WO 32-43)",
+   "Diced Chicken - Garlic & Herb Marinade (WO 32-44)",
+   "Tomato Curry Base (WO 32-47)",
+   "Steamed Peas - Plain (WO 32-45)",
+   "Basmati Rice & Cauliflower Blend (WO 32-42)"
+  ]
+ },
+ {
+  "recCode": "REC-013607-4-001",
+  "recName": "FV0972A - Salmon Piccata [DE]",
+  "date": "2026-07-30 - 1",
+  "runN": 2,
+  "isRework": true,
+  "subs": [
+   "Parmesan Cauliflower Mash - Rice - HTD - Batch (WO 32-56)",
+   "Garlic Herb Marinated Salmon (WO 32-55)",
+   "Sauce - Piccata Sauce - Lower Fat (WO 32-57)",
+   "Capers (WO 32-54)",
+   "Broccoli - S&P Broccoli FLORETS - less salt (WO 32-53)"
+  ]
+ },
+ {
+  "recCode": "REC-030830-4-005",
+  "recName": "FV4096B Zaatar Rub Salmon & Jeweled Rice [DE]",
+  "date": "2026-07-30 - 1",
+  "runN": 2,
+  "isRework": true,
+  "subs": [
+   "Jeweled Wild + Brown Jasmine Rice (WO 32-98)",
+   "Fire roasted Paprika with Cumin and Cilantro (WO 32-97)",
+   "Zaatar Salmon (WO 32-100)",
+   "Apicius glazed Carrots (WO 32-96)",
+   "Whipped Feta (WO 32-99)"
+  ]
+ },
+ {
+  "recCode": "REC-014288-4-002",
+  "recName": "FV4038A - [DE] Chicken in creamy mushroom sauce",
+  "date": "2026-07-30 - 1",
+  "runN": 2,
+  "isRework": true,
+  "subs": [
+   "Sauce - mushroom cream sauce -Chicken in creamy mushroom sauce (WO 32-77)",
+   "Chicken breast - Herb Grilled Chicken Breast (WO 32-74)",
+   "Roasted Garlic Broccoli (WO 32-75)",
+   "S&P Roasted Green Beans 1 (WO 32-76)"
+  ]
+ },
+ {
+  "recCode": "REC-013943-4-004",
+  "recName": "FV0257A - Greek style ground beef and feta [DE]",
+  "date": "2026-07-30 - 1",
+  "runN": 2,
+  "isRework": true,
+  "subs": [
+   "Ground beef - Red Wine & Garlic Beef Ragu (WO 32-118)",
+   "Spinach - Garlic Spinach - Frzn Spinach - less garlic (WO 32-122)",
+   "Red peppers - Roasted diced ¼\" red bell peppers (WO 32-120)",
+   "Tomatoes - Roasted cherry tomatoes (WO 32-123)",
+   "Herbed feta (WO 32-119)",
+   "Zucchini - Garlic Roasted Zucchini (WO 32-124)",
+   "Compound butter - Oregano-Tomato (WO 32-117)",
+   "Sauce - Yia Yia's Creamy Greek Sauce - sour cream (WO 32-121)"
+  ]
+ },
+ {
+  "recCode": "REC-013489-4-001",
+  "recName": "FV0794A - Loaded Bacon Shredded Chicken [DE]",
+  "date": "2026-07-30 - 1",
+  "runN": 5,
+  "isRework": true,
+  "subs": [
+   "Bacon Chicken Casserole (WO 32-105)",
+   "Extra Crispy Diced Bacon (WO 32-106)",
+   "Green Beans CUT 1-1/2 - Fresh (WO 32-107)",
+   "Ranch Sour Cream Batch - PH (WO 32-108)"
+  ]
+ },
+ {
+  "recCode": "REC-014063-4-004",
+  "recName": "FV4027A  [DE]-Beef & BBQ sauce",
+  "date": "2026-07-30 - 1",
+  "runN": 2,
+  "isRework": true,
+  "subs": [
+   "Mash Leek & Cream Cheese mashed Potatoes -Less Salt (WO 32-131)",
+   "Pulled Beef - Beef and BBQ sauce (WO 32-133)",
+   "Sauce - Maple BBQ Sauce (WO 32-134)",
+   "Steamed Green Onions (WO 32-195)",
+   "Mixed veg - Roasted Zucchini & Corn (WO 32-132)"
+  ]
+ },
+ {
+  "recCode": "REC-029892-4-001",
+  "recName": "FV1320A - Aji Verde Salmon [DE]",
+  "date": "2026-07-30 - 1",
+  "runN": 2,
+  "isRework": true,
+  "subs": [
+   "Tomato & Bell Pepper Quinoa Batch 2 (WO 32-164)",
+   "Scallion Marinated Salmon (WO 32-163)",
+   "Cumin Roasted Diced Red & Green Bell Peppers - 10mm (WO 32-161)",
+   "Roasted Zucchini & Corn - Less Corn (WO 32-162)",
+   "Aji Verde Sauce (CUPPED) - Less Spicy (WO 32-160)"
+  ]
+ }
+]

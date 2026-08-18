@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
+import Anthropic from "@anthropic-ai/sdk";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 loadEnv({ path: path.join(root, ".env.local") });
@@ -36,55 +37,26 @@ async function readJsonBody(req) {
 }
 
 const GEMINI_MAX_RETRIES = 3;
-const GEMINI_CONCURRENCY = 2;
-const GEMINI_DELAY_MS = 300;
+const GEMINI_CONCURRENCY = 4;
+const GEMINI_DELAY_MS = 150;
+const CLAUDE_CONCURRENCY = 2;
+const CLAUDE_DELAY_MS = 300;
 
 // Systemprompt für den Gemini WO-Instruction-Bot.
-const GEMINI_INSTRUCTION_SYSTEM_PROMPT = `Production instruction bot — Factor Verden kitchen.
-Write very short bilingual kitchen instructions (EN + DE).
+const GEMINI_INSTRUCTION_SYSTEM_PROMPT = `Kitchen WO instructions — Factor Verden. Bilingual, ultra-short.
 
-GOAL:
-- one tiny step per station
-- no numbers, no weights, no grams, no portions, no batch counts, no recipe IDs, no work orders
-- no ingredient list; the PDF already has ingredients
-- only use facts in the context
-- if unsure, use [CHECK]
+One line per station from processFlow: "STATION: action". Mirror EN/DE exactly.
+No numbers, weights, ingredient names. No intro text.
+Return JSON only: {"english":"...","german":"...","status":"generated"}
 
-FORMAT:
-- use the station order from processFlow
-- each station gets ONE short line only, in this format: "STATION: action"
-- keep it under 160 chars per language
-- EN and DE mirror the same stations and same count
-- use no headings except the station labels below
+FIXED:
+- rti=true → english:"RTI → Plating" german:"RTI → Anrichten"
+- BLAST CHILLER → "BLAST CHILLER: CCP1 core safe" / "SCHNELLKÜHLER: CCP1 Kern sicher"
+- separate/spiceRoom items → first line "A. SPICE ROOM: Portion separately" / "A. GEWÜRZRAUM: Separat portionieren"
+- neverBatch=true → never mention splits or batches
+- allergensContains → last line "⚠ {allergens list}"
 
-STATION LABELS:
-SPICE PORTIONING → "A. SPICE ROOM" / "A. GEWÜRZRAUM"
-VEGGIE DEBOX → "VEGGIE DEBOX" / "GEMÜSE-DEBOX"
-PROTEIN DEBOX → "PROTEIN DEBOX" / "PROTEINDEBOX"
-BRAISER → "BRAISER" / "BRAISER"
-OVEN → "OVEN" / "OFEN"
-GRILL → "GRILL" / "GRILL"
-HORIZONTAL MIXER → "HORIZONTAL MIXER" / "HORIZONTALMISCHER"
-PLANETARY MIXER → "PLANETARY MIXER" / "PLANETENMISCHER"
-PATTY MAKER → "PATTY MAKER" / "PATTY-PRESSE"
-HAND MIX → "HAND MIX" / "HANDMISCHUNG"
-MARINADE → "MARINADE" / "MARINADE"
-HAND MARINADE → "HANDMARINADE" / "HANDMARINADE"
-IMMERSION BLENDER → "STABMIXER" / "STABMIXER"
-DRAIN → "DRAIN" / "ABTROPFEN"
-BLAST CHILLER → "BLAST CHILLER" / "SCHNELLKÜHLER"
-
-RULES:
-- rti=true → output ONLY "RTI → Plating" / "RTI → Anrichten"
-- neverBatch=true → do not mention splitting or batches
-- separate/spiceRoom ingredients → first line exactly: "A. SPICE ROOM: Portion separately" / "A. GEWÜRZRAUM: Separat portionieren"
-- allergensContains non-empty → last line: "⚠ <list>"
-- BLAST CHILLER → exactly: "BLAST CHILLER: CCP1 core safe" / "SCHNELLKÜHLER: CCP1 Kern sicher"
-- keep each line short and practical: action + cue only
-- never copy ingredient names, article numbers, temperatures, times, weights or quantities from outside the context
-- do not add explanations, introductions or closing text
-
-Return JSON: {"english":"...","german":"...","status":"needs_review"}`;
+Station names EN→DE: OVEN→OFEN, HAND MIX→HANDMISCHUNG, HORIZONTAL MIXER→HORIZONTALMISCHER, PLANETARY MIXER→PLANETENMISCHER, PATTY MAKER→PATTY-PRESSE, DRAIN→ABTROPFEN, BLAST CHILLER→SCHNELLKÜHLER, VEGGIE DEBOX→GEMÜSE-DEBOX, PROTEIN DEBOX→PROTEINDEBOX, IMMERSION BLENDER→STABMIXER`;
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
@@ -196,8 +168,8 @@ async function generateGeminiInstruction(context) {
           },
           required: ["english", "german", "status"],
         },
-        maxOutputTokens: 256,
-        temperature: 0.05,
+        maxOutputTokens: 400,
+        temperature: 0.1,
         thinkingConfig: { thinkingBudget: 0 },
       },
     });
@@ -216,6 +188,35 @@ async function generateGeminiInstruction(context) {
 
 async function generateGeminiInstructionBatch(items) {
   return runInstructionBatch(items, (context) => generateGeminiInstruction(context), GEMINI_CONCURRENCY, GEMINI_DELAY_MS);
+}
+
+async function generateClaudeInstruction(context) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY fehlt im lokalen Server");
+  const model = process.env.CLAUDE_MODEL || "claude-opus-5";
+  const client = new Anthropic({ apiKey, maxRetries: 3 });
+  const response = await client.messages.create({
+    model,
+    max_tokens: 256,
+    thinking: { type: "disabled" },
+    output_config: { effort: "low" },
+    system: GEMINI_INSTRUCTION_SYSTEM_PROMPT,
+    messages: [{ role: "user", content: `WO context:\n${context}` }],
+  });
+  const text = response.content.find((b) => b.type === "text")?.text ?? "";
+  if (!text) throw new Error("Claude lieferte keine Instructions (leere Antwort)");
+  const instruction = extractInstructionJson(text, "Claude");
+  return {
+    english: instruction.english,
+    german: instruction.german,
+    status: instruction.status === "generated" ? "generated" : "needs_review",
+    generatedAt: new Date().toISOString(),
+    model,
+  };
+}
+
+async function generateClaudeInstructionBatch(items) {
+  return runInstructionBatch(items, (context) => generateClaudeInstruction(context), CLAUDE_CONCURRENCY, CLAUDE_DELAY_MS);
 }
 
 async function generateGeminiPlanningChat(context, history, message) {
@@ -407,6 +408,20 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/api/local-db/gemini-instructions-batch" && req.method === "POST") {
     readJsonBody(req)
       .then((body) => generateGeminiInstructionBatch(Array.isArray(body.items) ? body.items : []))
+      .then((results) => sendJson(res, 200, { results }))
+      .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
+    return;
+  }
+  if (url.pathname === "/api/local-db/claude-instruction" && req.method === "POST") {
+    readJsonBody(req)
+      .then((body) => generateClaudeInstruction(body.context))
+      .then((instruction) => sendJson(res, 200, { instruction }))
+      .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
+    return;
+  }
+  if (url.pathname === "/api/local-db/claude-instructions-batch" && req.method === "POST") {
+    readJsonBody(req)
+      .then((body) => generateClaudeInstructionBatch(Array.isArray(body.items) ? body.items : []))
       .then((results) => sendJson(res, 200, { results }))
       .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
     return;

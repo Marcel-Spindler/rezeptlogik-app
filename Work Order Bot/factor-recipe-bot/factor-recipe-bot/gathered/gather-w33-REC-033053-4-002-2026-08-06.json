@@ -1,0 +1,401 @@
+{
+ "rec": {
+  "name": "FV4091A - [DE] - Honey Mustard Pork Tenderloin",
+  "skuCode": "REC-033053-4-002",
+  "totalPortions": 761,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)",
+    "Mustard / Senf",
+    "Eggs / Eier"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Mashed Potatoes",
+   "id": "afc0e9bf-ea17-4456-bd2e-c21f3236cb24",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 52.72,
+   "portionA": 130,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 98930,
+   "ings": [
+    {
+     "name": "Steamed Potato Batch",
+     "g": 92864.44,
+     "manuf": true,
+     "id": "8c68a3bb-40b7-495c-987e-660d447417eb",
+     "children": [
+      {
+       "name": "FA-DE Potatoes, Diced 10mm /Kartoffeln, gewürfelt, 10 mm",
+       "g": 94759.4,
+       "manuf": false,
+       "id": "059e585f-7727-4d5d-af46-08f8e7e01e75",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Milk, Whole /Milch, voll",
+     "g": 6666.99,
+     "manuf": false,
+     "id": "37c33673-04b7-4614-a01f-4f3731647e42",
+     "children": []
+    },
+    {
+     "name": "FA-DE Butter, Unsalted /Butter, ungesalzen",
+     "g": 3877.35,
+     "manuf": false,
+     "id": "31f0cdc7-65bd-4602-9a4d-a535488e389c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Sour Cream /Sauerrahm",
+     "g": 928.71,
+     "manuf": false,
+     "id": "355ba8ec-49f8-42c5-9b7d-143e3ecc640b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 764.21,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, White Pepper /Gewürz, weißer Pfeffer",
+     "g": 116.08,
+     "manuf": false,
+     "id": "247c8269-2161-4887-9c87-a34173626a37",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 116.08,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+     "g": 116.08,
+     "manuf": false,
+     "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Garlic Chive Pork Tenderloin Batch",
+   "id": "3158a39a-4994-4e01-a3d0-970bca9697fd",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "MARINADE / GRILL / OVEN / SLICER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 180.34,
+   "portionA": 130,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 98930,
+   "ings": [
+    {
+     "name": "Pork Tenderloin - BRINED",
+     "g": 174190.57,
+     "manuf": true,
+     "id": "c4f66e45-1986-49e4-b3d6-f1c8a6559742",
+     "children": [
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1540.05,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 174190.57,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Pork, Tenderloin /Schweinefleisch, Filet",
+       "g": 174190.57,
+       "manuf": false,
+       "id": "dd06df1e-e649-436d-97c3-230220994313",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Garlic Chive Marinade",
+     "g": 6147.9,
+     "manuf": true,
+     "id": "4606bd25-e46d-440b-abf5-165479ed22a7",
+     "children": [
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 5474.61,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+       "g": 502.21,
+       "manuf": false,
+       "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 187.64,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Green Onion Granulated /Gewürz, grüne Zwiebel granuliert",
+       "g": 154.53,
+       "manuf": false,
+       "id": "15a41003-4b62-42f1-b01a-6932f243c2f1",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+       "g": 77.26,
+       "manuf": false,
+       "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 77.26,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Honey Mustard Sauce - 10% less Mayo",
+   "id": "7e4bd9e1-dc6f-4212-980d-a2688c01ad35",
+   "wo": "33-114",
+   "cook": [],
+   "paths": [
+    "IMMERSION BLENDER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 18.34,
+   "portionA": 20,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Mustard / Senf",
+     "Eggs / Eier"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 15220,
+   "ings": [
+    {
+     "name": "FA-DE Mustard, Whole Grain /Senf, Vollkorn",
+     "g": 7934.19,
+     "manuf": false,
+     "id": "8bed5b00-0d01-46be-a931-885f5213a96c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Honey /Honig – Masse",
+     "g": 4371.39,
+     "manuf": false,
+     "id": "a9667386-697a-4630-919e-869179cfa61f",
+     "children": []
+    },
+    {
+     "name": "FA-DE Mayo, Avocado (Egg) /Mayo, Avocado (Ei)",
+     "g": 5407.28,
+     "manuf": false,
+     "id": "a5cb8931-92ee-4f7d-8c9f-a2cf26c77916",
+     "children": []
+    },
+    {
+     "name": "FA-DE Vinegar, Apple Cider /Essig, Apfelwein",
+     "g": 624.34,
+     "manuf": false,
+     "id": "84c4e710-52ec-4d40-8a9b-4b5dd0ebe3bb",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Green beans - S&P Roasted Green Beans, Whole",
+   "id": "fe821b33-a8b3-40f9-b160-be80a56fd627",
+   "wo": "33-112",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 44.27,
+   "portionA": 95,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 72295,
+   "ings": [
+    {
+     "name": "FA-DE Green Beans, Fresh and Trimmed/Grüne Bohnen, frisch und geschnitten",
+     "g": 78795.64,
+     "manuf": false,
+     "id": "39a7de3b-fd2c-4e29-ad2e-acdbd4939423",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 8376.76,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 167.44,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 80.96,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+     "g": 1116.93,
+     "manuf": false,
+     "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Onions - Caramelized Onions",
+   "id": "269fe0c8-14c9-49a3-9a23-99f0e45cd792",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 40.29,
+   "portionA": 30,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 22830,
+   "ings": [
+    {
+     "name": "FA-DE Thyme, IQF /Thymian, IQF",
+     "g": 112.74,
+     "manuf": false,
+     "id": "418023d7-7677-4c49-b04c-4b282c840e2d",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 1026.75,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 112.74,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 112.74,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Onion, Spanish, Sliced 5mm /Zwiebel, spanisch, in Scheiben geschnitten, 5 mm",
+     "g": 38923.74,
+     "manuf": false,
+     "id": "43f2a12d-2caa-4bc2-9ae4-4dcd08beba23",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "afc0e9bf-ea17-4456-bd2e-c21f3236cb24": {
+   "en": "A. MIDDLE KITCHEN\n\n1. Ensure all equipment is available at stand mixer.\n\n2. Ensure ingredients are measured out for 75kg stand mixer batch.\n\n3. Please refer to the SOP for Making Mashed Potatoes. \n\n****DO NOT OVER PROCESS***\n\n4. Transfer to sheet trays, 2 scoops per tray\n\n5. Transfer to QA Associate at Blast Chiller",
+   "de": "A. MITTLERE KÜCHE\n\n1. Stellen Sie sicher, dass alle Geräte am Standmixer verfügbar sind.\n\n2. Stellen Sie sicher, dass die Zutaten für eine 75-kg-Standmixer-Charge abgemessen wurden.\n\n3. Bitte beachten Sie die SOP für die Zubereitung von Kartoffelpüree. \n\n****NICHT ZU VIEL VERARBEITEN***\n\n4. Auf Blechschalen umfüllen, 2 Messlöffel pro Schale\n\n5. Transfer zum QA-Mitarbeiter bei Blast Chiller"
+  },
+  "8c68a3bb-40b7-495c-987e-660d447417eb": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n\n2. Place potatoes in perforated GN 1/1 pans, 3 kg per pan\n\n3. Transfer to oven section.\n\nB. OVEN\n\n1. Steam on \"Steamed Diced Potatoes\" setting until tender\nAppearance: Pale, creamy-white cubes with soft, rounded edges and a moist, fork-tender interior\n\n2. FSQA CCP1 Check\n\n3. Use as directed in the recipe",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n\n2. Kartoffeln in perforierte GN 1/1-Pfannen legen, 3 kg pro Pfanne\n\n3. In den Ofenbereich überführen.\n\nB. OFEN\n\n1. Auf der Einstellung „Gedünstete, gewürfelte Kartoffeln“ dünsten, bis sie weich sind\nAussehen: Blasse, cremeweiße Würfel mit weichen, abgerundeten Kanten und einem feuchten, gabelzarten Inneren\n\n2. FQA CCP1-Überprüfung\n\n3. Wie im Rezept angegeben verwenden"
+  },
+  "3158a39a-4994-4e01-a3d0-970bca9697fd": {
+   "en": "A. PROTEIN DEBOX\n\n1. In Wanne, toss Pork tenderloin with Marinade until fully coated and evenly distributed.\n\n2. Marinated for 2-4 Hours\n\n3. Transfer pork to Grill Team.\n\nB. GRILL\n\n1. Grill mark pork tenderloin on two sides until grill mark is medium to dark golden brown but pork is still raw.\n\n2. Transfer pork to sheet trays\n\n3. Place sheet trays on oven racks; deliver racks to Oven Team.\n\nC. OVEN\n\n5. Roast per \"Pork Tenderloin\" Oven Setting:\n\n6. FSQA Check for internal temperature\n\n7. Transfer speed rack to pre-blast associates\n\n8. Slice in production \n",
+   "de": "A. PROTEINDEBOX\n\n1. In der Wanne das Schweinefilet mit der Marinade schwenken, bis es vollständig bedeckt und gleichmäßig verteilt ist.\n\n2. 2-4 Stunden mariniert\n\n3. Übertragen Sie das Schweinefleisch zum Grillteam.\n\nB. GRILLEN\n\n1. Schweinefilet auf zwei Seiten grillen, bis die Grillmarkierung mittel- bis dunkelgoldbraun ist, das Schweinefleisch jedoch noch roh ist.\n\n2. Übertragen Sie das Schweinefleisch auf Blechschalen\n\n3. Stellen Sie die Bleche auf die Ofenroste; liefern Sie die Roste an das Ofenteam.\n\nC. OFEN\n\n5. Braten nach Ofeneinstellung „Schweinefilet“:\n\n6. FSQA Überprüfen Sie die Innentemperatur\n\n7. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast\n\n8. Slice in der Produktion \n"
+  },
+  "c4f66e45-1986-49e4-b3d6-f1c8a6559742": {
+   "en": "A. DEBOX\n1. In a Cambro, dissolve salt in HOT water; transfer to chalupa (water can be hot from the tap)\n\n2. Add the remaining COLD water volume to the chalupa, ensuring water is cold. Brine temp should be below 3 degrees C\n\n3. Add Pork Tenderloin\n\n4. Allow the pork tenderloin brine to sit for a minimum of 4 hours. Hold up to 6 hours.\n\n5. Drain",
+   "de": "A. DEBOX\n1. In einem Cambro Salz in HEISSEM Wasser auflösen; auf Chalupa geben (Wasser kann heiß aus dem Wasserhahn sein)\n\n2. Das restliche KALTE Wasservolumen in die Chalupa geben und sicherstellen, dass das Wasser kalt ist. Die Soletemperatur sollte unter 3 Grad C liegen\n\n3. Schweinefilet hinzufügen\n\n4. Lassen Sie das Schweinefilet mindestens 4 Stunden ruhen. Halten Sie bis zu 6 Stunden.\n\n5. Abtropfen lassen"
+  },
+  "4606bd25-e46d-440b-abf5-165479ed22a7": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using immersion blender, blend until smooth\n\n3. Transfer to protein Debox",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer glatt rühren\n\n3. Transfer zur Protein-Debox"
+  },
+  "7e4bd9e1-dc6f-4212-980d-a2688c01ad35": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using immersion blender, blend until smooth\n\n3. Cover and transfer to staging room.",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer glatt rühren\n\n3. Cover und Transfer zum Inszenierungsraum."
+  },
+  "fe821b33-a8b3-40f9-b160-be80a56fd627": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting X: Roasted Green Beans\nShould be easily pierced with a fork and also have roasted charred brown edges\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n\"",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Braten pro Ofen, Einstellung X: Geröstete grüne Bohnen\nSollte leicht mit einer Gabel durchbohrt werden können und auch gebratene, verkohlte braune Ränder haben\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n“"
+  },
+  "269fe0c8-14c9-49a3-9a23-99f0e45cd792": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. In a braiser, heat oil, then saute onions until brown.\n\n2. DRAIN water to help with browning\n\n3. Add salt, pepper, and thyme, stir until well incorporated.\n\n4. FSQA CCP1 Check\n\n5. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Zutaten NICHT vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Öl in einem Schmortopf erhitzen, dann Zwiebeln anbraten, bis sie braun sind.\n\n2. Lassen Sie das Wasser ab, um die Bräunung zu erleichtern\n\n3. Salz, Pfeffer und Thymian hinzufügen und umrühren, bis alles gut eingearbeitet ist.\n\n4. FQA CCP1-Überprüfung\n\n5. Transfer an die Mitarbeiter von Pre-Blast"
+  }
+ }
+}

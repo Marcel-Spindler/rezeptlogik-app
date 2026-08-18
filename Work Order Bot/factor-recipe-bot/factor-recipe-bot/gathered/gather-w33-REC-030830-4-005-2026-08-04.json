@@ -1,0 +1,542 @@
+{
+ "rec": {
+  "name": "FV4096B Zaatar Rub Salmon & Jeweled Rice [DE]",
+  "skuCode": "REC-030830-4-005",
+  "totalPortions": 2570,
+  "alg": {
+   "c": [
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)",
+    "Tree nuts / Schalenfrüchte",
+    "Cashew nuts / Kaschunüsse",
+    "Sesame seeds / Sesamsamen",
+    "Fish / Fisch"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Jeweled Wild + Brown Jasmine Rice",
+   "id": "8e339b79-1c79-422b-bfba-ff7f870eaae5",
+   "wo": "33-97",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER"
+   ],
+   "batchCount": 4,
+   "batchQuantity": 86.11,
+   "portionA": 130,
+   "portionU": "grams",
+   "scoop": "",
+   "alg": {
+    "c": [
+     "Tree nuts / Schalenfrüchte",
+     "Cashew nuts / Kaschunüsse"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 334100,
+   "ings": [
+    {
+     "name": "Wild Rice COOKED with Tumeric",
+     "g": 133328.9,
+     "manuf": true,
+     "id": "4cfbee4c-19b4-48ab-9ae9-ca47eafcf265",
+     "children": [
+      {
+       "name": "FA-DE Rice, Long Grain and Wild Blend /Reis, Langkorn- und Wildreismischung",
+       "g": 40497.7,
+       "manuf": false,
+       "id": "c674caba-51d9-4bf3-bdc9-38ec1fa40302",
+       "children": []
+      },
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 89995.74,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 444.43,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Turmeric /Gewürz, Kurkuma",
+       "g": 375.86,
+       "manuf": false,
+       "id": "6b872e1c-edc7-412f-93ed-5a99abb145cc",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Brown Jasmine Rice COOKED with Turmeric",
+     "g": 133328.9,
+     "manuf": true,
+     "id": "75447caa-c68f-4381-864a-407d1cd2f674",
+     "children": [
+      {
+       "name": "FA-DE Rice, Jasmine, Brown/Reis, Jasmin, braun",
+       "g": 41284.06,
+       "manuf": false,
+       "id": "88dbb189-969c-4ff0-830f-1bdff408a758",
+       "children": []
+      },
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 91743.23,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 453.06,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Turmeric /Gewürz, Kurkuma",
+       "g": 383.16,
+       "manuf": false,
+       "id": "6b872e1c-edc7-412f-93ed-5a99abb145cc",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Jeweled Rice Inclusions",
+     "g": 77775.19,
+     "manuf": true,
+     "id": "2f21a31a-3585-42c0-a39e-55f7bd920ae7",
+     "children": [
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 4291.59,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Capers, Preserved/Kapern, konserviert",
+       "g": 3001.48,
+       "manuf": false,
+       "id": "b55fa0fe-55b3-4d22-830e-f7b21e76c0d4",
+       "children": []
+      },
+      {
+       "name": "FA-DE Dates diced 5-7mm /gehackte Datteln 5-7mm",
+       "g": 10728.97,
+       "manuf": false,
+       "id": "47abc151-3380-4cc8-accd-fca9e6507db5",
+       "children": []
+      },
+      {
+       "name": "FA-DE Stock, Chicken, Reduced/Brühe, Huhn, Reduziert",
+       "g": 6437.38,
+       "manuf": false,
+       "id": "6b7da73a-6323-4b9b-a041-9177b6741fcf",
+       "children": []
+      },
+      {
+       "name": "FA-DE Parsley, Chopped /Petersilie, gehackt",
+       "g": 4291.59,
+       "manuf": false,
+       "id": "1a2d8c37-3b80-46fb-bc06-8f16ef05546f",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+       "g": 1290.11,
+       "manuf": false,
+       "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+       "children": []
+      },
+      {
+       "name": "FA-DE Onion, Green, Sliced 5mm /Zwiebel, grün, in Scheiben geschnitten, 5 mm",
+       "g": 2145.79,
+       "manuf": false,
+       "id": "33cd87fe-84d1-4655-8a67-a22db613e21a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Nut, Cashew /Nuss, Cashew",
+       "g": 10728.97,
+       "manuf": false,
+       "id": "bb211e2f-2428-48e3-9a80-7562d1bca6c2",
+       "children": []
+      },
+      {
+       "name": "FA-DE Cranberries, IQF/Preiselbeere, IQF",
+       "g": 15797.26,
+       "manuf": false,
+       "id": "48056642-ce27-4c56-93f7-917e8a7e350a",
+       "children": []
+      },
+      {
+       "name": "FA-DE Carrots, Julienne 2-3mm /Karotten, Julienne 2-3 mm",
+       "g": 26328.77,
+       "manuf": false,
+       "id": "b682c008-c733-4166-9a4f-a03a19077925",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel",
+       "g": 2632.88,
+       "manuf": false,
+       "id": "b334a9ad-c05f-43e4-b8f9-f7f6780a8b7b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Cardamom Ground /Gewürz, Kardamom, gemahlen",
+       "g": 2632.88,
+       "manuf": false,
+       "id": "6b58c3e9-5035-4e26-86ad-d6b8bbf359c9",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Smoked Paprika /Gewürz, geräucherter Paprika",
+       "g": 2632.88,
+       "manuf": false,
+       "id": "8c068775-50a6-4d71-af4b-56e0716ce913",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Minced Garlic, Toasted, Dry /Gewürz, gehackter Knoblauch, geröstet, trocken",
+       "g": 855.69,
+       "manuf": false,
+       "id": "7133bc69-1d05-424e-a969-5a4f7da96794",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 1053.15,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Fire roasted Paprika with Cumin and Cilantro",
+   "id": "238a5057-9be0-4a5d-b6be-9041c8dd5851",
+   "wo": "33-96",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 90.81,
+   "portionA": 50,
+   "portionU": "grams",
+   "scoop": "black",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 128500,
+   "ings": [
+    {
+     "name": "FA-DE Bell Peppers, Red, Sliced 10mm /Paprika, rot, in Scheiben geschnitten, 10 mm",
+     "g": 168229.83,
+     "manuf": false,
+     "id": "bfdc9088-0ca8-4aa2-be4a-2e7487a6d883",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Cumin Ground /Gewürz, gemahlener Kreuzkümmel",
+     "g": 7161.92,
+     "manuf": false,
+     "id": "b334a9ad-c05f-43e4-b8f9-f7f6780a8b7b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 4523.32,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1696.25,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Zaatar Salmon",
+   "id": "4b5986e5-5807-4a9a-ad93-10ca64cb328c",
+   "wo": "33-99",
+   "cook": [],
+   "paths": [
+    "THAW / HAND MARINADE / OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 352.09,
+   "portionA": 1,
+   "portionU": "each",
+   "scoop": "Hand Portioned",
+   "alg": {
+    "c": [
+     "Sesame seeds / Sesamsamen",
+     "Fish / Fisch"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 2570,
+   "ings": [
+    {
+     "name": "Zaatar Rub for Salmon",
+     "g": 17990,
+     "manuf": true,
+     "id": "d7c9572b-b480-4060-abd0-07a0d38b22cf",
+     "children": [
+      {
+       "name": "FA-DE Zest IQF, Lemon/Gewürz, Zitronenschale IQF",
+       "g": 1129.08,
+       "manuf": false,
+       "id": "77de65db-8ffc-462e-b41e-5198105d39fd",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sesame Seed, Roasted /Gewürz, Sesamsamen, geröstet",
+       "g": 10274.62,
+       "manuf": false,
+       "id": "7ffba5be-6db6-4d10-ae9b-cfa96c9ed5ab",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sesame Seeds, Black /Gewürz, Sesamsamen, Schwarz",
+       "g": 4789.18,
+       "manuf": false,
+       "id": "ab487c4e-83c4-4c88-8372-63594bbabf66",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Thyme Dry /Gewürz, Thymian trocken",
+       "g": 846.81,
+       "manuf": false,
+       "id": "153913f4-09c5-4061-842f-dc16e0c6de5e",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Oregano Dry /Gewürz, Oregano trocken",
+       "g": 658.63,
+       "manuf": false,
+       "id": "563c7d2d-022f-4eab-adf5-b8c7a0a3f778",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 376.36,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken",
+       "g": 282.27,
+       "manuf": false,
+       "id": "5d0ad372-49db-472d-9bf3-3f505e3caaa8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Salmon, Skinless, Boneless, Filet/Lachs, ohne Haut, ohne Knochen, Filet - IQF",
+     "g": 334100,
+     "manuf": false,
+     "id": "f8b7838f-b9f2-48cb-b76c-c225004d0a7c",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Apicius glazed Carrots",
+   "id": "cce5916e-ac98-4448-b7df-d88674e798ee",
+   "wo": "33-95",
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 4,
+   "batchQuantity": 95.22,
+   "portionA": 80,
+   "portionU": "grams",
+   "scoop": "grey",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 205600,
+   "ings": [
+    {
+     "name": "Apicius Glaze",
+     "g": 66588.94,
+     "manuf": true,
+     "id": "30d2dbe7-569b-4aef-a413-59df8abaff3c",
+     "children": [
+      {
+       "name": "FA-DE Honey /Honig – Masse",
+       "g": 51534.56,
+       "manuf": false,
+       "id": "a9667386-697a-4630-919e-869179cfa61f",
+       "children": []
+      },
+      {
+       "name": "FA-DE Mint, Fresh/Minze, frisch",
+       "g": 1244.65,
+       "manuf": false,
+       "id": "46834875-10bc-4c52-93a8-7862d50893c4",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Gochugaru Chili Pepper Flakes /Gewürz, Gochugaru-Chili-Pfefferflocken",
+       "g": 2518.94,
+       "manuf": false,
+       "id": "5d0ad372-49db-472d-9bf3-3f505e3caaa8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Juice, Lemon /Saft, Zitrone",
+       "g": 14817.3,
+       "manuf": false,
+       "id": "0b6b5f66-8187-4cce-b414-bccc16699cd5",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 711.23,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Carrots, Coin Cut 5mm /Karotten, Münzschnitt 5 mm",
+     "g": 314299.78,
+     "manuf": false,
+     "id": "32e76fc0-fdfa-48e2-8b14-c3a1fd2e013b",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Whipped Feta",
+   "id": "896ef0f4-04a0-4412-98cb-57642d9d31d5",
+   "wo": "33-98",
+   "cook": [],
+   "paths": [
+    "PLANETARY MIXER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 60.9,
+   "portionA": 45,
+   "portionU": "grams",
+   "scoop": "Cup",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 115650,
+   "ings": [
+    {
+     "name": "FA-DE Cheese, Feta /Käse, Feta",
+     "g": 33933.99,
+     "manuf": false,
+     "id": "2af076f7-1552-46f2-bf94-6f1f5adcbb6e",
+     "children": []
+    },
+    {
+     "name": "FA-DE Yogurt, Greek, Plain /Joghurt, Griechisch, Natur",
+     "g": 82692.75,
+     "manuf": false,
+     "id": "821cbdf4-6265-453f-b4a8-a408b1d55dd2",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Cardamom Ground /Gewürz, Kardamom, gemahlen",
+     "g": 29.96,
+     "manuf": false,
+     "id": "6b58c3e9-5035-4e26-86ad-d6b8bbf359c9",
+     "children": []
+    },
+    {
+     "name": "FA-DE Juice, Lemon /Saft, Zitrone",
+     "g": 4494.17,
+     "manuf": false,
+     "id": "0b6b5f66-8187-4cce-b414-bccc16699cd5",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 407.47,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Cracked /Gewürz, schwarzer Pfeffer, gebrochen",
+     "g": 239.69,
+     "manuf": false,
+     "id": "e8291112-9305-4120-b2f5-a7fd918b2292",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "8e339b79-1c79-422b-bfba-ff7f870eaae5": {
+   "en": "A.MIDDLE KITCHEN\n\n*PRE-BLAST MIX*\n\n1. In Wannes mix together cooked rice and cooked inclusions until evenly distributed.\n\n2. combine rice with inclusions at the following ratio:\n\n600g cooked wild rice\n600g cooked brown jasmine rice\n350 gr inclusions\n\n3. Transfer to sheet trays. Transfer Sheet trays to Speed Rack.\n\n4. Deliver Speed Rack to QA Associate at Blast Chiller.\n\n",
+   "de": "EINE.MITTLERE KÜCHE\n\n*MISCHUNG VOR DER STRAHLUNG*\n\n1. In Wannes den gekochten Reis und die gekochten Einschlüsse vermischen, bis alles gleichmäßig verteilt ist.\n\n2. Kombinieren Sie Reis mit Einschlüssen im folgenden Verhältnis:\n\n600 g gekochter Wildreis\n600 g gekochter brauner Jasminreis\n350 gr. Einschlüsse\n\n3. Auf Blechfächer übertragen. Übertragen Sie die Blattfächer in das Speed Rack.\n\n4. Liefern Sie das Speed Rack an den QA-Mitarbeiter bei Blast Chiller.\n\n"
+  },
+  "4cfbee4c-19b4-48ab-9ae9-ca47eafcf265": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambros, combine Liquid and seasonings.\n\n2. Divide batches into hotel pans, 3.75kg per GN 1/1 65mm pan:\nRice - 1.5 kg per hotel pan\nLiquid - 2.25 kg per hotel pan\n\n3. Cover hotel pan with lids and transfer to oven racks\n\n4. Transfer to Oven station\n\nB. OVEN\n\n1. Steam per Oven Setting: Wild Rice\n- Rice should be tender and all liquid absorbed\n\n2. Fluff rice.\n\n3. FSQA CCP1 Check.\n\n4. Transfer oven rack to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambros Flüssigkeit und Gewürze.\n\n2. Teilen Sie die Chargen in Hotelpfannen auf, 3,75 kg pro GN 1/1 65-mm-Pfanne:\nReis: 1,5 kg pro Hotelpfanne\nFlüssigkeit - 2,25 kg pro Hotelpfanne\n\n3. Die Hotelpfanne mit Deckeln abdecken und auf die Ofenroste stellen\n\n4. Transfer zur Oven-Station\n\nB. OFEN\n\n1. Dampf pro Ofeneinstellung: Wildreis\n- Der Reis sollte zart sein und die gesamte Flüssigkeit aufgesogen sein\n\n2. Fluffiger Reis.\n\n3. FQA CCP1-Überprüfung.\n\n4. Übergeben Sie das Ofengestell an die Mitarbeiter vor dem Blast\n"
+  },
+  "75447caa-c68f-4381-864a-407d1cd2f674": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambros, combine Liquid and seasonings.\n\n2. Divide batches into hotel pans, 3.75kg per GN 1/1 65mm pan:\nRice - 1.5 kg per hotel pan\nLiquid - 2.25 kg per hotel pan\n\n3. Cover hotel pan with lids and transfer to oven racks\n\n4. Transfer to Oven station\n\nB. OVEN\n\n1. Steam per Oven Setting: Steamed Brown Rice\n- Rice should be tender and all liquid absorbed\n\n2. Fluff rice.\n\n3. FSQA CCP1 Check.\n\n4. Transfer oven rack to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambros Flüssigkeit und Gewürze.\n\n2. Teilen Sie die Chargen in Hotelpfannen auf, 3,75 kg pro GN 1/1 65-mm-Pfanne:\nReis: 1,5 kg pro Hotelpfanne\nFlüssigkeit - 2,25 kg pro Hotelpfanne\n\n3. Die Hotelpfanne mit Deckeln abdecken und auf die Ofenroste stellen\n\n4. Transfer zur Oven-Station\n\nB. OFEN\n\n1. Dampf pro Ofeneinstellung: Gedünsteter brauner Reis\n- Der Reis sollte zart sein und die gesamte Flüssigkeit aufgesogen sein\n\n2. Fluffiger Reis.\n\n3. FQA CCP1-Überprüfung.\n\n4. Übergeben Sie das Ofengestell an die Mitarbeiter vor dem Blast\n"
+  },
+  "2f21a31a-3585-42c0-a39e-55f7bd920ae7": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. Do not combine ingredients.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [X total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Heat the braiser and toast cashews over medium heat until slightly browned.\n\n4. Add all dry spices and cook until fragrant.\n\n5. Add dates, cranberries ,capers and garlic. Cook until soft.\n\n6.. Add Stock and herbs. Stir until combined. \n\n 7.. FSQA CCP1 check\n\n8. Transfer to sheet trays; (2 scoops per tray). Place trays on speed rack\n\n9. Transfer speed rack to pre-blast associates\"",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Zutaten nicht kombinieren.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [X Gesamtkapazität in kg pro Bratpfanne]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Den Schmorbraten erhitzen und die Cashewkerne bei mittlerer Hitze rösten, bis sie leicht gebräunt sind.\n\n4. Fügen Sie alle trockenen Gewürze hinzu und kochen Sie, bis sie duften.\n\n5. Datteln, Preiselbeeren, Kapern und Knoblauch dazugeben. Kochen bis es weich ist.\n\n6.. Brühe und Kräuter hinzufügen. Umrühren, bis alles gut vermischt ist. \n\n 7.. FQA CP1-Prüfung\n\n8. Auf Blechschalen verteilen; (2 Messlöffel pro Tablett). Stellen Sie die Tabletts auf das Speed Rack\n\n9. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast“"
+  },
+  "238a5057-9be0-4a5d-b6be-9041c8dd5851": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting : Roasted Diced Bell Pepper\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Geröstete gewürfelte Paprika\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "4b5986e5-5807-4a9a-ad93-10ca64cb328c": {
+   "en": "A. PROTEIN DEBOX\n\n1. In wanne, toss Salmon with olive oil until fully coated and evenly distributed.\n\n2. In wanne, toss Salmon with Zaatar Rub until fully coated and evenly distributed\n\n3. Arrange the salmon in GN 2/1  sheet tray, 35 pieces per tray, load the trays onto the oven trolley\n\n4. Transfer salmon to the oven.\n\nB. OVEN\n1. Pre-heat Oven on Salmon program\n\n2. Roast per \"\"Salmon\"\" Oven Setting:\n\n3. FSQA CCP1 Check\n\n4. Transfer to pre-blast associates\n",
+   "de": "A. PROTEINDEBOX\n\n1. In einer Pfanne den Lachs mit Olivenöl vermischen, bis er vollständig bedeckt und gleichmäßig verteilt ist.\n\n2. In einer Pfanne den Lachs mit Zaatar Rub vermischen, bis er vollständig bedeckt und gleichmäßig verteilt ist\n\n3. Den Lachs in einem Blech GN 2/1 anrichten, 35 Stück pro Blech, die Bleche auf den Ofenwagen laden\n\n4. Lachs in den Ofen geben.\n\nB. OFEN\n1. Ofen im Lachs-Programm vorheizen\n\n2. Braten nach Ofeneinstellung „Lachs“:\n\n3. FQA CCP1-Überprüfung\n\n4. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "d7c9572b-b480-4060-abd0-07a0d38b22cf": {
+   "en": "A. SPICE ROOM\n\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros.\n\n2. Combine spices in Cambros using paddles.\n\n3. Mix until thoroughly combined.\n\n4. Use as directed in the recipe.\n\n5. Store leftover spices in covered Cambros",
+   "de": "A. GEWÜRZRAUM\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten in Cambros umfüllen.\n\n2. Kombinieren Sie die Gewürze in Cambros mit Paddeln.\n\n3. Mischen, bis alles gut vermischt ist.\n\n4. Wie im Rezept angegeben verwenden.\n\n5. Lagern Sie übrig gebliebene Gewürze in abgedeckten Cambros"
+  },
+  "cce5916e-ac98-4448-b7df-d88674e798ee": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting: Roasted Carrot Coins 5mm\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Geröstete Karottenmünzen 5 mm\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "30d2dbe7-569b-4aef-a413-59df8abaff3c": {
+   "en": "A.  VEGGIE DEBOX\n1. Remove all ingredients from outer packaging; transfer ingredients to Cambros individually. DO NOT mix ingredients.\n\n2. Deliver ingredients to the braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [105 total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Heat Honey until soft and liquid \n\n4. Add lemon juice, chili and salt. Bring to a simmer, cook for 20 minutes.\n\n5. Add Mint and let it simmer at low heat for another 15 minutes.\n\n6. With an immersion blender, break down leaves.\n\n7. FSQA CCP1 Check\n\n8. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in Cambros umfüllen. Zutaten NICHT vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 105 kg pro Schmorbraten]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Honig erhitzen, bis er weich und flüssig ist \n\n4. Zitronensaft, Chili und Salz hinzufügen. Zum Köcheln bringen und 20 Minuten kochen lassen.\n\n5. Minze dazugeben und weitere 15 Minuten bei niedriger Hitze köcheln lassen.\n\n6. Mit einem Stabmixer die Blätter zerkleinern.\n\n7. FQA CCP1-Überprüfung\n\n8. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "896ef0f4-04a0-4412-98cb-57642d9d31d5": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix ingredients together.\n\n2. Deliver required volumes to Middle Kitchen\n\nB. MIDDLE KITCHEN\n\n1. Weigh and divide ingredients into capacity per stand mixer [X kg capacity per batch]\n\n2. Add crumbled feta and greek yogurt to stand mixer, whip with paddle attachment until soft and smooth\n\n4. Combine salt and spices  separately in cambros add to mixer\n\n5. Slowly add lemon juice  to mixer with whipped feta, mix until fully incorporated\n\n6. FSQA CCP1 Check   \n\n7. Transfer speed rack to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefert die benötigten Mengen an Middle Kitchen\n\nB. MITTLERE KÜCHE\n\n1. Wiegen Sie die Zutaten und teilen Sie sie nach Fassungsvermögen pro Standmixer auf [X kg Fassungsvermögen pro Charge]\n\n2. Zerbröckelten Feta und griechischen Joghurt in den Standmixer geben und mit dem Rühraufsatz aufschlagen, bis alles weich und glatt ist\n\n4. Salz und Gewürze getrennt in Cambros vermischen und in den Mixer geben\n\n5. Zitronensaft mit geschlagenem Feta langsam in den Mixer geben und mischen, bis alles vollständig eingearbeitet ist\n\n6. Häufig gestellte Fragen (CCP1) überprüfen \n\n7. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast\n"
+  }
+ }
+}

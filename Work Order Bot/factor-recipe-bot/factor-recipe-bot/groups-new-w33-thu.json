@@ -1,0 +1,199 @@
+[
+ {
+  "day": "Tuesday",
+  "date": "2026-08-04",
+  "recCode": "REC-013455-4-002",
+  "recName": "FV4053A - Gochugaru Chicken [DE]",
+  "target": 1562,
+  "wos": [
+   "33-148",
+   "33-149",
+   "33-150",
+   "33-151",
+   "33-152"
+  ],
+  "subs": {
+   "Cauliflower - Chili-Garlic Cauliflower Florets": "33-148",
+   "Diced Chicken - Garlic & Herb Marinade": "33-149",
+   "FA-DE Cheese, Mozzarella, Shredded /Käse, Mozzarella, gerieben": "33-150",
+   "Roasted Green Onions": "33-151",
+   "Sauce - Creamy Gochugaru Sauce": "33-152"
+  }
+ },
+ {
+  "day": "Wednesday",
+  "date": "2026-08-05",
+  "recCode": "REC-013943-4-004",
+  "recName": "FV0257A - Greek style ground beef and feta [DE]",
+  "target": 1401,
+  "wos": [
+   "33-25",
+   "33-26",
+   "33-27",
+   "33-28",
+   "33-29",
+   "33-30",
+   "33-31",
+   "33-32"
+  ],
+  "subs": {
+   "Compound butter - Oregano-Tomato": "33-25",
+   "Ground beef - Red Wine & Garlic Beef Ragu": "33-26",
+   "Herbed feta": "33-27",
+   "Red peppers - Roasted diced ¼ red bell peppers": "33-28",
+   "Sauce - Yia Yia's Creamy Greek Sauce - sour cream": "33-29",
+   "Spinach - Garlic Spinach - Frzn Spinach - less garlic": "33-30",
+   "Tomatoes - Roasted cherry tomatoes": "33-31",
+   "Zucchini - Garlic Roasted Zucchini": "33-32"
+  }
+ },
+ {
+  "day": "Wednesday",
+  "date": "2026-08-05",
+  "recCode": "REC-014197-4-004",
+  "recName": "FV0281A - Baja Salmon [DE]",
+  "target": 3523,
+  "wos": [
+   "33-39",
+   "33-40",
+   "33-41",
+   "33-42",
+   "33-43"
+  ],
+  "subs": {
+   "Broccoli - S&P Broccoli FLORETS - less salt": "33-39",
+   "Compound butter - Chili-Garlic Butter - master batch": "33-40",
+   "Mexican Cauliflower Rice": "33-41",
+   "Salmon - BAJA Salmon - Batch": "33-42",
+   "Sauce - Cilantro Sour Cream": "33-43"
+  }
+ },
+ {
+  "day": "Wednesday",
+  "date": "2026-08-05",
+  "recCode": "REC-030756-4-002",
+  "recName": "FV0576A - Creamy Lemon Pepper Chicken [DE]",
+  "target": 1603,
+  "wos": [
+   "33-20",
+   "33-21",
+   "33-22",
+   "33-23",
+   "33-24"
+  ],
+  "subs": {
+   "Carrot & Pea Brown Rice Pilaf": "33-20",
+   "Chicken Breast Marinade #4 - NO GRILL": "33-21",
+   "Grated Parmesan Broccoli": "33-22",
+   "Lemon Herb Cream Cheese Sauce - Low Fat": "33-23",
+   "Rosemary Carrot Coins": "33-24"
+  }
+ },
+ {
+  "day": "Wednesday",
+  "date": "2026-08-05",
+  "recCode": "REC-013950-4-002",
+  "recName": "FV0713A - Cabbage in cheese sauce with minced beef [DE]",
+  "target": 618,
+  "wos": [
+   "33-125",
+   "33-126",
+   "33-127",
+   "33-128"
+  ],
+  "subs": {
+   "Cabbage - Cheesy Cabbage Casserole": "33-125",
+   "FA-DE Cheese, White Cheddar, Shredded /Käse, weißer Cheddar, gerieben": "33-126",
+   "Mixed veg - Garlic Chili Green Beans & Red Bell Peppers": "33-127",
+   "Tomato Ground Beef Mix": "33-128"
+  }
+ },
+ {
+  "day": "Wednesday",
+  "date": "2026-08-05",
+  "recCode": "REC-014186-4-002",
+  "recName": "FV0970A - Caramelized Onion & Emmental Fondue Chicken [DE]",
+  "target": 2830,
+  "wos": [
+   "33-63",
+   "33-64",
+   "33-65",
+   "33-66",
+   "33-67",
+   "33-68",
+   "33-69"
+  ],
+  "subs": {
+   "Chicken breast - Herb Grilled Chicken Breast": "33-63",
+   "Emmental Cheese Sauce - More Salt/Fat": "33-64",
+   "Garlic Herb Butter": "33-65",
+   "Keto French Onion Burger Onions - More Salt - no wine": "33-66",
+   "Roasted Green Onions": "33-67",
+   "S&P Roasted Green Beans 1": "33-68",
+   "Thyme Roasted Mushrooms (less pepper, more salt)": "33-69"
+  }
+ },
+ {
+  "day": "Wednesday",
+  "date": "2026-08-05",
+  "recCode": "REC-032214-4-005",
+  "recName": "FV1481B - [DE] - Thai Coconut Curry Barramundi",
+  "target": 1715,
+  "wos": [
+   "33-160",
+   "33-161",
+   "33-162",
+   "33-163",
+   "33-164"
+  ],
+  "subs": {
+   "Asian Brown Jasmine with GGS": "33-160",
+   "Asian Spiced Barramundi Batch": "33-161",
+   "Gochugaru - Lemon - Green Onion roasted Cashews": "33-162",
+   "Lemongrass Broccoli Florets": "33-163",
+   "Thai Yellow Curry Sauce": "33-164"
+  }
+ },
+ {
+  "day": "Thursday",
+  "date": "2026-08-06",
+  "recCode": "REC-014040-4-004",
+  "recName": "FV0565A - [DE] - Bacon & Onion Pork Tenderloin",
+  "target": 1384,
+  "wos": [
+   "33-90",
+   "33-91",
+   "33-92",
+   "33-93",
+   "33-94"
+  ],
+  "subs": {
+   "Bacon Onion Jam - No sweetener": "33-90",
+   "Garlic Chili Marinated Green Beans": "33-91",
+   "Mash - Swiss Cauliflower Mash - Rice": "33-92",
+   "Pork tenderloin - herb marinade": "33-93",
+   "Sauce - Roasted Mushroom Cream (thick sliced)": "33-94"
+  }
+ },
+ {
+  "day": "Thursday",
+  "date": "2026-08-06",
+  "recCode": "REC-033053-4-002",
+  "recName": "FV4091A - [DE] - Honey Mustard Pork Tenderloin",
+  "target": 761,
+  "wos": [
+   "33-110",
+   "33-111",
+   "33-112",
+   "33-113",
+   "33-114"
+  ],
+  "subs": {
+   "Garlic Chive Pork Tenderloin Batch": "33-110",
+   "Green beans - S&P Roasted Green Beans, Whole": "33-111",
+   "Honey Mustard Sauce - 10% less Mayo": "33-112",
+   "Mashed Potatoes": "33-113",
+   "Onions - Caramelized Onions": "33-114"
+  }
+ }
+]

@@ -1,0 +1,549 @@
+{
+ "rec": {
+  "name": "FV0576A - Creamy Lemon Pepper Chicken [DE]",
+  "skuCode": "REC-030756-4-002",
+  "totalPortions": 1603,
+  "alg": {
+   "c": [
+    "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+    "Celery / Sellerie",
+    "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+   ]
+  }
+ },
+ "subs": [
+  {
+   "name": "Carrot & Pea Brown Rice Pilaf",
+   "id": "6fce04f5-9885-4952-9064-57f54cd9313c",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "UNCATEGORIZED BOM"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 92.57,
+   "portionA": 110,
+   "portionU": "grams",
+   "scoop": "white",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite",
+     "Celery / Sellerie"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 176330,
+   "ings": [
+    {
+     "name": "Sauteed Carrots, Onions + Garlic",
+     "g": 138886.96,
+     "manuf": true,
+     "id": "2e8b9a0e-f24c-4cee-a946-0b6ccc32a494",
+     "children": [
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 8140.8,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Carrots, Diced 10mm /Karotten, gewürfelt, 10 mm",
+       "g": 82764.79,
+       "manuf": false,
+       "id": "14ccb173-fdaf-4bd5-9e9f-eaf2e2f0e598",
+       "children": []
+      },
+      {
+       "name": "FA-DE Onion, Spanish, Diced 5mm /Zwiebel, Spanisch, gewürfelt 5 mm",
+       "g": 66236.5,
+       "manuf": false,
+       "id": "f11b2445-91bf-437e-9ba2-1602b9c2d910",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 16404.94,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Cooked Brown Rice with Mirepoix",
+     "g": 30841.37,
+     "manuf": true,
+     "id": "348bf823-946e-4535-9974-f7b834e57ee1",
+     "children": [
+      {
+       "name": "FA-DE Water / Wasser",
+       "g": 17439.9,
+       "manuf": false,
+       "id": "6ab2847e-3ec3-40b8-bfd7-6750a764df3b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Rice, Basmati, Brown /Reis, Basmati, braun",
+       "g": 11622.16,
+       "manuf": false,
+       "id": "ea3effe2-f727-431a-9ad6-fbd96b4d52a7",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 315.69,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Stock Concentrate, Mirepoix /Stammkonzentrat, Mirepoix",
+       "g": 746.38,
+       "manuf": false,
+       "id": "f0ccd622-59fd-4adf-a8fa-62dd41fd9ee6",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+       "g": 36.08,
+       "manuf": false,
+       "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 77.84,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "Peas - Steamed Peas",
+     "g": 15420.69,
+     "manuf": true,
+     "id": "f60fa782-4de6-478f-8a81-c59e062d028d",
+     "children": [
+      {
+       "name": "FA-DE Green Peas, IQF/Grüne Erbsen, IQF",
+       "g": 16223.25,
+       "manuf": false,
+       "id": "15eb491b-299a-4f7b-9ac0-f84791523289",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 48.73,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 325.04,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Chicken Breast Marinade #4 - NO GRILL",
+   "id": "8abc91f4-017a-430e-bb51-322a31d009ae",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "UNCATEGORIZED BOM"
+   ],
+   "batchCount": 1,
+   "batchQuantity": 265.15,
+   "portionA": 1,
+   "portionU": "each",
+   "scoop": "Hand Portioned",
+   "alg": {
+    "c": [
+     "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 1603,
+   "ings": [
+    {
+     "name": "FA-DE Chicken, Breast, B/S - 160g/Hähnchen, Brust, B/S – 160 g",
+     "g": 256480,
+     "manuf": false,
+     "id": "a3b0cd08-fbed-4a94-9f46-e4a6bdf92982",
+     "children": []
+    },
+    {
+     "name": "Mod Marinade #4 - Garlic and Herb",
+     "g": 8672.23,
+     "manuf": true,
+     "id": "6238681f-9e91-463e-980b-99bad7db69db",
+     "children": [
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 4721.28,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      },
+      {
+       "name": "FA-DE Vinegar, Red Wine /Essig, Rotwein",
+       "g": 1588.71,
+       "manuf": false,
+       "id": "b903d922-a18d-46b3-ab11-5aabc57bb62b",
+       "children": []
+      },
+      {
+       "name": "FA-DE Garlic, IQF, Diced 4 mm /Knoblauch, IQF, gewürfelt 4 mm",
+       "g": 1588.71,
+       "manuf": false,
+       "id": "894b42a8-8c76-44eb-a81d-a6f2437caffa",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+       "g": 363.55,
+       "manuf": false,
+       "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Parsley Dried /Gewürze, getrocknete Petersilie",
+       "g": 227.42,
+       "manuf": false,
+       "id": "770b5b73-a50c-437d-8f36-f63463bbda29",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+       "g": 91.29,
+       "manuf": false,
+       "id": "d62df615-205d-476e-8c73-be80be34de4c",
+       "children": []
+      },
+      {
+       "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+       "g": 180.97,
+       "manuf": false,
+       "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+       "children": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Lemon Herb Cream Cheese Sauce - Low Fat",
+   "id": "ec925045-8e5e-4d12-bc3c-6df8b111ae64",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "SPICE PORTIONING / IMMERSION BLENDER / BRAISER / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 58.86,
+   "portionA": 65,
+   "portionU": "grams",
+   "scoop": "blue",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 104195,
+   "ings": [
+    {
+     "name": "Heavy Cream- Yielded",
+     "g": 48777.83,
+     "manuf": true,
+     "id": "18082c41-8ced-42eb-92d9-f5c4c2bc51a9",
+     "children": [
+      {
+       "name": "FA-DE Heavy Cream 20% /Sahne 20%",
+       "g": 53912.34,
+       "manuf": false,
+       "id": "5453d563-18b8-4183-87e7-08cea4674f03",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Milk, Semi-Skimmed /Milch, teilentrahmt",
+     "g": 5913.9,
+     "manuf": false,
+     "id": "667f6be8-548d-41cc-874c-704ce51779d8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Cream, 13% Fat (Milk) /Käse, Sahne, 13% Fett",
+     "g": 54660.19,
+     "manuf": false,
+     "id": "360cffe0-1558-4a42-84f2-8c8c3d7c4473",
+     "children": []
+    },
+    {
+     "name": "Roasted Garlic (use)",
+     "g": 3217.16,
+     "manuf": true,
+     "id": "aba8b6fb-cc27-44b4-9604-edefe4de30bc",
+     "children": [
+      {
+       "name": "FA-DE Garlic, Peeled, Whole Cloves [10kg] /Knoblauch, geschält, ganze Nelken [10kg]",
+       "g": 3546.23,
+       "manuf": false,
+       "id": "1dca4a8a-a8ef-451d-ae63-49f821edd742",
+       "children": []
+      },
+      {
+       "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+       "g": 2659.65,
+       "manuf": false,
+       "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 488.88,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+     "g": 315.41,
+     "manuf": false,
+     "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Onion Granulated /Gewürze, Zwiebeln granuliert",
+     "g": 315.41,
+     "manuf": false,
+     "id": "1512a237-9204-4bd6-aa2d-190c5db62e80",
+     "children": []
+    },
+    {
+     "name": "FA-DE Rosemary, IQF /Rosmarin, IQF",
+     "g": 252.33,
+     "manuf": false,
+     "id": "130ed64e-5bf9-4531-9dcf-ab7203932349",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Thyme Dry /Gewürz, Thymian trocken",
+     "g": 78.85,
+     "manuf": false,
+     "id": "153913f4-09c5-4061-842f-dc16e0c6de5e",
+     "children": []
+    },
+    {
+     "name": "FA-DE Juice, Lemon /Saft, Zitrone",
+     "g": 1356.25,
+     "manuf": false,
+     "id": "0b6b5f66-8187-4cce-b414-bccc16699cd5",
+     "children": []
+    },
+    {
+     "name": "FA-DE Zest IQF, Lemon/Gewürz, Zitronenschale IQF",
+     "g": 756.98,
+     "manuf": false,
+     "id": "77de65db-8ffc-462e-b41e-5198105d39fd",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 1577.04,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Rosemary Carrot Coins",
+   "id": "b4c62138-7be7-4749-bcde-6b41cb9540b0",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "OVEN / BLAST CHILLER"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 54.91,
+   "portionA": 50,
+   "portionU": "grams",
+   "scoop": "red",
+   "alg": {
+    "c": []
+   },
+   "rti": false,
+   "totalNeeded": 80150,
+   "ings": [
+    {
+     "name": "FA-DE Carrots, Coin Cut 5mm /Karotten, Münzschnitt 5 mm",
+     "g": 105626.25,
+     "manuf": false,
+     "id": "32e76fc0-fdfa-48e2-8b14-c3a1fd2e013b",
+     "children": []
+    },
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 2848.47,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Rosemary, IQF /Rosmarin, IQF",
+     "g": 486.34,
+     "manuf": false,
+     "id": "130ed64e-5bf9-4531-9dcf-ab7203932349",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 338.35,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 257.63,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 179.77,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Chives Dried /Gewürze, getrocknete Schnittlauch",
+     "g": 84.44,
+     "manuf": false,
+     "id": "be8300c5-e009-4e78-939c-76e6b5d360ac",
+     "children": []
+    }
+   ]
+  },
+  {
+   "name": "Grated Parmesan Broccoli",
+   "id": "fb3d8600-1a4e-4490-9d90-5aec473d252b",
+   "wo": null,
+   "cook": [],
+   "paths": [
+    "UNCATEGORIZED BOM"
+   ],
+   "batchCount": 2,
+   "batchQuantity": 56.64,
+   "portionA": 50,
+   "portionU": "grams",
+   "scoop": "yellow",
+   "alg": {
+    "c": [
+     "Milk (incl. lactose) / Milch (einschließlich Laktose)"
+    ]
+   },
+   "rti": false,
+   "totalNeeded": 80150,
+   "ings": [
+    {
+     "name": "FA-DE Oil, Olive /Öl, Olivenöl",
+     "g": 9423.61,
+     "manuf": false,
+     "id": "674c05fd-48f5-47b0-9862-bfb59f8236f8",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Sea Salt /Gewürze, Meersalz",
+     "g": 246.69,
+     "manuf": false,
+     "id": "ba7c0c1b-e4c4-42fa-be24-3c2bbe344f68",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Garlic Granulated /Gewürz, Knoblauch granuliert",
+     "g": 333.03,
+     "manuf": false,
+     "id": "92238168-dc9c-49c3-b946-bc77a4011f26",
+     "children": []
+    },
+    {
+     "name": "FA-DE Spice, Black Pepper, Ground /Gewürz, schwarzer Pfeffer, gemahlen",
+     "g": 160.35,
+     "manuf": false,
+     "id": "d62df615-205d-476e-8c73-be80be34de4c",
+     "children": []
+    },
+    {
+     "name": "FA-DE Broccoli, Florets, /Brokkoli, Röschen",
+     "g": 96332.95,
+     "manuf": false,
+     "id": "e1ab5a78-1c7d-46d2-bd82-28a839ae16c4",
+     "children": []
+    },
+    {
+     "name": "FA-DE Cheese, Parmesan, Grated /Käse, Parmesan, gerieben",
+     "g": 6784.01,
+     "manuf": false,
+     "id": "e2445b9f-221b-4402-b5ab-ab53eb5364de",
+     "children": []
+    }
+   ]
+  }
+ ],
+ "cache": {
+  "6fce04f5-9885-4952-9064-57f54cd9313c": {
+   "en": "A.MIDDLE KITCHEN\n\n*PRE-BLAST MIX*\n\n1. In chalupas mix together cooked rice and cooked vegetables until evenly distributed.\n\n2. combine cooked brown rice with\nsauteed carrots, onion, garlic and\npeas following the ratio below:\n\n4,5 kg  cooked rice\n1 kg carrot/onion/garlic mix\n500 g peas\n\n3. Transfer to sheet trays. Transfer Sheet trays to Speed Rack.\n\n4. Deliver Speed Rack to QA Associate at Blast Chiller.",
+   "de": "EINE.MITTLERE KÜCHE\n\n*MISCHUNG VOR DER STRAHLUNG*\n\n1. In Chalupas gekochten Reis und gekochtes Gemüse vermischen, bis alles gleichmäßig verteilt ist.\n\n2. Kombinieren Sie gekochten braunen Reis mit\nsautierte Karotten, Zwiebeln, Knoblauch und\nErbsen, die dem folgenden Verhältnis entsprechen:\n\n4,5 kg gekochter Reis\n1 kg Karotten-/Zwiebel-Knoblauch-Mischung\n500 g Erbsen\n\n3. Auf Blechfächer übertragen. Übertragen Sie die Blattfächer in das Speed Rack.\n\n4. Liefern Sie das Speed Rack an den QA-Mitarbeiter bei Blast Chiller."
+  },
+  "2e8b9a0e-f24c-4cee-a946-0b6ccc32a494": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. Do not combine ingredients.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches [68  total kg capacity per braiser]\n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. Heat the oil over medium heat. \n\n4. Add carrots, onion and garlic. Cook until caramelized and soft.\n\n5. Add seasonings. Stir until combined \n\n6. FSQA CCP1 check\n\n7. Transfer to sheet trays; (2 scoops per tray). Place trays on speed rack\n\n8. Transfer speed rack to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Zutaten nicht kombinieren.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Chargen an [Gesamtkapazität 68 kg pro Schmorbraten]\n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Erhitzen Sie das Öl bei mittlerer Hitze. \n\n4. Fügen Sie Karotten, Zwiebeln und Knoblauch hinzu. Kochen, bis es karamellisiert und weich ist.\n\n5. Gewürze hinzufügen. Rühre bis alles gut vermischt ist \n\n6. FQA CCP1-Überprüfung\n\n7. Auf Blechschalen verteilen; (2 Messlöffel pro Tablett). Stellen Sie die Tabletts auf das Speed Rack\n\n8. Übergeben Sie das Speed Rack an die Mitarbeiter vor dem Blast"
+  },
+  "348bf823-946e-4535-9974-f7b834e57ee1": {
+   "en": "\"A. VEGGIE DEBOX\n\n1. In cambros, combine mirepoix, salt, granulated garlic and olive oil  and blend until evenly incorporated, ensuring there are no lumps.\n\n2. Divide batches into hotel pans, per hotel pan:\nRice - 1.5 kg per hotel pan\nLiquid - 2.25 kg per hotel pan\n\n3. Cover hotel pan with lids and transfer to oven racks\n    ** If all oven racks are in-use, place hotel pans on speed rack **\n\n4. Transfer to Oven station\n\nB. OVEN\n\n1. Steam per Oven Setting  'Brown Basmati Rice'\n- Rice should be tender and all liquid absorbed\n\n2. Fluff rice.\n\n3. FSQA CCP1 Check.\n\n4. Transfer oven rack to pre-blast associates\"",
+   "de": "„A. GEMÜSE-DEBOX\n\n1. In Cambros Mirepoix, Salz, granulierten Knoblauch und Olivenöl vermischen und mischen, bis alles gleichmäßig eingearbeitet ist, wobei darauf zu achten ist, dass keine Klumpen entstehen.\n\n2. Teilen Sie die Chargen pro Hotelplan in Hotelpläne auf:\nReis - 1,5 kg pro Hotelpfanne\nFlüssigkeit - 2,25 kg pro Hotelpfanne\n\n3. Die Hotelpfanne mit Deckeln abdecken und auf die Ofenroste stellen\n ** Wenn alle Ofenroste in Gebrauch sind, stellen Sie die Hotelpfannen auf das Schnellregal **\n\n4. Transfer zur Oven-Station\n\nB. OFEN\n\n1. Dampf pro Ofeneinstellung „Brauner Basmatireis“\n- Der Reis sollte zart sein und die gesamte Flüssigkeit aufgesogen sein\n\n2. Fluffiger Reis.\n\n3. FQA CCP1-Überprüfung.\n\n4. Übergeben Sie das Ofengestell an die Mitarbeiter vor dem Blast“"
+  },
+  "f60fa782-4de6-478f-8a81-c59e062d028d": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, mix all ingredients until completely combined and evenly distributed.\n\n3. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n4. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Steam per Oven Setting : Steamed IQF Peas\n- green\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates\n",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten vermischen, bis alles vollständig vermischt und gleichmäßig verteilt ist.\n\n3. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n4. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Dampf pro Ofeneinstellung: Gedünstete IQF-Erbsen\n- grün\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast\n"
+  },
+  "8abc91f4-017a-430e-bb51-322a31d009ae": {
+   "en": "A. DEBOX\n\n1. In Chalupa, toss Chicken with Marinade until fully coated and evenly distributed.\n\n2. Marinated for minimum 2 hours.\n\n3. Transfer chicken to sheet trays, grill mark side down. 25 pieces per tray.\n(DO NOT GRILL)\n\n4. Place sheet trays on oven racks; deliver racks to Oven Team.\n\nC. OVEN\n\n5. Roast per \"Chicken Grilled\" Oven Setting.\n\n6. FSQA Check for internal temperature\n\n7. Transfer to Blast Chiller",
+   "de": "A. DEBOX\n\n1. In Chalupa das Hähnchen mit der Marinade schwenken, bis es vollständig bedeckt und gleichmäßig verteilt ist.\n\n2. Mindestens 2 Stunden mariniert.\n\n3. Hähnchen mit der Grillmarkierung nach unten auf Bleche legen. 25 Stück pro Tablett.\n(NICHT GRILLEN)\n\n4. Stellen Sie die Bleche auf die Ofenroste; liefern Sie die Roste an das Ofenteam.\n\nC. OFEN\n\n5. Braten Sie in der Ofeneinstellung „Hühnchen gegrillt“.\n\n6. FSQA Überprüfen Sie die Innentemperatur\n\n7. Transfer zum Schnellkühler"
+  },
+  "6238681f-9e91-463e-980b-99bad7db69db": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambro, combine all ingredients \n\n2. Using an immersion blender, blend until smooth\n\n3. Use as directed in the recipe",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambro alle Zutaten \n\n2. Mit einem Stabmixer glatt rühren\n\n3. Wie im Rezept angegeben verwenden"
+  },
+  "ec925045-8e5e-4d12-bc3c-6df8b111ae64": {
+   "en": "A. DEBOX\n\n1. Remove all ingredients from outer packaging; transfer ingredients to cambros individually. DO NOT mix ingredients together.\n\n2. Deliver ingredients to braiser station \n\nB. BRAISER\n\n1. Divide and organize ingredients into braiser batches \n\n2. Place ingredients on sheet trays on speed racks; Deliver to each braiser\n\n3. At low temperature, Braiser Temperature is 210F bring heavy cream and milk to a low simmer. Mixture should not boil but start to steam.\n\n4. Immediately add cream cheese. Keep Braiser Temperature at 210F. Whisk in cream cheese; stir until\ncompletely melted.\n\n5. Reduce Braiser Temperature to 200F. Stir in roasted garlic, black pepper, chives, granulated onion, rosemary, & thyme.\n\n6. Turn off heat, stir in lemon juice, lemon zest and salt.\n\n7. Transfer to sheet trays. 2 scoops per tray. Transfer sheet trays to Speed Rack.\n \n8. Deliver to QA Associate at Blast Chiller. ",
+   "de": "A. DEBOX\n\n1. Alle Zutaten aus der Außenverpackung nehmen; Zutaten einzeln in die Cambros geben. Die Zutaten NICHT miteinander vermischen.\n\n2. Liefern Sie die Zutaten zur Schmorstation \n\nB. SCHMORBRATEN\n\n1. Teilen Sie die Zutaten auf und ordnen Sie sie in Schmorportionen an \n\n2. Die Zutaten auf Bleche auf Schnellregalen legen; in jeden Schmortopf geben\n\n3. Bei niedriger Temperatur beträgt die Brattemperatur 210F, Sahne und Milch auf niedriger Stufe köcheln lassen. Die Mischung sollte nicht kochen, sondern anfangen zu dampfen.\n\n4. Sofort Frischkäse hinzufügen. Halten Sie die Braiser-Temperatur auf 210F. Frischkäse einrühren; rühren bis\nvollständig geschmolzen.\n\n5. Reduzieren Sie die Schmortemperatur auf 200F. Gerösteten Knoblauch, schwarzen Pfeffer, Schnittlauch, granulierte Zwiebel, Rosmarin und Thymian einrühren.\n\n6. Hitze ausschalten, Zitronensaft, Zitronenschale und Salz einrühren.\n\n7. Auf Blechschalen verteilen. 2 Messlöffel pro Tablett. Übertragen Sie die Blattfächer in das Speed Rack.\n \n8. Lieferung an den QA-Mitarbeiter bei Blast Chiller. "
+  },
+  "18082c41-8ced-42eb-92d9-f5c4c2bc51a9": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove cream from outer packaging\n\n2. Pour cream in Cambros\n\n3. Use as directed in the recipes\n\n**This is a yield for heavy cream as we are always short***",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie die Creme aus der Außenverpackung\n\n2. Gießen Sie Sahne in Cambros\n\n3. Verwenden Sie es wie in den Rezepten angegeben\n\n**Das ist eine Ausbeute für Sahne, da wir immer zu wenig haben***"
+  },
+  "b4c62138-7be7-4749-bcde-6b41cb9540b0": {
+   "en": "A. VEGGIE DEBOX\n\n1. Remove all ingredients from the outer packaging\n \n2. In Wannes, blend all ingredients EXCEPT the carrots in a Cambro.\n\n3. Toss oil/seasoning mixture with carrots\n\n4. Transfer to GN 2/1 sheet trays (2 KG per sheet tray)\n\n5. Place sheet trays on oven racks; deliver to oven associates\n \nB. OVEN\n\n1. Roast per Oven Setting : Roasted Carrot Coins 5mm\n[Visual Appearance Indicator] - Shriveled, mahogany-orange discs with caramelized, blistered edges and a dense, candy-like sweetness\n\n2. FSQA CCP1 Check\n\n3. Transfer to pre-blast associates",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Entfernen Sie alle Zutaten aus der Außenverpackung\n \n2. In Wannes alle Zutaten AUSSER den Karotten in einem Cambro vermischen.\n\n3. Öl-Gewürzmischung mit Karotten vermischen\n\n4. In GN 2/1-Blattfächer umfüllen (2 kg pro Blattfach)\n\n5. Stellen Sie die Bleche auf die Ofenroste und liefern Sie sie an die Mitarbeiter des Ofens\n \nB. OFEN\n\n1. Einstellung Braten pro Ofen: Geröstete Karottenmünzen 5 mm\n[Optischer Indikator] — Geschrumpfte, mahagoni-orange Scheiben mit karamellisierten, blasigen Rändern und einer dichten, bonbonähnlichen Süße\n\n2. FQA CCP1-Überprüfung\n\n3. Transfer an die Mitarbeiter von Pre-Blast"
+  },
+  "fb3d8600-1a4e-4490-9d90-5aec473d252b": {
+   "en": "A. VEGGIE DEBOX\n\n1. In cambros, combine olive oil, salt, garlic powder & black pepper. Use an immersion blender to completely combine.",
+   "de": "A. VEGETARISCHE DEBOX\n\n1. Kombinieren Sie in Cambros Olivenöl, Salz, Knoblauchpulver und schwarzen Pfeffer. Verwenden Sie einen Stabmixer, um alles vollständig zu vermischen."
+  }
+ }
+}
