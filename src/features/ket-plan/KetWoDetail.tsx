@@ -2,7 +2,7 @@
 // (inline editierbar), Zutaten-Tabelle, Kochanweisungen.
 import { useEffect, useState } from "react";
 import { EQUIP_LABELS, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction } from "./ketTypes";
-import { catColor, fmtDateHeader, fmtKg, fmtNum } from "./ketLogic";
+import { catColor, fmtDateHeader, fmtKg, fmtNum, sortIngredients } from "./ketLogic";
 import { StatCard, StatusChip } from "./KetSharedUi";
 import { orderCookingMethods } from "./woInstructionBot";
 
@@ -13,6 +13,7 @@ export function WoDetail({
   onCapChange,
   instruction,
   onGenerateInstruction,
+  onInstructionEdit,
   onDownload,
   manualEquipment,
   onManualEquipmentChange,
@@ -23,6 +24,7 @@ export function WoDetail({
   onCapChange: (equip: string, raw: string) => void;
   instruction?: WoInstruction;
   onGenerateInstruction: () => Promise<void>;
+  onInstructionEdit?: (updated: WoInstruction) => void;
   onDownload: () => Promise<void>;
   manualEquipment?: ManualEquipmentOverride;
   onManualEquipmentChange: (override: ManualEquipmentOverride | null) => void;
@@ -33,6 +35,9 @@ export function WoDetail({
   const [manualCapacityDraft, setManualCapacityDraft] = useState("");
   const [instructionBusy, setInstructionBusy] = useState(false);
   const [instructionError, setInstructionError] = useState<string | null>(null);
+  const [editingInstruction, setEditingInstruction] = useState(false);
+  const [instrEnDraft, setInstrEnDraft] = useState("");
+  const [instrDeDraft, setInstrDeDraft] = useState("");
   const [downloadBusy, setDownloadBusy] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -190,7 +195,10 @@ export function WoDetail({
                     className={`rounded-xl px-3 py-2.5 border ${eb.equip === calc.primaryEquip ? "bg-blue-600/30 border-blue-400/40" : "bg-white/10 border-white/10"}`}>
                     <div className="text-[9px] font-bold text-blue-200 mb-1">{eb.label}</div>
                     <div className="text-2xl font-black text-white tabular-nums">{eb.batches}×</div>
-                    <div className="text-[9px] text-blue-300 mt-0.5">à {fmtKg(eb.perBatchKg)}</div>
+                    <div className="text-[9px] text-blue-300 mt-0.5">
+                      à {fmtKg(eb.perBatchKg)}
+                      {eb.remainderKg > 0 && <span className="text-amber-300"> · Rest {fmtKg(eb.remainderKg)} ({eb.utilizationPct}%)</span>}
+                    </div>
                     {/* Inline Kapazitäts-Edit */}
                     {editingEquip === eb.equip ? (
                       <div className="flex items-center gap-1 mt-1.5">
@@ -301,6 +309,16 @@ export function WoDetail({
           </div>
         </div>
 
+        {/* UoM-Warnungen */}
+        {calc.uomWarnings.length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2">
+            <div className="text-[9px] font-black text-amber-700 uppercase mb-1">Einheiten-Warnungen</div>
+            {calc.uomWarnings.map((w, i) => (
+              <div key={i} className="text-[10px] text-amber-600">{w}</div>
+            ))}
+          </div>
+        )}
+
         {/* Stats Grid */}
         <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 overflow-hidden">
           <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-emerald-200">
@@ -308,13 +326,47 @@ export function WoDetail({
               <div className="text-[10px] font-black uppercase tracking-[.12em] text-emerald-800">Google Gemini WO Instruction Bot</div>
               <div className="text-[10px] text-emerald-700 mt-0.5">Individuelle Arbeitsanweisung für diese WO und dieses Sub-Rezept</div>
             </div>
-            <button type="button" onClick={() => void generateInstruction()} disabled={instructionBusy}
-              className="rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
-              {instructionBusy ? "Erzeuge …" : instruction ? "Neu erzeugen" : "Instruction erzeugen"}
-            </button>
+            <div className="flex gap-1.5">
+              {instruction && onInstructionEdit && !editingInstruction && (
+                <button type="button" onClick={() => { setInstrEnDraft(instruction.english); setInstrDeDraft(instruction.german); setEditingInstruction(true); }}
+                  className="rounded-lg bg-slate-200 px-2.5 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-300">
+                  Bearbeiten
+                </button>
+              )}
+              <button type="button" onClick={() => void generateInstruction()} disabled={instructionBusy}
+                className="rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                {instructionBusy ? "Erzeuge …" : instruction ? "Neu erzeugen" : "Instruction erzeugen"}
+              </button>
+            </div>
           </div>
           {instructionError && <div className="px-4 py-2 text-[10px] font-semibold text-rose-700 bg-rose-50 border-b border-rose-200">{instructionError}</div>}
-          {instruction && (
+          {editingInstruction && instruction && (
+            <div className="p-4 space-y-3 border-b border-emerald-200 bg-white">
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1 block">English</label>
+                <textarea value={instrEnDraft} onChange={e => setInstrEnDraft(e.target.value)} rows={6}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-800 resize-y" />
+              </div>
+              <div>
+                <label className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1 block">Deutsch</label>
+                <textarea value={instrDeDraft} onChange={e => setInstrDeDraft(e.target.value)} rows={6}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-800 resize-y" />
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => {
+                  onInstructionEdit?.({ ...instruction, english: instrEnDraft, german: instrDeDraft });
+                  setEditingInstruction(false);
+                }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-emerald-800">
+                  Speichern
+                </button>
+                <button type="button" onClick={() => setEditingInstruction(false)}
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-200">
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          )}
+          {instruction && !editingInstruction && (
             <div className="grid gap-3 p-4 lg:grid-cols-2">
               <div><div className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1">Instructions (EN)</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.english}</div></div>
               <div><div className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1">Anleitung (DE) · {instruction.status === "needs_review" ? "Review erforderlich" : "Gemini"}</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.german}</div></div>
@@ -453,15 +505,9 @@ export function WoDetail({
                   </tr>
                 </thead>
                 <tbody>
-                  {calc.ingredients
-                    .filter(i => i.totalKg > 0.0005)
-                    .slice()
-                    .sort((a, b) => {
-                      const sa = a.spiceRoom || a.separate ? 1 : 0;
-                      const sb = b.spiceRoom || b.separate ? 1 : 0;
-                      if (sa !== sb) return sb - sa;
-                      return b.totalKg - a.totalKg;
-                    })
+                  {[...calc.ingredients]
+                    .filter(i => i.totalKg > 0.0005 || i.totalPcs > 0)
+                    .sort(sortIngredients)
                     .map((ing, idx) => (
                       <tr key={idx} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${
                         ing.category === "PRO" ? "bg-red-50/30" :
@@ -482,10 +528,10 @@ export function WoDetail({
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-slate-700">
-                          {fmtKg(ing.totalKg)}
+                          {ing.totalPcs > 0 ? `${Math.round(ing.totalPcs)} Stk` : fmtKg(ing.totalKg)}
                         </td>
                         <td className="px-4 py-2.5 text-right font-black tabular-nums text-blue-700">
-                          {fmtKg(ing.perBatchKg)}
+                          {ing.totalPcs > 0 ? `${Math.round(ing.totalPcs)} Stk` : fmtKg(ing.perBatchKg)}
                         </td>
                       </tr>
                     ))}

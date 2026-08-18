@@ -8,7 +8,7 @@ import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow,
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overview/wmsWeeks";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
-  calcBatch, fmtDateHeader, fmtKg, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
+  calcBatch, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
 } from "./features/ket-plan/ketLogic";
 import { buildPdf } from "./features/ket-plan/ketPdf";
 import { EmptyState, KetWoOverview, MissingDataScreen } from "./features/ket-plan/KetSharedUi";
@@ -22,7 +22,10 @@ import { generateWoInstruction, generateWoInstructionsBatch } from "./features/k
 const STORAGE_KEYS = {
   csvRows: "ket-csv-rows-v1",
   csvFilename: "ket-csv-filename-v1",
+  woInstructions: "ket-wo-instructions-v1",
 } as const;
+
+const INSTRUCTION_CACHE_MAX = 500;
 
 const DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})/;
 const SHIFT_PATTERN = /[-–]\s*(\d+)$/;
@@ -115,6 +118,35 @@ const storage = {
   },
 } as const;
 
+// ── Instruction-Cache: persistiert generierte Instructions über Neuimporte hinweg ──
+type InstructionCache = Record<string, WoInstruction>;
+
+function loadInstructionCache(): InstructionCache {
+  return storage.getItem<InstructionCache>(STORAGE_KEYS.woInstructions, true) ?? {};
+}
+
+function saveInstructionCache(cache: InstructionCache): void {
+  // Limitiere auf INSTRUCTION_CACHE_MAX Einträge (älteste zuerst raus, via generatedAt)
+  const entries = Object.entries(cache);
+  if (entries.length > INSTRUCTION_CACHE_MAX) {
+    entries.sort((a, b) => (a[1].generatedAt ?? "").localeCompare(b[1].generatedAt ?? ""));
+    const trimmed = Object.fromEntries(entries.slice(entries.length - INSTRUCTION_CACHE_MAX));
+    storage.setItem(STORAGE_KEYS.woInstructions, trimmed, true);
+  } else {
+    storage.setItem(STORAGE_KEYS.woInstructions, cache, true);
+  }
+}
+
+// Löst aktuelle row.keys → cache-basierte Instructions auf
+function resolveInstructionsFromCache(rows: KetRow[], cache: InstructionCache): Record<string, WoInstruction> {
+  const resolved: Record<string, WoInstruction> = {};
+  for (const row of rows) {
+    const ck = instructionCacheKey(row);
+    if (cache[ck]) resolved[row.key] = cache[ck];
+  }
+  return resolved;
+}
+
 
 export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; selectedWeek?: string }) {
   const liveWeek = selectedWeek || currentHfWeek();
@@ -146,6 +178,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     ),
   );
   const [manualEquipment, setManualEquipment] = useState<Record<string, ManualEquipmentOverride>>({});
+  const instructionCacheRef = useRef<InstructionCache>(loadInstructionCache());
   const [woInstructions, setWoInstructions] = useState<Record<string, WoInstruction>>({});
   const [selectedDayFilter, setSelectedDayFilter] = useState<Set<string> | null>(null);
   const [selectedInstructionDays, setSelectedInstructionDays] = useState<Set<string> | null>(null);
@@ -176,6 +209,15 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     if (rows?.length) return woEntriesToKetRows(rows); // stale but still better than nothing
     return [];
   }, [csvRows, data.productionPlan?.rows, productionPlanHasLiveWeek, liveWmsRows]);
+
+  // Bei Rows-Änderung: gecachte Instructions aus localStorage auflösen
+  useEffect(() => {
+    if (!ketRows.length) return;
+    const cached = resolveInstructionsFromCache(ketRows, instructionCacheRef.current);
+    if (Object.keys(cached).length > 0) {
+      setWoInstructions((prev) => ({ ...cached, ...prev }));
+    }
+  }, [ketRows]);
 
   // Lowest-priority fallback: only reach for the live WMS/Snowflake cache when
   // neither manual CSV nor the established GSheet→Firestore plan has rows for
@@ -316,7 +358,8 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       }
       
       try {
-        const parsed = parseKetCsv(text);
+        const { rows: parsed, warnings } = parseKetCsv(text);
+        if (warnings.length) console.warn("[KetBreakdown] CSV warnings:", warnings);
         if (!parsed || parsed.length === 0) {
           alert("Die CSV-Datei ist leer oder konnte nicht gelesen werden.");
           return;
@@ -429,26 +472,57 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     }
   }, [calcMap, caps, source, woInstructions]);
 
-  const generateInstructionsForSelectedDays = useCallback(async () => {
+  // Persistiert neue Instructions im localStorage-Cache und aktualisiert State
+  const persistInstructions = useCallback((generated: Record<string, WoInstruction>, rows: KetRow[]) => {
+    const cache = instructionCacheRef.current;
+    for (const row of rows) {
+      const inst = generated[row.key];
+      if (inst) cache[instructionCacheKey(row)] = inst;
+    }
+    instructionCacheRef.current = cache;
+    saveInstructionCache(cache);
+    setWoInstructions((current) => ({ ...current, ...generated }));
+  }, []);
+
+  // Löscht den gesamten Instruction-Cache
+  const clearInstructionCache = useCallback(() => {
+    instructionCacheRef.current = {};
+    storage.setItem(STORAGE_KEYS.woInstructions, null, true);
+    setWoInstructions({});
+    setBatchInstructionStatus("Instruction-Cache geleert");
+  }, []);
+
+  const generateInstructionsForSelectedDays = useCallback(async (forceAll = false) => {
     if (instructionRows.length === 0) return;
+    // Delta-Logik: nur WOs ohne bestehende Instruction generieren
+    const rowsToGenerate = forceAll
+      ? instructionRows
+      : instructionRows.filter((row) => !woInstructions[row.key]);
+    if (rowsToGenerate.length === 0) {
+      setBatchInstructionStatus("Alle WOs haben bereits Instructions (aus Cache)");
+      return;
+    }
     setBatchInstructionBusy(true);
-    setBatchInstructionStatus(`Erzeuge ${instructionRows.length} WO-Instructions …`);
+    const skipped = instructionRows.length - rowsToGenerate.length;
+    const skipNote = skipped > 0 ? ` (${skipped} aus Cache)` : "";
+    setBatchInstructionStatus(`Erzeuge ${rowsToGenerate.length} WO-Instructions${skipNote} …`);
     setFailedInstructions([]);
     try {
-      const result = await generateWoInstructionsBatch(instructionRows.map((row) => ({
+      const result = await generateWoInstructionsBatch(rowsToGenerate.map((row) => ({
         key: row.key,
         row,
         calc: calcMap.get(row.key)!,
       })).filter((item) => item.calc), (chunkResult, done, total) => {
-        setWoInstructions((current) => ({ ...current, ...chunkResult.generated }));
-        setBatchInstructionStatus(`${done} von ${total} WO-Instructions verarbeitet …`);
+        persistInstructions(chunkResult.generated, rowsToGenerate);
+        setBatchInstructionStatus(`${done} von ${total} WO-Instructions verarbeitet${skipNote} …`);
       });
+      persistInstructions(result.generated, rowsToGenerate);
       const genCount = Object.keys(result.generated).length;
       if (result.failed.length > 0) {
         setFailedInstructions(result.failed);
-        setBatchInstructionStatus(`${genCount} von ${instructionRows.length} erzeugt · ${result.failed.length} fehlgeschlagen`);
+        setBatchInstructionStatus(`${genCount} von ${rowsToGenerate.length} erzeugt · ${result.failed.length} fehlgeschlagen${skipNote}`);
       } else {
-        setBatchInstructionStatus(`Alle ${genCount} WO-Instructions erfolgreich erzeugt`);
+        setBatchInstructionStatus(`${genCount} WO-Instructions erzeugt${skipNote}`);
       }
     } catch (error) {
       console.error("[KetBreakdown] Batch instruction generation failed:", error);
@@ -456,7 +530,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [instructionRows, calcMap]);
+  }, [instructionRows, calcMap, woInstructions, persistInstructions]);
 
   const retryFailedInstructions = useCallback(async () => {
     if (failedInstructions.length === 0) return;
@@ -469,10 +543,10 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     setBatchInstructionStatus(`Wiederhole ${retryItems.length} fehlgeschlagene WOs …`);
     try {
       const result = await generateWoInstructionsBatch(retryItems, (chunkResult, done, total) => {
-        setWoInstructions((current) => ({ ...current, ...chunkResult.generated }));
+        persistInstructions(chunkResult.generated, retryItems.map(i => i.row));
         setBatchInstructionStatus(`${done} von ${total} Wiederholungen verarbeitet …`);
       });
-      setWoInstructions((current) => ({ ...current, ...result.generated }));
+      persistInstructions(result.generated, retryItems.map(i => i.row));
       const genCount = Object.keys(result.generated).length;
       if (result.failed.length > 0) {
         setFailedInstructions(result.failed);
@@ -486,7 +560,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [failedInstructions, instructionRows, calcMap]);
+  }, [failedInstructions, instructionRows, calcMap, persistInstructions]);
   const totalBatches = weekFilteredRows.reduce((s, row) => s + (calcMap.get(row.key)?.batches ?? 0), 0);
 
   if (ketRows.length === 0) {
@@ -738,8 +812,27 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             })}
           </div>
           <button type="button" disabled={batchInstructionBusy || instructionRows.length === 0} onClick={() => void generateInstructionsForSelectedDays()} className="mt-2 w-full rounded-lg bg-emerald-700 px-2 py-2 text-[10px] font-black text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
-            {batchInstructionBusy ? "Instructions werden erzeugt …" : `Instructions für ${instructionRows.length} WOs erzeugen`}
+            {batchInstructionBusy
+              ? "Instructions werden erzeugt …"
+              : (() => {
+                  const cached = instructionRows.filter((r) => woInstructions[r.key]).length;
+                  const newCount = instructionRows.length - cached;
+                  return newCount > 0
+                    ? `Instructions für ${newCount} neue WOs erzeugen${cached > 0 ? ` (${cached} aus Cache)` : ""}`
+                    : `Alle ${instructionRows.length} WOs haben Instructions`;
+                })()
+            }
           </button>
+          {!batchInstructionBusy && Object.keys(woInstructions).length > 0 && (
+            <div className="mt-1 flex gap-1">
+              <button type="button" onClick={() => void generateInstructionsForSelectedDays(true)} className="flex-1 rounded bg-slate-200 px-1.5 py-1 text-[9px] font-semibold text-slate-600 hover:bg-slate-300">
+                Alle neu generieren
+              </button>
+              <button type="button" onClick={clearInstructionCache} className="rounded bg-red-100 px-1.5 py-1 text-[9px] font-semibold text-red-700 hover:bg-red-200">
+                Cache leeren
+              </button>
+            </div>
+          )}
           {batchInstructionStatus && <div className="mt-1 text-[9px] font-semibold text-emerald-800">{batchInstructionStatus}</div>}
           {failedInstructions.length > 0 && !batchInstructionBusy && (
             <div className="mt-1">
@@ -984,7 +1077,10 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               onGenerateInstruction={async () => {
                 if (!selectedCalc) throw new Error("Keine Berechnung für diese WO vorhanden");
                 const instruction = await generateWoInstruction(selectedRow, selectedCalc);
-                setWoInstructions((current) => ({ ...current, [selectedRow.key]: instruction }));
+                persistInstructions({ [selectedRow.key]: instruction }, [selectedRow]);
+              }}
+              onInstructionEdit={(updated) => {
+                persistInstructions({ [selectedRow.key]: updated }, [selectedRow]);
               }}
               onDownload={async () => {
                 if (!selectedRow) return;

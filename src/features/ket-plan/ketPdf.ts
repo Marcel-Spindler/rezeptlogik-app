@@ -1,6 +1,6 @@
 // Baut das druckbare HTML/PDF für einen Satz Work Orders (Breakdown-Karten je WO).
 import { EQUIP_LABELS, type BatchCalc, type KetRow, type WoInstruction } from "./ketTypes";
-import { escHtml, fmtKg, fmtNum, parseDateShift } from "./ketLogic";
+import { escHtml, fmtKg, fmtNum, parseDateShift, sortIngredients } from "./ketLogic";
 import { orderCookingMethods } from "./woInstructionBot";
 
 export function buildPdf(
@@ -22,21 +22,9 @@ export function buildPdf(
 
     const cookDisplay = orderCookingMethods(calc.resolvedCookMethods).join(" → ") || "—";
 
-    const ING_CAT_ORDER: Record<string, number> = { SPI: 0, PHF: 1, DAI: 2, PRO: 3 };
-    const ingRows = calc.ingredients
-      .filter(ing => ing.totalKg > 0.0005)
-      .sort((a, b) => {
-        // Factor-Regel (SKILL.md §4.2): SEPARATE/Spice-Room-Zutaten immer zuerst.
-        const sa = a.spiceRoom || a.separate ? 1 : 0;
-        const sb = b.spiceRoom || b.separate ? 1 : 0;
-        if (sa !== sb) return sb - sa;
-        const ca = (a.category ?? "").trim().toUpperCase().slice(0, 3);
-        const cb = (b.category ?? "").trim().toUpperCase().slice(0, 3);
-        const oa = ING_CAT_ORDER[ca] ?? 99;
-        const ob = ING_CAT_ORDER[cb] ?? 99;
-        if (oa !== ob) return oa - ob;
-        return b.totalKg - a.totalKg;
-      })
+    const ingRows = [...calc.ingredients]
+      .filter(ing => ing.totalKg > 0.0005 || ing.totalPcs > 0)
+      .sort(sortIngredients)
       .map(ing => {
         const cat = (ing.category ?? "").trim().toUpperCase().slice(0, 3);
         const isSpice = cat === "SPI";
@@ -64,8 +52,8 @@ export function buildPdf(
             ${spiceBadge}${separateBadge}${ing.category ? `<span class="cat"${isSpice ? ' style="background:#f59e0b;color:#fff;font-weight:900;"' : ""}>${ing.category}</span>` : ""}
             <span${nameStyle}>${ing.name}</span>${yieldNote}
           </td>
-          <td class="num hi"${underline ? ' style="text-decoration:underline;"' : ""}>${fmtKg(ing.perBatchKg)}</td>
-          <td class="num"${underline ? ' style="text-decoration:underline;"' : ""}>${fmtKg(ing.totalKg)}</td>
+          <td class="num hi"${underline ? ' style="text-decoration:underline;"' : ""}>${ing.totalPcs > 0 ? `${Math.round(ing.totalPcs)} Stk` : fmtKg(ing.perBatchKg)}</td>
+          <td class="num"${underline ? ' style="text-decoration:underline;"' : ""}>${ing.totalPcs > 0 ? `${Math.round(ing.totalPcs)} Stk` : fmtKg(ing.totalKg)}</td>
         </tr>`;
       }).join("");
 
@@ -301,6 +289,7 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
 .ings td{padding:4px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 .ings thead{display:table-header-group}
 .ings tr{break-inside:avoid;page-break-inside:avoid}
+.ings{break-inside:auto;page-break-inside:auto}
 .ings tfoot td{border-top:2px solid #1e3a5f;padding-top:6px;background:#f8fafc}
 .num{text-align:right;white-space:nowrap;font-weight:600}
 .hi{color:#1e40af;font-weight:700}

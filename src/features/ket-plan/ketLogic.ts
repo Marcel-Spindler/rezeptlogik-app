@@ -19,6 +19,7 @@ function collectAllergens(sub: DetailedSubRecipe, acc: Set<string>): void {
 
 export { cleanRecipeName, extractCode, fmtNum, parseSteps };
 
+// Allgemeine Normalisierung für Rezept-/Zutatennamen-Vergleiche (lowercase, nur alnum).
 export function normStr(s: string): string {
   return (s ?? "")
     .toLowerCase()
@@ -26,8 +27,10 @@ export function normStr(s: string): string {
     .trim();
 }
 
-// ── Kuechenbible (equipmentBible) matching — BRAISER only ──────────────────
-// Normalize per spec: uppercase, strip everything except letters/digits/spaces.
+// ── Kuechenbible (equipmentBible) matching ───────────────────────────────
+// Normalisierung für Equipment-Bible: UPPERCASE, nur Letters/Digits/Spaces.
+// Getrennt von normStr weil Bible-Einträge case-sensitiv verglichen werden
+// (BRAISER vs. braiser) und Sonderzeichen anders behandelt werden müssen.
 function normBibleStr(s: string): string {
   return (s ?? "")
     .toUpperCase()
@@ -172,7 +175,9 @@ export function parseDateShift(dateNeeded: string): { date: string; shift: strin
 
 export function parseSortKey(dateNeeded: string): number {
   const { date, shift } = parseDateShift(dateNeeded);
-  return Date.parse(date) * 10 + parseInt(shift || "0");
+  const ts = Date.parse(date);
+  if (Number.isNaN(ts)) return 0;
+  return ts * 10 + parseInt(shift || "0");
 }
 
 export function fmtDateHeader(dateNeeded: string): string {
@@ -212,6 +217,10 @@ function collectDetailedIngredients(sub: DetailedSubRecipe): DetailedIngredient[
 }
 
 // Echte Kochanweisungen aus Recipe.markets SubRecipes
+// Prioritätsreihenfolge (erste nicht-leere Quelle gewinnt):
+//   1. instructionCatalog (Firestore „instructions"-Sammlung, manuell gepflegt)
+//   2. recipe.markets[mkt].subRecipes[].instructions (aus Rezept-Import)
+//   3. mealCatalog[code].instructionsBySubRecipe (aus Meal-Catalog-Import)
 function findSubRecipeInstructions(
   recipe: Recipe | undefined,
   mealCatalog: DataBundle["mealCatalog"],
@@ -272,7 +281,40 @@ function matchGrossIngredients(
   return [];
 }
 
-// ── Batch calculation ──────────────────────────────────────────────────────
+// ── Ingredient sort (shared: ketLogic + ketPdf) ──────────────────────────
+// Spice-Room/SEPARATE zuerst, dann Kategorie, dann Gewicht absteigend.
+const ING_CAT_ORDER: Record<string, number> = { SPI: 0, PHF: 1, DAI: 2, PRO: 3 };
+
+export function sortIngredients(a: IngCalc, b: IngCalc): number {
+  const sa = a.spiceRoom || a.separate ? 1 : 0;
+  const sb = b.spiceRoom || b.separate ? 1 : 0;
+  if (sa !== sb) return sb - sa;
+  const ao = ING_CAT_ORDER[(a.category ?? "").trim().toUpperCase().slice(0, 3)] ?? 99;
+  const bo = ING_CAT_ORDER[(b.category ?? "").trim().toUpperCase().slice(0, 3)] ?? 99;
+  if (ao !== bo) return ao - bo;
+  return b.totalKg - a.totalKg;
+}
+
+// ── UoM to kg conversion ─────────────────────────────────────────────────
+// Konvertiert Mengeneinheit → kg-Faktor. Gibt [factor, isPcs] zurück.
+// isPcs=true: Stückzahl-Zutat, nicht als Gewicht zählen.
+const PIECE_UOMS = /^(pcs|stk|stück|ea|each|piece|pieces|portion|portionen)$/i;
+const GRAM_UOMS = /^(g|gram|grams|gramm)$/i;
+const KG_UOMS = /^(kg|kilogram|kilograms)$/i;
+const ML_UOMS = /^(ml|milliliter|millilitre)$/i;
+const LITER_UOMS = /^(l|liter|litre|liters|litres)$/i;
+
+function uomToKgFactor(uom: string): { factor: number; isPcs: boolean; unknown: boolean } {
+  const u = (uom ?? "").trim();
+  if (!u || GRAM_UOMS.test(u)) return { factor: 0.001, isPcs: false, unknown: false };
+  if (KG_UOMS.test(u)) return { factor: 1, isPcs: false, unknown: false };
+  if (ML_UOMS.test(u)) return { factor: 0.001, isPcs: false, unknown: false };
+  if (LITER_UOMS.test(u)) return { factor: 1, isPcs: false, unknown: false };
+  if (PIECE_UOMS.test(u)) return { factor: 0, isPcs: true, unknown: false };
+  // Unbekannt — Fallback assume grams (legacy), aber warnen.
+  return { factor: 0.001, isPcs: false, unknown: true };
+}
+
 
 export function calcBatch(
   row: KetRow,
@@ -285,6 +327,7 @@ export function calcBatch(
   const processSpec = findProcessSpec(data, row.subRecipeName);
   const resolvedCookMethods = resolveCookMethods(row, data, structure, recipe);
   const ingredients: IngCalc[] = [];
+  const uomWarnings: string[] = [];
   let totalKg = 0;
   let subRecipeFound = false;
   let cookingInstructions: string | null = null;
@@ -300,14 +343,10 @@ export function calcBatch(
         cookingInstructions = sub.categories ?? null;
         const ings = collectDetailedIngredients(sub);
         for (const ing of ings) {
-          const uomLc = (ing.uom ?? "").toLowerCase();
-          const kgPer =
-            uomLc === "g" || uomLc === "gram" || uomLc === "grams"
-              ? ing.grossQty / 1000
-              : uomLc === "kg"
-                ? ing.grossQty
-                : ing.grossQty / 1000; // default assume grams
-          const ingKg = kgPer * row.targetPortions;
+          const { factor, isPcs, unknown } = uomToKgFactor(ing.uom);
+          if (unknown) uomWarnings.push(`${ing.name}: unbekannte Einheit "${ing.uom}" (als Gramm behandelt)`);
+          const ingKg = isPcs ? 0 : factor * ing.grossQty * row.targetPortions;
+          const ingPcs = isPcs ? ing.grossQty * row.targetPortions : 0;
           totalKg += ingKg;
           ingredients.push({
             name: ing.name,
@@ -317,6 +356,7 @@ export function calcBatch(
             totalKg: ingKg,
             perBatchKg: 0,
             yieldPct: ing.yieldPct ?? null,
+            totalPcs: ingPcs,
             separate: false,
             spiceRoom: false,
           });
@@ -325,30 +365,27 @@ export function calcBatch(
     }
 
     // Fallback: grossIngredients (adds category info)
-    if (!subRecipeFound && recipe) {
-      const grossHits = matchGrossIngredients(recipe.grossIngredients, row.subRecipeName);
-      if (grossHits.length) {
-        subRecipeFound = true;
-        for (const g of grossHits) {
-          const uomLc = (g.uom ?? "").toLowerCase();
-          const kgPer =
-            uomLc === "g" || uomLc === "gram" || uomLc === "grams"
-              ? g.grossQuantityPerPortion / 1000
-              : g.grossQuantityPerPortion;
-          const ingKg = kgPer * row.targetPortions;
-          totalKg += ingKg;
-          ingredients.push({
-            name: g.ingredient,
-            id: g.ingredientId,
-            category: g.ingredientCategory ?? "",
-            uom: g.uom,
-            totalKg: ingKg,
-            perBatchKg: 0,
-            yieldPct: null,
-            separate: false,
-            spiceRoom: false,
-          });
-        }
+    const grossHits = recipe ? matchGrossIngredients(recipe.grossIngredients, row.subRecipeName) : [];
+    if (!subRecipeFound && grossHits.length) {
+      subRecipeFound = true;
+      for (const g of grossHits) {
+        const { factor, isPcs, unknown } = uomToKgFactor(g.uom);
+        if (unknown) uomWarnings.push(`${g.ingredient}: unbekannte Einheit "${g.uom}" (als Gramm behandelt)`);
+        const ingKg = isPcs ? 0 : factor * g.grossQuantityPerPortion * row.targetPortions;
+        const ingPcs = isPcs ? g.grossQuantityPerPortion * row.targetPortions : 0;
+        totalKg += ingKg;
+        ingredients.push({
+          name: g.ingredient,
+          id: g.ingredientId,
+          category: g.ingredientCategory ?? "",
+          uom: g.uom,
+          totalKg: ingKg,
+          perBatchKg: 0,
+          yieldPct: null,
+          totalPcs: ingPcs,
+          separate: false,
+          spiceRoom: false,
+        });
       }
     }
 
@@ -356,8 +393,7 @@ export function calcBatch(
     // Structure ingredient names often carry a country prefix ("FA-DE Spice, Sea Salt")
     // while gross ingredients may not ("Spice, Sea Salt") — index both forms so the
     // lookup succeeds regardless of which side has the prefix.
-    if (subRecipeFound && structure && recipe) {
-      const grossHits = matchGrossIngredients(recipe.grossIngredients, row.subRecipeName);
+    if (subRecipeFound && structure && grossHits.length) {
       const stripPrefix = (s: string) => s.replace(/^[A-Z]{2}-[A-Z]{2}\s+/i, "");
       const catLookup = new Map<string, string>();
       for (const g of grossHits) {
@@ -431,17 +467,25 @@ export function calcBatch(
     .filter(m => effectiveCap(m) > 0)
     .map(m => {
       const cap = effectiveCap(m);
-      const fullBatches = totalKg > 0 ? Math.floor(totalKg / cap) : 0;
-      const remainder = totalKg > 0 ? +(totalKg - fullBatches * cap).toFixed(3) : 0;
-      const b = fullBatches + (remainder > 0 ? 1 : 0);
+      const batches = totalKg > 0 ? Math.ceil(totalKg / cap) : 0;
+      const remainder = totalKg > 0 ? +(totalKg - (batches - 1) * cap).toFixed(3) : 0;
+      const utilization = batches > 0 ? Math.round((remainder / cap) * 100) : 0;
+      const bMatch = bibleActive(m) ? bibleMatches.get(m) ?? null : null;
+      const mq: "exact" | "substring" | "none" = !bMatch
+        ? "none"
+        : normBibleStr(bMatch.itemName ?? "") === normBibleStr(row.subRecipeName)
+          ? "exact"
+          : "substring";
       return {
         equip: m,
         label: EQUIP_LABELS[m] ?? m,
         capacityKg: cap,
-        batches: Math.max(b, totalKg > 0 ? 1 : 0),
+        batches,
         perBatchKg: cap,
-        remainderKg: remainder,
-        bibleMatch: bibleActive(m) ? bibleMatches.get(m) ?? null : null,
+        remainderKg: remainder === cap ? 0 : remainder,
+        utilizationPct: remainder === cap ? 100 : utilization,
+        bibleMatch: bMatch,
+        matchQuality: mq,
       };
     });
 
@@ -458,26 +502,14 @@ export function calcBatch(
   const perBatchKg = primaryBatch?.perBatchKg ?? (capacityKg ?? 0);
   const remainderKg = primaryBatch?.remainderKg ?? 0;
 
-  const ING_CAT_ORDER: Record<string, number> = { SPI: 0, PHF: 1, DAI: 2, PRO: 3 };
   for (const ing of ingredients) {
-    // Zutaten-Menge für einen vollen Batch (proportional zur Batch-Kapazität)
     ing.perBatchKg = totalKg > 0 && perBatchKg > 0
       ? +(ing.totalKg / totalKg * perBatchKg).toFixed(3)
       : 0;
     ing.separate = isSeparate(ing.name);
     ing.spiceRoom = isSpiceRoom(ing.name);
   }
-  // Spice-Room/SEPARATE-Zutaten immer zuerst (Matteo, Regel §4.2 „schnelleres Picking“),
-  // danach die bestehende Kategorie-/Gewichtssortierung als Tie-Break.
-  ingredients.sort((a, b) => {
-    const sa = a.spiceRoom || a.separate ? 1 : 0;
-    const sb = b.spiceRoom || b.separate ? 1 : 0;
-    if (sa !== sb) return sb - sa;
-    const ao = ING_CAT_ORDER[a.category.trim().toUpperCase().slice(0, 3)] ?? 99;
-    const bo = ING_CAT_ORDER[b.category.trim().toUpperCase().slice(0, 3)] ?? 99;
-    if (ao !== bo) return ao - bo;
-    return b.totalKg - a.totalKg; // innerhalb Kategorie: schwerste zuerst
-  });
+  ingredients.sort(sortIngredients);
 
   const instructionPair = findSubRecipeInstructions(recipe, data.mealCatalog, data.instructions, row.subRecipeName);
 
@@ -514,19 +546,33 @@ export function calcBatch(
     factorFallbackCapacity: !!factorClass.fallback,
     readyMade: READY_MADE.test(row.subRecipeName),
     allergensContains,
+    uomWarnings,
+    factorOverridesEquip: rti || neverBatch,
   };
 }
 
 // ── CSV parsers ────────────────────────────────────────────────────────────
 
-export function parseKetCsv(text: string): KetRow[] {
+export interface ParseKetCsvResult {
+  rows: KetRow[];
+  warnings: string[];
+}
+
+export function parseKetCsv(text: string): ParseKetCsvResult {
   const result = Papa.parse<Record<string, string>>(text, {
     header: true,
     skipEmptyLines: true,
     transformHeader: h => h.trim(),
   });
 
-  return result.data
+  const warnings: string[] = [];
+  if (result.errors.length) {
+    for (const err of result.errors) {
+      warnings.push(`Zeile ${(err.row ?? 0) + 2}: ${err.message}`);
+    }
+  }
+
+  const rows = result.data
     .map((row, idx) => {
       const recipeName = (row["Recipe Name"] ?? "").trim();
       const recipeCode = extractCode(recipeName);
@@ -562,6 +608,8 @@ export function parseKetCsv(text: string): KetRow[] {
       } satisfies KetRow;
     })
     .filter(r => r.woNumber);
+
+  return { rows, warnings };
 }
 
 export function woEntriesToKetRows(rows: WorkOrderEntry[]): KetRow[] {
@@ -615,4 +663,11 @@ export function catColor(cat: string): string {
   if (c === "SPI") return "text-amber-700 bg-amber-50";
   if (c === "DRY") return "text-slate-600 bg-slate-100";
   return "text-slate-500 bg-slate-50";
+}
+
+// Stabiler Cache-Key für WO-Instructions: basiert auf Rezeptcode + Sub-Rezeptname,
+// damit Instructions über Wochen hinweg wiederverwendet werden (gleiche Gerichte
+// wiederholen sich alle 3–8 Wochen mit neuen WO-Nummern).
+export function instructionCacheKey(row: KetRow): string {
+  return `${row.recipeCode}::${row.subRecipeName}`;
 }

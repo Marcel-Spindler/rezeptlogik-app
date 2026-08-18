@@ -18,6 +18,7 @@ import { RecipeList } from "../components/RecipeList";
 import { DataHealthBanner } from "../components/DataHealthBanner";
 import { CapacityWarningBanner } from "../components/CapacityWarningBanner";
 import { MealCatalogView } from "../features/meal-catalog/MealCatalogView";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BlastChillerView } from "../features/blast-chiller/BlastChillerView";
 import { AllergenPlatingView } from "../features/allergen-plating/AllergenPlatingView";
 import { resolveRecipeByCode } from "../lib/helpers";
@@ -32,16 +33,18 @@ function MainPane({ view }: { view: AppView }) {
   switch (view) {
     case "catalog":
       return (
-        <MealCatalogView
-          catalog={data.mealCatalog ?? {}}
-          data={data}
-          selectedWeek={selectedWeek}
-          upliftPercent={upliftPercent}
-          onSelectWeek={setSelectedWeek}
-          onOpenRecipe={code => { setSelectedRecipe(code); setView("recipe"); }}
-          onOpenPlanning={code => { setSelectedRecipe(code); setView("planning"); }}
-          onOpenWms={() => setView("wms")}
-        />
+        <ErrorBoundary>
+          <MealCatalogView
+            catalog={data.mealCatalog ?? {}}
+            data={data}
+            selectedWeek={selectedWeek}
+            upliftPercent={upliftPercent}
+            onSelectWeek={setSelectedWeek}
+            onOpenRecipe={code => { setSelectedRecipe(code); setView("recipe"); }}
+            onOpenPlanning={code => { setSelectedRecipe(code); setView("planning"); }}
+            onOpenWms={() => setView("wms")}
+          />
+        </ErrorBoundary>
       );
 
     case "recipe":
@@ -153,6 +156,7 @@ function FullApp() {
             recipes={filteredRecipes}
             allRecipesCount={recipesOfWeek.length}
             recipesByCode={recipesByCode}
+            mealCatalog={data.mealCatalog}
             activeCode={activeRecipe?.code}
             selectedWeek={selectedWeek}
             upliftPercent={upliftPercent}

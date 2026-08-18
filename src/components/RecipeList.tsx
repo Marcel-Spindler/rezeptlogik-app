@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { WeekRecipe, Recipe } from "../core/types";
+import type { WeekRecipe, Recipe, MealCatalogEntry } from "../core/types";
 import { getRampUpHistory } from "../lib/rampUpHistory";
 import { RampHistorySparkline } from "../features/recipe-detail/shared";
 import {
-  adjustedPortions, fmtNum,
+  adjustedPortions, codeDigits, fmtNum,
   MARKETS, MARKET_COLOR, MARKET_LABEL,
   recipeListTone, stripMarketTag,
   resolveRecipeByCode, searchMatchReason,
@@ -41,6 +41,7 @@ interface Props {
   recipes: WeekRecipe[];
   allRecipesCount: number;
   recipesByCode: Record<string, Recipe>;
+  mealCatalog?: Record<string, MealCatalogEntry>;
   activeCode: string | undefined;
   selectedWeek: string;
   upliftPercent: number;
@@ -85,9 +86,10 @@ function MarketPills({ wr }: { wr: WeekRecipe }) {
   );
 }
 
-function RecipeListItem({ wr, recipe, isActive, week, upliftPercent, searchNeedle, isFavorite, onToggleFavorite, onClick }: {
+function RecipeListItem({ wr, recipe, catalogEntry, isActive, week, upliftPercent, searchNeedle, isFavorite, onToggleFavorite, onClick }: {
   wr: WeekRecipe;
   recipe: Recipe | undefined;
+  catalogEntry: MealCatalogEntry | undefined;
   isActive: boolean;
   week: string;
   upliftPercent: number;
@@ -100,6 +102,8 @@ function RecipeListItem({ wr, recipe, isActive, week, upliftPercent, searchNeedl
   const portions = adjustedPortions(getBaseVerdenVolume(wr), upliftPercent);
   const sparkValues = getRampUpHistory(week).map(s => s.volumes[wr.code] ?? 0).filter(v => v > 0);
   const matchReason = searchNeedle ? searchMatchReason(searchNeedle, wr, recipe) : null;
+  const cup = catalogEntry?.sheets?.["Meal DB_Culinary"]?.["Cup"];
+  const photoUrl = catalogEntry?.photoUrl && (catalogEntry.photoUrl.startsWith("/data/meal-images/") || /\.(png|jpe?g|webp)(\?|$)/i.test(catalogEntry.photoUrl)) ? catalogEntry.photoUrl : undefined;
 
   return (
     <button
@@ -109,6 +113,7 @@ function RecipeListItem({ wr, recipe, isActive, week, upliftPercent, searchNeedl
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5">
+          {photoUrl && <img src={photoUrl} alt="" className="h-8 w-8 rounded object-cover shrink-0" />}
           <span
             role="button"
             className={`text-sm cursor-pointer select-none ${isFavorite ? "text-amber-400" : "text-slate-300 hover:text-amber-300"}`}
@@ -129,6 +134,7 @@ function RecipeListItem({ wr, recipe, isActive, week, upliftPercent, searchNeedl
       </div>
       <div className="mt-1.5 flex flex-wrap gap-1">
         <span className="pill text-[10px]" style={tone.preference}>{wr.preference}</span>
+        {cup && <span className="pill text-[10px] bg-sky-100 text-sky-800">{cup}</span>}
         <MarketPills wr={wr} />
         {matchReason && (
           <span className="pill text-[10px] bg-violet-100 text-violet-800 max-w-[14rem] truncate" title={matchReason.label}>
@@ -150,7 +156,7 @@ function EmptyState({ hasResults, hasAnyRecipes }: { hasResults: boolean; hasAny
 }
 
 export function RecipeList({
-  recipes, allRecipesCount, recipesByCode, activeCode, selectedWeek, upliftPercent,
+  recipes, allRecipesCount, recipesByCode, mealCatalog, activeCode, selectedWeek, upliftPercent,
   searchText, onSearchChange, onSelect,
 }: Props) {
   const searchNeedle = searchText.trim().toLowerCase();
@@ -213,6 +219,7 @@ export function RecipeList({
                 <RecipeListItem
                   wr={r}
                   recipe={resolveRecipeByCode(recipesByCode, r.code)}
+                  catalogEntry={mealCatalog?.[r.code] ?? (mealCatalog ? Object.values(mealCatalog).find(e => codeDigits(e.mealId) === codeDigits(r.code)) : undefined)}
                   isActive={activeCode === r.code}
                   week={selectedWeek}
                   upliftPercent={upliftPercent}

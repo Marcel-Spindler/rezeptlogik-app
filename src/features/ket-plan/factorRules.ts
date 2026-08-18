@@ -70,6 +70,10 @@ export function classify(name: string, cookMethods: string[] = []): FactorClassi
   // Führendes "Sauce" ist immer eine Sauce, auch wenn der Name die Proteinart nennt.
   if (/^\s*sauce\b/.test(n)) return { rti: false, capacityKg: isMushroomSauce ? 90 : 105 };
 
+  // Generelle Sauce-Erkennung — auch "Chicken Teriyaki Sauce" ist eine Sauce,
+  // nicht Fleisch. Muss VOR den Fleisch-Regeln stehen.
+  if (/sauce|salsa|ketchup|marinara|gravy|fondue|teriyaki|dressing/.test(n)) return { rti: false, capacityKg: isMushroomSauce ? 90 : 105 };
+
   // Fleisch/Fisch, das NIE gesplittet wird (Matteo 2026-07-08).
   if (/(shred|pulled|sfilacc)/.test(n) && /(beef|rind|chuck|pork|schwein|maiale)/.test(n)) return { rti: false, capacityKg: NO_BATCH };
   if (/burger|patty|meatball|polpett/.test(n)) return { rti: false, capacityKg: NO_BATCH };
@@ -85,8 +89,6 @@ export function classify(name: string, cookMethods: string[] = []): FactorClassi
   if (/green onion|cipollott|scallion/.test(n)) return { rti: false, capacityKg: ONE_BATCH };
   if (/pine ?nut|pinoli|nuts?\b|pistachio|almond/.test(n) && !/flour|mehl/.test(n)) return { rti: false, capacityKg: ONE_BATCH };
 
-  // Saucen ohne führendes "Sauce" (z. B. "Honey Mustard Sauce").
-  if (/sauce|salsa|ketchup|marinara|gravy|fondue|teriyaki|dressing/.test(n)) return { rti: false, capacityKg: isMushroomSauce ? 90 : 105 };
   if (/rice|reis|risotto|grain|basmati|spanakopita|pilaf|couscous|quinoa/.test(n)) return { rti: false, capacityKg: 100 };
   if (/mash|stamppot|puree|purè|püree/.test(n)) return { rti: false, capacityKg: 95 };
   if (/butter/.test(n)) return { rti: false, capacityKg: 105 };

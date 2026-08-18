@@ -52,7 +52,7 @@ export async function generateWoInstruction(row: KetRow, calc: BatchCalc): Promi
   const endpoint = typeof window === "undefined"
     ? "http://127.0.0.1:3142/api/local-db/gemini-instruction"
     : "/api/local-db/gemini-instruction";
-  const response = await fetch(endpoint, {
+  const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ context: buildWoInstructionContext(row, calc) }),
@@ -81,6 +81,14 @@ export interface WoBatchResult {
 // überschreitet das schnell, deshalb wird hier in kleine, garantiert schnelle
 // Häppchen aufgeteilt statt alle Items in einem einzigen HTTP-Request zu senden.
 const BATCH_CHUNK_SIZE = 5;
+const FETCH_TIMEOUT_MS = 90_000; // 90s pro Request (statt unendlich)
+const MAX_CHUNK_RETRIES = 2;
+
+function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...opts, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 async function generateWoInstructionsChunk(
   items: Array<{ key: string; row: KetRow; calc: BatchCalc }>,
@@ -89,7 +97,7 @@ async function generateWoInstructionsChunk(
     ? "http://127.0.0.1:3142/api/local-db/gemini-instructions-batch"
     : "/api/local-db/gemini-instructions-batch";
 
-  const response = await fetch(endpoint, {
+  const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ items: items.map((item) => ({
@@ -132,18 +140,23 @@ export async function generateWoInstructionsBatch(
 
   for (let i = 0; i < items.length; i += BATCH_CHUNK_SIZE) {
     const chunk = items.slice(i, i + BATCH_CHUNK_SIZE);
-    let chunkResult: WoBatchResult;
-    try {
-      chunkResult = await generateWoInstructionsChunk(chunk);
-    } catch (error) {
-      // HTTP-Ebene des ganzen Häppchens fehlgeschlagen (z. B. trotzdem ein Timeout) —
-      // nur diese wenigen Items als fehlgeschlagen markieren, Rest des Batches weiterlaufen lassen.
-      const message = error instanceof Error ? error.message : String(error);
-      chunkResult = { generated: {}, failed: chunk.map((item) => ({ key: item.key, woNumber: item.row.woNumber, error: message })) };
+    let chunkResult: WoBatchResult | null = null;
+    for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
+      try {
+        chunkResult = await generateWoInstructionsChunk(chunk);
+        break;
+      } catch (error) {
+        if (attempt < MAX_CHUNK_RETRIES) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); // backoff
+          continue;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        chunkResult = { generated: {}, failed: chunk.map((item) => ({ key: item.key, woNumber: item.row.woNumber, error: message })) };
+      }
     }
-    Object.assign(generated, chunkResult.generated);
-    failed.push(...chunkResult.failed);
-    onChunkDone?.(chunkResult, Math.min(i + chunk.length, items.length), items.length);
+    Object.assign(generated, chunkResult!.generated);
+    failed.push(...chunkResult!.failed);
+    onChunkDone?.(chunkResult!, Math.min(i + chunk.length, items.length), items.length);
   }
 
   if (Object.keys(generated).length === 0 && failed.length > 0) {

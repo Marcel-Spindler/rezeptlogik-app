@@ -78,6 +78,8 @@ export interface IngCalc {
   totalKg: number;
   perBatchKg: number;
   yieldPct: number | null;
+  // Stückzahl-Zutaten (pcs/stk/ea): kg bleibt 0, Menge hier.
+  totalPcs: number;
   // Factor-Regeln (Matteos capacity-rules.js): SEPARATE-Tag bzw. Spice-Room-Zutat —
   // wird in der PDF/UI immer zuerst sortiert + unterstrichen dargestellt.
   separate: boolean;
@@ -91,9 +93,13 @@ export interface EquipBatch {
   batches: number;
   perBatchKg: number;   // volle Batch-Kapazität (= capacityKg)
   remainderKg: number;  // letzter Rest-Batch (0 wenn exakt aufgeht)
+  // Auslastung des letzten Batches in % (0–100). 100 = exakt aufgegangen.
+  utilizationPct: number;
   // Set only for BRAISER when capacityKg came from a Kuechenbible match
   // (instead of the manual/default caps value) — lets the UI label the source.
   bibleMatch?: EquipBibleEntry | null;
+  // Wie gut der Bible-Match ist: "exact" (gesamter Name), "substring" (Teilstring), "none".
+  matchQuality?: "exact" | "substring" | "none";
 }
 
 export interface BatchCalc {
@@ -131,4 +137,8 @@ export interface BatchCalc {
   readyMade: boolean;
   // Bilinguale (EN/DE) CONTAINS-Allergenliste, aus DetailedIngredient.allergen gesammelt.
   allergensContains: string[];
+  // Warnungen zu unbekannten/unkonvertierbaren Einheiten (z.B. "oz", "cup").
+  uomWarnings: string[];
+  // true wenn Factor-Regeln (neverBatch/rti) die equipBatches-Logik übersteuern.
+  factorOverridesEquip: boolean;
 }
