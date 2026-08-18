@@ -1,0 +1,359 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#F0F4F8;color:#222;min-height:100vh;font-size:13px}
+.hdr{background:#1F3864;color:#fff;padding:13px 20px;display:flex;align-items:center;gap:11px}
+.hdr-icon{width:32px;height:32px;background:rgba(255,255,255,.15);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.hdr h1{font-size:14px;font-weight:700}
+.hdr p{font-size:11px;opacity:.7;margin-top:1px}
+.wrap{padding:14px 18px;max-width:1200px;margin:0 auto}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:620px){.two-col{grid-template-columns:1fr}}
+.card{background:#fff;border-radius:10px;border:0.5px solid #dde3ee;padding:14px}
+.card-title{font-size:12px;font-weight:700;color:#1F3864;margin-bottom:9px}
+textarea{width:100%;border:1px solid #d0d8e8;border-radius:7px;padding:9px;font-size:12px;font-family:Arial,sans-serif;resize:vertical;color:#333;outline:none}
+textarea:focus{border-color:#2E5AAC}
+.upload-zone{border:2px dashed #BDD5FF;border-radius:9px;padding:24px 14px;text-align:center;cursor:pointer;position:relative;background:#F7FAFF;transition:all .18s}
+.upload-zone:hover,.upload-zone.drag{border-color:#2E5AAC;background:#EDF4FF}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.u-icon{font-size:26px;margin-bottom:5px}
+.upload-zone h3{font-size:12px;font-weight:700;color:#2E5AAC}
+.upload-zone p{font-size:11px;color:#888;margin-top:2px}
+.file-ok{background:#E8F5E9;border-color:#4CAF50;border-style:solid}
+.file-ok h3{color:#2E7D32}
+.row-btns{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.btn{padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:all .13s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:#2E5AAC;color:#fff}
+.btn-primary:not(:disabled):hover{background:#1F3864}
+.btn-success{background:#2E7D32;color:#fff}
+.btn-success:not(:disabled):hover{background:#1B5E20}
+.btn-ghost{background:#f0f2f5;color:#444}
+.btn-ghost:hover{background:#e2e5ea}
+.btn-sm{padding:4px 10px;font-size:11px}
+.process-row{text-align:center;margin-bottom:14px}
+.match-wrap{margin-top:10px;max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}
+.mi{display:flex;align-items:center;gap:7px;padding:4px 7px;border-radius:6px;font-size:11px}
+.mi-ok{background:#E8F5E9}.mi-warn{background:#FFF8E1}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot-g{background:#4CAF50}.dot-o{background:#FF9800}
+.mi-name{flex:1;font-weight:600;color:#222}
+.mi-csv{color:#888;font-size:10px}
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.stat{background:#fff;border:0.5px solid #dde3ee;border-radius:7px;padding:6px 12px;font-size:11px;color:#555}
+.stat strong{color:#1F3864;font-size:13px;display:block}
+
+/* legend */
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#333;background:#fff;border:0.5px solid #dde3ee;border-radius:6px;padding:3px 9px}
+.leg-swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0;border:0.5px solid rgba(0,0,0,.1)}
+
+.tbl-wrap{overflow-x:auto;border-radius:9px;border:0.5px solid #dde3ee}
+table{border-collapse:collapse;width:100%;min-width:700px;font-size:11.5px}
+thead th{background:#1F3864;color:#fff;padding:7px 5px;font-size:10px;font-weight:700;text-align:center;border:0.5px solid rgba(255,255,255,.1);white-space:nowrap}
+thead th:first-child{text-align:left;padding-left:10px;min-width:200px}
+.dr td{padding:5px 5px;border:0.5px solid rgba(0,0,0,.07);vertical-align:middle}
+.dr td:first-child{padding-left:10px;font-size:11.5px;font-weight:600}
+.xmark{text-align:center;font-weight:900;font-size:12px}
+.empty{text-align:center;color:rgba(0,0,0,.18);font-size:10px}
+
+.toast{position:fixed;bottom:16px;right:16px;background:#1F3864;color:#fff;padding:10px 16px;border-radius:8px;font-size:12px;font-weight:700;box-shadow:0 3px 16px rgba(0,0,0,.22);opacity:0;transition:opacity .28s;pointer-events:none;z-index:9999}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-icon">🥗</div>
+  <div>
+    <h1>Allergen Plating Bot <span id="wkLabel" style="background:rgba(255,255,255,.18);border-radius:4px;padding:1px 7px;font-size:10px;margin-left:5px">W??</span></h1>
+    <p>Gleiche Allergen-Kombination = gleiche Zeilenfarbe · sortiert von wenig → viele</p>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title">📋 Rezeptnamen einfügen (einen pro Zeile)</div>
+      <textarea id="recipeInput" rows="13" placeholder="Cabbage in Cheese Sauce & Minced Beef
+Salmon and Sweet Soy Dressing
+Creamy Lemon Pepper Chicken
+…"></textarea>
+      <div class="row-btns">
+        <button class="btn btn-ghost btn-sm" onclick="loadW35()">W35 Standard laden</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('recipeInput').value='';updateCount()">✕ Leeren</button>
+        <span id="rCount" style="font-size:11px;color:#888;margin-left:auto">0 Rezepte</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📂 CSV-Datei hochladen</div>
+      <div class="upload-zone" id="dropZone">
+        <input type="file" id="csvFile" accept=".csv" onchange="handleFile(this.files[0])"/>
+        <div class="u-icon" id="uIco">📊</div>
+        <h3 id="uTit">CSV hier ablegen oder klicken</h3>
+        <p id="uSub">export-recipes_xxx.csv</p>
+      </div>
+      <div id="matchWrap" style="display:none">
+        <div style="font-size:11px;font-weight:700;color:#1F3864;margin:9px 0 4px">Matching-Vorschau:</div>
+        <div class="match-wrap" id="matchList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="process-row">
+    <button class="btn btn-primary" id="procBtn" onclick="processData()" disabled>⚡ Allergene extrahieren & Tabelle erstellen</button>
+  </div>
+
+  <div id="resultSec" style="display:none">
+    <div class="stats" id="statsBar"></div>
+    <div class="legend" id="legendBar"></div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn btn-success btn-sm" onclick="exportExcel()">📥 Excel exportieren</button>
+    </div>
+    <div class="tbl-wrap"><table id="tbl"></table></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const AM={
+  'MILCH (EINSCHLIESSLICH LAKTOSE)':'Milch (Laktose)',
+  'SCHWEFELDIOXIDE UND SULFITE':'Sulfite / Schwefeldioxid',
+  'FISCH':'Fisch','EIER':'Eier',
+  'SESAMSAMEN':'Sesam','SESAM':'Sesam',
+  'SELLERIE':'Sellerie','SENF':'Senf',
+  'SCHALENFRÜCHTE':'Nüsse / Schalenfrüchte',
+  'KASCHUNÜSSE':'Nüsse / Schalenfrüchte',
+  'MANDELN':'Nüsse / Schalenfrüchte',
+  'NÜSSE':'Nüsse / Schalenfrüchte',
+  'SOJA':'Soja',
+  'GLUTENHALTIGES GETREIDE':'Weizen / Gluten',
+  'WEIZEN':'Weizen / Gluten'
+};
+const COLS=['Milch (Laktose)','Sulfite / Schwefeldioxid','Fisch','Eier','Sesam','Sellerie','Senf','Nüsse / Schalenfrüchte','Soja','Weizen / Gluten'];
+const W35=['Cabbage in Cheese Sauce & Minced Beef','Salmon and Sweet Soy Dressing','Creamy Lemon Pepper Chicken','Salmon in creamy Gochugaru sauce','Rosemary-Tomato Chicken','Chicken in tomato cream sauce','Sun-Dried Tomato Penne','Vegetarian Biryani','Creamy Leek Pork tenderloin','Spicy Beef & Black Bean Chili - Version B','Souvlaki-style pork tenderloin','Pulled chicken with cheddar and bacon','Honey Mustard Pork Tenderloin','Bulgogi Pulled Beef Bowl','Indian style butter chicken','Cheddar & Red Pepper Chicken Thigh Pasta','Hot Honey Barramundi & Wild rice','Chive & Garlic Chicken','Beef & pepper casserole'];
+
+/* Distinct row colors — soft pastel palette, clearly different from each other */
+const PALETTE=[
+  '#FFE0E0','#FFE8CC','#FFF5CC','#E0F2D6','#D6EAF8',
+  '#E8D6F8','#D6F2EE','#FDECEA','#E8F0FE','#F8D6E8',
+  '#D6F0F8','#F0F8D6','#F8ECD6','#E0E8FF','#FFD6F0',
+  '#D6FFE8','#FFF0D6','#E8FFD6','#D6D6FF','#FFE8E8'
+];
+
+let csvRows=[],weekLabel='W??',results=[];
+// map: allergen-key → color
+const colorMap={};
+let colorIdx=0;
+
+function getColor(key){
+  if(key==='')return '#FFFFFF';
+  if(!colorMap[key]){colorMap[key]=PALETTE[colorIdx%PALETTE.length];colorIdx++;}
+  return colorMap[key];
+}
+
+function n(s){return(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+function tokenScore(a,b){
+  const ta=a.toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(x=>x.length>2);
+  const tb=new Set(b.toLowerCase().replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(x=>x.length>2));
+  if(!ta.length||!tb.size)return 0;
+  return ta.filter(t=>tb.has(t)).length/Math.max(ta.length,tb.size);
+}
+function findMatch(recipe,names){
+  const nr=n(recipe);let best=null,bs=0;
+  names.forEach(cn=>{
+    const nc=n(cn);
+    let sc=(nc.includes(nr)||nr.includes(nc))?0.9+Math.min(nr.length,nc.length)/1000:tokenScore(recipe,cn);
+    if(sc>bs){bs=sc;best=cn;}
+  });
+  return bs>0.3?{name:best,score:bs}:null;
+}
+function getRecipes(){return document.getElementById('recipeInput').value.split('\n').map(l=>l.trim()).filter(l=>l.length>1);}
+function loadW35(){document.getElementById('recipeInput').value=W35.join('\n');updateCount();}
+function updateCount(){document.getElementById('rCount').textContent=getRecipes().length+' Rezepte';checkReady();}
+document.getElementById('recipeInput').addEventListener('input',updateCount);
+function checkReady(){document.getElementById('procBtn').disabled=!(getRecipes().length>0&&csvRows.length>0);}
+
+function parseCSVLine(line){
+  const res=[];let cur='';let q=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){if(q&&line[i+1]==='"'){cur+='"';i++;}else q=!q;}
+    else if(ch===','&&!q){res.push(cur);cur='';}
+    else cur+=ch;
+  }
+  res.push(cur);return res;
+}
+
+function handleFile(file){
+  if(!file)return;
+  const wm=file.name.match(/[Ww](\d{2})/);
+  if(wm){weekLabel='W'+wm[1];document.getElementById('wkLabel').textContent=weekLabel;}
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const lines=e.target.result.split('\n');
+    const hdr=parseCSVLine(lines[0]);
+    const ni=hdr.findIndex(h=>h.toLowerCase().includes('recipe name'));
+    const ai=hdr.findIndex(h=>h.toLowerCase().includes('allergen contains'));
+    const si=hdr.findIndex(h=>h.toLowerCase().includes('sub-allergen'));
+    csvRows=[];
+    for(let i=1;i<lines.length;i++){
+      const c=parseCSVLine(lines[i]);
+      if(c.length<2)continue;
+      const nm=(c[ni]||'').replace(/^"+|"+$/g,'').trim();
+      if(!nm)continue;
+      csvRows.push({name:nm,allergen:(c[ai]||'').replace(/^"+|"+$/g,'').trim(),sub:(si>=0?(c[si]||''):'').replace(/^"+|"+$/g,'').trim()});
+    }
+    const dz=document.getElementById('dropZone');
+    dz.classList.add('file-ok');
+    document.getElementById('uIco').textContent='✅';
+    document.getElementById('uTit').textContent=file.name;
+    document.getElementById('uSub').textContent=csvRows.length+' Zeilen eingelesen';
+    showMatchPreview();
+    checkReady();
+    showToast('CSV geladen: '+csvRows.length+' Zeilen ✓');
+  };
+  reader.readAsText(file,'UTF-8');
+}
+
+function showMatchPreview(){
+  const recipes=getRecipes();
+  if(!recipes.length||!csvRows.length)return;
+  const names=[...new Set(csvRows.map(r=>r.name))];
+  document.getElementById('matchList').innerHTML=recipes.map(r=>{
+    const m=findMatch(r,names);
+    return m
+      ?`<div class="mi mi-ok"><div class="dot dot-g"></div><div class="mi-name">${r}</div><div class="mi-csv">→ ${m.name.replace(/^\[.*?\]\s*-?\s*/,'').substring(0,48)}</div></div>`
+      :`<div class="mi mi-warn"><div class="dot dot-o"></div><div class="mi-name">${r}</div><div class="mi-csv" style="color:#E65100">kein Match</div></div>`;
+  }).join('');
+  document.getElementById('matchWrap').style.display='block';
+}
+
+function extractAllergens(str){
+  const s=new Set();
+  (str||'').split(',').forEach(a=>{
+    const u=a.trim().toUpperCase();
+    for(const[k,v]of Object.entries(AM)){if(u.includes(k))s.add(v);}
+  });
+  return s;
+}
+
+function processData(){
+  // reset color map for fresh assignment
+  Object.keys(colorMap).forEach(k=>delete colorMap[k]);
+  colorIdx=0;
+
+  const recipes=getRecipes();
+  if(!recipes.length||!csvRows.length)return;
+  const aMap={};
+  csvRows.forEach(row=>{
+    recipes.forEach(recipe=>{
+      const m=findMatch(recipe,[row.name]);
+      if(m&&m.score>0.3){
+        if(!aMap[recipe])aMap[recipe]=new Set();
+        [row.allergen,row.sub].forEach(s=>extractAllergens(s).forEach(v=>aMap[recipe].add(v)));
+      }
+    });
+  });
+
+  results=recipes.map(r=>({
+    name:r,
+    allergens:aMap[r]||new Set(),
+    found:!!aMap[r]
+  }));
+
+  // Sort: count ASC, then by sorted allergen key for stable grouping
+  results.sort((a,b)=>{
+    const ca=a.allergens.size,cb=b.allergens.size;
+    if(ca!==cb)return ca-cb;
+    return [...a.allergens].sort().join('|').localeCompare([...b.allergens].sort().join('|'));
+  });
+
+  // Assign colors: same allergen combo = same color
+  // First pass: collect unique keys in sorted order so colors are assigned top-to-bottom
+  const seenKeys=[];
+  results.forEach(r=>{
+    const key=[...r.allergens].sort().join('|');
+    if(!seenKeys.includes(key))seenKeys.push(key);
+  });
+  seenKeys.forEach(k=>getColor(k));
+
+  renderLegend(seenKeys);
+  renderTable();
+  document.getElementById('resultSec').style.display='block';
+  document.getElementById('resultSec').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function renderLegend(keys){
+  const items=keys.filter(k=>k!=='').map(k=>{
+    const col=getColor(k);
+    const label=k.split('|').join(' + ');
+    return `<div class="leg-item"><div class="leg-swatch" style="background:${col}"></div>${label}</div>`;
+  });
+  if(keys.includes(''))items.unshift(`<div class="leg-item"><div class="leg-swatch" style="background:#fff"></div>Keine Allergene</div>`);
+  document.getElementById('legendBar').innerHTML=items.join('');
+}
+
+function renderTable(){
+  const found=results.filter(r=>r.found).length;
+  document.getElementById('statsBar').innerHTML=
+    `<div class="stat"><strong>${weekLabel}</strong>Woche</div>
+     <div class="stat"><strong>${results.length}</strong>Rezepte</div>
+     <div class="stat" style="border-color:#4CAF50"><strong style="color:#2E7D32">${found}</strong>gematcht</div>
+     <div class="stat" style="border-color:#FF9800"><strong style="color:#E65100">${results.length-found}</strong>nicht gefunden</div>`;
+
+  let h=`<thead><tr>
+    <th style="text-align:left;padding-left:10px">Rezeptname</th>
+    ${COLS.map(c=>`<th>${c}</th>`).join('')}
+  </tr></thead><tbody>`;
+
+  results.forEach(r=>{
+    const key=[...r.allergens].sort().join('|');
+    const bg=getColor(key);
+    // darken text slightly for readability on colored bg
+    const nameStyle=r.found?`color:#222`:`color:#999;font-style:italic`;
+    h+=`<tr class="dr" style="background:${bg}">`;
+    h+=`<td style="${nameStyle}">${r.name}</td>`;
+    COLS.forEach(c=>{
+      h+=r.allergens.has(c)
+        ?`<td class="xmark">X</td>`
+        :`<td class="empty">–</td>`;
+    });
+    h+='</tr>';
+  });
+  h+='</tbody>';
+  document.getElementById('tbl').innerHTML=h;
+}
+
+function exportExcel(){
+  if(!results.length)return;
+  const wb=XLSX.utils.book_new();
+  const data=[[`${weekLabel} – Allergenkennzeichnung`],['Rezeptname',...COLS]];
+  results.forEach(r=>{data.push([r.name,...COLS.map(c=>r.allergens.has(c)?'X':'')]);});
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=[{wch:38},...COLS.map(()=>({wch:14}))];
+  XLSX.utils.book_append_sheet(wb,ws,`${weekLabel} Allergene`);
+  XLSX.writeFile(wb,`${weekLabel}_Allergene_Plating.xlsx`);
+  showToast('Excel exportiert ✓');
+}
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+const dz=document.getElementById('dropZone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');handleFile(e.dataTransfer.files[0]);});
+</script>
+</body>
+</html>

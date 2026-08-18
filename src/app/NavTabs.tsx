@@ -10,6 +10,8 @@ const NAV_TABS: ReadonlyArray<{ view: AppView; label: string }> = [
   { view: "whatif", label: "What-If Rechner" },
   { view: "rundmail", label: "Rundmail" },
   { view: "import", label: "CSV Import" },
+  { view: "blast-chiller", label: "❄️ Blast Chiller Bot" },
+  { view: "allergen-plating", label: "🥗 Allergen Plating Bot" },
 ];
 
 export function NavTabs({ view, onChange }: { view: AppView; onChange: (v: AppView) => void }) {

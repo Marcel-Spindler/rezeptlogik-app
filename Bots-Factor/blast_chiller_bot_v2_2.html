@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#F0F4F8;color:#222;min-height:100vh;font-size:13px}
+.hdr{background:#1F3864;color:#fff;padding:13px 20px;display:flex;align-items:center;gap:11px}
+.hdr-icon{width:32px;height:32px;background:rgba(255,255,255,.15);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.hdr h1{font-size:14px;font-weight:700}
+.hdr p{font-size:11px;opacity:.7;margin-top:1px}
+.kw-badge{background:rgba(255,255,255,.18);border-radius:4px;padding:1px 7px;font-size:10px;margin-left:5px}
+.wrap{padding:14px 18px;max-width:1200px;margin:0 auto}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:700px){.two-col{grid-template-columns:1fr}}
+.card{background:#fff;border-radius:10px;border:0.5px solid #dde3ee;padding:14px}
+.card-title{font-size:12px;font-weight:700;color:#1F3864;margin-bottom:9px}
+
+/* upload zone */
+.upload-zone{border:2px dashed #BDD5FF;border-radius:9px;padding:20px 14px;text-align:center;cursor:pointer;position:relative;background:#F7FAFF;transition:all .18s}
+.upload-zone:hover,.upload-zone.drag{border-color:#2E5AAC;background:#EDF4FF}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.u-icon{font-size:22px;margin-bottom:4px}
+.upload-zone h3{font-size:12px;font-weight:700;color:#2E5AAC}
+.upload-zone p{font-size:11px;color:#888;margin-top:2px}
+.file-ok{background:#E8F5E9;border-color:#4CAF50;border-style:solid}
+.file-ok h3{color:#2E7D32}
+
+/* buttons */
+.row-btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.btn{padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;transition:all .13s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:#2E5AAC;color:#fff}
+.btn-primary:not(:disabled):hover{background:#1F3864}
+.btn-success{background:#2E7D32;color:#fff}
+.btn-success:not(:disabled):hover{background:#1B5E20}
+.btn-ghost{background:#f0f2f5;color:#444}
+.btn-ghost:hover{background:#e2e5ea}
+.btn-gsheet{background:#0F9D58;color:#fff}
+.btn-gsheet:hover{background:#0B7A44}
+.btn-csv-dl{background:#6D4C41;color:#fff}
+.btn-csv-dl:hover{background:#4E342E}
+.btn-print-btn{background:#37474F;color:#fff}
+.btn-print-btn:hover{background:#263238}
+.btn-sm{padding:5px 11px;font-size:11px}
+.process-row{text-align:center;margin-bottom:14px}
+
+/* match list */
+.match-wrap{margin-top:8px;max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}
+.mi{display:flex;align-items:center;gap:7px;padding:4px 7px;border-radius:6px;font-size:11px}
+.mi-ok{background:#E8F5E9}.mi-warn{background:#FFF8E1}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dot-g{background:#4CAF50}.dot-o{background:#FF9800}.dot-b{background:#90CAF9}
+.mi-name{flex:1;font-weight:600;color:#222}
+.mi-csv{color:#888;font-size:10px}
+
+/* stats */
+.stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.stat{background:#fff;border:0.5px solid #dde3ee;border-radius:7px;padding:6px 12px;font-size:11px;color:#555}
+.stat strong{color:#1F3864;font-size:13px;display:block}
+
+/* day tabs */
+.day-tabs{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.day-tabs span{font-size:11px;font-weight:700;color:#1F3864;margin-right:2px}
+.dtab{padding:4px 12px;border-radius:20px;font-size:11px;border:1px solid #dde3ee;background:#fff;color:#555;cursor:pointer;font-weight:700;transition:all .13s}
+.dtab:hover{background:#EDF4FF;border-color:#90CAF9}
+.dtab.active{background:#1F3864;color:#fff;border-color:#1F3864}
+
+/* export bar */
+.export-bar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:12px;padding:9px 13px;background:#fff;border-radius:9px;border:0.5px solid #dde3ee}
+.export-bar-lbl{font-size:11px;font-weight:700;color:#1F3864;margin-right:3px}
+
+/* gsheet hint */
+.gsheet-hint{display:none;align-items:center;gap:9px;background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:9px 14px;margin-bottom:10px;font-size:11.5px;color:#1B5E20}
+
+/* chiller sections */
+.chiller-sections{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.ch-section{border-radius:9px;border:0.5px solid #dde3ee;overflow:hidden}
+.ch-head{display:flex;align-items:center;gap:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer;user-select:none}
+.ch-head:hover{filter:brightness(.97)}
+.ch-cnt{font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;margin-left:auto}
+.ch-arr{font-size:11px;color:rgba(0,0,0,.35);margin-left:4px;transition:transform .18s}
+.ch-arr.open{transform:rotate(180deg)}
+.ch-body{border-top:1px solid rgba(0,0,0,.07)}
+
+.c1 .ch-head{background:#E8F5E9;color:#1B5E20}.c1 .ch-cnt{background:#A5D6A7;color:#1B5E20}
+.c3 .ch-head{background:#FFF8E1;color:#7B3F00}.c3 .ch-cnt{background:#FFD54F;color:#7B3F00}
+.c4 .ch-head{background:#E3F2FD;color:#0D3780}.c4 .ch-cnt{background:#90CAF9;color:#0D3780}
+.c5 .ch-head{background:#F3E5F5;color:#4A148C}.c5 .ch-cnt{background:#CE93D8;color:#4A148C}
+.c6 .ch-head{background:#FFEBEE;color:#B71C1C}.c6 .ch-cnt{background:#EF9A9A;color:#B71C1C}
+
+/* table */
+.tbl-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:11.5px}
+thead th{background:#1F3864;color:#fff;padding:7px 8px;font-size:10px;font-weight:700;text-align:center;border:0.5px solid rgba(255,255,255,.1);white-space:nowrap}
+thead th:first-child{text-align:left;padding-left:10px;width:70px}
+thead th:nth-child(2){text-align:left}
+thead th:nth-child(3){text-align:left;width:240px}
+.dr td{padding:6px 8px;border:0.5px solid rgba(0,0,0,.07);vertical-align:middle}
+.dr td:first-child{padding-left:10px;font-size:11px;font-weight:700;color:#1F3864;white-space:nowrap}
+.wo-name{font-size:11.5px;font-weight:600}
+.wo-recipe{font-size:10px;color:#888;margin-top:1px}
+
+/* allergen pills */
+.a-pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;border:1px solid transparent;max-width:230px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.ap-keine {background:#E8F5E9;color:#1B5E20;border-color:#A5D6A7}
+.ap-sulfit{background:#FFF8E1;color:#7B3F00;border-color:#FFD54F}
+.ap-milch {background:#E3F2FD;color:#0D3780;border-color:#90CAF9}
+.ap-multi {background:#F3E5F5;color:#4A148C;border-color:#CE93D8}
+.ap-other {background:#FFEBEE;color:#B71C1C;border-color:#EF9A9A}
+.ap-unbekannt{background:#ECEFF1;color:#546E7A;border-color:#B0BEC5}
+
+.empty-row{text-align:center;padding:18px;color:#aaa;font-size:11px}
+
+/* toast */
+.toast{position:fixed;bottom:16px;right:16px;background:#1F3864;color:#fff;padding:10px 16px;border-radius:8px;font-size:12px;font-weight:700;box-shadow:0 3px 16px rgba(0,0,0,.22);opacity:0;transition:opacity .28s;pointer-events:none;z-index:9999}
+.toast.show{opacity:1}
+
+
+/* ═══════════════════════════════════════════════════════
+   PRINT — ein Blatt pro Chiller (1&2 zusammen)
+   Schrift skaliert automatisch wenn viele Zeilen
+═══════════════════════════════════════════════════════ */
+@media print {
+  /* hide everything except chiller sections */
+  .hdr, .two-col, #status-banner, .process-row,
+  .export-bar, .day-tabs, .gsheet-hint,
+  #dayTabsWrap, .stats, .ch-arr { display:none !important; }
+
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff; margin: 0; padding: 0; font-size: 9pt; }
+
+  .wrap { padding: 0; max-width: 100%; }
+  .chiller-sections { gap: 0; margin: 0; }
+
+  /* each chiller = own page */
+  .ch-section {
+    display: block;
+    page-break-before: always;
+    break-before: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    border: none;
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* first chiller: no blank page before it */
+  .ch-section:first-child {
+    page-break-before: auto;
+    break-before: auto;
+  }
+
+  /* header bar full width, larger */
+  .ch-head {
+    padding: 8pt 10pt !important;
+    font-size: 13pt !important;
+    font-weight: 700 !important;
+    cursor: default;
+    border-radius: 0 !important;
+    width: 100%;
+    margin-bottom: 0;
+  }
+  .ch-cnt {
+    font-size: 10pt !important;
+    padding: 3pt 10pt !important;
+  }
+
+  /* always show body */
+  .ch-body { display: block !important; border-top: 1.5pt solid rgba(0,0,0,.15); }
+
+  /* table fills page */
+  .tbl-wrap { overflow: visible; width: 100%; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+
+  /* column widths */
+  thead th:first-child  { width: 60pt; }
+  thead th:nth-child(2) { width: auto; }
+  thead th:nth-child(3) { width: 180pt; }
+
+  thead th {
+    background: #1F3864 !important;
+    color: #fff !important;
+    padding: 5pt 6pt !important;
+    font-size: 8pt !important;
+    font-weight: 700;
+    text-align: left;
+    border: 0.5pt solid rgba(255,255,255,.2);
+  }
+
+  /* base row size — scales down via JS class if many rows */
+  .dr td {
+    padding: 3pt 6pt !important;
+    border: 0.4pt solid #ddd;
+    vertical-align: middle;
+    font-size: 9pt;
+    line-height: 1.3;
+  }
+  .dr td:first-child {
+    font-weight: 700;
+    color: #1F3864 !important;
+    padding-left: 8pt !important;
+    white-space: nowrap;
+  }
+  .wo-name   { font-size: inherit; font-weight: 600; }
+  .wo-recipe { font-size: 7pt; color: #666; margin-top: 0; }
+
+  .a-pill {
+    font-size: 7.5pt !important;
+    padding: 1pt 5pt !important;
+    border-radius: 10pt;
+    max-width: 175pt;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  /* auto font-size scaling by row count */
+  .ch-section.rows-gt30 .dr td  { font-size: 7.5pt !important; padding: 2pt 5pt !important; }
+  .ch-section.rows-gt30 .a-pill { font-size: 6.5pt !important; }
+  .ch-section.rows-gt30 .wo-recipe { display: none; }
+  .ch-section.rows-gt30 thead th { font-size: 7pt !important; padding: 3pt 5pt !important; }
+
+  .ch-section.rows-gt45 .dr td  { font-size: 6.5pt !important; padding: 1.5pt 4pt !important; }
+  .ch-section.rows-gt45 .a-pill { font-size: 5.5pt !important; max-width: 140pt; }
+  .ch-section.rows-gt45 thead th { font-size: 6pt !important; padding: 2pt 4pt !important; }
+
+  .ch-section.rows-gt60 .dr td  { font-size: 5.5pt !important; padding: 1pt 3pt !important; }
+  .ch-section.rows-gt60 .a-pill { font-size: 5pt !important; }
+  .ch-section.rows-gt60 .dr td:first-child { font-size: 5.5pt !important; }
+}
+
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-icon">❄️</div>
+  <div>
+    <h1>Blast Chiller Bot <span id="wkLabel" class="kw-badge">W??</span></h1>
+    <p>CSV + Excel hochladen → automatische Allergen-Zuteilung auf Chiller 1–6</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="two-col">
+
+    <!-- CSV Upload -->
+    <div class="card">
+      <div class="card-title">📋 Schritt 1 — KET-CSV hochladen</div>
+      <div class="upload-zone" id="dz-csv">
+        <input type="file" id="file-csv" accept=".csv" onchange="handleCSV(this.files[0])"/>
+        <div class="u-icon" id="ico-csv">📊</div>
+        <h3 id="tit-csv">CSV hier ablegen oder klicken</h3>
+        <p id="sub-csv">KET-Verden-2026-W34.csv</p>
+      </div>
+      <div id="prev-csv" style="display:none">
+        <div style="font-size:11px;font-weight:700;color:#1F3864;margin:8px 0 3px">Eingelesene Work Orders:</div>
+        <div class="match-wrap" id="list-csv"></div>
+      </div>
+    </div>
+
+    <!-- Excel Upload -->
+    <div class="card">
+      <div class="card-title">📂 Schritt 2 — Kitchen Priority List (Excel) hochladen</div>
+      <div class="upload-zone" id="dz-xl">
+        <input type="file" id="file-xl" accept=".xlsx,.xls" onchange="handleXL(this.files[0])"/>
+        <div class="u-icon" id="ico-xl">📗</div>
+        <h3 id="tit-xl">Excel hier ablegen oder klicken</h3>
+        <p id="sub-xl">Kitchen_Priority_List_-_Verden-_2026.xlsx</p>
+      </div>
+      <div id="prev-xl" style="display:none">
+        <div style="font-size:11px;font-weight:700;color:#1F3864;margin:8px 0 3px">Allergen-Mapping geladen:</div>
+        <div class="match-wrap" id="list-xl"></div>
+      </div>
+      <div class="row-btns">
+        <button class="btn btn-ghost btn-sm" onclick="loadSeed()">W34 Beispieldaten laden</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status banner: shows exactly which files are missing -->
+  <div id="status-banner" style="margin-bottom:12px;border-radius:9px;border:1.5px solid #FFC107;background:#FFFDE7;padding:11px 15px;font-size:12px;color:#5D4037">
+    <div style="font-weight:700;color:#E65100;margin-bottom:6px;font-size:12px">⚠ Fehlende Dateien — bitte hochladen:</div>
+    <div id="missing-csv" style="display:flex;align-items:center;gap:7px;padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+      <span style="font-size:14px">❌</span>
+      <div>
+        <div style="font-weight:700;color:#B71C1C">KET-Wochenliste (CSV)</div>
+        <div style="font-size:10.5px;color:#888;margin-top:1px">Enthält: Work Order Nummern, Sub-Rezept-Namen, Datum · Dateiname z.B. <code style="background:#F5F5F5;padding:1px 4px;border-radius:3px">KET-Verden-2026-W34.csv</code></div>
+      </div>
+    </div>
+    <div id="missing-xl" style="display:flex;align-items:center;gap:7px;padding:4px 0;margin-top:2px">
+      <span style="font-size:14px">❌</span>
+      <div>
+        <div style="font-weight:700;color:#B71C1C">Kitchen Priority List (Excel)</div>
+        <div style="font-size:10.5px;color:#888;margin-top:1px">Enthält: Tabellenblatt „Blast Chiller Handout" mit WO → Allergen Zuordnung · Dateiname z.B. <code style="background:#F5F5F5;padding:1px 4px;border-radius:3px">Kitchen_Priority_List_-_Verden-_2026.xlsx</code></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="process-row">
+    <button class="btn btn-primary" id="procBtn" onclick="processData()" disabled>⚡ Chiller-Zuteilung berechnen</button>
+  </div>
+
+  <!-- Result -->
+  <div id="resultSec" style="display:none">
+
+    <div class="stats" id="statsBar"></div>
+
+    <div class="day-tabs" id="dayTabsWrap"></div>
+
+    <div class="export-bar">
+      <span class="export-bar-lbl">Exportieren:</span>
+      <button class="btn btn-success btn-sm" onclick="exportExcel()">📥 Excel (.xlsx)</button>
+      <button class="btn btn-gsheet btn-sm" onclick="exportGSheet()">🟩 Google Sheets</button>
+      <button class="btn btn-csv-dl btn-sm" onclick="exportCSV()">📄 CSV</button>
+      <button class="btn btn-print-btn btn-sm" onclick="doPrint()">🖨 Drucken / PDF</button>
+    </div>
+
+    <div class="gsheet-hint" id="gsheet-hint">
+      <span style="font-size:16px">🟩</span>
+      <span><strong>In der Zwischenablage!</strong> Google Sheets öffnen → Zelle A1 klicken → <strong>Strg+V</strong> (Mac: ⌘+V)</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:3px 8px" onclick="document.getElementById('gsheet-hint').style.display='none'">✕</button>
+    </div>
+
+    <div class="chiller-sections" id="chillerSections"></div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Chiller-Logik ──────────────────────────────────────────────────────────
+function assignChiller(a) {
+  if (!a || a.trim().toUpperCase() === 'KEINE') return '1';
+  const u = a.toUpperCase();
+  const m = u.includes('MILCH');
+  const s = u.includes('SCHWEFELDIOXIDE') || u.includes('SULFITE');
+  // strip known allergens, check if anything real remains
+  const rest = u
+    .replace(/MILCH \(EINSCHLIESSLICH LAKTOSE\)/g, '')
+    .replace(/SCHWEFELDIOXIDE UND SULFITE/g, '')
+    .split(',').map(p => p.trim()).filter(p => p.length > 0);
+  const x = rest.length > 0;
+  if (x)       return '6';
+  if (m && s)  return '5';
+  if (s)       return '3';
+  if (m)       return '4';
+  return '6';
+}
+
+const CHILLER_CFG = {
+  '1': { label:'Chiller 1 & 2', sub:'Allergenfrei',   cls:'c1' },
+  '3': { label:'Chiller 3',     sub:'Sulfite',         cls:'c3' },
+  '4': { label:'Chiller 4',     sub:'Milch',           cls:'c4' },
+  '5': { label:'Chiller 5',     sub:'Milch + Sulfite', cls:'c5' },
+  '6': { label:'Chiller 6',     sub:'Rest-Pool',       cls:'c6' },
+};
+
+// ── State ──────────────────────────────────────────────────────────────────
+let csvRows    = [];   // [{wo, name, recipe, date}]  — from KET CSV
+let allergenMap = {};  // wo → allergen string         — from Excel
+let allData    = [];   // merged + chiller assigned
+let activeDay  = 'all';
+let weekLabel  = 'W??';
+let collapsed  = {};
+
+// ── CSV Parsing ─────────────────────────────────────────────────────────────
+function parseCSVLine(line) {
+  const res = []; let cur = ''; let q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (q && line[i+1] === '"') { cur += '"'; i++; } else q = !q; }
+    else if ((ch === ',' || ch === ';') && !q) { res.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  res.push(cur); return res;
+}
+
+function handleCSV(file) {
+  if (!file) return;
+  const wm = file.name.match(/[Ww](\d{2,})/);
+  if (wm) { weekLabel = 'W' + wm[1]; document.getElementById('wkLabel').textContent = weekLabel; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split(/\r?\n/);
+    const hdr = parseCSVLine(lines[0]).map(h => h.replace(/^"+|"+$/g,'').trim().toLowerCase());
+    const fi = n => hdr.findIndex(h => h.includes(n));
+    const iWo   = fi('work order');
+    const iName = fi('sub recipe') >= 0 ? fi('sub recipe') : fi('sub rezept');
+    const iDate = fi('date needed') >= 0 ? fi('date needed') : fi('datum');
+    const iRec  = fi('recipe name');
+    if (iWo < 0 || iName < 0) { showToast('Spalten nicht gefunden — CSV prüfen'); return; }
+    csvRows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const c = parseCSVLine(lines[i]);
+      if (c.length < 2) continue;
+      const wo   = (c[iWo]   || '').replace(/^"+|"+$/g,'').trim();
+      const name = (c[iName] || '').replace(/^"+|"+$/g,'').trim();
+      if (!wo || !name) continue;
+      const date = (iDate >= 0 ? c[iDate] : '').replace(/^"+|"+$/g,'').trim().split(' ')[0];
+      const rec  = (iRec  >= 0 ? c[iRec]  : '').replace(/^"+|"+$/g,'').trim();
+      csvRows.push({ wo, name, recipe: rec, date });
+    }
+    setUploaded('csv', file.name, csvRows.length + ' Work Orders eingelesen');
+    const sample = csvRows.slice(0, 6);
+    document.getElementById('list-csv').innerHTML = sample.map(d =>
+      `<div class="mi mi-ok"><div class="dot dot-g"></div><div class="mi-name">${d.wo}</div><div class="mi-csv">→ ${d.name.substring(0,50)}</div></div>`
+    ).join('') + (csvRows.length > 6 ? `<div class="mi"><div class="dot dot-b"></div><div class="mi-csv">… +${csvRows.length-6} weitere</div></div>` : '');
+    document.getElementById('prev-csv').style.display = 'block';
+    checkReady();
+    showToast('CSV geladen: ' + csvRows.length + ' WOs ✓');
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// ── Excel Parsing (Blast Chiller Handout) ───────────────────────────────────
+function handleXL(file) {
+  if (!file) return;
+  const wm = file.name.match(/[Ww](\d{2,})/);
+  if (wm && weekLabel === 'W??') { weekLabel = 'W' + wm[1]; document.getElementById('wkLabel').textContent = weekLabel; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      // Find "Blast Chiller Handout" sheet
+      const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('blast chiller handout')) || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      allergenMap = {};
+      let count = 0;
+      rows.forEach(row => {
+        // Row format: [Blast Chiller label, WO number, Sub-Rezept, Allergen]
+        const wo  = String(row[1] || '').trim();
+        const all = String(row[3] || '').trim();
+        // Valid WO: matches pattern XX-NNN
+        if (/^\d{2}-\d+$/.test(wo) && all && !all.toLowerCase().includes('allergen') && all !== "(WO's)") {
+          allergenMap[wo] = all;
+          count++;
+        }
+      });
+      if (count === 0) {
+        showToast('Keine Allergene gefunden — Tabellenblatt "Blast Chiller Handout" prüfen');
+        return;
+      }
+      setUploaded('xl', file.name, count + ' WO-Allergen-Paare geladen');
+      const sample = Object.entries(allergenMap).slice(0, 6);
+      document.getElementById('list-xl').innerHTML = sample.map(([wo, a]) =>
+        `<div class="mi mi-ok"><div class="dot dot-g"></div><div class="mi-name">${wo}</div><div class="mi-csv">→ ${a.substring(0,45)}</div></div>`
+      ).join('') + (count > 6 ? `<div class="mi"><div class="dot dot-b"></div><div class="mi-csv">… +${count-6} weitere</div></div>` : '');
+      document.getElementById('prev-xl').style.display = 'block';
+      checkReady();
+      showToast('Excel geladen: ' + count + ' Allergen-Einträge ✓');
+    } catch(err) {
+      showToast('Excel-Fehler: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setUploaded(which, filename, sub) {
+  const dz  = document.getElementById('dz-' + which);
+  dz.classList.add('file-ok');
+  document.getElementById('ico-' + which).textContent = '✅';
+  document.getElementById('tit-' + which).textContent = filename;
+  document.getElementById('sub-' + which).textContent = sub;
+}
+
+function checkReady() {
+  const hasCsv = csvRows.length > 0;
+  const hasXl  = Object.keys(allergenMap).length > 0;
+
+  // Update missing-files banner
+  const banner = document.getElementById('status-banner');
+  const mCsv   = document.getElementById('missing-csv');
+  const mXl    = document.getElementById('missing-xl');
+
+  if (hasCsv && hasXl) {
+    // Both loaded — hide banner entirely
+    banner.style.display = 'none';
+  } else {
+    banner.style.display = 'block';
+    // CSV row
+    if (hasCsv) {
+      mCsv.innerHTML = `<span style="font-size:14px">✅</span><div><div style="font-weight:700;color:#2E7D32">KET-Wochenliste (CSV) — geladen</div><div style="font-size:10.5px;color:#888;margin-top:1px">${csvRows.length} Work Orders eingelesen</div></div>`;
+    } else {
+      mCsv.innerHTML = `<span style="font-size:14px">❌</span><div><div style="font-weight:700;color:#B71C1C">KET-Wochenliste (CSV) — fehlt</div><div style="font-size:10.5px;color:#888;margin-top:1px">Enthält: Work Order Nummern, Sub-Rezept-Namen, Datum · z.B. <code style="background:#F5F5F5;padding:1px 4px;border-radius:3px">KET-Verden-2026-W34.csv</code></div></div>`;
+    }
+    // Excel row
+    if (hasXl) {
+      mXl.innerHTML = `<span style="font-size:14px">✅</span><div><div style="font-weight:700;color:#2E7D32">Kitchen Priority List (Excel) — geladen</div><div style="font-size:10.5px;color:#888;margin-top:1px">${Object.keys(allergenMap).length} WO-Allergen-Paare eingelesen</div></div>`;
+    } else {
+      mXl.innerHTML = `<span style="font-size:14px">❌</span><div><div style="font-weight:700;color:#B71C1C">Kitchen Priority List (Excel) — fehlt</div><div style="font-size:10.5px;color:#888;margin-top:1px">Enthält: Tabellenblatt „Blast Chiller Handout" mit WO → Allergen-Zuordnung · z.B. <code style="background:#F5F5F5;padding:1px 4px;border-radius:3px">Kitchen_Priority_List_-_Verden-_2026.xlsx</code></div></div>`;
+    }
+    // Warning if only CSV loaded: can still run but allergens will all be KEINE
+    if (hasCsv && !hasXl) {
+      banner.style.borderColor = '#FF9800';
+      banner.style.background = '#FFF8E1';
+      banner.querySelector('div').textContent = '⚠ Hinweis — ohne Excel werden alle Allergene als KEINE dargestellt:';
+      banner.querySelector('div').style.color = '#E65100';
+    } else {
+      banner.style.borderColor = '#FFC107';
+      banner.style.background = '#FFFDE7';
+      const hdr = banner.querySelector('div');
+      hdr.innerHTML = '⚠ Fehlende Dateien — bitte hochladen:';
+      hdr.style.color = '#E65100';
+    }
+  }
+
+  // Button: enabled as soon as CSV is loaded (Excel optional)
+  document.getElementById('procBtn').disabled = !hasCsv;
+}
+
+// ── Process ─────────────────────────────────────────────────────────────────
+function processData() {
+  allData = csvRows.map(d => {
+    const allergen = allergenMap[d.wo] || 'KEINE';
+    return { ...d, allergen, chiller: assignChiller(allergen) };
+  });
+  activeDay = 'all';
+  renderAll();
+  document.getElementById('resultSec').style.display = 'block';
+  document.getElementById('resultSec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const noMap = allData.filter(d => !allergenMap[d.wo]).length;
+  if (noMap > 0 && Object.keys(allergenMap).length > 0)
+    showToast(`⚠ ${noMap} WOs ohne Allergen-Eintrag → als KEINE behandelt`);
+  else if (Object.keys(allergenMap).length === 0)
+    showToast('Tipp: Excel hochladen für korrekte Allergene!');
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function filtered() {
+  return activeDay === 'all' ? allData : allData.filter(d => d.date === activeDay);
+}
+function woNum(w) { return parseInt((w||'').split('-')[1] || 9999); }
+
+function allergenPill(a) {
+  if (!a || a.toUpperCase() === 'KEINE')
+    return '<span class="a-pill ap-keine">KEINE</span>';
+  const u = a.toUpperCase();
+  const parts = a.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length > 1)  return `<span class="a-pill ap-multi" title="${a}">${a}</span>`;
+  if (u.includes('MILCH'))            return `<span class="a-pill ap-milch">${a}</span>`;
+  if (u.includes('SCHWEFELDIOXIDE'))  return `<span class="a-pill ap-sulfit">${a}</span>`;
+  return `<span class="a-pill ap-other">${a}</span>`;
+}
+
+function renderAll() {
+  const items = filtered();
+  const by = {'1':[],'3':[],'4':[],'5':[],'6':[]};
+  items.forEach(d => by[d.chiller].push(d));
+  ['1','3','4','5','6'].forEach(c => by[c].sort((a,b) => woNum(a.wo)-woNum(b.wo)));
+
+  // Stats
+  document.getElementById('statsBar').innerHTML =
+    `<div class="stat"><strong>${weekLabel}</strong>Woche</div>` +
+    ['1','3','4','5','6'].map(c =>
+      `<div class="stat"><strong>${by[c].length}</strong>${CHILLER_CFG[c].label}</div>`
+    ).join('') +
+    `<div class="stat"><strong>${items.length}</strong>WOs gesamt</div>`;
+
+  // Day tabs
+  const days = [...new Set(allData.map(d => d.date).filter(Boolean))].sort();
+  const tw = document.getElementById('dayTabsWrap');
+  if (days.length > 1) {
+    tw.style.display = 'flex';
+    const fmt = d => { const dt = new Date(d); return isNaN(dt) ? d : dt.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'}); };
+    tw.innerHTML = `<span>Tag:</span>` +
+      `<button class="dtab ${activeDay==='all'?'active':''}" onclick="setDay('all')">Alle</button>` +
+      days.map(d => `<button class="dtab ${activeDay===d?'active':''}" onclick="setDay('${d}')">${fmt(d)}</button>`).join('');
+  } else { tw.style.display = 'none'; }
+
+  // Chiller sections
+  document.getElementById('chillerSections').innerHTML =
+    ['1','3','4','5','6'].map(c => {
+      const it = by[c];
+      const cfg = CHILLER_CFG[c];
+      const open = !collapsed[c];
+      return `<div class="ch-section ${cfg.cls}">
+        <div class="ch-head" onclick="toggleC('${c}')">
+          <span>${cfg.label}</span>
+          <span style="font-size:11px;font-weight:400;opacity:.75">&nbsp;— ${cfg.sub}</span>
+          <span class="ch-cnt">${it.length} WOs</span>
+          <span class="ch-arr ${open?'open':''}">▼</span>
+        </div>
+        ${open ? `<div class="ch-body">
+          ${it.length === 0
+            ? `<div class="empty-row">Keine Work Orders für diesen Tag</div>`
+            : `<div class="tbl-wrap"><table>
+                <thead><tr>
+                  <th style="text-align:left">WO</th>
+                  <th style="text-align:left">Sub-Rezept / Komponente</th>
+                  <th style="text-align:left">Allergene</th>
+                </tr></thead>
+                <tbody>${it.map(d => `<tr class="dr">
+                  <td>${d.wo}</td>
+                  <td>
+                    <div class="wo-name">${d.name}</div>
+                    ${d.recipe ? `<div class="wo-recipe">${d.recipe}</div>` : ''}
+                  </td>
+                  <td>${allergenPill(d.allergen)}</td>
+                </tr>`).join('')}
+                </tbody>
+              </table></div>`}
+        </div>` : ''}
+      </div>`;
+    }).join('');
+}
+
+function setDay(d) { activeDay = d; renderAll(); }
+function toggleC(c) { collapsed[c] = !collapsed[c]; renderAll(); }
+
+// ── Export: Excel ────────────────────────────────────────────────────────────
+function exportExcel() {
+  if (!allData.length) return;
+  const items = filtered();
+  const by = {'1':[],'3':[],'4':[],'5':[],'6':[]};
+  items.forEach(d => by[d.chiller].push(d));
+  ['1','3','4','5','6'].forEach(c => by[c].sort((a,b) => woNum(a.wo)-woNum(b.wo)));
+  const wb = XLSX.utils.book_new();
+  const wsData = [[weekLabel,'','','']];
+  ['1','3','4','5','6'].forEach(c => {
+    const it = by[c]; if (!it.length) return;
+    const cfg = CHILLER_CFG[c];
+    wsData.push(['Blast Chiller',"(WO's)",'Sub-Rezept / Komponente','Allergene']);
+    it.forEach(d => wsData.push([`${cfg.label} (${cfg.sub})`, d.wo, d.name, d.allergen]));
+  });
+  wsData.push(['Blast Chiller',"(WO's)",'Sub-Rezept / Komponente','Allergene']);
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [{wch:36},{wch:11},{wch:60},{wch:55}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Blast Chiller Handout ' + weekLabel);
+  XLSX.writeFile(wb, `Blast_Chiller_Handout_${weekLabel}.xlsx`);
+  showToast('Excel exportiert ✓');
+}
+
+// ── Export: CSV ──────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!allData.length) return;
+  const items = filtered();
+  const by = {'1':[],'3':[],'4':[],'5':[],'6':[]};
+  items.forEach(d => by[d.chiller].push(d));
+  ['1','3','4','5','6'].forEach(c => by[c].sort((a,b) => woNum(a.wo)-woNum(b.wo)));
+  const esc = v => `"${(v||'').replace(/"/g,'""')}"`;
+  const lines = [`${esc('Blast Chiller')},${esc("(WO's)")},${esc('Sub-Rezept / Komponente')},${esc('Allergene')}`];
+  ['1','3','4','5','6'].forEach(c => {
+    const it = by[c]; if (!it.length) return;
+    const cfg = CHILLER_CFG[c];
+    it.forEach(d => lines.push([esc(`${cfg.label} (${cfg.sub})`),esc(d.wo),esc(d.name),esc(d.allergen)].join(',')));
+  });
+  const blob = new Blob(['\uFEFF'+lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `Blast_Chiller_Handout_${weekLabel}.csv`; a.click();
+  showToast('CSV exportiert ✓');
+}
+
+// ── Export: Google Sheets (TSV in Clipboard) ─────────────────────────────────
+function exportGSheet() {
+  if (!allData.length) return;
+  const items = filtered();
+  const by = {'1':[],'3':[],'4':[],'5':[],'6':[]};
+  items.forEach(d => by[d.chiller].push(d));
+  ['1','3','4','5','6'].forEach(c => by[c].sort((a,b) => woNum(a.wo)-woNum(b.wo)));
+  const lines = ["Blast Chiller\t(WO's)\tSub-Rezept / Komponente\tAllergene"];
+  ['1','3','4','5','6'].forEach(c => {
+    const it = by[c]; if (!it.length) return;
+    const cfg = CHILLER_CFG[c];
+    it.forEach(d => lines.push([`${cfg.label} (${cfg.sub})`,d.wo,d.name,d.allergen].join('\t')));
+  });
+  const tsv = lines.join('\n');
+  const copy = text => {
+    if (navigator.clipboard && navigator.clipboard.writeText)
+      return navigator.clipboard.writeText(text);
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText='position:fixed;opacity:0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); return Promise.resolve();
+  };
+  copy(tsv).then(() => {
+    showToast('In Zwischenablage → Strg+V in Google Sheets ✓');
+    const h = document.getElementById('gsheet-hint');
+    h.style.display = 'flex'; setTimeout(() => h.style.display='none', 7000);
+  });
+}
+
+// ── Print: setzt Zeilenzahl-Klassen für Auto-Skalierung ──────────────────────
+function doPrint() {
+  // Für jeden Chiller-Block Zeilenzahl ermitteln und Skalierungsklasse setzen
+  document.querySelectorAll('.ch-section').forEach(sec => {
+    const rows = sec.querySelectorAll('tr.dr').length;
+    sec.classList.remove('rows-gt30','rows-gt45','rows-gt60');
+    if      (rows > 60) sec.classList.add('rows-gt60');
+    else if (rows > 45) sec.classList.add('rows-gt45');
+    else if (rows > 30) sec.classList.add('rows-gt30');
+  });
+  window.print();
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── Drag & Drop ──────────────────────────────────────────────────────────────
+['csv','xl'].forEach(which => {
+  const dz = document.getElementById('dz-' + which);
+  dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', ()  => dz.classList.remove('drag'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    if (which === 'csv') handleCSV(f); else handleXL(f);
+  });
+});
+
+// ── Seed Data (W34) ──────────────────────────────────────────────────────────
+function loadSeed() {
+  weekLabel = 'W34'; document.getElementById('wkLabel').textContent = weekLabel;
+  // Full allergen map from Blast Chiller Handout W34
+  allergenMap = {"34-1":"MANDELN, SCHALENFRÜCHTE","34-2":"KEINE","34-3":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-4":"KEINE","34-5":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-11":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-12":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-13":"SCHWEFELDIOXIDE UND SULFITE","34-14":"KEINE","34-15":"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SELLERIE","34-21":"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE","34-22":"KEINE","34-23":"KEINE","34-24":"FISCH","34-25":"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF","34-31":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-32":"KEINE","34-33":"FISCH","34-34":"MANDELN, MILCH (EINSCHLIESSLICH LAKTOSE), SCHALENFRÜCHTE","34-35":"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE","34-41":"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE","34-42":"KEINE","34-43":"KEINE","34-44":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-49":"KEINE","34-50":"KEINE","34-51":"KEINE","34-52":"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF","34-57":"GLUTENHALTIGES GETREIDE, WEIZEN","34-58":"KEINE","34-59":"SCHWEFELDIOXIDE UND SULFITE","34-60":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-61":"KEINE","34-62":"SCHWEFELDIOXIDE UND SULFITE","34-63":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-64":"SCHWEFELDIOXIDE UND SULFITE","34-65":"SCHWEFELDIOXIDE UND SULFITE, SELLERIE","34-66":"KEINE","34-67":"SCHWEFELDIOXIDE UND SULFITE","34-68":"KEINE","34-69":"SCHWEFELDIOXIDE UND SULFITE","34-70":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-71":"KEINE","34-76":"SCHWEFELDIOXIDE UND SULFITE","34-77":"SCHWEFELDIOXIDE UND SULFITE","34-78":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-79":"KEINE","34-80":"SCHWEFELDIOXIDE UND SULFITE","34-86":"SCHWEFELDIOXIDE UND SULFITE","34-87":"KEINE","34-88":"KEINE","34-89":"KEINE","34-90":"SCHWEFELDIOXIDE UND SULFITE","34-91":"KEINE","34-98":"SCHWEFELDIOXIDE UND SULFITE","34-100":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-101":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-106":"EIER, MILCH (EINSCHLIESSLICH LAKTOSE), SENF","34-107":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-108":"SCHWEFELDIOXIDE UND SULFITE","34-112":"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE","34-113":"SCHWEFELDIOXIDE UND SULFITE","34-114":"KEINE","34-115":"KEINE","34-116":"KEINE","34-122":"SCHWEFELDIOXIDE UND SULFITE","34-124":"SCHWEFELDIOXIDE UND SULFITE, SOJA","34-125":"SCHWEFELDIOXIDE UND SULFITE, SESAMSAMEN, SOJA","34-126":"SOJA","34-127":"SESAMSAMEN","34-134":"KEINE","34-135":"KEINE","34-136":"KEINE","34-137":"MILCH (EINSCHLIESSLICH LAKTOSE)","34-138":"SCHWEFELDIOXIDE UND SULFITE","34-139":"KEINE","34-146":"EIER, MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SENF","34-147":"KEINE","34-148":"SCHWEFELDIOXIDE UND SULFITE","34-149":"FISCH","34-150":"KEINE","34-156":"GLUTENHALTIGES GETREIDE, WEIZEN","34-157":"MILCH (EINSCHLIESSLICH LAKTOSE), SCHWEFELDIOXIDE UND SULFITE, SELLERIE","34-158":"KEINE","34-159":"KEINE","34-164":"KEINE","34-165":"SCHWEFELDIOXIDE UND SULFITE"};
+  csvRows = [
+    {wo:'34-62',name:'Black Bean Enchilada Mix',recipe:'FV0131A',date:'2026-08-10'},
+    {wo:'34-63',name:'FA-DE Cheese, White Cheddar, Shredded',recipe:'FV0131A',date:'2026-08-10'},
+    {wo:'34-64',name:'Mixed veg - Roasted Zucchini & Corn',recipe:'FV0131A',date:'2026-08-10'},
+    {wo:'34-65',name:'Rice - Enchilada Bowl Rice',recipe:'FV0131A',date:'2026-08-10'},
+    {wo:'34-66',name:'Roasted Green Onions',recipe:'FV0131A',date:'2026-08-10'},
+    {wo:'34-67',name:'Sauce - Roasted Green Chili Salsa Verde',recipe:'FV0131A',date:'2026-08-10'},
+    {wo:'34-57',name:'FA-DE Pasta, Whole Wheat, Penne IQF',recipe:'FV0778A',date:'2026-08-10'},
+    {wo:'34-58',name:'Green Beans - Roasted w/Garlic less oil',recipe:'FV0778A',date:'2026-08-10'},
+    {wo:'34-59',name:'Mixed veg - Roasted Vegetable BATCH 25%',recipe:'FV0778A',date:'2026-08-10'},
+    {wo:'34-60',name:'Sauce - Basil Pesto Cream Sauce -Less Fat',recipe:'FV0778A',date:'2026-08-10'},
+    {wo:'34-61',name:'Tomatoes - Roasted cherry tomatoes',recipe:'FV0778A',date:'2026-08-10'},
+    {wo:'34-11',name:'Courgette - Parmesan Roasted Courgetti',recipe:'FV0849A',date:'2026-08-10'},
+    {wo:'34-12',name:'FA-DE Cheese, Mozzarella, Shredded',recipe:'FV0849A',date:'2026-08-10'},
+    {wo:'34-13',name:'Mushrooms - Loaded Roasted Sliced Mushrooms',recipe:'FV0849A',date:'2026-08-10'},
+    {wo:'34-14',name:'Roasted Green Onions',recipe:'FV0849A',date:'2026-08-10'},
+    {wo:'34-15',name:'Sauce - Ground Beef Bolognese Sauce',recipe:'FV0849A',date:'2026-08-10'},
+    {wo:'34-112',name:'Mash Leek & Cream Cheese mashed Potatoes',recipe:'FV4027A',date:'2026-08-10'},
+    {wo:'34-113',name:'Mixed veg - Roasted Zucchini & Corn',recipe:'FV4027A',date:'2026-08-10'},
+    {wo:'34-114',name:'Pulled Beef - Beef and BBQ sauce',recipe:'FV4027A',date:'2026-08-10'},
+    {wo:'34-115',name:'Sauce - Maple BBQ Sauce',recipe:'FV4027A',date:'2026-08-10'},
+    {wo:'34-116',name:'Steamed Green Onions',recipe:'FV4027A',date:'2026-08-10'},
+    {wo:'34-134',name:'Mixed veg - Garlic Roasted courgette & parsley',recipe:'FV4034A',date:'2026-08-10'},
+    {wo:'34-135',name:'Peas - Steamed Peas',recipe:'FV4034A',date:'2026-08-10'},
+    {wo:'34-136',name:'Potatoes - Diced potato wedges in fresh parsley',recipe:'FV4034A',date:'2026-08-10'},
+    {wo:'34-137',name:'Sauce - Garlic Sauce ailoi',recipe:'FV4034A',date:'2026-08-10'},
+    {wo:'34-138',name:'Sauce - Spanish Tomato Sauce with chorizo spice',recipe:'FV4034A',date:'2026-08-10'},
+    {wo:'34-139',name:'Shredded Chicken Thighs - BRINED',recipe:'FV4034A',date:'2026-08-10'},
+    {wo:'34-98',name:'Cauliflower - Chili-Garlic Cauliflower Florets',recipe:'FV4040A',date:'2026-08-10'},
+    {wo:'34-100',name:'FA-DE Cheese, Mozzarella, Shredded',recipe:'FV4040A',date:'2026-08-10'},
+    {wo:'34-101',name:'Sauce - Basil Pesto Cream Sauce',recipe:'FV4040A',date:'2026-08-10'},
+    {wo:'34-164',name:'Chicken Breast - Sun Dried Tomato Grilled 160g',recipe:'FV4040A',date:'2026-08-10'},
+    {wo:'34-1',name:'Almonds - Garlic & Black Pepper Toasted Almonds',recipe:'FV4055A',date:'2026-08-10'},
+    {wo:'34-2',name:'Chicken breast - Herb Grilled Chicken Breast',recipe:'FV4055A',date:'2026-08-10'},
+    {wo:'34-3',name:'Compound butter - Garlic Lemon Butter',recipe:'FV4055A',date:'2026-08-10'},
+    {wo:'34-4',name:'Green Beans - Oil and sea salt less oil',recipe:'FV4055A',date:'2026-08-10'},
+    {wo:'34-5',name:'Mash - Garlic Herb Mashed Cauliflower - Rice',recipe:'FV4055A',date:'2026-08-10'},
+    {wo:'34-122',name:'Garlic Carrot Coins',recipe:'FV4067B',date:'2026-08-10'},
+    {wo:'34-124',name:'Honey Miso Chicken chunk Batch',recipe:'FV4067B',date:'2026-08-10'},
+    {wo:'34-125',name:'Honey Miso Sauce',recipe:'FV4067B',date:'2026-08-10'},
+    {wo:'34-126',name:'Steamed Edamame',recipe:'FV4067B',date:'2026-08-10'},
+    {wo:'34-127',name:'Toasted Sesame Seeds',recipe:'FV4067B',date:'2026-08-10'},
+    {wo:'34-165',name:'Garlic-Ginger-Green Onion Brown + Wild Rice MIX',recipe:'FV4067B',date:'2026-08-10'},
+    {wo:'34-86',name:'Black beans - Stewed Black Beans & Peppers',recipe:'FV0076A',date:'2026-08-11'},
+    {wo:'34-87',name:'Cooked Wild Rice Blend w/ Roasted Chicken Base',recipe:'FV0076A',date:'2026-08-11'},
+    {wo:'34-88',name:'FA-DE Pork, Pulled, Sous Vide',recipe:'FV0076A',date:'2026-08-11'},
+    {wo:'34-89',name:'Roasted Green Onions',recipe:'FV0076A',date:'2026-08-11'},
+    {wo:'34-90',name:'Sauce - Mojo Sauce',recipe:'FV0076A',date:'2026-08-11'},
+    {wo:'34-91',name:'Smoky Cauliflower Florets',recipe:'FV0076A',date:'2026-08-11'},
+    {wo:'34-76',name:'Beef Burger Master EU',recipe:'FV0601A',date:'2026-08-11'},
+    {wo:'34-77',name:'Mixed veg - Summer Zucchini Roast',recipe:'FV0601A',date:'2026-08-11'},
+    {wo:'34-78',name:'Mozzarella + Parsley Mix',recipe:'FV0601A',date:'2026-08-11'},
+    {wo:'34-79',name:'Roasted Garlic and Parsley Roasted Potato',recipe:'FV0601A',date:'2026-08-11'},
+    {wo:'34-80',name:'Smokehouse Ketchup',recipe:'FV0601A',date:'2026-08-11'},
+    {wo:'34-156',name:'FA-DE Pasta, Whole Wheat, Penne IQF',recipe:'FV0780A',date:'2026-08-11'},
+    {wo:'34-157',name:'Sauce - Ground Beef Bolognese Sauce with carrot',recipe:'FV0780A',date:'2026-08-11'},
+    {wo:'34-158',name:'Tomatoes - Roasted cherry tomatoes',recipe:'FV0780A',date:'2026-08-11'},
+    {wo:'34-159',name:'Zucchini - Garlic Roasted Zucchini',recipe:'FV0780A',date:'2026-08-11'},
+    {wo:'34-41',name:'Bacon Chicken Casserole',recipe:'FV0794A',date:'2026-08-11'},
+    {wo:'34-42',name:'Extra Crispy Diced Bacon',recipe:'FV0794A',date:'2026-08-11'},
+    {wo:'34-43',name:'Green Beans CUT 1-1/2 - Fresh',recipe:'FV0794A',date:'2026-08-11'},
+    {wo:'34-44',name:'Ranch Sour Cream Batch - PH',recipe:'FV0794A',date:'2026-08-11'},
+    {wo:'34-68',name:'Garlic Chive Pork Tenderloin Batch',recipe:'FV0962A',date:'2026-08-11'},
+    {wo:'34-69',name:"Kickin' Ginger Apricot Glaze",recipe:'FV0962A',date:'2026-08-11'},
+    {wo:'34-70',name:'Parmesan Roasted Potatoes',recipe:'FV0962A',date:'2026-08-11'},
+    {wo:'34-71',name:'S&P Roasted Green Beans 1',recipe:'FV0962A',date:'2026-08-11'},
+    {wo:'34-49',name:'Chicken breast - Herb Grilled Chicken Breast',recipe:'FV4038A',date:'2026-08-11'},
+    {wo:'34-50',name:'Roasted Garlic Broccoli',recipe:'FV4038A',date:'2026-08-11'},
+    {wo:'34-51',name:'S&P Roasted Green Beans 1',recipe:'FV4038A',date:'2026-08-11'},
+    {wo:'34-52',name:'Sauce - mushroom cream sauce',recipe:'FV4038A',date:'2026-08-11'},
+    {wo:'34-106',name:'Artichoke & Spinach Dip',recipe:'FV4060A',date:'2026-08-11'},
+    {wo:'34-107',name:'Cauliflower - with basil and parmesan seasoning',recipe:'FV4060A',date:'2026-08-11'},
+    {wo:'34-108',name:'Pork Tenderloin - Garlic Marinated',recipe:'FV4060A',date:'2026-08-11'},
+    {wo:'34-31',name:'Compound butter - Sun-Dried Tomato',recipe:'FV0035A',date:'2026-08-12'},
+    {wo:'34-32',name:'S&P Roasted Green Beans 1',recipe:'FV0035A',date:'2026-08-12'},
+    {wo:'34-33',name:'Salmon - garlic seasoning',recipe:'FV0035A',date:'2026-08-12'},
+    {wo:'34-34',name:'Sauce - Pesto',recipe:'FV0035A',date:'2026-08-12'},
+    {wo:'34-35',name:'Spinach - Creamed Spinach',recipe:'FV0035A',date:'2026-08-12'},
+    {wo:'34-146',name:'Aji Verde Sauce (CUPPED) - Less Spicy',recipe:'FV1320A',date:'2026-08-12'},
+    {wo:'34-147',name:'Cumin Roasted Diced Red & Green Bell Peppers',recipe:'FV1320A',date:'2026-08-12'},
+    {wo:'34-148',name:'Roasted Zucchini & Corn - Less Corn',recipe:'FV1320A',date:'2026-08-12'},
+    {wo:'34-149',name:'Scallion Marinated Salmon',recipe:'FV1320A',date:'2026-08-12'},
+    {wo:'34-150',name:'Tomato & Bell Pepper Quinoa Batch 2',recipe:'FV1320A',date:'2026-08-12'},
+    {wo:'34-21',name:'Garlic Spinach Stamppot',recipe:'FV4009A',date:'2026-08-12'},
+    {wo:'34-22',name:'Green Beans CUT 1-1/2 - Fresh - Less Salt',recipe:'FV4009A',date:'2026-08-12'},
+    {wo:'34-23',name:'Honey-Garlic Roasted Carrot Coins',recipe:'FV4009A',date:'2026-08-12'},
+    {wo:'34-24',name:'Salmon - garlic seasoning',recipe:'FV4009A',date:'2026-08-12'},
+    {wo:'34-25',name:'Sauce - Creamy Dijon and Dill Sauce',recipe:'FV4009A',date:'2026-08-12'},
+  ];
+  setUploaded('csv','KET-Verden-2026-W34.csv', csvRows.length + ' Work Orders eingelesen');
+  setUploaded('xl','Kitchen_Priority_List_Verden_2026.xlsx', Object.keys(allergenMap).length + ' Allergen-Einträge geladen');
+  const sample = csvRows.slice(0,6);
+  document.getElementById('list-csv').innerHTML = sample.map(d =>
+    `<div class="mi mi-ok"><div class="dot dot-g"></div><div class="mi-name">${d.wo}</div><div class="mi-csv">→ ${d.name.substring(0,50)}</div></div>`
+  ).join('') + `<div class="mi"><div class="dot dot-b"></div><div class="mi-csv">… +${csvRows.length-6} weitere</div></div>`;
+  document.getElementById('prev-csv').style.display = 'block';
+  const sampleXL = Object.entries(allergenMap).slice(0,6);
+  document.getElementById('list-xl').innerHTML = sampleXL.map(([wo,a]) =>
+    `<div class="mi mi-ok"><div class="dot dot-g"></div><div class="mi-name">${wo}</div><div class="mi-csv">→ ${a.substring(0,45)}</div></div>`
+  ).join('') + `<div class="mi"><div class="dot dot-b"></div><div class="mi-csv">… +${Object.keys(allergenMap).length-6} weitere</div></div>`;
+  document.getElementById('prev-xl').style.display = 'block';
+  checkReady();
+  showToast('W34 Beispieldaten geladen ✓');
+}
+</script>
+</body>
+</html>

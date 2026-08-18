@@ -18,6 +18,8 @@ import { RecipeList } from "../components/RecipeList";
 import { DataHealthBanner } from "../components/DataHealthBanner";
 import { CapacityWarningBanner } from "../components/CapacityWarningBanner";
 import { MealCatalogView } from "../features/meal-catalog/MealCatalogView";
+import { BlastChillerView } from "../features/blast-chiller/BlastChillerView";
+import { AllergenPlatingView } from "../features/allergen-plating/AllergenPlatingView";
 import { resolveRecipeByCode } from "../lib/helpers";
 
 function MainPane({ view }: { view: AppView }) {
@@ -89,8 +91,16 @@ function MainPane({ view }: { view: AppView }) {
 
     case "wms":
       return <WmsKwOverviewView data={data} />;
+
+    case "blast-chiller":
+      return <BlastChillerView data={data} />;
+
+    case "allergen-plating":
+      return <AllergenPlatingView data={data} />;
   }
 }
+
+const BOT_VIEWS = new Set<AppView>(["blast-chiller", "allergen-plating"]);
 
 function FullApp() {
   const state = useAppState();
@@ -101,6 +111,22 @@ function FullApp() {
     setSelectedWeek, setSelectedRecipe, setView, setUpliftPercent, setSearchText,
   } = state;
   if (!data) return null;
+
+  // Bot-Views: nur NavTabs + vollbreiter Inhalt, kein WeekSelector/RecipeList
+  if (BOT_VIEWS.has(view)) {
+    return (
+      <Shell>
+        <div className="flex gap-4">
+          <div className="w-48 shrink-0">
+            <NavTabs view={view} onChange={setView} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <MainPane view={view} />
+          </div>
+        </div>
+      </Shell>
+    );
+  }
 
   return (
     <Shell>
