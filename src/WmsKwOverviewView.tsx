@@ -10,8 +10,8 @@ import type {
 import { fmtQty } from "./features/wms-overview/wmsFormat";
 import { generateWmsWeeks, resolveSelectedWeekFromStationRows, weekNumFromHfWeek, woMatchesSelectedWeek } from "./features/wms-overview/wmsWeeks";
 import { aggregateInbound, aggregateSleeving, aggregateStored, aggregateWorkorders, buildSkuBilanz, detectKettenbruch } from "./features/wms-overview/wmsAggregate";
-import { loadSnapshots, persistSnapshot, removeSnapshot } from "./features/wms-overview/wmsSnapshots";
-import type { WmsSnapshot } from "./features/wms-overview/wmsSnapshots";
+import { loadSnapshots, loadTimeline, persistSnapshot, persistTimelineSnapshot, removeSnapshot } from "./features/wms-overview/wmsSnapshots";
+import type { TimelineSnapshot, WmsSnapshot } from "./features/wms-overview/wmsSnapshots";
 import { buildFunnel, buildLotStationMap, buildSkuStationMap } from "./features/wms-overview/wmsIndex";
 import { woReadiness } from "./features/wms-overview/wmsWoLogic";
 import { SectionCard } from "./features/wms-overview/WmsPrimitives";
@@ -25,6 +25,7 @@ import { WoListTable, WorkordersMealTable } from "./features/wms-overview/WmsWoT
 import { InboundAggTable, SleevingAggTable, StoredAggTable } from "./features/wms-overview/WmsStationTables";
 import { StationsBilanz, SnapshotPanel } from "./features/wms-overview/WmsBilanzPanels";
 import { buildMealOperations, MealOperationsBoard } from "./features/wms-overview/WmsMealOperations";
+import { WmsTimelinePanel } from "./features/wms-overview/WmsTimelineView";
 
 export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const allWmsWeeks = useMemo(() => generateWmsWeeks(2026, 1), []);
@@ -40,16 +41,15 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const [detailSku,    setDetailSku]    = useState<string | null>(null);
   const [detailWo,     setDetailWo]     = useState<string | null>(null);
   const [woViewMode,   setWoViewMode]   = useState<"list" | "meal">("list");
-  type CmdTab = "command" | "bilanz" | "inbound" | "workorders" | "staging" | "debox" | "postblast" | "plating" | "sleeving";
+  type CmdTab = "command" | "timeline" | "bilanz" | "inbound" | "workorders" | "staging" | "debox" | "postblast" | "platingHolding" | "plating" | "sleeving";
   const [activeTab, setActiveTab] = useState<CmdTab>("command");
   const [liveMode,     setLiveMode]     = useState(false);
   const [liveCountdown, setLiveCountdown] = useState(30);
   const [snapshots,    setSnapshots]    = useState<WmsSnapshot[]>(() => loadSnapshots());
   const [compareSnapId, setCompareSnapId] = useState<string | null>(null);
-  // Rezeptplan-Scope: nur Artikel zeigen, die laut weekRecipes (+ deren Sub-
-  // Rezepten/Zutaten) tatsächlich für die gewählte KW geplant sind. Default an,
-  // da sonst z.B. Plating/Staging/Debox/Post-Blast unabhängig von der KW-Wahl
-  // einfach alles aus dem rollierenden Serverfenster zeigten.
+  const [timeline, setTimeline] = useState<TimelineSnapshot[]>(() => loadTimeline());
+  // WO-Scope: nur Artikel zeigen, die in den Workorders der gewählten KW
+  // als Submeal/Meal vorkommen. Default ON — liefert eine saubere 100%-Basis.
   const [weekScopeFilter, setWeekScopeFilter] = useState(true);
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const liveTickRef     = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -59,14 +59,14 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const selectedWeekNum = useMemo(() => weekNumFromHfWeek(selectedWeek), [selectedWeek]);
   const skuInfoIndex = useMemo(() => buildSkuInfoIndex(data, selectedWeek), [data, selectedWeek]);
 
-  const doLoad = async (week: string) => {
+  const doLoad = async (week: string, retryCount = 0) => {
     setLoadState("loading");
     setLoadError(null);
-    setAllData(null);
+    if (retryCount === 0) setAllData(null);
     try {
       const p   = new URLSearchParams({ whId: "VF", week, limit: "50000", ts: String(Date.now()) });
       const pwo = new URLSearchParams({ whId: "VF", week, limit: "50000", ts: String(Date.now()) });
-      const [plR, stgR, debR, pbR, slR, inR, woR, wodR] = await Promise.all([
+      const [plR, stgR, debR, pbR, slR, inR, woR, wodR, plhR] = await Promise.all([
         fetch(`/api/wms-plating?${p}`,    { cache: "no-store" }),
         fetch(`/api/wms-staging?${p}`,    { cache: "no-store" }),
         fetch(`/api/wms-debox?${p}`,      { cache: "no-store" }),
@@ -75,12 +75,18 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
         fetch(`/api/wms-inbound?${p}`,    { cache: "no-store" }),
         fetch(`/api/wms-workorders?${pwo}`,{ cache: "no-store" }),
         fetch(`/api/wms-wo-detail?${p}`,  { cache: "no-store" }),
+        fetch(`/api/wms-plating-holding?${p}`, { cache: "no-store" }),
       ]);
       const ct = plR.headers.get("content-type") ?? "";
       if (!ct.includes("application/json") && !ct.includes("text/json")) {
+        if (retryCount < 3) {
+          setLoadError(`Warte auf WMS-Server… (Versuch ${retryCount + 1}/3)`);
+          await new Promise(r => setTimeout(r, 2500));
+          return doLoad(week, retryCount + 1);
+        }
         throw new Error(`WMS-Server nicht erreichbar (HTTP ${plR.status}). Lokalen Server starten: npm run wms:server`);
       }
-      const [pl, stg, deb, pb, sl, inb, wo, wod] = await Promise.all([
+      const [pl, stg, deb, pb, sl, inb, wo, wod, plh] = await Promise.all([
         plR.json()  as Promise<StoredPayload>,
         stgR.json() as Promise<StoredPayload>,
         debR.json() as Promise<StoredPayload>,
@@ -92,16 +98,22 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
           return { ok: false, rows: [], error: `WO-Daten nicht verfügbar (HTTP ${woR.status}) — lokaler Server läuft? Snowflake verbunden?` } as WorkordersPayload;
         }),
         wodR.ok ? wodR.json() as Promise<WoDetailPayload> : Promise.resolve({ ok: true, rows: [] } as WoDetailPayload),
+        plhR.ok ? plhR.json() as Promise<StoredPayload> : Promise.resolve({ ok: true, rows: [] } as StoredPayload),
       ]);
       for (const [label, pay] of [["Plating", pl], ["Staging", stg], ["Debox", deb], ["Post-Blast", pb], ["Sleeving", sl], ["Inbound", inb]] as [string, BasePayload][]) {
         if (!pay.ok) throw new Error(`${label}: ${pay.error ?? "Unbekannter Fehler"}`);
       }
-      setAllData({ plating: pl, staging: stg, debox: deb, postblast: pb, sleeving: sl, inbound: inb, workorders: wo, woDetail: wod });
+      setAllData({ plating: pl, platingHolding: plh, staging: stg, debox: deb, postblast: pb, sleeving: sl, inbound: inb, workorders: wo, woDetail: wod });
       setGeneratedAt(pl.generatedAt ?? sl.generatedAt ?? inb.generatedAt ?? null);
       setRangeStart(pl.rangeStart ?? inb.rangeStart ?? null);
       setRangeEnd(pl.rangeEnd ?? inb.rangeEnd ?? null);
       setLoadState("ready");
     } catch (e) {
+      if (retryCount < 3 && e instanceof TypeError && e.message.includes("fetch")) {
+        setLoadError(`Warte auf WMS-Server… (Versuch ${retryCount + 1}/3)`);
+        await new Promise(r => setTimeout(r, 2500));
+        return doLoad(week, retryCount + 1);
+      }
       setLoadError(e instanceof Error ? e.message : String(e));
       setLoadState("error");
     }
@@ -159,49 +171,65 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   );
   const wmsWeekFallbackActive = allData != null && wmsWeekNum != null && wmsWeekNum !== selectedWeekNum;
 
-  // Artikel, die laut Rezeptplan (weekRecipes + Sub-Rezepte/Zutaten) für die
-  // gewählte KW tatsächlich gebraucht werden. Zuverlässiger als die rohen WMS-
-  // Datums-/Wochenfelder je Station (uneinheitliches Format, teils gar nicht
-  // vorhanden) - siehe weekScopeFilter-Toggle in der Command-Bar.
-  const weekSkus = useMemo(() => weekPlannedSkuSet(skuInfoIndex), [skuInfoIndex]);
+  // ── WO-basierter SKU-Filter ─────────────────────────────────────────────
+  // Workorders zuerst filtern (nur nach KW/WO-Nummer), dann daraus das Set
+  // aller relevanten SKUs extrahieren. Bestands-Stationen werden anschließend
+  // über dieses Set gefiltert — nicht über DB_CHANGE_COMMIT_TIME.
+  const rawWorkorders = useMemo(
+    () => (allData?.workorders.rows ?? []).filter((row) => woMatchesSelectedWeek(row.week, selectedWeek, row.woNumber)),
+    [allData, selectedWeek],
+  );
+  const woSkuSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rawWorkorders) {
+      const sub = skuKey(r.submealItemNumber);
+      const meal = skuKey(r.mealItemNumber);
+      if (sub) set.add(sub);
+      if (meal) set.add(meal);
+    }
+    return set;
+  }, [rawWorkorders]);
+
+  // Kombination: WO-basiert (wenn Daten vorhanden) + Rezeptplan-Fallback
+  const weekSkus = useMemo(() => {
+    if (woSkuSet.size > 0) return woSkuSet;
+    return weekPlannedSkuSet(skuInfoIndex);
+  }, [woSkuSet, skuInfoIndex]);
+
   const inWeekScope = useCallback(
     (itemNumber: string) => !weekScopeFilter || weekSkus.size === 0 || weekSkus.has(skuKey(itemNumber)),
     [weekScopeFilter, weekSkus],
   );
 
   // ── Filtered raw rows per station ─────────────────────────────────────────
-  // Plating/Staging/Debox/Post-Blast hatten bisher GAR KEINEN Wochenfilter -
-  // sie zeigten unabhängig von der KW-Auswahl alles aus dem rollierenden
-  // Serverfenster (Ursache für "Artikel, die wir diese Woche nicht haben" /
-  // "zeigen Einträge anderer Wochen"). Jetzt wie Sleeving/Inbound zusätzlich
-  // über das eigene "kw"-Feld (WEEKOFYEAR aus Snowflake) gefiltert, zusammen
-  // mit dem rezeptbasierten SKU-Filter - zwei unabhängige Signale, da eine
-  // gemeinsam genutzte Zutat (z.B. Gewürz) über viele Wochen hinweg im
-  // SKU-Filter allein bestehen bliebe, auch wenn die konkrete Bewegung aus
-  // einer anderen Woche stammt.
+  // Stored Items: nur über WO-SKU-Zugehörigkeit filtern (kein kw-Filter).
+  // Transaktions-Daten (Sleeving, Inbound): zusätzlich nach kw filtern.
   const inWmsWeek = useCallback(
-    (kw: number | null) => !weekScopeFilter || wmsWeekNum == null || kw === wmsWeekNum,
+    (kw: number | null) => {
+      if (!weekScopeFilter) return true;
+      if (wmsWeekNum == null) return true;
+      if (kw == null) return true;
+      return kw === wmsWeekNum;
+    },
     [weekScopeFilter, wmsWeekNum],
   );
-  const rawPlating   = useMemo(() => (allData?.plating.rows    ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
-  const rawStaging   = useMemo(() => (allData?.staging.rows    ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
-  const rawDebox     = useMemo(() => (allData?.debox.rows      ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
-  const rawPostblast = useMemo(() => (allData?.postblast.rows  ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
+  const rawPlating        = useMemo(() => (allData?.plating.rows         ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
+  const rawPlatingHolding = useMemo(() => (allData?.platingHolding.rows  ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
+  const rawStaging   = useMemo(() => (allData?.staging.rows    ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
+  const rawDebox     = useMemo(() => (allData?.debox.rows      ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
+  const rawPostblast = useMemo(() => (allData?.postblast.rows  ?? []).filter(r => inWeekScope(r.itemNumber)), [allData, inWeekScope]);
   const rawSleeving  = useMemo(() => (allData?.sleeving.rows ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
   const rawInbound   = useMemo(() => (allData?.inbound.rows  ?? []).filter(r => inWmsWeek(r.kw) && inWeekScope(r.itemNumber)), [allData, inWmsWeek, inWeekScope]);
-  const rawWorkorders = useMemo(
-    () => (allData?.workorders.rows ?? []).filter((row) => woMatchesSelectedWeek(row.week, selectedWeek, row.woNumber)),
-    [allData, selectedWeek],
-  );
 
   // ── Aggregated rows ───────────────────────────────────────────────────────
-  const aggWorkorders = useMemo(() => aggregateWorkorders(rawWorkorders), [rawWorkorders]);
-  const aggInbound    = useMemo(() => aggregateInbound(rawInbound),       [rawInbound]);
-  const aggStaging    = useMemo(() => aggregateStored(rawStaging),        [rawStaging]);
-  const aggDebox      = useMemo(() => aggregateStored(rawDebox),          [rawDebox]);
-  const aggPostblast  = useMemo(() => aggregateStored(rawPostblast),      [rawPostblast]);
-  const aggSleeving   = useMemo(() => aggregateSleeving(rawSleeving),     [rawSleeving]);
-  const aggPlating    = useMemo(() => aggregateStored(rawPlating),        [rawPlating]);
+  const aggWorkorders     = useMemo(() => aggregateWorkorders(rawWorkorders), [rawWorkorders]);
+  const aggInbound        = useMemo(() => aggregateInbound(rawInbound),       [rawInbound]);
+  const aggStaging        = useMemo(() => aggregateStored(rawStaging),        [rawStaging]);
+  const aggDebox          = useMemo(() => aggregateStored(rawDebox),          [rawDebox]);
+  const aggPostblast      = useMemo(() => aggregateStored(rawPostblast),      [rawPostblast]);
+  const aggSleeving       = useMemo(() => aggregateSleeving(rawSleeving),     [rawSleeving]);
+  const aggPlating        = useMemo(() => aggregateStored(rawPlating),        [rawPlating]);
+  const aggPlatingHolding = useMemo(() => aggregateStored(rawPlatingHolding), [rawPlatingHolding]);
 
   // ── Cross-station indices ─────────────────────────────────────────────────
   const skuMap = useMemo(
@@ -260,8 +288,8 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
     [allData, rawWorkorders, aggInbound, aggStaging, aggDebox, aggPostblast, aggSleeving, aggPlating],
   );
   const mealOperations = useMemo(
-    () => buildMealOperations(aggWorkorders, aggPlating, aggPostblast, aggSleeving, skuInfoIndex),
-    [aggWorkorders, aggPlating, aggPostblast, aggSleeving, skuInfoIndex],
+    () => buildMealOperations(aggWorkorders, aggPlating, aggPlatingHolding, aggPostblast, aggDebox, aggStaging, aggSleeving, skuInfoIndex),
+    [aggWorkorders, aggPlating, aggPlatingHolding, aggPostblast, aggDebox, aggStaging, aggSleeving, skuInfoIndex],
   );
 
   const compareSnap = useMemo(
@@ -281,6 +309,14 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const handleWoDetail = (wo: string) => setDetailWo(wo);
   const handleSaveSnapshot = () => { persistSnapshot(selectedWeek, bilanz); setSnapshots(loadSnapshots()); };
   const handleDeleteSnapshot = (id: string) => { removeSnapshot(id); setSnapshots(loadSnapshots()); };
+
+  // Auto-Snapshot im Live-Mode: bei jedem Refresh Timeline-Snapshot speichern
+  useEffect(() => {
+    if (loadState === "ready" && mealOperations.length > 0) {
+      const saved = persistTimelineSnapshot(selectedWeek, mealOperations);
+      if (saved) setTimeline(loadTimeline());
+    }
+  }, [loadState, mealOperations, selectedWeek]);
   const needle   = search.trim().toUpperCase();
   const isTrace  = needle.length > 0;
 
@@ -303,18 +339,20 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const totalCounts: Record<StationKey, number> = {
     workorders: aggWorkorders.length, inbound: aggInbound.length,
     staging: aggStaging.length, debox: aggDebox.length, postblast: aggPostblast.length,
-    sleeving: aggSleeving.length, plating: aggPlating.length,
+    platingHolding: aggPlatingHolding.length, sleeving: aggSleeving.length, plating: aggPlating.length,
   };
 
   const TAB_DEFS: { key: CmdTab; label: string; icon: string; count?: number; color?: string }[] = [
     { key: "command", label: "Leitwarte", icon: "🎯" },
+    { key: "timeline", label: "Timeline", icon: "🕐", count: timeline.length },
     { key: "bilanz", label: "Bilanz", icon: "📊" },
     { key: "inbound", label: "Inbound", icon: "📦", count: totalCounts.inbound, color: "emerald" },
     { key: "workorders", label: "WO", icon: "📋", count: totalCounts.workorders, color: "violet" },
     { key: "staging", label: "Staging", icon: "🗄️", count: totalCounts.staging, color: "amber" },
     { key: "debox", label: "Debox", icon: "📂", count: totalCounts.debox, color: "orange" },
     { key: "postblast", label: "Post-Blast", icon: "❄️", count: totalCounts.postblast, color: "rose" },
-    { key: "plating", label: "Plating", icon: "🍽️", count: totalCounts.plating, color: "blue" },
+    { key: "platingHolding", label: "PLH", icon: "🧊", count: totalCounts.platingHolding, color: "indigo" },
+    { key: "plating", label: "Linie", icon: "🍽️", count: totalCounts.plating, color: "blue" },
     { key: "sleeving", label: "Sleeving", icon: "🔄", count: totalCounts.sleeving, color: "sky" },
   ];
 
@@ -463,7 +501,16 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
         )}
 
         {loadState === "error" && (
-          <div className="card border-rose-300 bg-rose-50 p-4 text-rose-800 text-sm">{loadError}</div>
+          <div className="card border-rose-300 bg-rose-50 p-4 text-rose-800 text-sm space-y-2">
+            <div>{loadError}</div>
+            <button type="button" onClick={() => void doLoad(selectedWeek)}
+              className="px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold">
+              ⟳ Erneut versuchen
+            </button>
+          </div>
+        )}
+        {loadState === "loading" && loadError && (
+          <div className="card border-amber-300 bg-amber-50 p-4 text-amber-800 text-sm animate-pulse">{loadError}</div>
         )}
 
         {/* ── Data Tabs ──── */}
@@ -471,6 +518,11 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
           <>
             {/* Trace Panel (always visible when tracing) */}
             {isTrace && <TracePanel sku={search} funnel={funnel} skuInfoIndex={skuInfoIndex} onClear={() => setSearch("")} />}
+
+            {/* ─── TAB: Timeline ─── */}
+            {activeTab === "timeline" && (
+              <WmsTimelinePanel timeline={timeline} currentMeals={mealOperations} data={data} onTrace={handleTrace} />
+            )}
 
             {/* ─── TAB: Leitwarte (Command) ─── */}
             {activeTab === "command" && (
@@ -647,6 +699,12 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
             )}
 
             {/* ─── TAB: Plating ─── */}
+            {activeTab === "platingHolding" && (
+              <SectionCard stationKey="platingHolding" totalCount={totalCounts.platingHolding}>
+                <StoredAggTable rows={aggPlatingHolding} stationKey="platingHolding" skuMap={skuMap} lotMap={lotMap} search={search} onTrace={handleTrace} onDetail={handleDetail} itemToWoMap={itemToWoMap} onWoDetail={handleWoDetail} skuInfoIndex={skuInfoIndex} />
+              </SectionCard>
+            )}
+
             {activeTab === "plating" && (
               <SectionCard stationKey="plating" totalCount={totalCounts.plating} filteredCount={isTrace ? filtCounts.plating : undefined}>
                 <StoredAggTable rows={aggPlating} stationKey="plating" skuMap={skuMap} lotMap={lotMap} search={search} onTrace={handleTrace} onDetail={handleDetail} itemToWoMap={itemToWoMap} onWoDetail={handleWoDetail} skuInfoIndex={skuInfoIndex} />

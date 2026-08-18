@@ -24,6 +24,7 @@ export function buildSkuStationMap(allData: AllData, selectedWeek: string, weekN
   for (const r of allData.staging.rows)   { add(r.itemNumber, "staging");   }
   for (const r of allData.debox.rows)     { add(r.itemNumber, "debox");     }
   for (const r of allData.postblast.rows) { add(r.itemNumber, "postblast"); }
+  for (const r of allData.platingHolding.rows) { add(r.itemNumber, "platingHolding"); }
   for (const r of allData.sleeving.rows)  { if (weekNum == null || r.kw === weekNum) add(r.itemNumber, "sleeving"); }
   for (const r of allData.plating.rows)   { add(r.itemNumber, "plating"); }
   return map;
@@ -37,11 +38,12 @@ export function buildLotStationMap(allData: AllData): LotStationMap {
     if (!map.has(k)) map.set(k, new Set());
     map.get(k)!.add(station);
   }
-  for (const r of allData.inbound.rows)   add(r.lotNumber, "inbound");
-  for (const r of allData.staging.rows)   add(r.lotNumber, "staging");
-  for (const r of allData.debox.rows)     add(r.lotNumber, "debox");
-  for (const r of allData.postblast.rows) add(r.lotNumber, "postblast");
-  for (const r of allData.plating.rows)   add(r.lotNumber, "plating");
+  for (const r of allData.inbound.rows)        add(r.lotNumber, "inbound");
+  for (const r of allData.staging.rows)        add(r.lotNumber, "staging");
+  for (const r of allData.debox.rows)          add(r.lotNumber, "debox");
+  for (const r of allData.postblast.rows)      add(r.lotNumber, "postblast");
+  for (const r of allData.platingHolding.rows) add(r.lotNumber, "platingHolding");
+  for (const r of allData.plating.rows)        add(r.lotNumber, "plating");
   return map;
 }
 
@@ -61,33 +63,61 @@ export type FunnelRow = {
 
 export function buildFunnel(allData: AllData, skuMap: SkuStationMap, selectedWeek: string, weekNum: number | null): FunnelRow[] {
   const multiSkus = [...skuMap.entries()].filter(([, s]) => s.size >= 2).map(([sku]) => sku);
-  const sumArr = (arr: Record<string, unknown>[], field: string) =>
-    arr.reduce((s, r) => s + (Number(r[field]) || 0), 0);
+
+  // Pre-index rows by SKU for O(1) lookup instead of O(n) per-SKU filter
+  const woIndex = new Map<string, { qty: number }>();
+  for (const r of allData.workorders.rows) {
+    if (!woMatchesSelectedWeek(r.week, selectedWeek)) continue;
+    for (const field of [r.submealItemNumber, r.mealItemNumber]) {
+      const k = skuKey(field);
+      if (!k) continue;
+      woIndex.set(k, { qty: (woIndex.get(k)?.qty ?? 0) + (Number(r.quantity) || 0) });
+    }
+  }
+  const inbIndex = new Map<string, number>();
+  for (const r of allData.inbound.rows) {
+    if (weekNum != null && r.kw !== weekNum) continue;
+    const k = skuKey(r.itemNumber);
+    if (k) inbIndex.set(k, (inbIndex.get(k) ?? 0) + (Number(r.qtyReceived) || 0));
+  }
+  const storedIndex = (rows: { itemNumber: string; actualQty: number | null }[]) => {
+    const m = new Map<string, number>();
+    for (const r of rows) { const k = skuKey(r.itemNumber); if (k) m.set(k, (m.get(k) ?? 0) + (Number(r.actualQty) || 0)); }
+    return m;
+  };
+  const stgIndex = storedIndex(allData.staging.rows);
+  const debIndex = storedIndex(allData.debox.rows);
+  const pbIndex = storedIndex(allData.postblast.rows);
+  const pltIndex = storedIndex(allData.plating.rows);
+  const slvIndex = new Map<string, number>();
+  for (const r of allData.sleeving.rows) {
+    if (weekNum != null && r.kw !== weekNum) continue;
+    const k = skuKey(r.itemNumber);
+    if (!k) continue;
+    const sig = sleevingSignal(r);
+    const q = Math.abs(r.tranQty ?? 0);
+    const delta = sig === "eingang" ? q : sig === "ausgang" ? -q : 0;
+    slvIndex.set(k, (slvIndex.get(k) ?? 0) + delta);
+  }
 
   return multiSkus.map(sku => {
-    const wo  = allData.workorders.rows.filter(r => woMatchesSelectedWeek(r.week, selectedWeek) && (skuKey(r.submealItemNumber) === sku || skuKey(r.mealItemNumber) === sku));
-    const inb = allData.inbound.rows.filter(r => (weekNum == null || r.kw === weekNum) && skuKey(r.itemNumber) === sku);
-    const stg = allData.staging.rows.filter(r => skuKey(r.itemNumber) === sku);
-    const deb = allData.debox.rows.filter(r => skuKey(r.itemNumber) === sku);
-    const pb  = allData.postblast.rows.filter(r => skuKey(r.itemNumber) === sku);
-    const slv = allData.sleeving.rows.filter(r => (weekNum == null || r.kw === weekNum) && skuKey(r.itemNumber) === sku);
-    const plt = allData.plating.rows.filter(r => skuKey(r.itemNumber) === sku);
-
-    const sleevNet = slv.reduce((s, r) => {
-      const sig = sleevingSignal(r);
-      const q = Math.abs(r.tranQty ?? 0);
-      return sig === "eingang" ? s + q : sig === "ausgang" ? s - q : s;
-    }, 0);
+    const woQty = woIndex.get(sku)?.qty ?? null;
+    const inbQty = inbIndex.has(sku) ? inbIndex.get(sku)! : null;
+    const stagingQty = stgIndex.has(sku) ? stgIndex.get(sku)! : null;
+    const deboxQty = debIndex.has(sku) ? debIndex.get(sku)! : null;
+    const postblastQty = pbIndex.has(sku) ? pbIndex.get(sku)! : null;
+    const platingQty = pltIndex.has(sku) ? pltIndex.get(sku)! : null;
+    const sleevingNet = slvIndex.has(sku) ? slvIndex.get(sku)! : null;
 
     return {
       sku,
-      woQty:        wo.length  ? sumArr(wo  as unknown as Record<string, unknown>[], "quantity")    : null,
-      inboundQty:   inb.length ? sumArr(inb as unknown as Record<string, unknown>[], "qtyReceived") : null,
-      stagingQty:   stg.length ? sumArr(stg as unknown as Record<string, unknown>[], "actualQty")   : null,
-      deboxQty:     deb.length ? sumArr(deb as unknown as Record<string, unknown>[], "actualQty")   : null,
-      postblastQty: pb.length  ? sumArr(pb  as unknown as Record<string, unknown>[], "actualQty")   : null,
-      sleevingNet:  slv.length ? sleevNet : null,
-      platingQty:   plt.length ? sumArr(plt as unknown as Record<string, unknown>[], "actualQty")   : null,
+      woQty:        woQty != null ? woQty : null,
+      inboundQty:   inbQty,
+      stagingQty:   stagingQty,
+      deboxQty:     deboxQty,
+      postblastQty: postblastQty,
+      sleevingNet:  sleevingNet,
+      platingQty:   platingQty,
       stationCount: skuMap.get(sku)!.size,
     };
   }).sort((a, b) => b.stationCount - a.stationCount || (b.inboundQty ?? 0) - (a.inboundQty ?? 0));

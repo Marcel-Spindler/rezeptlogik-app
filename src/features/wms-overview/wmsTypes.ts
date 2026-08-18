@@ -153,31 +153,33 @@ export type WorkordersPayload = { ok: boolean; rows: WorkorderRow[]; error?: str
 export type WoDetailPayload   = { ok: boolean; rows: WoTransactionRow[]; error?: string; source?: string; cachedAt?: string; week?: string; wmsWeek?: string; controlPattern?: string };
 
 export type AllData = {
-  plating:    StoredPayload;
-  staging:    StoredPayload;
-  debox:      StoredPayload;
-  postblast:  StoredPayload;
-  sleeving:   SleevingPayload;
-  inbound:    InboundPayload;
-  workorders: WorkordersPayload;
-  woDetail:   WoDetailPayload;
+  plating:        StoredPayload;
+  platingHolding: StoredPayload;
+  staging:        StoredPayload;
+  debox:          StoredPayload;
+  postblast:      StoredPayload;
+  sleeving:       SleevingPayload;
+  inbound:        InboundPayload;
+  workorders:     WorkordersPayload;
+  woDetail:       WoDetailPayload;
 };
 
-export type StationKey = "workorders" | "inbound" | "staging" | "debox" | "postblast" | "sleeving" | "plating";
+export type StationKey = "workorders" | "inbound" | "staging" | "debox" | "postblast" | "platingHolding" | "sleeving" | "plating";
 export type LoadState  = "idle" | "loading" | "ready" | "error";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────
 
 export const STATION_ORDER: StationKey[] = [
-  "inbound", "workorders", "staging", "debox", "postblast", "plating", "sleeving",
+  "inbound", "workorders", "staging", "debox", "postblast", "platingHolding", "plating", "sleeving",
 ];
 
 export const STATION_META: Record<StationKey, { label: string; bgColor: string; textColor: string; borderColor: string; icon: string }> = {
-  workorders: { label: "Work Orders",               bgColor: "bg-violet-50",  textColor: "text-violet-700",  borderColor: "border-violet-200",  icon: "📋" },
-  inbound:    { label: "Inbound (Wareneingang)",    bgColor: "bg-emerald-50", textColor: "text-emerald-700", borderColor: "border-emerald-200", icon: "📦" },
-  staging:    { label: "Staging",                   bgColor: "bg-amber-50",   textColor: "text-amber-700",   borderColor: "border-amber-200",   icon: "🗄️" },
-  debox:      { label: "Debox",                     bgColor: "bg-orange-50",  textColor: "text-orange-700",  borderColor: "border-orange-200",  icon: "📂" },
-  postblast:  { label: "Post-Blast",                bgColor: "bg-rose-50",    textColor: "text-rose-700",    borderColor: "border-rose-200",    icon: "❄️" },
-  sleeving:   { label: "Sleeving",                  bgColor: "bg-sky-50",     textColor: "text-sky-700",     borderColor: "border-sky-200",     icon: "🔄" },
-  plating:    { label: "Plating (Linie & Holding)", bgColor: "bg-blue-50",    textColor: "text-blue-700",    borderColor: "border-blue-200",    icon: "🍽️" },
+  workorders:     { label: "Work Orders",               bgColor: "bg-violet-50",  textColor: "text-violet-700",  borderColor: "border-violet-200",  icon: "📋" },
+  inbound:        { label: "Inbound (Wareneingang)",    bgColor: "bg-emerald-50", textColor: "text-emerald-700", borderColor: "border-emerald-200", icon: "📦" },
+  staging:        { label: "Staging",                   bgColor: "bg-amber-50",   textColor: "text-amber-700",   borderColor: "border-amber-200",   icon: "🗄️" },
+  debox:          { label: "Debox",                     bgColor: "bg-orange-50",  textColor: "text-orange-700",  borderColor: "border-orange-200",  icon: "📂" },
+  postblast:      { label: "Post-Blast",                bgColor: "bg-rose-50",    textColor: "text-rose-700",    borderColor: "border-rose-200",    icon: "❄️" },
+  platingHolding: { label: "Plating Holding (PLH)",     bgColor: "bg-indigo-50",  textColor: "text-indigo-700",  borderColor: "border-indigo-200",  icon: "🧊" },
+  sleeving:       { label: "Sleeving",                  bgColor: "bg-sky-50",     textColor: "text-sky-700",     borderColor: "border-sky-200",     icon: "🔄" },
+  plating:        { label: "Plating (Linie)",           bgColor: "bg-blue-50",    textColor: "text-blue-700",    borderColor: "border-blue-200",    icon: "🍽️" },
 };

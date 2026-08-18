@@ -40,9 +40,28 @@ SELECT
     WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
 FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
 WHERE WH_ID = ?
-  AND (LOCATION_ID ILIKE '%PLAT%' OR LOCATION_ID ILIKE '%PLH%' OR LOCATION_ID ILIKE '%PLSTG%')
+  AND (LOCATION_ID ILIKE 'PLATING-LINE%' OR LOCATION_ID ILIKE 'PLSTG%')
   AND DB_CHANGE_COMMIT_TIME >= TO_TIMESTAMP_NTZ(?)
   AND DB_CHANGE_COMMIT_TIME < TO_TIMESTAMP_NTZ(?)
+ORDER BY LOCATION_ID, ITEM_NUMBER
+LIMIT ?`;
+
+const WMS_PLATING_HOLDING_SQL = `
+SELECT
+    LOCATION_ID,
+    ITEM_NUMBER,
+    ACTUAL_QTY,
+    LOT_NUMBER,
+    HU_ID,
+    STATUS,
+    FIFO_DATE,
+    EXPIRATION_DATE,
+    DB_CHANGE_COMMIT_TIME,
+    WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
+WHERE WH_ID = ?
+  AND LOCATION_ID ILIKE 'PLH%'
+  AND ACTUAL_QTY > 0
 ORDER BY LOCATION_ID, ITEM_NUMBER
 LIMIT ?`;
 
@@ -163,10 +182,10 @@ SELECT
     WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
 FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
 WHERE WH_ID = ?
-  AND LOCATION_ID = 'PostB-01'
+  AND (LOCATION_ID ILIKE '%POSTB%' OR LOCATION_ID ILIKE '%POST-BLAST%')
   AND DB_CHANGE_COMMIT_TIME >= TO_TIMESTAMP_NTZ(?)
   AND DB_CHANGE_COMMIT_TIME < TO_TIMESTAMP_NTZ(?)
-ORDER BY ITEM_NUMBER
+ORDER BY LOCATION_ID, ITEM_NUMBER
 LIMIT ?`;
 
 const WMS_WORKORDERS_SQL = `
@@ -658,6 +677,37 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         wmsWeek: range.wmsWeek,
         rangeStart: range.startDate,
         rangeEnd: range.endDate,
+        limit,
+        generatedAt: new Date().toISOString(),
+        rows: rows.map(mapWmsPlatingRow),
+      });
+    } catch (error) {
+      if (cachedConn) {
+        void destroyConnection(cachedConn);
+        cachedConn = undefined;
+      }
+      connectingConn = undefined;
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/wms-plating-holding" && req.method === "GET") {
+    const whId = url.searchParams.get("whId")?.trim() || "VF";
+    const week = url.searchParams.get("week")?.trim() || currentHfWeek();
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 25000);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(50000, Math.max(1, Math.round(requestedLimit)))
+      : 25000;
+
+    try {
+      const conn = await ensureConnection();
+      console.log(`WMS Plating Holding Query startet: WH_ID=${whId}, LIMIT=${limit} (kein Date-Filter — aktueller Bestand)`);
+      const rows = await executeQuery(conn, WMS_PLATING_HOLDING_SQL, [whId, limit]);
+      sendJson(res, 200, {
+        ok: true,
+        whId,
+        week,
         limit,
         generatedAt: new Date().toISOString(),
         rows: rows.map(mapWmsPlatingRow),
