@@ -26,3 +26,4 @@ In der WO-Detailansicht `Instruction erzeugen` klicken. Der Kontext enthaelt WO,
 - Jede Antwort wird als `needs_review` behandelt, bis sie fachlich geprueft wurde.
 - Die erzeugte englische und deutsche Anweisung wird beim PDF-Druck fuer genau diese WO verwendet.
 - Ohne `GEMINI_API_KEY` bleibt der bestehende Rezept-/Datenbanktext erhalten; der Server gibt eine kontrollierte Fehlermeldung zurueck.
+

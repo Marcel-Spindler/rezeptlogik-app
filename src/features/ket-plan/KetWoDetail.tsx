@@ -126,6 +126,41 @@ export function WoDetail({
 
       <div className="p-5 space-y-4">
 
+        {/* Factor-Produktionsregeln (RTI / nie-batchen-Fleisch / Batch nach Rezeptname / Allergene) */}
+        {(calc.rti || calc.neverBatch || calc.readyMade || calc.factorCapacityKg != null || calc.allergensContains.length > 0) && (
+          <div className="space-y-2">
+            {calc.rti && (
+              <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs font-bold text-amber-200">
+                RTI · Ready to Eat → direkt zum Plating (kein Batch)
+              </div>
+            )}
+            {calc.neverBatch && (
+              <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">
+                ⚠ Kein Batch — wird als Gesamtmenge produziert (Fleisch/Fisch-Regel)
+              </div>
+            )}
+            {calc.readyMade && (
+              <div className="rounded-xl border border-purple-400/40 bg-purple-500/10 px-3 py-2 text-xs font-bold text-purple-200">
+                Fertigprodukt — wöchentlich vorbereitet, nicht expandieren
+              </div>
+            )}
+            {!calc.rti && !calc.neverBatch && calc.factorCapacityKg != null && (
+              <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200">
+                Batch (Factor-Regel): {calc.factorBatches ?? "—"}× {calc.factorBatchQtyKg != null ? fmtKg(calc.factorBatchQtyKg) : "—"}
+                {" "}(Kapazität {calc.factorCapacityKg} kg{calc.factorFallbackCapacity ? " · Fallback" : ""})
+              </div>
+            )}
+            {calc.allergensContains.length > 0 && (
+              <div className="rounded-xl border border-red-400/30 bg-red-500/5 px-3 py-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-black text-red-300 underline">⚠ CONTAINS</span>
+                {calc.allergensContains.map(a => (
+                  <span key={a} className="text-[9px] font-bold text-white bg-red-600 rounded-full px-2 py-0.5">{a}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Cook Methods + Per-Equipment Batche */}
         <div className="bg-[#0f2240] rounded-2xl px-5 py-4">
           <div className="text-[8px] font-black uppercase tracking-[0.15em] text-blue-400 mb-2.5">
@@ -282,7 +317,7 @@ export function WoDetail({
           {instruction && (
             <div className="grid gap-3 p-4 lg:grid-cols-2">
               <div><div className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1">Instructions (EN)</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.english}</div></div>
-              <div><div className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1">Anleitung (DE) · {instruction.status === "needs_review" ? "Review erforderlich" : "Claude"}</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.german}</div></div>
+              <div><div className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1">Anleitung (DE) · {instruction.status === "needs_review" ? "Review erforderlich" : "Gemini"}</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.german}</div></div>
             </div>
           )}
         </section>
@@ -420,7 +455,13 @@ export function WoDetail({
                 <tbody>
                   {calc.ingredients
                     .filter(i => i.totalKg > 0.0005)
-                    .sort((a, b) => b.totalKg - a.totalKg)
+                    .slice()
+                    .sort((a, b) => {
+                      const sa = a.spiceRoom || a.separate ? 1 : 0;
+                      const sb = b.spiceRoom || b.separate ? 1 : 0;
+                      if (sa !== sb) return sb - sa;
+                      return b.totalKg - a.totalKg;
+                    })
                     .map((ing, idx) => (
                       <tr key={idx} className={`border-b border-slate-50 hover:bg-slate-50/50 transition-colors ${
                         ing.category === "PRO" ? "bg-red-50/30" :

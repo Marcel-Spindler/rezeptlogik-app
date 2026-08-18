@@ -1,14 +1,14 @@
 // Baut das druckbare HTML/PDF für einen Satz Work Orders (Breakdown-Karten je WO).
-import { EQUIP_DEFAULTS, EQUIP_LABELS, type BatchCalc, type KetRow, type WoInstruction } from "./ketTypes";
+import { EQUIP_LABELS, type BatchCalc, type KetRow, type WoInstruction } from "./ketTypes";
 import { escHtml, fmtKg, fmtNum, parseDateShift } from "./ketLogic";
 import { orderCookingMethods } from "./woInstructionBot";
 
 export function buildPdf(
   rows: KetRow[],
   calcMap: Map<string, BatchCalc>,
-  caps: Record<string, number>,
+  _caps: Record<string, number>,
   title: string,
-  source: "CSV" | "Firestore" | "LiveWMS" | "FirestoreStale" | null = null,
+  _source: "CSV" | "Firestore" | "LiveWMS" | "FirestoreStale" | null = null,
   woInstructions: Record<string, WoInstruction> = {},
 ): string {
 
@@ -20,15 +20,16 @@ export function buildPdf(
     const d = new Date(date);
     const dateStr = d.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
 
-    const done = row.woCookedPortions ?? 0;
-    const remaining = Math.max(0, row.targetPortions - done);
-    const donePct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
     const cookDisplay = orderCookingMethods(calc.resolvedCookMethods).join(" → ") || "—";
 
     const ING_CAT_ORDER: Record<string, number> = { SPI: 0, PHF: 1, DAI: 2, PRO: 3 };
     const ingRows = calc.ingredients
       .filter(ing => ing.totalKg > 0.0005)
       .sort((a, b) => {
+        // Factor-Regel (SKILL.md §4.2): SEPARATE/Spice-Room-Zutaten immer zuerst.
+        const sa = a.spiceRoom || a.separate ? 1 : 0;
+        const sb = b.spiceRoom || b.separate ? 1 : 0;
+        if (sa !== sb) return sb - sa;
         const ca = (a.category ?? "").trim().toUpperCase().slice(0, 3);
         const cb = (b.category ?? "").trim().toUpperCase().slice(0, 3);
         const oa = ING_CAT_ORDER[ca] ?? 99;
@@ -37,21 +38,34 @@ export function buildPdf(
         return b.totalKg - a.totalKg;
       })
       .map(ing => {
-        const catBg =
+        const cat = (ing.category ?? "").trim().toUpperCase().slice(0, 3);
+        const isSpice = cat === "SPI";
+        const underline = ing.spiceRoom || ing.separate;
+        const catBg = isSpice ? "#fbbf24" :
           ing.category === "PRO" ? "#fee2e2" :
           ing.category === "PHF" ? "#dbeafe" :
-          ing.category === "SPI" ? "#fef9c3" :
           ing.category === "DRY" ? "#f3f4f6" : "#fff";
+        const rowStyle = isSpice
+          ? "background:#fef3c7;border-left:4px solid #f59e0b;font-weight:700;"
+          : `background:${catBg}`;
         const yieldNote = ing.yieldPct && ing.yieldPct < 1
           ? `<br><span style="font-size:8px;color:#d97706;font-weight:700">${Math.round((1 - ing.yieldPct) * 100)}% Verlust</span>`
           : "";
-        return `<tr style="background:${catBg}">
+        const spiceBadge = isSpice
+          ? `<span style="display:inline-block;font-size:7px;font-weight:900;padding:1px 5px;border-radius:3px;background:#f59e0b;color:#fff;margin-right:4px;letter-spacing:.04em;">🌶 SPICE ROOM</span>`
+          : "";
+        // SEPARATE = im Spice Room separat portioniert (Matteos capacity-rules.js isSeparate()).
+        const separateBadge = ing.separate
+          ? `<span style="display:inline-block;font-size:7px;font-weight:900;padding:1px 5px;border-radius:3px;background:#b23c17;color:#fff;margin-right:4px;letter-spacing:.04em;">SEPARATE</span>`
+          : "";
+        const nameStyle = underline ? ' style="text-decoration:underline;text-decoration-color:#c77d17;"' : "";
+        return `<tr style="${rowStyle}">
           <td>
-            ${ing.category ? `<span class="cat">${ing.category}</span>` : ""}
-            ${ing.name}${yieldNote}
+            ${spiceBadge}${separateBadge}${ing.category ? `<span class="cat"${isSpice ? ' style="background:#f59e0b;color:#fff;font-weight:900;"' : ""}>${ing.category}</span>` : ""}
+            <span${nameStyle}>${ing.name}</span>${yieldNote}
           </td>
-          <td class="num">${fmtKg(ing.totalKg)}</td>
-          <td class="num hi">${fmtKg(ing.perBatchKg)}</td>
+          <td class="num hi"${underline ? ' style="text-decoration:underline;"' : ""}>${fmtKg(ing.perBatchKg)}</td>
+          <td class="num"${underline ? ' style="text-decoration:underline;"' : ""}>${fmtKg(ing.totalKg)}</td>
         </tr>`;
       }).join("");
 
@@ -61,17 +75,57 @@ export function buildPdf(
       ? ` <span style="color:#b45309;font-weight:800;" title="Kuechenbible-Kapazität (provisorisch)">📖 Kuechenbible: ${escHtml(calc.primaryCapBibleMatch.itemName)}</span>`
       : "";
 
-    // Per-Equipment Batch-Übersicht
+    // Per-Equipment Batch-Übersicht — Rest-Batch als eigene Kachel neben den Voll-Batches,
+    // statt als Zusatzzeile innerhalb der Voll-Batch-Kachel (bessere Lesbarkeit).
     const equipBatchHtml = calc.equipBatches.length > 0
       ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;">
-          ${calc.equipBatches.map(eb => `
+          ${calc.equipBatches.map(eb => {
+            const fullBatches = Math.max(0, eb.batches - (eb.remainderKg > 0 ? 1 : 0));
+            const remainderTile = eb.remainderKg > 0
+              ? `<div style="background:#78350f;color:#fff;border-radius:8px;padding:6px 10px;min-width:80px;text-align:center;">
+                  <div style="font-size:8px;color:#fde68a;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">${eb.label} · Rest</div>
+                  <div style="font-size:18px;font-weight:900;line-height:1;">1× REST</div>
+                  <div style="font-size:8px;color:#fde68a;margin-top:2px;">${eb.remainderKg.toFixed(1)} kg</div>
+                </div>`
+              : "";
+            return `
             <div style="background:#1e3a5f;color:#fff;border-radius:8px;padding:6px 10px;min-width:80px;text-align:center;">
               <div style="font-size:8px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">${eb.label}</div>
-              <div style="font-size:20px;font-weight:900;line-height:1;">${eb.batches}×</div>
-              <div style="font-size:8px;color:#93c5fd;margin-top:1px;">${eb.capacityKg} kg / Batch</div>
-              <div style="font-size:8px;color:#7dd3fc;">à ${eb.perBatchKg.toFixed(1)} kg${eb.remainderKg > 0 ? ` + Rest ${eb.remainderKg.toFixed(1)} kg` : ""}</div>
+              <div style="font-size:18px;font-weight:900;line-height:1;">${fullBatches}× VOLL</div>
+              <div style="font-size:8px;color:#93c5fd;margin-top:2px;">${eb.capacityKg} kg je Voll-Batch</div>
               ${eb.bibleMatch ? `<div style="font-size:7px;color:#fde68a;font-weight:800;margin-top:2px;">📖 Kuechenbible: ${escHtml(eb.bibleMatch.itemName)}</div>` : ""}
-            </div>`).join("")}
+            </div>${remainderTile}`;
+          }).join("")}
+        </div>`
+      : "";
+    const primaryFullBatches = Math.max(0, calc.batches - (calc.remainderKg > 0 ? 1 : 0));
+    const batchSummary = calc.remainderKg > 0
+      ? `${primaryFullBatches} volle + 1 Rest-Batch (${calc.remainderKg.toFixed(1)} kg)`
+      : `${primaryFullBatches} volle Batches`;
+
+    // Factor-Produktionsregeln (Matteos capacity-rules.js/classify()) — ergänzt die
+    // Equipment-Batch-Ansicht oben, ersetzt sie nicht.
+    const factorBadgeHtml = [
+      calc.rti
+        ? `<div style="margin:6px 0;padding:6px 10px;background:#fff8f0;border:1px solid #e0a94f;border-radius:6px;font-size:10px;font-weight:800;color:#9a5b0e;">RTI · Ready to Eat → direkt zum Plating (kein Batch)</div>`
+        : "",
+      calc.neverBatch
+        ? `<div style="margin:6px 0;padding:6px 10px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:10px;font-weight:800;color:#991b1b;">⚠ Kein Batch — wird als Gesamtmenge produziert (Fleisch/Fisch-Regel, Matteo 2026-07-08)</div>`
+        : "",
+      calc.readyMade
+        ? `<div style="margin:6px 0;padding:6px 10px;background:#faf5ff;border:1px solid #d8b4fe;border-radius:6px;font-size:10px;font-weight:800;color:#6b21a8;">Fertigprodukt — wöchentlich vorbereitet, nicht expandieren</div>`
+        : "",
+      !calc.rti && !calc.neverBatch && calc.factorCapacityKg
+        ? `<div style="margin:6px 0;padding:6px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:10px;font-weight:700;color:#166534;">
+            Batch (Factor-Regel): <strong>${calc.factorBatches ?? "—"}×</strong> ${calc.factorBatchQtyKg != null ? fmtKg(calc.factorBatchQtyKg) : "—"}
+            (Kapazität ${calc.factorCapacityKg} kg${calc.factorFallbackCapacity ? " · Fallback, unklares Gemüse" : ""})
+          </div>`
+        : "",
+    ].join("");
+    const allergenHtml = calc.allergensContains.length > 0
+      ? `<div style="margin:6px 0;padding:5px 10px;background:#fff8f6;border-bottom:2px solid #f0d8d0;border-radius:6px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
+          <span style="font-weight:900;color:#c62828;font-size:10px;text-decoration:underline;text-decoration-color:#c62828;">⚠ CONTAINS</span>
+          ${calc.allergensContains.map(a => `<span style="background:#c62828;color:#fff;font-weight:800;font-size:9px;padding:2px 8px;border-radius:9px;">${escHtml(a)}</span>`).join("")}
         </div>`
       : "";
 
@@ -115,10 +169,6 @@ export function buildPdf(
       ? (() => { try { return new Date(row.unlockedEta).toLocaleString("de-DE"); } catch { return row.unlockedEta; } })()
       : null;
 
-    const progressBar = donePct > 0 ? `
-    <div class="progress-wrap">
-      <div class="progress-bar" style="width:${Math.min(100, donePct)}%;background:${donePct >= 100 ? "#10b981" : "#3b82f6"}"></div>
-    </div>` : "";
 
     return `
 <section class="card" style="page-break-before:${i > 0 ? "always" : "auto"};page-break-after:auto">
@@ -143,12 +193,6 @@ export function buildPdf(
       <div class="sval">${fmtNum(row.targetPortions)}</div>
     </div>
     <div class="stat">
-      <div class="slabel">Gekocht / Rest</div>
-      <div class="sval">${fmtNum(done)} <span style="font-size:12px;color:#6b7280">/ ${fmtNum(remaining)}</span></div>
-      ${donePct > 0 ? `<div style="font-size:9px;color:#059669;font-weight:700;margin-top:1px">${donePct}% fertig</div>` : ""}
-      ${progressBar}
-    </div>
-    <div class="stat">
       <div class="slabel">Total KG (Roh)</div>
       <div class="sval">${calc.totalKg > 0 ? fmtKg(calc.totalKg) : (calc.recipeFound ? "kein Sub" : "Rezept?")}</div>
     </div>
@@ -160,19 +204,17 @@ export function buildPdf(
     <div class="stat hi-stat">
       <div class="slabel">BATCHE (${equip})${calc.primaryCapBibleMatch ? ` <span title="Kuechenbible-Kapazität (provisorisch)">📖</span>` : ""}</div>
       <div class="sval big">${calc.batches > 0 ? calc.batches : "—"}</div>
+      <div style="font-size:9px;color:#dbeafe;font-weight:800;margin-top:2px;">${calc.batches > 0 ? batchSummary : "—"}</div>
     </div>
     <div class="stat">
       <div class="slabel">Pro Batch</div>
       <div class="sval">${calc.perBatchKg > 0 ? fmtKg(calc.perBatchKg) : "—"}</div>
     </div>
-    ${row.cookedPortionsExcess != null ? `
-    <div class="stat ${(row.cookedPortionsExcess ?? 0) >= 0 ? "stat-green" : "stat-red"}">
-      <div class="slabel">Excess Portionen</div>
-      <div class="sval">${(row.cookedPortionsExcess ?? 0) > 0 ? "+" : ""}${fmtNum(row.cookedPortionsExcess ?? 0)}</div>
-    </div>` : ""}
   </div>
 
   ${equipBatchHtml}
+  ${factorBadgeHtml}
+  ${allergenHtml}
 
   <div class="badges">
     <span class="badge ${row.kitchenStatus === "Post Blast" ? "badge-green" : row.kitchenStatus === "Pre Blast" ? "badge-amber" : "badge-gray"}">
@@ -190,12 +232,12 @@ export function buildPdf(
 
   ${ingRows ? `
   <table class="ings">
-    <thead><tr><th>Zutat</th><th class="num">Total</th><th class="num hi">Pro Batch</th></tr></thead>
+    <thead><tr><th>Zutat</th><th class="num hi">Pro Batch</th><th class="num">Total</th></tr></thead>
     <tbody>${ingRows}</tbody>
     <tfoot><tr>
-      <td><strong>GESAMT (${calc.batches > 1 ? `${calc.batches} Batche` : "1 Batch"})</strong></td>
-      <td class="num"><strong>${fmtKg(calc.totalKg)}</strong></td>
+      <td><strong>GESAMT (${calc.batches > 0 ? batchSummary : "1 Batch"})</strong></td>
       <td class="num hi"><strong>${fmtKg(calc.perBatchKg)}</strong></td>
+      <td class="num"><strong>${fmtKg(calc.totalKg)}</strong></td>
     </tr></tfoot>
   </table>` : `
   <div class="no-data">${!calc.recipeFound ? "⚠ Rezept nicht in App-Daten — KG-Berechnung nicht möglich." : "⚠ Sub-Rezept in Zutaten nicht gefunden."}</div>`}
@@ -257,6 +299,8 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
 .ings{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px}
 .ings th{background:#f1f5f9;padding:5px 8px;text-align:left;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #e2e8f0;color:#475569}
 .ings td{padding:4px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.ings thead{display:table-header-group}
+.ings tr{break-inside:avoid;page-break-inside:avoid}
 .ings tfoot td{border-top:2px solid #1e3a5f;padding-top:6px;background:#f8fafc}
 .num{text-align:right;white-space:nowrap;font-weight:600}
 .hi{color:#1e40af;font-weight:700}
@@ -266,11 +310,11 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
   body{font-size:9px}
   .page-header,.equip-section{display:none}
   .card{
-    page-break-before:always;page-break-after:always;page-break-inside:avoid;
-    break-before:page;break-after:page;break-inside:avoid;
+    page-break-before:always;page-break-after:auto;page-break-inside:auto;
+    break-before:page;break-after:auto;break-inside:auto;
     margin:0;border-width:1px;box-shadow:none;border-radius:6px;
     padding:10px 12px;
-    max-height:281mm;overflow:hidden;
+    max-height:none;overflow:visible;
   }
   .card:first-of-type{page-break-before:auto;break-before:auto}
   .wo-num{font-size:22px}.sub{font-size:15px}

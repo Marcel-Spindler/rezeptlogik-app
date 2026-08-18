@@ -24,8 +24,7 @@ export type AutoFulfillmentProfile = {
 };
 
 export const AUTO_FULFILLMENT_PROFILES: readonly AutoFulfillmentProfile[] = [
-  { id: "mhd-smart", label: "MHD Smart (Fr/So aus Batch-Plan)", mode: "mhd-smart" },
-  { id: "growth-fr-sa-so", label: "Growth (Fr/Sa/So)", mode: "fixed", fallbackWeights: { Fr: 0.55, Sa: 0.2, So: 0.25 } },
+  { id: "auto", label: "Auto (niedrigste Last)", mode: "fixed", fallbackWeights: { Fr: 1 } },
 ] as const;
 
 // ─── Manufacturing-Kalender-Spalten (Cockpit-eigener Kalender) ──────────────
@@ -42,7 +41,6 @@ export type ManufacturingDaySummary = {
 };
 
 export const MANUFACTURING_DAYS: readonly ManufacturingDayColumn[] = [
-  { id: "prep-so", day: "So", label: "So (Prep)", lane: "prep" },
   { id: "mo", day: "Mo", label: "Mo", lane: "regular" },
   { id: "di", day: "Di", label: "Di", lane: "regular" },
   { id: "mi", day: "Mi", label: "Mi", lane: "regular" },
@@ -72,10 +70,6 @@ export function plannerDayIndex(day: PlannerDay): number {
 
 const KITCHEN_DAYS = ["Mo", "Di", "Mi", "Do", "Fr"] as const;
 export const REGULAR_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
-const RUN_ONE_SUB_DAYS: readonly PlannerDay[] = ["So", "Mo", "Di", "Mi"];
-const RUN_TWO_SUB_DAYS: readonly PlannerDay[] = ["Mo", "Di", "Mi", "Do"];
-export const SUNDAY_LIGHT_PREP_MAX_JOBS = 4;
-export const SUNDAY_LIGHT_PREP_MAX_TOTAL_MIN = 240;
 
 export function pickLowestLoadSlot(slotLoads: Map<string, number>, activeShifts: readonly PlannerShift[]): { day: PlannerDay; shift: PlannerShift } | null {
   let best: { day: PlannerDay; shift: PlannerShift; load: number } | null = null;
@@ -178,16 +172,12 @@ export function serializeBatchesForNote(batches: AutoFulfillmentBatch[]): string
 }
 
 export function resolveAutoBatches(
-  recipeCode: string,
+  _recipeCode: string,
   totalTarget: number,
   profile: AutoFulfillmentProfile,
-  batchSplitByRecipe: Map<string, AutoFulfillmentBatch[]>
 ): AutoFulfillmentBatch[] {
   if (totalTarget <= 0) return [];
-  if (profile.mode === "fixed") return fixedBatchesFromProfile(totalTarget, profile);
-  const fromPlanner = batchSplitByRecipe.get(recipeCode) ?? [];
-  if (fromPlanner.length > 0) return normalizeBatches(fromPlanner, totalTarget);
-  return [{ day: "Fr", portions: totalTarget }];
+  return fixedBatchesFromProfile(totalTarget, profile);
 }
 
 // ─── Sub-Rezept-Produktionstag (Lead-Time-Logik) ────────────────────────────
@@ -215,10 +205,8 @@ export function regularSubProductionDayForNeedDay(needDay: PlannerDay, leadDays:
   return clampRegularSubDay(kitchenDayBackshift(needDay, leadDays));
 }
 
-export function distributedRunSubDay(runIndex: number, subIndex: number): PlannerDay {
-  const window = runIndex === 0 ? RUN_ONE_SUB_DAYS : RUN_TWO_SUB_DAYS;
-  const offset = runIndex === 0 ? 0 : 2;
-  return window[(subIndex + offset) % window.length] ?? window[0];
+export function distributedRunSubDay(_runIndex: number, subIndex: number): PlannerDay {
+  return REGULAR_SUB_DAYS[subIndex % REGULAR_SUB_DAYS.length] ?? "Mo";
 }
 
 export function nearestUnusedRegularSubDay(day: PlannerDay, usedDays: Set<PlannerDay>): PlannerDay {
@@ -250,51 +238,23 @@ export function splitDuplicateSubBatchDays(days: PlannerDay[]): PlannerDay[] {
 }
 
 export function runSubBatchesForAssignment(
-  mainAssignment: { day: PlannerDay; targetPortions?: number; note?: string },
-  subAssignment: { targetPortions?: number },
-  fallbackPortions: number,
-  subIndex: number
+  _mainAssignment: { day: PlannerDay; targetPortions?: number; note?: string },
+  _subAssignment: { targetPortions?: number },
+  _fallbackPortions: number,
+  _subIndex: number
 ): Array<{ label: string; portions: number; day: PlannerDay }> {
-  const mainPortions = Math.max(0, Math.round(mainAssignment.targetPortions ?? 0));
-  const parsedNote = parseBoardNote(mainAssignment.note);
-  const splitSpec = extractSplitSpecFromNotes(parsedNote.notes);
-  const mainBatches = parseSplitSpecToBatches(splitSpec, mainAssignment.day, mainPortions);
-  if (mainBatches.length <= 1) return [];
-  const mainTotal = mainBatches.reduce((s, b) => s + b.portions, 0);
-  if (mainTotal <= 0) return [];
-  const subTotal = subAssignment.targetPortions ?? fallbackPortions;
-  const batchDays = splitDuplicateSubBatchDays(mainBatches.map((_, bIdx) => distributedRunSubDay(bIdx, subIndex)));
-  return mainBatches.map((batch, bIdx) => ({
-    label: `R${bIdx + 1}`,
-    portions: Math.max(0, Math.round(subTotal * batch.portions / mainTotal)),
-    day: batchDays[bIdx] ?? distributedRunSubDay(bIdx, subIndex),
-  }));
+  return [];
 }
 
-export function isSundayLightPrepSub(category: string, spec?: ProcessSpec): boolean {
-  const cat = String(category ?? "").toLowerCase();
-  const family = String(spec?.productFamily ?? "").toLowerCase();
-  return /thaw|defrost|marinade|marinated|mariniert|hand marinade|patty maker|patty|spice|gewürz|gewuerz/.test(cat)
-    || /thaw|marinade|patty|spice/.test(family);
+export function isSundayLightPrepSub(_category: string, _spec?: ProcessSpec): boolean {
+  return false;
 }
 
-export function isSundayPrepSub(category: string, spec?: ProcessSpec): boolean {
-  return isSundayLightPrepSub(category, spec);
+export function isSundayPrepSub(_category: string, _spec?: ProcessSpec): boolean {
+  return false;
 }
 
-export function subLeadDaysBeforeNeed(category: string, spec?: ProcessSpec): number {
-  const cat = String(category ?? "").toLowerCase();
-  const family = String(spec?.productFamily ?? "").toLowerCase();
-  const maxHoldMin = Math.max(0, ...Object.values(spec?.holdTimeMin ?? {}).map(v => Number(v) || 0));
-
-  // Thaw / Auftauen / lange Vorbereitung: mind. 3 Tage vor Plating
-  if (/thaw|thawed|defrost/.test(cat) || maxHoldMin >= 24 * 60) return 3;
-  if (/brine|cure|ferment|inbound|raw receive/.test(cat)) return 3;
-  if (isSundayPrepSub(category, spec)) return 0;
-  // Marinaden, Saucen, Patty Maker: 2 Tage vor Plating
-  if (/hand marinade|marinade|sauce|broth|stock|slow cook|braise|patty maker|patty/.test(cat) || family === "butter" || maxHoldMin >= 12 * 60) return 2;
-  if (/blast chiller|chill|cold hold|portion/.test(cat) || maxHoldMin >= 4 * 60) return 1;
-  if (/grill|fry|sear|wok|hot finish|plating|oven/.test(cat)) return 1;
+export function subLeadDaysBeforeNeed(_category: string, _spec?: ProcessSpec): number {
   return 1;
 }
 

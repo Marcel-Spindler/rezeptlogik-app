@@ -42,6 +42,7 @@
     "sync:all:deploy": "npm run sync:all && npm run build && npx firebase-tools deploy --only hosting"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "dotenv": "^17.4.2",
     "firebase": "11.0.2",
     "react": "^18.3.1",

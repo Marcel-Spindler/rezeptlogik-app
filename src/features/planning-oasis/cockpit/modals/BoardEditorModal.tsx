@@ -31,7 +31,6 @@ interface Props {
   recipeLookup: Record<string, WeekRecipe>;
   analysisRecipes: ReturnType<typeof analyzePlan>["recipes"];
   portionMultiplier: number;
-  batchSplitPlan: Array<{ recipeCode: string; batches: Array<{ fulfillmentDay: PlannerDay }> }>;
   activeShifts: readonly PlannerShift[];
   onRemoveAssignment: () => void;
   onSaveUnlocked: () => void;
@@ -40,13 +39,12 @@ interface Props {
 
 export function BoardEditorModal({
   boardEditor, boardDraft, setBoardDraft, onClose, recipeLookup, analysisRecipes,
-  portionMultiplier, batchSplitPlan, activeShifts, onRemoveAssignment, onSaveUnlocked, onSave,
+  portionMultiplier, activeShifts, onRemoveAssignment, onSaveUnlocked, onSave,
 }: Props) {
   const editorRecipe = recipeLookup[boardEditor.recipeCode];
   const editorAnalysis = analysisRecipes.find(row => row.recipeCode === boardEditor.recipeCode);
   const demand = Math.max(0, Math.round((editorRecipe?.totalVerdenVolume ?? 0) * portionMultiplier));
   const mapped = editorAnalysis?.assigned?.targetPortions ?? 0;
-  const earliestPlatDay = batchSplitPlan.find(p => p.recipeCode === boardEditor.recipeCode)?.batches[0]?.fulfillmentDay ?? "-";
   const unassignedSubCount = editorAnalysis?.subRecipes.filter(s => !s.assigned).length ?? 0;
 
   return (
@@ -61,7 +59,6 @@ export function BoardEditorModal({
             <div className="text-sm font-semibold text-slate-900">{boardEditor.recipeCode} – {editorAnalysis?.recipeName ?? editorRecipe?.recipeName ?? ""}</div>
             {boardEditor.subRecipeId && <div className="mt-0.5 text-xs text-slate-600">{boardEditor.subRecipeName ?? boardEditor.subRecipeId}</div>}
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-              <span>Earliest plating day: <strong className="text-slate-700">{earliestPlatDay}</strong></span>
               <span>Demand: <strong className="text-slate-700">{fmtNum(demand)}</strong></span>
               <span>Mapped: <strong className="text-slate-700">{fmtNum(Math.round(mapped))}</strong></span>
             </div>

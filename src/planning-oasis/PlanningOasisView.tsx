@@ -9,7 +9,6 @@ import { PlanningView } from "../PlanningView";
 import type { UiLocale } from "../lib/i18n";
 import { usePlanningOasisData } from "../lib/planningOasisData";
 import { loadFactorDailyMeta, type FactorDailyMeta } from "../lib/planningTruthData";
-import { runSplitForRecipeLike } from "../lib/runPlanning";
 import { refreshRampUpDataOnStart } from "../core/dataSource";
 import { recordRampUpSnapshot, type RampUpChangeEvent } from "../lib/rampUpHistory";
 import { useOasisSourceHealth, sourceHealthTone } from "./oasisSourceHealth";
@@ -28,18 +27,6 @@ const OASIS_TABS: ReadonlyArray<[OasisSection, string]> = [
 
 function fmtNum(n: number, digits = 0): string {
   return n.toLocaleString("de-DE", { maximumFractionDigits: digits });
-}
-
-function getFulfillmentSplit(recipe: WeekRecipe): { dkseFriday: number; deFriday: number; deSunday: number; benl: number } {
-  const deFriday = Math.round((recipe.verdenVolume.DE ?? 0) / 2);
-  const deSunday = Math.max(0, (recipe.verdenVolume.DE ?? 0) - deFriday);
-  return { dkseFriday: recipe.verdenVolume.DKSE ?? 0, deFriday, deSunday, benl: recipe.verdenVolume.BENL ?? 0 };
-}
-
-function inferMhdDays(recipeName: string): number {
-  const fishMarkers = ["lachs", "salmon", "fisch", "cod", "kabeljau", "shrimp", "garnele", "tuna", "thunfisch"];
-  const normalized = recipeName.toLowerCase();
-  return fishMarkers.some(marker => normalized.includes(marker)) ? 9 : 13;
 }
 
 function recipeDigitKey(raw: string | null | undefined): string {
@@ -212,190 +199,16 @@ function OasisHeader({
   );
 }
 
-function CockpitLineV2Table({ rows, onSelectRecipe }: {
-  rows: Array<{ meal: WeekRecipe; split: ReturnType<typeof getFulfillmentSplit>; mhdDays: number; run1Target: number; run2Target: number; subRun1: number; subRun2: number; subCount: number }>;
-  onSelectRecipe?: (code: string) => void;
-}) {
-  return (
-    <div className="card p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-bold text-slate-800">Cockpit-Linie V2 (Vollansicht)</h3>
-        <span className="text-[11px] font-semibold text-slate-500">Regelwerk fix: Batch-Split MHD/Fulfillment + 2 Runs inkl. Submeals</span>
-      </div>
-      <div className="mt-3 overflow-x-auto rounded-lg ring-1 ring-slate-200">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-2 py-2 text-left">Rezept</th>
-              <th className="px-2 py-2 text-right">MHD</th>
-              <th className="px-2 py-2 text-right">Fr DK/SE</th>
-              <th className="px-2 py-2 text-right">Fr DE-1</th>
-              <th className="px-2 py-2 text-right">So DE-2</th>
-              <th className="px-2 py-2 text-right">BENL</th>
-              <th className="px-2 py-2 text-right text-indigo-700">Run1 Ziel</th>
-              <th className="px-2 py-2 text-right text-teal-700">Run2 Ziel</th>
-              <th className="px-2 py-2 text-right">Submeals</th>
-              <th className="px-2 py-2 text-right text-indigo-700">Sub R1</th>
-              <th className="px-2 py-2 text-right text-teal-700">Sub R2</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(row => (
-              <tr key={row.meal.code} onClick={() => onSelectRecipe?.(row.meal.code)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-2 py-2">
-                  <div className="font-mono font-bold text-slate-700">{row.meal.code}</div>
-                  <div className="line-clamp-1 text-[11px] text-slate-500">{row.meal.recipeName}</div>
-                </td>
-                <td className={`px-2 py-2 text-right font-semibold ${row.mhdDays <= 9 ? "text-blue-700" : "text-slate-700"}`}>{row.mhdDays}d</td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(row.split.dkseFriday)}</td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(row.split.deFriday)}</td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(row.split.deSunday)}</td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(row.split.benl)}</td>
-                <td className="px-2 py-2 text-right"><span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-bold text-indigo-700">{fmtNum(row.run1Target)}</span></td>
-                <td className="px-2 py-2 text-right"><span className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 font-bold text-teal-700">{fmtNum(row.run2Target)}</span></td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-600">{fmtNum(row.subCount)}</td>
-                <td className="px-2 py-2 text-right"><span className="inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-700">{fmtNum(row.subRun1)}</span></td>
-                <td className="px-2 py-2 text-right"><span className="inline-flex rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 font-semibold text-teal-700">{fmtNum(row.subRun2)}</span></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600 ring-1 ring-slate-200">
-        Submeal-Regel aktiv: Wenn ein Rezept Submeals hat, wird Run2 immer mitgeplant (mindestens 35%), auch wenn Rohdaten keinen Run2-Eintrag liefern.
-      </div>
-    </div>
-  );
-}
-
-function BatchSplitAutomatikTable({ rows, onSelectRecipe }: {
-  rows: Array<{ meal: WeekRecipe; mhdDays: number; split: ReturnType<typeof getFulfillmentSplit> }>;
-  onSelectRecipe?: (code: string) => void;
-}) {
-  return (
-    <div className="card p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-bold text-slate-800">Batch-Split Automatik (alle Rezepte)</h3>
-        <span className="text-[11px] font-semibold text-slate-500">Nur MHD + Fulfillment-Tag</span>
-      </div>
-      <div className="mt-3 max-h-[32rem] overflow-auto rounded-lg ring-1 ring-slate-200">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-2 py-2 text-left">Rezept</th>
-              <th className="px-2 py-2 text-right">MHD</th>
-              <th className="px-2 py-2 text-right">Fr DK/SE</th>
-              <th className="px-2 py-2 text-right">Fr DE-1</th>
-              <th className="px-2 py-2 text-right">So DE-2</th>
-              <th className="px-2 py-2 text-right">BENL</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(entry => (
-              <tr key={entry.meal.code} onClick={() => onSelectRecipe?.(entry.meal.code)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-2 py-2">
-                  <div className="font-mono font-bold text-slate-700">{entry.meal.code}</div>
-                  <div className="line-clamp-1 text-[11px] text-slate-500">{entry.meal.recipeName}</div>
-                </td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{entry.mhdDays}d</td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(entry.split.dkseFriday)}</td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(entry.split.deFriday)}</td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(entry.split.deSunday)}</td>
-                <td className="px-2 py-2 text-right font-semibold text-slate-700">{fmtNum(entry.split.benl)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rows.length === 0 && <div className="mt-2 text-sm text-slate-400">Keine Rezepte für diese KW gefunden.</div>}
-      <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600 ring-1 ring-slate-200">
-        Regelwerk aktiv: Fisch 9 Tage, sonst 13 Tage. Fulfillment-Split: Fr = DK/SE komplett + DE Split 1, So = DE Split 2, BENL separat ohne feste Packregel.
-      </div>
-    </div>
-  );
-}
-
-function SchemaPlanungCard() {
-  return (
-    <div className="card p-4">
-      <h3 className="text-sm font-bold text-slate-800">Schema-Planung (einheitlich)</h3>
-      <ol className="mt-2 space-y-2 text-xs text-slate-700">
-        <li className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200"><span className="font-semibold">Do / S1:</span> Vorproduktion nach MHD-Fenster starten.</li>
-        <li className="rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200"><span className="font-semibold">Fr / S1:</span> DK/SE komplett + DE Split 1 fulfillment-ready.</li>
-        <li className="rounded-lg bg-sky-50 px-3 py-2 ring-1 ring-sky-200"><span className="font-semibold">So / S1:</span> DE Split 2 fulfillment-ready.</li>
-      </ol>
-    </div>
-  );
-}
-
-function CockpitSection({ data, week, locale, upliftPercent, selectedRecipe, onSelectRecipe, weekMeals, oasisData }: {
+function CockpitSection({ data, week, locale, upliftPercent, selectedRecipe, onSelectRecipe }: {
   data: DataBundle; week: string; locale: UiLocale; upliftPercent: number;
   selectedRecipe?: string | null; onSelectRecipe?: (code: string) => void;
-  weekMeals: WeekRecipe[]; oasisData: ReturnType<typeof usePlanningOasisData>["data"];
 }) {
-  const recipeIntelByDigit = useMemo(() => {
-    const map = new Map<string, NonNullable<typeof oasisData>["recipes"][string]>();
-    for (const intel of Object.values(oasisData?.recipes ?? {})) map.set(intel.recipeDigitKey, intel);
-    return map;
-  }, [oasisData]);
-
-  const batchSplitRows = useMemo(
-    () => weekMeals.map(meal => ({ meal, mhdDays: inferMhdDays(meal.recipeName), split: getFulfillmentSplit(meal) })),
-    [weekMeals]
-  );
-
-  const cockpitLineV2Rows = useMemo(() => weekMeals.map(meal => {
-    const split = getFulfillmentSplit(meal);
-    const mhdDays = inferMhdDays(meal.recipeName);
-    const runSplit = runSplitForRecipeLike({ verdenVolume: meal.verdenVolume });
-    let run1Target = Math.max(0, runSplit.firstRun.total);
-    let run2Target = Math.max(0, runSplit.secondRun);
-    const totalTarget = Math.max(0, runSplit.upliftTotal);
-
-    const normalizedMealName = meal.recipeName.toLowerCase().replace(/\[[^\]]*\]/g, "").trim();
-    const intelByName = Object.values(oasisData?.recipes ?? {}).find(entry => {
-      const n = entry.recipeName.toLowerCase();
-      return n.includes(normalizedMealName) || normalizedMealName.includes(n);
-    }) ?? null;
-    const intel = oasisData?.recipes[meal.code] ?? recipeIntelByDigit.get(recipeDigitKey(meal.code)) ?? intelByName;
-    const subOrders = (intel?.workOrders ?? []).filter(wo => wo.subRecipeName.trim().length > 0);
-    const hasSubMeals = subOrders.length > 0 || (intel?.uniqueSubRecipes.length ?? 0) > 0;
-
-    // Harte Cockpit-V2-Regel: Submeal-Rezepte laufen immer in 2 Runs.
-    if (hasSubMeals && totalTarget > 1) {
-      run2Target = Math.max(1, Math.round(totalTarget * 0.35));
-      if (run2Target >= totalTarget) run2Target = totalTarget - 1;
-      run1Target = totalTarget - run2Target;
-    }
-
-    const observedSubTotal = subOrders.reduce((sum, wo) => sum + Math.max(0, Math.round(wo.targetPortions || 0)), 0);
-    const boundedObserved = observedSubTotal > 0 && observedSubTotal <= Math.round(totalTarget * 1.15) ? observedSubTotal : 0;
-    const subTotal = hasSubMeals ? Math.max(1, boundedObserved || Math.round(intel?.totalTargetPortions ?? 0) || totalTarget) : 0;
-    let subRun1 = 0;
-    let subRun2 = 0;
-    if (subTotal > 0) {
-      const run2Share = totalTarget > 0 ? run2Target / totalTarget : 0.35;
-      subRun2 = Math.max(1, Math.round(subTotal * Math.max(0.2, Math.min(0.8, run2Share))));
-      if (subRun2 >= subTotal) subRun2 = subTotal - 1;
-      subRun1 = Math.max(0, subTotal - subRun2);
-    }
-
-    return { meal, split, mhdDays, run1Target, run2Target, subRun1, subRun2, subCount: Math.max(subOrders.length, intel?.uniqueSubRecipes.length ?? 0) };
-  }), [weekMeals, oasisData, recipeIntelByDigit]);
-
   return (
-    <div className="space-y-4">
-      <PlanningView
-        data={data} week={week} locale={locale} upliftPercent={upliftPercent}
-        selectedRecipe={selectedRecipe} onSelectRecipe={onSelectRecipe}
-        onPlanSnapshotSaved={() => {
-          // Snapshot bleibt live verfügbar; die Plating-Automatik startet erst per Klick.
-        }}
-      />
-      <CockpitLineV2Table rows={cockpitLineV2Rows} onSelectRecipe={onSelectRecipe} />
-      <BatchSplitAutomatikTable rows={batchSplitRows} onSelectRecipe={onSelectRecipe} />
-      <SchemaPlanungCard />
-    </div>
+    <PlanningView
+      data={data} week={week} locale={locale} upliftPercent={upliftPercent}
+      selectedRecipe={selectedRecipe} onSelectRecipe={onSelectRecipe}
+      onPlanSnapshotSaved={() => {}}
+    />
   );
 }
 
@@ -440,7 +253,6 @@ export function PlanningOasisView({
         <CockpitSection
           data={data} week={week} locale={locale} upliftPercent={upliftPercent}
           selectedRecipe={selectedRecipe} onSelectRecipe={onSelectRecipe}
-          weekMeals={weekMeals} oasisData={oasisData}
         />
       )}
 

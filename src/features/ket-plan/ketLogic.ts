@@ -7,6 +7,15 @@ import type {
 } from "../../core/types";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, EQUIP_PRIORITY, type BatchCalc, type EquipBatch, type IngCalc, type KetRow, type ManualEquipmentOverride } from "./ketTypes";
 import { cleanRecipeName, codeDigits, extractCode, fmtNum, parseSteps } from "../../lib/helpers";
+import { biAllergen, classify, NO_BATCH, READY_MADE, isSeparate, isSpiceRoom } from "./factorRules";
+
+export { isSeparate, isSpiceRoom } from "./factorRules";
+
+// Sammelt CONTAINS-Allergene rekursiv aus dem Detailbaum eines Sub-Rezepts.
+function collectAllergens(sub: DetailedSubRecipe, acc: Set<string>): void {
+  for (const ing of sub.ingredients) if (ing.allergen) acc.add(ing.allergen.trim());
+  for (const child of sub.subRecipes) collectAllergens(child, acc);
+}
 
 export { cleanRecipeName, extractCode, fmtNum, parseSteps };
 
@@ -279,12 +288,14 @@ export function calcBatch(
   let totalKg = 0;
   let subRecipeFound = false;
   let cookingInstructions: string | null = null;
+  let matchedSub: DetailedSubRecipe | null = null;
 
   if (recipe || structure) {
     // Try detailed structure first (more accurate)
     if (structure) {
       const sub = findDetailedSub(structure, row.subRecipeName);
       if (sub) {
+        matchedSub = sub;
         subRecipeFound = true;
         cookingInstructions = sub.categories ?? null;
         const ings = collectDetailedIngredients(sub);
@@ -306,6 +317,8 @@ export function calcBatch(
             totalKg: ingKg,
             perBatchKg: 0,
             yieldPct: ing.yieldPct ?? null,
+            separate: false,
+            spiceRoom: false,
           });
         }
       }
@@ -332,6 +345,8 @@ export function calcBatch(
             totalKg: ingKg,
             perBatchKg: 0,
             yieldPct: null,
+            separate: false,
+            spiceRoom: false,
           });
         }
       }
@@ -361,6 +376,19 @@ export function calcBatch(
     }
   }
 
+  const uniqueCookMethods = (() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const method of resolvedCookMethods) {
+      const key = method.trim().toUpperCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      result.push(method.trim().toUpperCase());
+    }
+    return result;
+  })();
+  resolvedCookMethods.splice(0, resolvedCookMethods.length, ...uniqueCookMethods);
+
   const bibleMatches = new Map<string, EquipBibleEntry>();
   for (const equipment of resolvedCookMethods) {
     const match = equipment === "BRAISER"
@@ -371,7 +399,9 @@ export function calcBatch(
 
   if (manualEquipment?.equipment && manualEquipment.capacityKg > 0) {
     const manualName = manualEquipment.equipment.trim().toUpperCase();
-    if (manualName) resolvedCookMethods.push(manualName);
+    if (manualName && !resolvedCookMethods.some((method) => method.trim().toUpperCase() === manualName)) {
+      resolvedCookMethods.push(manualName);
+    }
   }
 
   const effectiveCap = (e: string) => {
@@ -434,8 +464,15 @@ export function calcBatch(
     ing.perBatchKg = totalKg > 0 && perBatchKg > 0
       ? +(ing.totalKg / totalKg * perBatchKg).toFixed(3)
       : 0;
+    ing.separate = isSeparate(ing.name);
+    ing.spiceRoom = isSpiceRoom(ing.name);
   }
+  // Spice-Room/SEPARATE-Zutaten immer zuerst (Matteo, Regel §4.2 „schnelleres Picking“),
+  // danach die bestehende Kategorie-/Gewichtssortierung als Tie-Break.
   ingredients.sort((a, b) => {
+    const sa = a.spiceRoom || a.separate ? 1 : 0;
+    const sb = b.spiceRoom || b.separate ? 1 : 0;
+    if (sa !== sb) return sb - sa;
     const ao = ING_CAT_ORDER[a.category.trim().toUpperCase().slice(0, 3)] ?? 99;
     const bo = ING_CAT_ORDER[b.category.trim().toUpperCase().slice(0, 3)] ?? 99;
     if (ao !== bo) return ao - bo;
@@ -444,6 +481,28 @@ export function calcBatch(
 
   const instructionPair = findSubRecipeInstructions(recipe, data.mealCatalog, data.instructions, row.subRecipeName);
 
+  // ── Factor-Produktionsregeln (RTI / nie-batchen-Fleisch / Batch-Kapazität nach Name) ──
+  const factorClass = classify(row.subRecipeName, resolvedCookMethods);
+  const rti = factorClass.rti;
+  const neverBatch = !rti && factorClass.capacityKg === NO_BATCH;
+  const factorCapacityKg = !rti && !neverBatch ? factorClass.capacityKg : null;
+  const factorBatches = rti
+    ? null
+    : neverBatch
+      ? (totalKg > 0 ? 1 : 0)
+      : (totalKg > 0 && factorCapacityKg ? Math.ceil(totalKg / factorCapacityKg) : null);
+  const factorBatchQtyKg = factorBatches && factorBatches > 0 ? +(totalKg / factorBatches).toFixed(3) : null;
+
+  const allergenSet = new Set<string>();
+  if (matchedSub) collectAllergens(matchedSub, allergenSet);
+  if (allergenSet.size === 0 && recipe) {
+    for (const mkt of ["DE", "BENL", "DKSE"] as const) {
+      const raw = recipe.markets[mkt]?.allergens;
+      if (raw) for (const a of raw.split(/[,;/]/)) { const t = a.trim(); if (t) allergenSet.add(t); }
+    }
+  }
+  const allergensContains = [...allergenSet].map(biAllergen);
+
   return {
     totalKg, equipBatches, primaryEquip, capacityKg, primaryCapBibleMatch, batches, perBatchKg, remainderKg,
     resolvedCookMethods, manualEquipment: manualEquipment ?? null,
@@ -451,6 +510,10 @@ export function calcBatch(
     subRecipeInstructions: instructionPair.english,
     subRecipeInstructionsDE: instructionPair.german,
     subRecipeInstructionsGermanFallback: instructionPair.germanIsFallback,
+    rti, neverBatch, factorCapacityKg, factorBatches, factorBatchQtyKg,
+    factorFallbackCapacity: !!factorClass.fallback,
+    readyMade: READY_MADE.test(row.subRecipeName),
+    allergensContains,
   };
 }
 

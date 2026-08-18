@@ -107,6 +107,68 @@ describe("calcBatch equipment resolution", () => {
     expect(calc.manualEquipment?.equipment).toBe("CUSTOM MIXER");
   });
 
+  it("deduplicates the same station when it is reported by multiple sources", () => {
+    const calc = calcBatch(
+      { ...row, cookMethods: ["OVEN"] },
+      {},
+      { ...data, processSpecs: {
+        "SUB-001": {
+          subRecipeId: "SUB-001",
+          name: "Test sauce",
+          primaryStation: "OVEN",
+          batchSizeKg: 50,
+          minutesPerBatch: {},
+          holdTimeMin: {},
+        },
+      } },
+      { equipment: "OVEN", capacityKg: 45 },
+    );
+
+    expect(calc.resolvedCookMethods.filter((m) => m === "OVEN")).toHaveLength(1);
+    expect(calc.equipBatches.filter((b) => b.equip === "OVEN")).toHaveLength(1);
+    expect(calc.primaryEquip).toBe("OVEN");
+  });
+
+  it("drops numeric quantities from the instruction context so the model stays concise", () => {
+    const context = JSON.parse(buildWoInstructionContext({
+      ...row,
+      recipeCode: "FV0001A",
+      subRecipeName: "Test sauce",
+    }, {
+      ...({
+        totalKg: 120,
+        equipBatches: [],
+        primaryEquip: "OVEN",
+        capacityKg: 60,
+        batches: 2,
+        perBatchKg: 60,
+        remainderKg: 0,
+        resolvedCookMethods: ["OVEN"],
+        manualEquipment: null,
+        ingredients: [],
+        recipeFound: true,
+        subRecipeFound: true,
+        cookingInstructions: null,
+        subRecipeInstructions: "Mix 500 g sauce and hold at 2°C.",
+        subRecipeInstructionsDE: "Mische 500 g Sauce und halte bei 2°C.",
+        subRecipeInstructionsGermanFallback: false,
+        rti: false,
+        neverBatch: false,
+        factorCapacityKg: null,
+        factorBatches: null,
+        factorBatchQtyKg: null,
+        factorFallbackCapacity: false,
+        readyMade: false,
+        allergensContains: ["Milk"],
+      } as any),
+    }));
+
+    expect(context.recipeName).toBe("Test recipe");
+    expect(JSON.stringify(context)).not.toMatch(/\d/);
+    expect(context.sourceInstructionEnglish).toBe("Mix sauce and hold at °C.");
+    expect(context.sourceInstructionGerman).toBe("Mische Sauce und halte bei °C.");
+  });
+
   it("prints English and German instruction blocks in the WO PDF", () => {
     const pdf = buildPdf(
       [row],
@@ -127,6 +189,14 @@ describe("calcBatch equipment resolution", () => {
         subRecipeInstructions: null,
         subRecipeInstructionsDE: null,
         subRecipeInstructionsGermanFallback: false,
+        rti: false,
+        neverBatch: false,
+        factorCapacityKg: null,
+        factorBatches: null,
+        factorBatchQtyKg: null,
+        factorFallbackCapacity: false,
+        readyMade: false,
+        allergensContains: [],
       }]]),
       {},
       "WO test",
@@ -158,13 +228,21 @@ describe("calcBatch equipment resolution", () => {
       subRecipeInstructions: null,
       subRecipeInstructionsDE: null,
       subRecipeInstructionsGermanFallback: false,
+      rti: false,
+      neverBatch: false,
+      factorCapacityKg: null,
+      factorBatches: null,
+      factorBatchQtyKg: null,
+      factorFallbackCapacity: false,
+      readyMade: false,
+      allergensContains: [],
     };
     const secondRow = { ...row, key: "wo::34-2", woNumber: "34-2" };
     const pdf = buildPdf([row, secondRow], new Map([[row.key, calc], [secondRow.key, calc]]), {}, "WO test");
     const context = JSON.parse(buildWoInstructionContext(row, calc));
 
     expect(pdf).toContain("page-break-before:always");
-    expect(context.cookMethods).toEqual(["SPICE PORTIONING", "OVEN"]);
+    expect(context.processFlow).toEqual(["SPICE PORTIONING", "OVEN"]);
   });
 
   it("keeps every cooking method exactly once in process order", () => {

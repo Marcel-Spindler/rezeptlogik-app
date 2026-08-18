@@ -78,6 +78,10 @@ export interface IngCalc {
   totalKg: number;
   perBatchKg: number;
   yieldPct: number | null;
+  // Factor-Regeln (Matteos capacity-rules.js): SEPARATE-Tag bzw. Spice-Room-Zutat —
+  // wird in der PDF/UI immer zuerst sortiert + unterstrichen dargestellt.
+  separate: boolean;
+  spiceRoom: boolean;
 }
 
 export interface EquipBatch {
@@ -111,4 +115,20 @@ export interface BatchCalc {
   subRecipeInstructions: string | null;
   subRecipeInstructionsDE: string | null;
   subRecipeInstructionsGermanFallback: boolean;
+
+  // ── Factor-Produktionsregeln (portiert aus Matteos factor-recipe-bot) ──────
+  // RTI = roher "FA-DE ..."-Artikel ohne Cook Methods → kein Batch, direkt Plating.
+  rti: boolean;
+  // Fleisch/Fisch, das laut Matteo NIE gesplittet wird (immer als Gesamtmenge zeigen).
+  neverBatch: boolean;
+  // Kapazität/Batchzahl nach der rezeptnamen-basierten Factor-Klassifizierung —
+  // unabhängig von Equipment/Kuechenbible, ergänzt (ersetzt nicht) equipBatches oben.
+  factorCapacityKg: number | null;
+  factorBatches: number | null;
+  factorBatchQtyKg: number | null;
+  factorFallbackCapacity: boolean;
+  // "Roasted Garlic"/"Roasted Garlic Oil" — wöchentlich fertiges Produkt, nie expandieren.
+  readyMade: boolean;
+  // Bilinguale (EN/DE) CONTAINS-Allergenliste, aus DetailedIngredient.allergen gesammelt.
+  allergensContains: string[];
 }

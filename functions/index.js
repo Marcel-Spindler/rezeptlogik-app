@@ -3212,40 +3212,29 @@ async function generateGeminiInstructionCloud(context) {
   if (!apiKey) throw new Error("Firebase Secret GEMINI_API_KEY nicht gesetzt");
   const model = "gemini-2.5-flash";
   const requestBody = JSON.stringify({
-    systemInstruction: { parts: [{ text: `You are the production instruction bot for HelloFresh professional food production kitchens (Factor, Verden facility).
-Generate bilingual cooking instructions (English + German) following the HelloFresh KitchenOS recipe card format.
+    systemInstruction: { parts: [{ text: `Production instruction bot — Factor Verden kitchen.
+Generate MINIMAL bilingual cooking instructions (EN + DE).
 
-STATION FORMAT — mandatory:
-Label each cooking method in processFlow as a lettered station (A, B, C...) in that exact order.
-Station heading on its own line, then numbered steps below it.
-Use these station name mappings exactly:
-  SPICE PORTIONING  → "A. SPICE ROOM" / "A. GEWÜRZRAUM"
-  VEGGIE DEBOX      → "A. VEGGIE DEBOX" / "A. GEMÜSE-DEBOX"
-  PROTEIN DEBOX     → "A. PROTEIN DEBOX" / "A. PROTEINDEBOX"
-  BRAISER           → "B. BRAISER" / "B. BRAISER"
-  OVEN              → "B. OVEN" / "B. OFEN"
-  GRILL             → "B. GRILL" / "B. GRILL"
-  HORIZONTAL MIXER  → "B. HORIZONTAL MIXER" / "B. HORIZONTALMISCHER"
-  PLANETARY MIXER   → "B. PLANETARY MIXER" / "B. PLANETENMISCHER"
-  PATTY MAKER       → "B. PATTY MAKER" / "B. PATTY-PRESSE"
-  HAND MIX          → "B. HAND MIX" / "B. HANDMISCHUNG"
-  MARINADE          → "B. MARINADE" / "B. MARINADE"
-  HAND MARINADE     → "B. HAND MARINADE" / "B. HANDMARINADE"
-  IMMERSION BLENDER → "B. IMMERSION BLENDER" / "B. STABMIXER"
-  DRAIN             → "C. DRAIN" / "C. ABTROPFEN"
-  BLAST CHILLER     → "C. BLAST CHILLER" / "C. SCHNELLKÜHLER"
+FORMAT: Each cook method from processFlow → one lettered station line + MAX 1 step below it.
+Station names: SPICE PORTIONING→"A. SPICE ROOM"/"A. GEWÜRZRAUM" | VEGGIE DEBOX→"VEGGIE DEBOX"/"GEMÜSE-DEBOX" | PROTEIN DEBOX→"PROTEIN DEBOX"/"PROTEINDEBOX" | BRAISER→"BRAISER" | OVEN→"OFEN" | GRILL→"GRILL" | HORIZONTAL MIXER→"HORIZONTAL MIXER"/"HORIZONTALMISCHER" | PLANETARY MIXER→"PLANETARY MIXER"/"PLANETENMISCHER" | PATTY MAKER→"PATTY MAKER"/"PATTY-PRESSE" | HAND MIX→"HAND MIX"/"HANDMISCHUNG" | MARINADE→"MARINADE" | HAND MARINADE→"HANDMARINADE" | IMMERSION BLENDER→"STABMIXER" | DRAIN→"DRAIN"/"ABTROPFEN" | BLAST CHILLER→"BLAST CHILLER"/"SCHNELLKÜHLER"
 
-STEP RULES:
-- Each station: 1–3 numbered steps
-- Include one concise visual appearance indicator per cooking station (e.g. "golden and tender-crisp", "sauce consistency", "internal temp 75°C")
-- BLAST CHILLER step must always end with: "FSQA CCP1: Verify core temperature ≤5°C." / "FSQA CCP1: Kerntemperatur ≤5°C prüfen."
-- English and German must mirror exactly (same stations, same step count, same order)
-- Use only facts from the supplied context; if temperature/time/quantity is missing write [MANUAL CHECK REQUIRED]
-- Do NOT list all ingredients — only critical handling quantities or equipment settings
-- Keep each language under 1500 characters
+ABSOLUTE RULES:
+- NEVER mention kg, g, grams, kilograms, weights, or quantities of ANY kind
+- NEVER list ingredients — the PDF already has an ingredient table
+- NEVER mention batch counts or batch sizes
+- Each step: MAX 8 words. Only: action + temp/time/texture cue
+- BLAST CHILLER always exactly: "CCP1: Core ≤5°C" / "CCP1: Kern ≤5°C"
+- Total per language: MAX 300 characters (HARD LIMIT — shorter is better)
+- EN and DE must mirror exactly (same stations, same step count)
+- Only use facts from context; if temp/time unknown → [CHECK]
 
-Return JSON: {"english":"...","german":"...","status":"needs_review"}
-This is an operational draft and must be reviewed by the kitchen lead before production.` }] },
+FACTOR RULES (from context — never override):
+- rti=true → output ONLY "RTI → Plating" (both languages, nothing else)
+- neverBatch=true → do NOT mention splitting or batches
+- separate/spiceRoom ingredients → first line: "Separate portioning at Spice Room" / "Separate Portionierung im Gewürzraum"
+- allergensContains non-empty → last line: "⚠ <list>"
+
+Return JSON: {"english":"...","german":"...","status":"needs_review"}` }] },
     contents: [{ role: "user", parts: [{ text: `WO context:\n${context}` }] }],
     generationConfig: {
       responseMimeType: "application/json",
@@ -3258,8 +3247,8 @@ This is an operational draft and must be reviewed by the kitchen lead before pro
         },
         required: ["english", "german", "status"],
       },
-      maxOutputTokens: 8192,
-      temperature: 0.2,
+      maxOutputTokens: 1024,
+      temperature: 0.1,
       thinkingConfig: { thinkingBudget: 0 },
     },
   });
@@ -3334,8 +3323,9 @@ exports.geminiInstructionsBatch = onRequest(
       const body = req.body || {};
       const items = Array.isArray(body.items) ? body.items : [];
       const results = {};
-      // Process up to 12 WOs in parallel to stay well within the 540s timeout.
-      const CONCURRENCY = 12;
+      // Keep Gemini traffic below rate limits; the browser splits large weeks
+      // into requests of four WOs, and each request is processed in parallel.
+      const CONCURRENCY = 4;
       for (let i = 0; i < items.length; i += CONCURRENCY) {
         await Promise.all(items.slice(i, i + CONCURRENCY).map(async (item) => {
           try {
