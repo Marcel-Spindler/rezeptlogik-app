@@ -1,7 +1,7 @@
 // Plating-KI: Kontext-Builder, API-Call und Typen für den Linien-Planungs-Assistenten.
 // Spezialisiert auf Allergen-Minimierung, Highrunner-Strategie und Line-Optimierung.
 import type { DataBundle } from "../../../core/types";
-import { DAYS, SLOTS, LINES, type PlanDay, type ScheduleMap } from "./linePlanningDomain";
+import { DAYS, SLOTS, type PlanDay, type ScheduleMap } from "./linePlanningDomain";
 import { extractAllergenProfile, detectCup } from "./autoPlatingAlgorithm";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────

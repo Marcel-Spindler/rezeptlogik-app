@@ -270,6 +270,59 @@ function RampUpHistoryCard({ wr, history }: { wr: WeekRecipe; history: ReturnTyp
   );
 }
 
+function AllergenSummaryCard({ recipe, md }: { recipe: Recipe; market: Market; md?: Recipe["markets"][Market] }) {
+  const allergensByMarket = useMemo(() => {
+    const result: { market: string; allergens: string[] }[] = [];
+    for (const [m, details] of Object.entries(recipe.markets)) {
+      if (!details?.allergens) continue;
+      const list = details.allergens.split(/[,;/]/).map(s => s.trim()).filter(Boolean);
+      if (list.length > 0) result.push({ market: m, allergens: list });
+    }
+    return result;
+  }, [recipe]);
+
+  const allAllergens = useMemo(() => {
+    const set = new Set<string>();
+    for (const entry of allergensByMarket) for (const a of entry.allergens) set.add(a.toLowerCase());
+    return [...set].sort();
+  }, [allergensByMarket]);
+
+  if (allAllergens.length === 0) {
+    return (
+      <div className="card p-4">
+        <h3 className="text-sm font-semibold text-slate-700 mb-2">Allergene</h3>
+        <div className="text-sm text-slate-500">Keine Allergen-Daten vorhanden.</div>
+      </div>
+    );
+  }
+
+  const currentAllergens = md?.allergens?.split(/[,;/]/).map(s => s.trim()).filter(Boolean) ?? allAllergens;
+
+  return (
+    <div className="card p-4 border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-orange-50">
+      <h3 className="text-sm font-semibold text-slate-700 mb-2">Allergene</h3>
+      <div className="flex flex-wrap gap-1.5">
+        {currentAllergens.map(a => (
+          <span key={a} className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-300">
+            ⚠ {a}
+          </span>
+        ))}
+      </div>
+      {allergensByMarket.length > 1 && (
+        <div className="mt-3 space-y-1">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Pro Markt</div>
+          {allergensByMarket.map(({ market: m, allergens }) => (
+            <div key={m} className="flex items-start gap-2 text-xs">
+              <span className="font-semibold text-slate-600 w-12 shrink-0">{m}</span>
+              <span className="text-slate-600">{allergens.join(", ")}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function OverviewTab({ wr, recipe, market, md, portionsTotal, upliftPercent, productionPlan }: Props) {
   const planningIntel = useRecipePlanningIntel(wr.code);
   const rampHistory = useRampHistory(wr);
@@ -278,6 +331,7 @@ export function OverviewTab({ wr, recipe, market, md, portionsTotal, upliftPerce
     <div className="grid md:grid-cols-2 gap-3">
       <ProductionCard wr={wr} portionsTotal={portionsTotal} upliftPercent={upliftPercent} />
       <MarketVariantCard market={market} md={md} recipe={recipe} />
+      <AllergenSummaryCard recipe={recipe} market={market} md={md} />
       <PlanningIntelCard wr={wr} planningIntel={planningIntel} />
       {productionPlan && <ProductionPlanCard wr={wr} productionPlan={productionPlan} />}
       <RampUpHistoryCard wr={wr} history={rampHistory} />

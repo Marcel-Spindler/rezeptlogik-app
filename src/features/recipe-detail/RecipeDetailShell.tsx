@@ -12,6 +12,7 @@ import { WorkflowTab } from "./tabs/WorkflowTab";
 import { IngredientsTab } from "./tabs/IngredientsTab";
 import { PlatingTab } from "./tabs/PlatingTab";
 import { CookTab } from "./tabs/CookTab";
+import { RecipeComparePanel } from "./RecipeComparePanel";
 
 export { RampHistorySparkline } from "./shared";
 
@@ -39,14 +40,17 @@ interface Props {
   cookSchedules: Record<string, CookSchedule>;
   processSpecs: Record<string, ProcessSpec>;
   upliftPercent: number;
+  allRecipes?: WeekRecipe[];
+  recipesByCode?: Record<string, Recipe>;
 }
 
-export function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, upliftPercent }: Props) {
+export function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, upliftPercent, allRecipes, recipesByCode }: Props) {
   const [rawTab, setTab] = usePersistent<string>("detail_tab", "overview");
   // Migration: "engpass" (Tab wurde entfernt) oder sonstige Altwerte fallen auf "overview" zurück.
   const tab: Tab = isValidTab(rawTab) ? rawTab : "overview";
   const [market, setMarket] = usePersistent<Market>("detail_market", "BENL");
   const [detailSearch, setDetailSearch] = useState("");
+  const [showCompare, setShowCompare] = useState(false);
 
   const prevCodeRef = useRef("");
   useEffect(() => {
@@ -83,7 +87,24 @@ export function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, up
             </div>
           </div>
           <div className="flex flex-col gap-2 items-end">
-            <div className="inline-flex rounded-lg ring-1 ring-slate-300 bg-white overflow-hidden">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => window.print()}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg ring-1 ring-slate-300 bg-white hover:bg-slate-50 text-slate-700 print:hidden"
+                title="Arbeitsblatt drucken"
+              >
+                Drucken
+              </button>
+              {allRecipes && allRecipes.length > 1 && (
+                <button
+                  onClick={() => setShowCompare(s => !s)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg ring-1 print:hidden ${showCompare ? "bg-indigo-600 text-white ring-indigo-700" : "ring-slate-300 bg-white hover:bg-slate-50 text-slate-700"}`}
+                  title="Rezept vergleichen"
+                >
+                  Vergleichen
+                </button>
+              )}
+              <div className="inline-flex rounded-lg ring-1 ring-slate-300 bg-white overflow-hidden">
               {MARKETS.map(m => {
                 const has = !!recipe?.markets[m];
                 return (
@@ -93,6 +114,7 @@ export function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, up
                   </button>
                 );
               })}
+            </div>
             </div>
             {md && <div className="font-mono text-[10px] text-slate-400">{md.msku}</div>}
           </div>
@@ -130,11 +152,23 @@ export function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, up
         <WorkflowTab wr={wr} recipe={recipe} md={md} processSpecs={processSpecs} detailSearch={detailSearch} />
       )}
       {recipe && tab === "ingredients" && (
-        <IngredientsTab recipe={recipe} market={market} portionsTotal={portionsTotal} wr={wr} shelfLifeBySku={data.shelfLifeBySku ?? {}} generatedAt={data.generatedAt} detailSearch={detailSearch} />
+        <IngredientsTab recipe={recipe} market={market} portionsTotal={portionsTotal} wr={wr} shelfLifeBySku={data.shelfLifeBySku ?? {}} generatedAt={data.generatedAt} detailSearch={detailSearch} data={data} selectedWeek={wr.hfWeek} upliftPercent={upliftPercent} />
       )}
       {recipe && tab === "plating" && md && <PlatingTab md={md} detailSearch={detailSearch} />}
       {recipe && tab === "cook" && md && (
         <CookTab wr={wr} md={md} cookSchedules={cookSchedules} portionsTotal={portionsTotal} recipe={recipe} processSpecs={processSpecs} detailSearch={detailSearch} />
+      )}
+
+      {showCompare && allRecipes && recipesByCode && (
+        <RecipeComparePanel
+          currentWr={wr}
+          currentRecipe={recipe}
+          allRecipes={allRecipes}
+          recipesByCode={recipesByCode}
+          upliftPercent={upliftPercent}
+          market={market}
+          onClose={() => setShowCompare(false)}
+        />
       )}
     </div>
   );

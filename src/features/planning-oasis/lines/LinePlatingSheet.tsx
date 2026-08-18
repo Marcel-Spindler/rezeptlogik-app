@@ -1,6 +1,6 @@
 // GSheet-kompatible Plating-Plan-Tabelle (LinePlating W{XX} Stil).
-// Darstellung + TSV-Export für Copy-Paste in Google Sheets.
-import { useRef } from "react";
+// Darstellung + TSV-Export + Drag & Drop für Copy-Paste in Google Sheets.
+import { useRef, useState } from "react";
 import { DAYS, type PlanDay, type ScheduleMap } from "./linePlanningDomain";
 import { portionsInSlotByLineCapacity } from "./linePlanningLogic";
 
@@ -31,6 +31,7 @@ type SheetRow = {
   meal: string;
   planned: string;
   comment: string;
+  schedKeys: [string, string, string]; // schedule keys for line 0/1/2
 };
 
 function mapScheduleToSheet(
@@ -50,6 +51,7 @@ function mapScheduleToSheet(
       line1: "Line 1", line2: "Line 2", line3: "Line 3",
       cupping: "Cupping/Slicing", amount: "Amount", run: "Run",
       code: "Code", meal: "Meal", planned: "Planned", comment: "Comment",
+      schedKeys: ["", "", ""],
     });
 
     for (let si = 0; si < SHEET_SLOTS.length; si++) {
@@ -100,6 +102,10 @@ function mapScheduleToSheet(
       const slotComment = comments[`${day}|${schedSlotKey}`] ?? "";
       const cupValue = cuppingBySlot?.[`${day}|${schedSlotKey}`] ?? "";
 
+      const schedKey0 = `${day}|${schedSlotKey}|0`;
+      const schedKey1 = `${day}|${schedSlotKey}|1`;
+      const schedKey2 = `${day}|${schedSlotKey}|2`;
+
       rows.push({
         day: si === 0 ? day : "",
         comms: isBreak ? "Break" : isPrep ? "Prep Line" : isClean ? "Clean Line" : "",
@@ -114,6 +120,7 @@ function mapScheduleToSheet(
         meal,
         planned,
         comment: slotComment,
+        schedKeys: [schedKey0, schedKey1, schedKey2],
       });
     }
   }
@@ -137,6 +144,7 @@ export function LinePlatingSheet({
   dayLineCount,
   week,
   cuppingBySlot,
+  onSwapCells,
 }: {
   schedule: ScheduleMap;
   lineCapacity: Record<string, number>;
@@ -144,8 +152,11 @@ export function LinePlatingSheet({
   dayLineCount: Record<PlanDay, number>;
   week: string;
   cuppingBySlot?: Record<string, string>;
+  onSwapCells?: (fromKey: string, toKey: string) => void;
 }) {
   const tableRef = useRef<HTMLTableElement>(null);
+  const [dragSource, setDragSource] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<string | null>(null);
   const rows = mapScheduleToSheet(schedule, lineCapacity, comments, dayLineCount, cuppingBySlot);
 
   const handleCopyTsv = () => {
@@ -229,9 +240,30 @@ export function LinePlatingSheet({
                   <td className="px-2 py-1 font-bold text-slate-800 whitespace-nowrap">{r.day}</td>
                   <td className={`px-2 py-1 whitespace-nowrap ${isBreak ? "font-bold text-amber-700" : isPrep ? "font-bold text-sky-700" : isClean ? "font-bold text-rose-700" : "text-slate-500"}`}>{r.comms}</td>
                   <td className="px-2 py-1 font-mono text-slate-600 whitespace-nowrap">{r.time}</td>
-                  <td className={`px-2 py-1 max-w-[12rem] truncate ${r.line1 && !isBreak ? "font-semibold text-slate-800" : "text-slate-400"}`} title={r.line1}>{r.line1}</td>
-                  <td className={`px-2 py-1 max-w-[12rem] truncate ${r.line2 && !isBreak ? "font-semibold text-slate-800" : "text-slate-400"}`} title={r.line2}>{r.line2}</td>
-                  <td className={`px-2 py-1 max-w-[12rem] truncate ${r.line3 && !isBreak ? "font-semibold text-slate-800" : "text-slate-400"}`} title={r.line3}>{r.line3}</td>
+                  {[r.line1, r.line2, r.line3].map((cellText, li) => {
+                    const cellKey = r.schedKeys[li];
+                    const hasRecipe = !!cellText && !isBreak && !isPrep && !isClean;
+                    const isDragOverCell = dragOver === cellKey;
+                    return (
+                      <td
+                        key={li}
+                        draggable={hasRecipe && !!onSwapCells}
+                        onDragStart={() => { if (hasRecipe) setDragSource(cellKey); }}
+                        onDragEnd={() => { setDragSource(null); setDragOver(null); }}
+                        onDragOver={(e) => { if (dragSource && dragSource !== cellKey) { e.preventDefault(); setDragOver(cellKey); } }}
+                        onDragLeave={() => setDragOver(null)}
+                        onDrop={(e) => { e.preventDefault(); if (dragSource && onSwapCells) { onSwapCells(dragSource, cellKey); } setDragSource(null); setDragOver(null); }}
+                        className={`px-2 py-1 max-w-[12rem] truncate cursor-${hasRecipe && onSwapCells ? "grab" : "default"} select-none transition-all ${
+                          isDragOverCell ? "bg-cyan-100 ring-2 ring-cyan-400 ring-inset rounded" :
+                          dragSource === cellKey ? "opacity-50 bg-cyan-50" :
+                          hasRecipe ? "font-semibold text-slate-800" : "text-slate-400"
+                        }`}
+                        title={cellText}
+                      >
+                        {cellText}
+                      </td>
+                    );
+                  })}
                   <td className="px-2 py-1 text-slate-500">{r.cupping}</td>
                   <td className="px-2 py-1 text-right font-semibold text-slate-700 tabular-nums">{r.amount}</td>
                   <td className="px-2 py-1 text-center font-bold text-indigo-700">{r.run}</td>

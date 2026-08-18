@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Market, Recipe, ShelfLifeInfo, WeekRecipe } from "../../../core/types";
+import type { DataBundle, Market, Recipe, ShelfLifeInfo, WeekRecipe } from "../../../core/types";
 import {
   categoryRiskTone, findShelfLifeNameHint, fmtNum, ingredientSectionTone,
   matchesNeedle, scaleQty, shelfLifeTone, MARKET_LABEL,
 } from "../../../lib/helpers";
 import { Stat } from "../shared";
+import { WeeklyOrderAggregation } from "../WeeklyOrderAggregation";
 
 interface Props {
   recipe: Recipe;
@@ -14,6 +15,9 @@ interface Props {
   shelfLifeBySku: Record<string, ShelfLifeInfo>;
   generatedAt: string;
   detailSearch: string;
+  data?: DataBundle;
+  selectedWeek?: string;
+  upliftPercent?: number;
 }
 
 interface GroupedRow {
@@ -92,8 +96,9 @@ function useCollapsedSections(storageKey: string) {
     try { return JSON.parse(window.localStorage.getItem(storageKey) ?? "{}"); } catch { return {}; }
   });
 
+  // Re-read when storageKey changes (different recipe/market selected)
   useEffect(() => {
-    setCollapsed(() => { try { return JSON.parse(window.localStorage.getItem(storageKey) ?? "{}"); } catch { return {}; } });
+    try { setCollapsed(JSON.parse(window.localStorage.getItem(storageKey) ?? "{}")); } catch { setCollapsed({}); }
   }, [storageKey]);
 
   useEffect(() => {
@@ -196,7 +201,8 @@ function IngredientSection({ section, index, collapsed, onToggle, portionsTotal 
   );
 }
 
-export function IngredientsTab({ recipe, market, portionsTotal, wr, shelfLifeBySku, generatedAt, detailSearch }: Props) {
+export function IngredientsTab({ recipe, market, portionsTotal, wr, shelfLifeBySku, generatedAt, detailSearch, data, selectedWeek, upliftPercent }: Props) {
+  const [showWeeklyAgg, setShowWeeklyAgg] = useState(false);
   const list = useMemo(() => recipe.grossIngredients[market] ?? [], [recipe.grossIngredients, market]);
   const grouped = useMemo(() => groupIngredients(list, shelfLifeBySku), [list, shelfLifeBySku]);
 
@@ -233,6 +239,21 @@ export function IngredientsTab({ recipe, market, portionsTotal, wr, shelfLifeByS
         <Stat label="knapp" value={fmtNum(shelfSummary.risk)} accent={shelfSummary.risk > 0} />
         <Stat label="Kundenziel" value="7 Tage" />
       </div>
+      {data && selectedWeek && upliftPercent !== undefined && (
+        <div className="mb-3">
+          <button
+            className={`btn text-xs ${showWeeklyAgg ? "bg-teal-600 text-white ring-teal-700" : ""}`}
+            onClick={() => setShowWeeklyAgg(s => !s)}
+          >
+            {showWeeklyAgg ? "Wochenbestellung ausblenden" : "Wochenbestellung anzeigen (alle Rezepte)"}
+          </button>
+          {showWeeklyAgg && (
+            <div className="mt-3">
+              <WeeklyOrderAggregation data={data} selectedWeek={selectedWeek} upliftPercent={upliftPercent} />
+            </div>
+          )}
+        </div>
+      )}
       {sections.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
           <div className="text-xs text-slate-500">{fmtNum(sections.length)} Sub-Rezept-Blöcke sichtbar.</div>

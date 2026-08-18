@@ -30,6 +30,8 @@ import {
 import { DeltaBadge, DropCell, RecipePill, VolumeBar } from "./features/planning-oasis/lines/LineWidgets";
 import { LinePlatingSheet } from "./features/planning-oasis/lines/LinePlatingSheet";
 import { autoPlating, parsePetCsv } from "./features/planning-oasis/lines/autoPlatingAlgorithm";
+import { PlatingAIPanel } from "./features/planning-oasis/lines/PlatingAIPanel";
+import { buildPlatingContext } from "./features/planning-oasis/lines/platingAI";
 
 // Modul-weite Drag-Payload (vermeidet Stale-Closures über Handler-Callbacks hinweg).
 // Bewusst nicht ausgelagert: eng an die Drag-Handler der Hauptkomponente gekoppelt.
@@ -83,6 +85,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   const [viewTab, setViewTab] = useState<"grid" | "sheet">("grid");
   const [cuppingBySlot, setCuppingBySlot] = useState<Record<string, string>>({});
   const [autoPlatingNotice, setAutoPlatingNotice] = useState("");
+  const [showPlatingAI, setShowPlatingAI] = useState(false);
   const petFileRef = useRef<HTMLInputElement>(null);
   const dragLeaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAutoPlanTriggerRef = useRef<number | undefined>(autoPlanTrigger);
@@ -1929,14 +1932,25 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
           </div>
 
           {viewTab === "sheet" && (
-            <LinePlatingSheet
-              schedule={schedule}
-              lineCapacity={lineCapacityByLane}
-              comments={comments}
-              dayLineCount={dayLineCount}
-              week={week}
-              cuppingBySlot={cuppingBySlot}
-            />
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowPlatingAI(true)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-700"
+                >
+                  🧬 Plating-KI
+                </button>
+              </div>
+              <LinePlatingSheet
+                schedule={schedule}
+                lineCapacity={lineCapacityByLane}
+                comments={comments}
+                dayLineCount={dayLineCount}
+                week={week}
+                cuppingBySlot={cuppingBySlot}
+                onSwapCells={(fromKey, toKey) => dispatch({ type: "swap", from: fromKey, to: toKey })}
+              />
+            </>
           )}
 
           {viewTab === "grid" && <>
@@ -2285,6 +2299,41 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
           </div>
         );
       })()}
+      {/* Plating AI Panel */}
+      <PlatingAIPanel
+        isOpen={showPlatingAI}
+        onClose={() => setShowPlatingAI(false)}
+        planContext={appData ? buildPlatingContext(schedule, appData, lineCapacityByLane, dayLineCount, week) : ""}
+        onApplyMoves={(moves) => {
+          const next = { ...schedule };
+          for (const m of moves) {
+            const fromKey = `${m.fromDay}|${m.fromSlot}|${m.fromLine}`;
+            const toKey = `${m.toDay}|${m.toSlot}|${m.toLine}`;
+            const recipe = next[fromKey];
+            if (recipe) { next[toKey] = recipe; delete next[fromKey]; }
+          }
+          dispatch({ type: "load", schedule: next });
+        }}
+        onApplySequence={(changes) => {
+          const next = { ...schedule };
+          for (const c of changes) {
+            const daySlots = SLOTS.map(s => `${c.day}|${s.key}|${c.line}`);
+            const currentRecipes = daySlots.map(k => next[k]).filter(Boolean);
+            // Clear line
+            for (const k of daySlots) delete next[k];
+            // Re-fill in new order
+            let slotIdx = 0;
+            for (const code of c.newOrder) {
+              const recipe = currentRecipes.find(r => r?.code === code);
+              if (recipe && slotIdx < daySlots.length) {
+                next[daySlots[slotIdx]] = recipe;
+                slotIdx++;
+              }
+            }
+          }
+          dispatch({ type: "load", schedule: next });
+        }}
+      />
     </div>
   );
 }

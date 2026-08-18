@@ -235,15 +235,37 @@ function sortByMinAllergenChanges(recipes: PetDayRecipe[]): PetDayRecipe[] {
 
 const LINE_CAPACITY_PER_HOUR = 1200; // default portions/hour
 const THIRD_LINE_THRESHOLD = 16000; // daily target above which 3rd line activates
+const LATE_SHIFT_THRESHOLD = 0.85; // activate late shift when early shift fills >85%
+const EARLY_SHIFT_SLOTS = 10; // 06:00-15:00 = 10 slots (standard)
+const LATE_SHIFT_SLOTS = 4;  // 15:00-19:00 = 4 additional slots
+
+// Extended SLOTS including late shift
+const ALL_SLOTS = [
+  ...SLOTS,
+  { key: "15:00-16:00", label: "15 – 16", duration: 60 },
+  { key: "16:00-17:00", label: "16 – 17", duration: 60 },
+  { key: "17:00-18:00", label: "17 – 18", duration: 60 },
+  { key: "18:00-19:00", label: "18 – 19", duration: 60 },
+];
+
+export type PlatingConfig = {
+  enableLateShift: boolean;  // Spätschicht zuschaltbar
+  planDaysAhead: number;     // Standard: 2 (nur 2 Tage vorausplanen)
+  carryover: Map<string, number>; // code → unerledigte Portionen vom Vortag
+};
 
 export function autoPlating(
   petByDay: Map<PlanDay, PetDayRecipe[]>,
   data: DataBundle,
   lineCapacity: Record<string, number>,
+  config?: Partial<PlatingConfig>,
 ): AutoPlatingResult {
   const schedule: ScheduleMap = {};
   const cuppingBySlot: Record<string, string> = {};
   const summaryParts: string[] = [];
+  const carryover = new Map<string, number>(config?.carryover ?? []);
+  const enableLateShift = config?.enableLateShift ?? true;
+  const planDaysAhead = config?.planDaysAhead ?? 2;
 
   // Enrich PET data with allergens and cup info
   for (const [, recipes] of petByDay) {
@@ -253,35 +275,58 @@ export function autoPlating(
     }
   }
 
-  for (const day of DAYS) {
-    const dayRecipes = petByDay.get(day);
-    if (!dayRecipes || dayRecipes.length === 0) continue;
+  // Only plan the next N days that have recipes
+  const daysWithRecipes = DAYS.filter(d => petByDay.has(d) && (petByDay.get(d)?.length ?? 0) > 0);
+  const daysToPlate = daysWithRecipes.slice(0, planDaysAhead);
+
+  for (const day of daysToPlate) {
+    const dayRecipes = petByDay.get(day) ?? [];
+    if (dayRecipes.length === 0) continue;
+
+    // Add carryover from previous day
+    for (const r of dayRecipes) {
+      const carry = carryover.get(r.code) ?? 0;
+      if (carry > 0) {
+        r.target += carry;
+        carryover.delete(r.code);
+      }
+    }
+    // Recipes that are ONLY carryover (not in today's PET)
+    for (const [code, carry] of carryover) {
+      if (carry > 0 && !dayRecipes.find(r => r.code === code)) {
+        dayRecipes.push({
+          code, name: code, target: carry, day,
+          allergens: extractAllergenProfile(code, data),
+          hasCup: detectCup(code, data),
+          isSeafood: /salmon|shrimp|prawn|fish|seafood|cod|tuna|barramundi|lachs|garnele/i.test(code),
+        });
+      }
+    }
+    carryover.clear();
 
     const dayTotal = dayRecipes.reduce((sum, r) => sum + r.target, 0);
     const useThirdLine = dayTotal > THIRD_LINE_THRESHOLD;
     const lineCount = useThirdLine ? 3 : 2;
 
-    // ─── Cluster recipes into line groups ────────────────────────────────
-    // Sort by volume desc
-    const sorted = [...dayRecipes].sort((a, b) => b.target - a.target);
+    // Determine available slots per line
+    const earlyCapacity = lineCount * EARLY_SHIFT_SLOTS * (lineCapacity["0"] ?? LINE_CAPACITY_PER_HOUR);
+    const needsLateShift = enableLateShift && dayTotal > earlyCapacity * LATE_SHIFT_THRESHOLD;
+    const maxSlots = needsLateShift ? EARLY_SHIFT_SLOTS + LATE_SHIFT_SLOTS : EARLY_SHIFT_SLOTS;
+    const availableSlots = ALL_SLOTS.slice(0, maxSlots);
 
-    // Group by allergen similarity
+    // ─── Cluster recipes into line groups ────────────────────────────────
+    const sorted = [...dayRecipes].sort((a, b) => b.target - a.target);
     const line1Recipes: PetDayRecipe[] = [];
     const line2Recipes: PetDayRecipe[] = [];
     const line3Recipes: PetDayRecipe[] = [];
 
-    // Strategy: Line 1 = high-volume cluster with similar allergens
-    // Pick the top recipe, then greedily add recipes with high similarity
     if (sorted.length > 0) {
       const anchor = sorted[0];
       line1Recipes.push(anchor);
       const remaining = sorted.slice(1);
-
-      // Target: Line 1 gets ~50% of volume (highrunner)
       const line1Target = dayTotal * 0.5;
       let line1Volume = anchor.target;
 
-      // Add recipes with high allergen similarity until target met
       const scored = remaining.map(r => ({
         recipe: r,
         similarity: allergenSimilarity(anchor.allergens, r.allergens),
@@ -297,12 +342,10 @@ export function autoPlating(
         }
       }
 
-      // Remaining go to line 2 (and line 3 if active)
       const assigned = new Set(line1Recipes.map(r => r.code));
       const rest = sorted.filter(r => !assigned.has(r.code));
 
       if (useThirdLine && rest.length > 3) {
-        // Split rest: higher volume → line 2, lower → line 3
         const midpoint = Math.ceil(rest.length * 0.6);
         line2Recipes.push(...rest.slice(0, midpoint));
         line3Recipes.push(...rest.slice(midpoint));
@@ -315,24 +358,22 @@ export function autoPlating(
     const sortedLine1 = sortByMinAllergenChanges(line1Recipes);
     const sortedLine2 = sortByMinAllergenChanges(line2Recipes);
     const sortedLine3 = sortByMinAllergenChanges(line3Recipes);
-
     const lineGroups = [sortedLine1, sortedLine2, sortedLine3].slice(0, lineCount);
 
-    // ─── Fill slots ──────────────────────────────────────────────────────
+    // ─── Fill slots + track what couldn't be finished ────────────────────
     for (let li = 0; li < lineGroups.length; li++) {
       const lineRecipes = lineGroups[li];
       const cap = lineCapacity[String(li)] ?? LINE_CAPACITY_PER_HOUR;
       let slotIdx = 0;
-      let remainingInSlot = cap; // portions left in current slot
+      let remainingInSlot = cap;
 
       for (const recipe of lineRecipes) {
         let portionsLeft = recipe.target;
 
-        while (portionsLeft > 0 && slotIdx < SLOTS.length) {
-          const slot = SLOTS[slotIdx];
+        while (portionsLeft > 0 && slotIdx < availableSlots.length) {
+          const slot = availableSlots[slotIdx];
           const key = `${day}|${slot.key}|${li}`;
 
-          // Assign recipe to this slot
           schedule[key] = {
             code: recipe.code,
             name: recipe.name,
@@ -352,9 +393,15 @@ export function autoPlating(
           }
         }
 
+        // Carryover: couldn't finish → carry to next day
+        if (portionsLeft > 0) {
+          carryover.set(recipe.code, (carryover.get(recipe.code) ?? 0) + portionsLeft);
+        }
+
         // Cup recipes → cupping column
-        if (recipe.hasCup && slotIdx < SLOTS.length) {
-          const slotKey = SLOTS[Math.min(slotIdx, SLOTS.length - 1)].key;
+        if (recipe.hasCup) {
+          const cupSlotIdx = Math.min(slotIdx, availableSlots.length - 1);
+          const slotKey = availableSlots[cupSlotIdx].key;
           const cupKey = `${day}|${slotKey}`;
           const existing = cuppingBySlot[cupKey];
           cuppingBySlot[cupKey] = existing ? `${existing}, ${recipe.name}` : `(Cup) ${recipe.name}`;
@@ -364,7 +411,18 @@ export function autoPlating(
 
     const changes1 = countAllergenChanges(sortedLine1);
     const changes2 = countAllergenChanges(sortedLine2);
-    summaryParts.push(`${day}: ${lineCount}L, L1=${sortedLine1.length} Meals (${changes1} Wechsel), L2=${sortedLine2.length} Meals (${changes2} Wechsel)${useThirdLine ? `, L3=${sortedLine3.length}` : ""}`);
+    const carryoverTotal = Array.from(carryover.values()).reduce((s, v) => s + v, 0);
+    summaryParts.push(
+      `${day}: ${lineCount}L${needsLateShift ? "+Spät" : ""}, L1=${sortedLine1.length} (${changes1}⟳), L2=${sortedLine2.length} (${changes2}⟳)` +
+      `${useThirdLine ? `, L3=${sortedLine3.length}` : ""}` +
+      `${carryoverTotal > 0 ? ` | Carry→morgen: ${carryoverTotal}` : ""}`
+    );
+  }
+
+  // Report remaining carryover
+  const totalCarry = Array.from(carryover.values()).reduce((s, v) => s + v, 0);
+  if (totalCarry > 0) {
+    summaryParts.push(`⚠ Offener Carryover: ${totalCarry} Portionen (${carryover.size} Rezepte) → nächster Plantag`);
   }
 
   return {

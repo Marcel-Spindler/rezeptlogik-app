@@ -3475,6 +3475,170 @@ exports.geminiPlanningChat = onRequest(
   },
 );
 
+// ─── Gemini Plating Chat (Plating-Linien-KI-Experte) ─────────────────────────
+
+exports.geminiPlatingChat = onRequest(
+  { region: "europe-west3", timeoutSeconds: 60, secrets: [GEMINI_API_KEY_SECRET] },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
+    try {
+      const body = req.body || {};
+      const { context, history, message } = body;
+      if (!message) { res.status(400).json({ error: "message fehlt" }); return; }
+
+      const apiKey = GEMINI_API_KEY_SECRET.value();
+      if (!apiKey) throw new Error("Firebase Secret GEMINI_API_KEY nicht gesetzt");
+      const model = "gemini-2.5-flash";
+
+      const systemPrompt = [
+        "Du bist der PLATING-LINIEN-EXPERTE für die HelloFresh Factory Verden.",
+        "Du kennst den kompletten Linienplan (welches Rezept auf welcher Linie/Slot läuft) und alle Allergen-Daten.",
+        "Dein Ziel: MINIMALE Allergen-Wechsel, maximaler Durchsatz, optimale Linien-Auslastung.",
+        "",
+        "STRATEGIEN die du IMMER anwendest:",
+        "• Linie 1 = HIGHRUNNER: Höchstes Volumen, fast keine Wechsel (0-1 Allergen-Changeover/Tag)",
+        "• Linie 2 = FLEX: Mittlere Rezepte, allergen-ähnliche nacheinander (max 3-4 Wechsel/Tag)",
+        "• Linie 3 = NUR bei Overload (>16k Portionen/Tag)",
+        "• SPÄTSCHICHT: Zuschaltbar wenn Frühschicht >85% voll. Slots 15:00-19:00.",
+        "• CARRYOVER: Wenn ein Tag sein Kontingent nicht schafft → Rest zum nächsten Tag mitnehmen",
+        "• FISCH immer am Ende des Tages oder am Donnerstag/Freitag (MHD 9 Tage)",
+        "• Jeder Allergen-Wechsel = 30min Reinigung. Protein-Typ-Wechsel = 1h Full Changeover.",
+        "• CUP-Rezepte: Parallel zur Linie in der Cupping-Station, brauchen Vorlauf",
+        "• NUR 2 TAGE VORAUSPLANEN: Immer nur den aktuellen + nächsten Tag planen",
+        "",
+        "Antworte IMMER auf Deutsch, direkt und mit Begründung.",
+        "Bei Optimierungs-Anfragen: Nutze optimize_line_sequence für ganze Tages-Linien.",
+        "Bei Verschiebungen: Nutze propose_plating_move für einzelne Rezept-Moves.",
+        "Bei Analyse: Nutze check_plating_issues für Probleme und Warnungen.",
+        "",
+        context || "",
+      ].join("\n");
+
+      const contents = [
+        ...(Array.isArray(history) ? history : []).map((m) => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content || "(Vorschlag)" }],
+        })),
+        { role: "user", parts: [{ text: message }] },
+      ];
+
+      const tools = [{
+        functionDeclarations: [
+          {
+            name: "propose_plating_move",
+            description: "Verschiebt ein oder mehrere Rezepte zwischen Linien oder Slots. Nutzer sieht Vorschau.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                moves: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      recipeCode: { type: "STRING" },
+                      recipeName: { type: "STRING" },
+                      fromDay: { type: "STRING" },
+                      fromSlot: { type: "STRING" },
+                      fromLine: { type: "NUMBER", description: "0-basiert (0=L1, 1=L2, 2=L3)" },
+                      toDay: { type: "STRING" },
+                      toSlot: { type: "STRING" },
+                      toLine: { type: "NUMBER" },
+                      reason: { type: "STRING" },
+                    },
+                    required: ["recipeCode", "fromDay", "fromSlot", "fromLine", "toDay", "toSlot", "toLine", "reason"],
+                  },
+                },
+                summary: { type: "STRING" },
+              },
+              required: ["moves", "summary"],
+            },
+          },
+          {
+            name: "optimize_line_sequence",
+            description: "Gibt die optimale Reihenfolge aller Rezepte auf einer Linie für einen Tag vor (allergen-optimal sortiert).",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                changes: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      line: { type: "NUMBER", description: "0=L1, 1=L2, 2=L3" },
+                      day: { type: "STRING" },
+                      newOrder: { type: "ARRAY", items: { type: "STRING" }, description: "Rezept-Codes in neuer Reihenfolge" },
+                      reason: { type: "STRING" },
+                    },
+                    required: ["line", "day", "newOrder", "reason"],
+                  },
+                },
+                summary: { type: "STRING" },
+              },
+              required: ["changes", "summary"],
+            },
+          },
+          {
+            name: "check_plating_issues",
+            description: "Meldet Probleme: Zu viele Allergen-Wechsel, MHD-Verstöße, Kapazitätslücken, suboptimale Reihenfolge.",
+            parameters: {
+              type: "OBJECT",
+              properties: {
+                issues: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      severity: { type: "STRING", description: "critical, warning, info" },
+                      description: { type: "STRING" },
+                      affectedSlots: { type: "ARRAY", items: { type: "STRING" } },
+                      suggestion: { type: "STRING" },
+                    },
+                    required: ["severity", "description"],
+                  },
+                },
+              },
+              required: ["issues"],
+            },
+          },
+        ],
+      }];
+
+      const requestBody = JSON.stringify({
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents,
+        tools,
+        generationConfig: { maxOutputTokens: 4096 },
+      });
+
+      let response;
+      let payload;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: requestBody }
+        );
+        payload = await response.json().catch(() => ({}));
+        if (response.ok) break;
+        if (response.status === 429 && attempt < 1) { await new Promise(r => setTimeout(r, 2000)); continue; }
+        throw new Error(payload?.error?.message || `Gemini HTTP ${response.status}`);
+      }
+
+      const parts = payload?.candidates?.[0]?.content?.parts ?? [];
+      let text = "";
+      let toolName = null;
+      let toolInput = null;
+      for (const part of parts) {
+        if (part.text) text += part.text;
+        if (part.functionCall) { toolName = part.functionCall.name; toolInput = part.functionCall.args; }
+      }
+
+      res.status(200).json({ text: text.trim(), toolName, toolInput });
+    } catch (err) {
+      res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  },
+);
+
 // ─── PDF-Generierung via Chromium ────────────────────────────────────────────
 
 const CHROMIUM_PACK_URL = "https://github.com/Sparticuz/chromium/releases/download/v131.0.1/chromium-v131.0.1-pack.tar";

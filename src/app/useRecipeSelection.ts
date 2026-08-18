@@ -48,7 +48,7 @@ function producedRecipesOfWeek(weekRecipes: WeekRecipe[], week: string, upliftPe
     );
 }
 
-function recipeSearchHaystack(wr: WeekRecipe, recipe: Recipe | undefined): string {
+function buildRecipeSearchHaystack(wr: WeekRecipe, recipe: Recipe | undefined): string {
   const parts: string[] = [wr.code, wr.recipeName, wr.preference];
   if (recipe) {
     parts.push(recipe.baseName);
@@ -104,11 +104,17 @@ export function useRecipeSelection(
     [weekRecipes, selectedWeek, upliftPercent]
   );
 
+  const haystackMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of recipesOfWeek) map.set(r.code, buildRecipeSearchHaystack(r, recipesByCode[r.code]));
+    return map;
+  }, [recipesOfWeek, recipesByCode]);
+
   const searchNeedle = searchText.trim().toLowerCase();
   const filteredRecipes = useMemo(() => {
     if (!searchNeedle) return recipesOfWeek;
-    return recipesOfWeek.filter(r => recipeSearchHaystack(r, recipesByCode[r.code]).includes(searchNeedle));
-  }, [recipesOfWeek, searchNeedle, recipesByCode]);
+    return recipesOfWeek.filter(r => (haystackMap.get(r.code) ?? "").includes(searchNeedle));
+  }, [recipesOfWeek, searchNeedle, haystackMap]);
 
   const totals = useMemo(() => weekTotals(recipesOfWeek), [recipesOfWeek]);
   const plannedTotal = adjustedPortions(totals.base, upliftPercent);

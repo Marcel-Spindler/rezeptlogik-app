@@ -68,7 +68,7 @@ function SubRecipeNode({ node, depth }: { node: DetailedSubRecipe; depth: number
   const borderCols = ["border-l-indigo-400", "border-l-violet-400", "border-l-fuchsia-400", "border-l-rose-400"];
   const borderClass = borderCols[Math.min(depth, borderCols.length - 1)];
   return (
-    <div className={`ml-${depth === 0 ? "0" : "5"} mt-2`}>
+    <div className="mt-2" style={{ marginLeft: depth * 20 }}>
       <div className={`rounded-xl border border-slate-200 border-l-4 ${borderClass} bg-white shadow-sm`}>
         <button onClick={() => setOpen(o => !o)} className="w-full flex items-start gap-2 p-3 text-left">
           <span className={`mt-0.5 text-[9px] font-bold uppercase tracking-widest shrink-0 ${depth === 0 ? "text-indigo-500" : depth === 1 ? "text-violet-500" : "text-fuchsia-500"}`}>SUB{depth + 1}</span>
@@ -137,7 +137,6 @@ function TreeCanvas({ roots, code }: { roots: DetailedSubRecipe[]; code: string 
     collectIds(roots, all);
     return all;
   });
-  const [hover, setHover] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
   const flatNodes = useMemo(() => buildFlatTree(roots, expanded), [roots, expanded]);
@@ -188,7 +187,6 @@ function TreeCanvas({ roots, code }: { roots: DetailedSubRecipe[]; code: string 
             );
           })}
           {flatNodes.map(node => {
-            const isHover = hover === node.id;
             const isSel = selected === node.id;
             const cats = node.categories.split(/[,/]/).map(s => s.trim()).filter(Boolean);
             const mainCat = cats[0] ?? "";
@@ -196,14 +194,19 @@ function TreeCanvas({ roots, code }: { roots: DetailedSubRecipe[]; code: string 
             return (
               <foreignObject key={node.id} x={node.cx} y={node.cy} width={TW} height={TH}
                 style={{ cursor: node.hasChildren ? "pointer" : "default" }}
-                onClick={() => { if (node.hasChildren) toggleNode(node.id); setSelected(isSel ? null : node.id); }}
-                onMouseEnter={() => setHover(node.id)} onMouseLeave={() => setHover(null)}>
-                <div className={`h-full w-full rounded-xl border text-xs flex flex-col justify-center px-2 py-1 transition-all ${
-                  isSel ? "shadow-md ring-2" : isHover ? "shadow-sm ring-1" : "shadow-sm"
-                }`} style={{
-                  borderColor: isSel ? `hsl(${hue} 70% 46%)` : isHover ? `hsl(${hue} 52% 62%)` : `hsl(${hue} 40% 78%)`,
-                  background: isSel ? `hsl(${hue} 78% 92%)` : isHover ? `hsl(${hue} 60% 96%)` : `hsl(${hue} 38% 97%)`,
-                }}>
+                onClick={() => { if (node.hasChildren) toggleNode(node.id); setSelected(isSel ? null : node.id); }}>
+                <div
+                  className={`h-full w-full rounded-xl border text-xs flex flex-col justify-center px-2 py-1 transition-all shadow-sm hover:shadow-sm hover:ring-1 ${
+                    isSel ? "shadow-md ring-2" : ""
+                  }`}
+                  style={{
+                    "--node-hue": hue,
+                    borderColor: isSel ? `hsl(${hue} 70% 46%)` : `hsl(${hue} 40% 78%)`,
+                    background: isSel ? `hsl(${hue} 78% 92%)` : `hsl(${hue} 38% 97%)`,
+                  } as React.CSSProperties}
+                  onMouseEnter={e => { if (!isSel) { e.currentTarget.style.borderColor = `hsl(${hue} 52% 62%)`; e.currentTarget.style.background = `hsl(${hue} 60% 96%)`; } }}
+                  onMouseLeave={e => { if (!isSel) { e.currentTarget.style.borderColor = `hsl(${hue} 40% 78%)`; e.currentTarget.style.background = `hsl(${hue} 38% 97%)`; } }}
+                >
                   <div className="font-semibold text-slate-800 truncate leading-tight" title={node.label}>{node.label}</div>
                   {catEntry && <span className={`mt-0.5 self-start rounded px-1 text-[9px] font-semibold border ${catEntry[1]}`}>{mainCat}</span>}
                   <div className="mt-0.5 text-[9px] text-slate-400 flex items-center gap-1">

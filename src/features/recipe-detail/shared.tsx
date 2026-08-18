@@ -1,6 +1,8 @@
 // Kleine, tab-übergreifende Bausteine der Rezept-Detail-Ansicht.
 import { fmtNum } from "../../lib/helpers";
 
+export const SHIFT_RANGE = [4, 3, 2, 1, 0] as const;
+
 export function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className={`rounded-lg px-2 py-1 ${accent ? "bg-verden-50 ring-1 ring-verden-500" : "bg-slate-50"}`}>

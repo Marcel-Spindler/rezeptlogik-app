@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { type CSSProperties, useMemo } from "react";
 import type { CookSchedule, Market, Recipe } from "../../../core/types";
 import {
   matchesNeedle, methodColorToCSS, resolveCookSchedule,
@@ -32,13 +32,16 @@ function methodColorStyles(methodColor: string | undefined, tonePanel: CSSProper
 export function SubRecipesTab({ recipeCode, md, cookSchedules, detailSearch }: Props) {
   const needle = detailSearch.trim().toLowerCase();
 
-  const items = md.subRecipes
-    .filter(s => matchesNeedle([s.id, s.name, s.category, s.methodType, s.methodColor, s.instructions], needle))
-    .sort((a, b) => {
-      const csA = resolveCookSchedule(a.category, cookSchedules).schedule;
-      const csB = resolveCookSchedule(b.category, cookSchedules).schedule;
-      return URGENCY_ORDER[subRecipeUrgency(csA?.cookShifts)] - URGENCY_ORDER[subRecipeUrgency(csB?.cookShifts)];
-    });
+  const items = useMemo(() =>
+    md.subRecipes
+      .filter(s => matchesNeedle([s.id, s.name, s.category, s.methodType, s.methodColor, s.instructions], needle))
+      .sort((a, b) => {
+        const csA = resolveCookSchedule(a.category, cookSchedules).schedule;
+        const csB = resolveCookSchedule(b.category, cookSchedules).schedule;
+        return URGENCY_ORDER[subRecipeUrgency(csA?.cookShifts)] - URGENCY_ORDER[subRecipeUrgency(csB?.cookShifts)];
+      }),
+    [md.subRecipes, needle, cookSchedules]
+  );
 
   return (
     <div className="space-y-3">
