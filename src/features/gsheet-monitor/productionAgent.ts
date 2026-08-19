@@ -27,6 +27,8 @@ export interface ShiftSummary {
   totalEntries: number;
   avgWeightPerEntry: number;
   entriesPerHour: number;
+  kgPerHour: number;
+  shiftDurationHours: number;
   projectedEndOfShift: number;
   shortfallAtEndOfShift: number;
   topBottleneck: string | null;
@@ -232,11 +234,16 @@ function generateRecommendations(meals: MealProgress[], backfillPlan: BackfillPl
   return recs;
 }
 
-function computeShiftSummary(postblast: PostblastData, meals: MealProgress[]): ShiftSummary | null {
-  const entries = postblast.entries;
-  if (entries.length === 0) return null;
+function computeShiftSummary(postblast: PostblastData, meals: MealProgress[], shiftEndHours = 8): ShiftSummary | null {
+  const allEntries = postblast.entries;
+  if (allEntries.length === 0) return null;
 
-  const totalWeighed = postblast.totalWeightKg;
+  // Nur heutige Einträge für korrekte Schichtbilanz
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEntries = allEntries.filter(e => e.date === today);
+  const entries = todayEntries.length > 0 ? todayEntries : allEntries;
+
+  const totalWeighed = entries.reduce((s, e) => s + e.rawWeightKg, 0);
   const timestamps = entries.map(e => new Date(e.timestamp).getTime()).filter(t => !isNaN(t));
   if (timestamps.length < 2) return null;
 
@@ -245,8 +252,7 @@ function computeShiftSummary(postblast: PostblastData, meals: MealProgress[]): S
   const entriesPerHour = shiftDurationHours > 0 ? entries.length / shiftDurationHours : 0;
   const kgPerHour = shiftDurationHours > 0 ? totalWeighed / shiftDurationHours : 0;
 
-  // Projektion: wenn Schicht 8h dauert, wie viel noch?
-  const remainingHours = Math.max(0, 8 - shiftDurationHours);
+  const remainingHours = Math.max(0, shiftEndHours - shiftDurationHours);
   const projectedEndOfShift = totalWeighed + (kgPerHour * remainingHours);
 
   const totalPlanned = meals.reduce((s, m) => s + m.totalPlannedKg, 0);
@@ -262,6 +268,8 @@ function computeShiftSummary(postblast: PostblastData, meals: MealProgress[]): S
     totalEntries: entries.length,
     avgWeightPerEntry: entries.length > 0 ? totalWeighed / entries.length : 0,
     entriesPerHour,
+    kgPerHour,
+    shiftDurationHours,
     projectedEndOfShift,
     shortfallAtEndOfShift: shortfall,
     topBottleneck: bottleneckMeal?.criticalWOs[0]?.subRecipe ?? null,
@@ -273,7 +281,8 @@ export function analyzeProduction(
   postblast: PostblastData | null,
   meals: MealProgress[],
   backfillPlan: BackfillPlan,
-  productionPlan: ProductionPlan | undefined
+  productionPlan: ProductionPlan | undefined,
+  shiftEndHours = 8
 ): ProductionIntelligence {
   if (!postblast) return { alerts: [], shiftSummary: null, recommendations: [], lastAnalysis: Date.now() };
 
@@ -298,7 +307,7 @@ export function analyzeProduction(
   dedupedAlerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
   const recommendations = generateRecommendations(meals, backfillPlan);
-  const shiftSummary = computeShiftSummary(postblast, meals);
+  const shiftSummary = computeShiftSummary(postblast, meals, shiftEndHours);
 
   return { alerts: dedupedAlerts, shiftSummary, recommendations, lastAnalysis: Date.now() };
 }

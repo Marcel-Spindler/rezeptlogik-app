@@ -219,6 +219,7 @@ export function MealCatalogView({
             onConfirmImage={() => { if (selected.photoUrl) confirmImage(selected.mealId, selected.photoUrl); }}
             onRejectImage={() => rejectImage(selected.mealId)}
             onResetImage={() => resetImage(selected.mealId)}
+            onPickImage={(url) => confirmImage(selected.mealId, url)}
             onToggleFavorite={() => toggleFavorite(selected.mealId)}
             onToggleCompare={() => setCompareIds(prev => prev.includes(selected.mealId) ? prev.filter(id => id !== selected.mealId) : prev.length < 3 ? [...prev, selected.mealId] : prev)}
             onSelectRelative={selectRelative}

@@ -2,8 +2,11 @@ import { defineConfig, loadEnv } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createConnection } from "node:net";
+import { extname, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 /// <reference types="vitest" />
 
@@ -103,6 +106,126 @@ function importLocalPlugin(): Plugin {
   };
 }
 
+const DRIVE_SOURCE_DIR = "G:/.shortcut-targets-by-id/1tSHOPlJpN0vslaIY2JyAEa3gJQT603IF/Factor EU Meal Images";
+
+function extractMealCodeFromFolder(folderName: string): string | null {
+  const withLetter = folderName.match(/^([A-Z]{2}\d{4}[A-Z])/i);
+  if (withLetter) return withLetter[1].toUpperCase();
+  const noLetter = folderName.match(/^([A-Z]{2}\d{4})(?:\s|_|-|$)/i);
+  if (noLetter) return noLetter[1].toUpperCase() + "A";
+  return null;
+}
+
+function scoreDriveFile(filename: string): number {
+  const lower = filename.toLowerCase();
+  const isSA = lower.includes("_sa_") || lower.includes("_sa ") || lower.endsWith("_sa_low.jpg") || lower.endsWith("_sa_high.jpg");
+  const isTray = lower.includes("_tray_");
+  const isLow = lower.includes("low");
+  if (isSA && isLow) return 10;
+  if (isSA && !isLow) return 8;
+  if (isTray && isLow) return 6;
+  if (isTray && !isLow) return 4;
+  return 1;
+}
+
+function imageLabelFromName(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.includes("_sa_")) return "SA";
+  if (lower.includes("_tray_")) return "Tray";
+  if (lower.includes("_bento_")) return "Bento";
+  if (lower.includes("_plated_")) return "Plated";
+  return "Sonstig";
+}
+
+interface DriveImageEntry { name: string; path: string; score: number; label: string; }
+
+function scanDriveFolder(dir: string): DriveImageEntry[] {
+  const results: DriveImageEntry[] = [];
+  try {
+    const entries: Dirent[] = readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const fullPath = join(dir, e.name);
+      if (e.isDirectory()) {
+        results.push(...scanDriveFolder(fullPath));
+      } else if (/\.(jpe?g|png|webp)$/i.test(e.name)) {
+        results.push({ name: e.name, path: fullPath, score: scoreDriveFile(e.name), label: imageLabelFromName(e.name) });
+      }
+    }
+  } catch { /* Ordner nicht erreichbar */ }
+  return results;
+}
+
+function mealFolderImagesPlugin(): Plugin {
+  return {
+    name: "meal-folder-images",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/meal-folder-images", (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== "GET") { res.statusCode = 405; res.end(); return; }
+        const mealId = req.url?.replace(/^\//, "").split("?")[0].toUpperCase() ?? "";
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        if (!mealId || !existsSync(DRIVE_SOURCE_DIR)) { res.end(JSON.stringify([])); return; }
+        try {
+          const mealDirs = readdirSync(DRIVE_SOURCE_DIR, { withFileTypes: true })
+            .filter((e: Dirent) => e.isDirectory() && extractMealCodeFromFolder(e.name) === mealId)
+            .map((e: Dirent) => join(DRIVE_SOURCE_DIR, e.name));
+          const allImages: DriveImageEntry[] = mealDirs.flatMap(scanDriveFolder);
+          allImages.sort((a, b) => b.score - a.score);
+          res.end(JSON.stringify(allImages.map(img => ({
+            name: img.name,
+            score: img.score,
+            label: img.label,
+            url: `/api/drive-image?p=${encodeURIComponent(img.path)}`,
+          }))));
+        } catch { res.end(JSON.stringify([])); }
+      });
+    },
+  };
+}
+
+function driveImagePlugin(): Plugin {
+  return {
+    name: "drive-image",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/drive-image", (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== "GET") { res.statusCode = 405; res.end(); return; }
+        const qs = req.url?.includes("?") ? req.url.slice(req.url.indexOf("?") + 1) : "";
+        const p = new URLSearchParams(qs).get("p") ?? "";
+        if (!p || !p.startsWith(DRIVE_SOURCE_DIR)) { res.statusCode = 403; res.end(); return; }
+        try {
+          const buf = readFileSync(p);
+          const ext = extname(p).toLowerCase();
+          const mime = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+          res.setHeader("Content-Type", mime);
+          res.setHeader("Cache-Control", "public, max-age=86400");
+          res.end(buf);
+        } catch { res.statusCode = 404; res.end(); }
+      });
+    },
+  };
+}
+
+function mealImageListPlugin(): Plugin {
+  return {
+    name: "meal-image-list",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/meal-images", (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== "GET") { res.statusCode = 405; res.end(); return; }
+        try {
+          const dir = join(process.cwd(), "public", "data", "meal-images");
+          const files = readdirSync(dir).filter((f: string) => /\.(jpe?g|png|webp|gif|avif)$/i.test(f));
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader("Cache-Control", "no-store");
+          res.end(JSON.stringify(files.sort()));
+        } catch {
+          res.statusCode = 500;
+          res.end(JSON.stringify([]));
+        }
+      });
+    },
+  };
+}
+
 function noopRefreshRampUpPlugin(): Plugin {
   return {
     name: "noop-refresh-ramp-up",
@@ -120,7 +243,7 @@ function noopRefreshRampUpPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), noopRefreshRampUpPlugin(), react()],
+  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), mealImageListPlugin(), noopRefreshRampUpPlugin(), react()],
   server: {
     port: 5173,
     open: true,

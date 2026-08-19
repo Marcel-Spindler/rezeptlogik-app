@@ -66,7 +66,7 @@ export function createPoller(
   parser: (rows: string[][]) => unknown,
   onChange: SheetChangeCallback,
   onError?: (err: Error) => void
-): { start: () => void; stop: () => void; getSnapshot: () => GSheetSnapshot | null } {
+): { start: () => void; stop: () => void; getSnapshot: () => GSheetSnapshot | null; forceRefresh: () => Promise<void> } {
   let abortController: AbortController | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   let lastSnapshot: GSheetSnapshot | null = null;
@@ -116,6 +116,7 @@ export function createPoller(
       if (timer) clearInterval(timer);
       timer = null;
     },
-    getSnapshot() { return lastSnapshot; }
+    getSnapshot() { return lastSnapshot; },
+    forceRefresh() { return poll(); },
   };
 }

@@ -18,7 +18,7 @@ import type { UiLocale } from "./lib/i18n";
 import { tl } from "./lib/i18n";
 import { usePlanningOasisData } from "./lib/planningOasisData";
 
-import type { Direction, FlatIngredient, SubRecipeAggregate, SubRecipeScenario } from "./features/whatif/whatIfTypes";
+import type { Direction, FlatIngredient, SubRecipeAggregate, SubRecipeScenario, YieldSource } from "./features/whatif/whatIfTypes";
 import { saveOverride, listAllOverrides } from "./features/whatif/whatIfOverrides";
 import { fmt, fmtMass, parseNumInput } from "./features/whatif/whatIfFormat";
 import {
@@ -197,6 +197,11 @@ export function WhatIfView({
   const [subRecipeExportLoading, setSubRecipeExportLoading] = useState(false);
   const [recipeExportLoading, setRecipeExportLoading] = useState(false);
 
+  // ── Rohwarenbedarf-Tabelle: Yield-Cap + Sortierung ─────────────────────
+  const [yieldCapEnabled, setYieldCapEnabled] = useState(false);
+  type NeedsSortBy = 'gross' | 'loss' | 'losspct';
+  const [needsSortBy, setNeedsSortBy] = useState<NeedsSortBy>('gross');
+
   // ── Batch-Korrekturfaktor (global auf alle Yields) ─────────────────────
   const [batchCorrectionPct, setBatchCorrectionPct] = useState(0);
   const correctionMultiplier = 1 + batchCorrectionPct / 100;
@@ -252,15 +257,30 @@ export function WhatIfView({
     setUnderweightActualUnitWeight(0);
   }, [upliftedPortions, selectedCode]);
 
-  const selectedSubRecipeIngredients = useMemo(
-    () => selectedSubRecipe ? flattenIngredients(selectedSubRecipe) : [],
-    [selectedSubRecipe]
-  );
+  const selectedSubRecipeIngredients = useMemo(() => {
+    const ings = selectedSubRecipe ? flattenIngredients(selectedSubRecipe) : [];
+    if (!yieldCapEnabled) return ings;
+    return ings.map(ing => ing.effectiveYield > 1 ? { ...ing, effectiveYield: 1 } : ing);
+  }, [selectedSubRecipe, yieldCapEnabled]);
 
-  const selectedSubRecipeNeeds = useMemo(
-    () => aggregateSubRecipeIngredientNeeds(selectedSubRecipeIngredients, subRecipeMissingMeals),
-    [selectedSubRecipeIngredients, subRecipeMissingMeals]
-  );
+  const selectedSubRecipeNeeds = useMemo(() => {
+    const needs = aggregateSubRecipeIngredientNeeds(selectedSubRecipeIngredients, subRecipeMissingMeals);
+    if (needsSortBy === 'loss') return [...needs].sort((a, b) => b.lossTotal - a.lossTotal);
+    if (needsSortBy === 'losspct') return [...needs].sort((a, b) => b.lossPercent - a.lossPercent);
+    return needs;
+  }, [selectedSubRecipeIngredients, subRecipeMissingMeals, needsSortBy]);
+
+  const ingredientYieldInfo = useMemo(() => {
+    const map = new Map<string, { yieldSource: YieldSource; yieldMissing: boolean; effectiveYield: number }>();
+    for (const ing of selectedSubRecipeIngredients) {
+      const key = `${ing.ingredientId}__${ing.uom}`;
+      const existing = map.get(key);
+      if (!existing || ing.effectiveYield > existing.effectiveYield) {
+        map.set(key, { yieldSource: ing.yieldSource, yieldMissing: ing.yieldMissing, effectiveYield: ing.effectiveYield });
+      }
+    }
+    return map;
+  }, [selectedSubRecipeIngredients]);
 
   const fullRecipeNeeds = useMemo(
     () => aggregateRecipeIngredientNeeds(allIngredients, targetPortions),
@@ -1722,8 +1742,31 @@ export function WhatIfView({
 
             {subRecipeScenario === "missing-meals" && selectedSubRecipeNeeds.length > 0 && (
               <div className="mt-4 overflow-hidden rounded-xl ring-1 ring-slate-200">
-                <div className="bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
-                  Rohwarenbedarf für die fehlenden Meals
+                <div className="bg-slate-100 px-3 py-2 flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-bold uppercase tracking-wide text-slate-600">
+                    Rohwarenbedarf für die fehlenden Meals
+                  </span>
+                  <label className="flex items-center gap-1.5 cursor-pointer ml-auto">
+                    <input
+                      type="checkbox"
+                      checked={yieldCapEnabled}
+                      onChange={e => setYieldCapEnabled(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span className="text-[11px] text-slate-600 font-medium">Yield max. 100%</span>
+                  </label>
+                  <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                    <span className="font-semibold">Sortierung:</span>
+                    {(["gross", "loss", "losspct"] as const).map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setNeedsSortBy(s)}
+                        className={`px-2 py-0.5 rounded ${needsSortBy === s ? "bg-indigo-600 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200"}`}
+                      >
+                        {s === "gross" ? "Rohware" : s === "loss" ? "Verlust abs." : "Verlust %"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="max-h-80 overflow-auto bg-white">
                   <table className="min-w-full text-sm">
@@ -1733,22 +1776,48 @@ export function WhatIfView({
                         <th className="px-3 py-2 text-right">Brutto/Meal</th>
                         <th className="px-3 py-2 text-right">Rohware</th>
                         <th className="px-3 py-2 text-right">Fertigware</th>
-                        <th className="px-3 py-2 text-right">Verlust</th>
+                        <th className="px-3 py-2 text-right">Verlust / Gewinn</th>
+                        <th className="px-3 py-2 text-right">%</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {selectedSubRecipeNeeds.map(row => (
-                        <tr key={row.key}>
-                          <td className="px-3 py-2">
-                            <div className="font-medium text-slate-800">{row.ingredientName}</div>
-                            <div className="text-[10px] font-mono text-slate-400">{row.ingredientId}</div>
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono">{fmt(row.grossPerPortion, 2)} {row.uom}</td>
-                          <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">{fmt(row.grossTotal, 2)} {row.uom}</td>
-                          <td className="px-3 py-2 text-right font-mono text-emerald-700">{fmt(row.netTotal, 2)} {row.uom}</td>
-                          <td className="px-3 py-2 text-right font-mono text-rose-700">{fmt(row.lossTotal, 2)} {row.uom}</td>
-                        </tr>
-                      ))}
+                      {selectedSubRecipeNeeds.map(row => {
+                        const yieldInfo = ingredientYieldInfo.get(row.key);
+                        const isGain = row.lossTotal < 0;
+                        const lossColor = isGain ? "text-emerald-600" : "text-rose-700";
+                        const lossPctColor = isGain ? "text-emerald-600" : Math.abs(row.lossPercent) > 15 ? "text-rose-700 font-bold" : "text-slate-600";
+                        return (
+                          <tr key={row.key}>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium text-slate-800">{row.ingredientName}</span>
+                                {yieldInfo?.yieldMissing && (
+                                  <span title="Kein Yield in Daten – Fallback 100% verwendet" className="text-amber-500 text-xs">⚠</span>
+                                )}
+                                {!yieldInfo?.yieldMissing && yieldInfo?.yieldSource === "computed" && (
+                                  <span title="Yield berechnet aus netQty/grossQty" className="text-slate-400 text-[10px]">~</span>
+                                )}
+                                {yieldInfo?.yieldSource === "override" && (
+                                  <span title="Manueller Yield-Override aktiv" className="text-violet-500 text-xs">✎</span>
+                                )}
+                                {isGain && !yieldCapEnabled && (
+                                  <span title={`Yield ${((yieldInfo?.effectiveYield ?? 1) * 100).toFixed(1)}% > 100% – Massengewinn`} className="text-emerald-600 text-[10px] font-bold">↑</span>
+                                )}
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-400">{row.ingredientId}</div>
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono">{fmt(row.grossPerPortion, 2)} {row.uom}</td>
+                            <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">{fmt(row.grossTotal, 2)} {row.uom}</td>
+                            <td className="px-3 py-2 text-right font-mono text-emerald-700">{fmt(row.netTotal, 2)} {row.uom}</td>
+                            <td className={`px-3 py-2 text-right font-mono ${lossColor}`}>
+                              {isGain ? "+" : ""}{fmt(isGain ? -row.lossTotal : row.lossTotal, 2)} {row.uom}
+                            </td>
+                            <td className={`px-3 py-2 text-right font-mono text-xs ${lossPctColor}`}>
+                              {isGain ? "+" : ""}{fmt(isGain ? -row.lossPercent : row.lossPercent, 1)}%
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

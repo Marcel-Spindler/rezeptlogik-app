@@ -77,14 +77,14 @@ function IngredientDiff({ left, right, market }: { left: Recipe; right: Recipe; 
       )}
       {changed.length > 0 && (
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Mengen geaendert</div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Mengen geändert</div>
           {changed.map(id => {
             const l = leftIngs.get(id)!;
             const r = rightIngs.get(id)!;
             const delta = r.qty - l.qty;
             return (
               <div key={id} className="text-xs text-amber-800">
-                {l.name}: {fmtNum(l.qty, 2)} {"->"} {fmtNum(r.qty, 2)} {l.uom} ({delta > 0 ? "+" : ""}{fmtNum(delta, 2)})
+                {l.name}: {fmtNum(l.qty, 2)} {"→"} {fmtNum(r.qty, 2)} {l.uom} ({delta > 0 ? "+" : ""}{fmtNum(delta, 2)})
               </div>
             );
           })}
@@ -107,7 +107,7 @@ export function RecipeComparePanel({ currentWr, currentRecipe, allRecipes, recip
     <div className="card p-4 border border-indigo-200 bg-gradient-to-r from-indigo-50 via-white to-violet-50">
       <div className="flex items-center justify-between gap-2 mb-3">
         <h3 className="text-sm font-semibold text-slate-700">Rezeptvergleich</h3>
-        <button onClick={onClose} className="btn text-xs">Schliessen</button>
+        <button onClick={onClose} className="btn text-xs">Schließen</button>
       </div>
 
       <div className="mb-3">
@@ -117,7 +117,7 @@ export function RecipeComparePanel({ currentWr, currentRecipe, allRecipes, recip
           onChange={e => setCompareCode(e.target.value)}
           className="mt-1 w-full rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-3 py-2 text-sm"
         >
-          <option value="">Rezept waehlen...</option>
+          <option value="">Rezept wählen …</option>
           {allRecipes.filter(r => r.code !== currentWr.code).map(r => (
             <option key={r.code} value={r.code}>{r.code} - {recipesByCode[r.code]?.baseName ?? r.recipeName}</option>
           ))}

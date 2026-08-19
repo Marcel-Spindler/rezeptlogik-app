@@ -4,6 +4,7 @@ import { fmtNum, resolveRecipeByCode } from "../../lib/helpers";
 import { getBaseVerdenVolume } from "../../lib/equipment";
 import { field, label, localFields, metric, subtitleOf, tagsOf, titleOf, findWeekMatches, type Locale } from "./catalog-utils";
 import type { ImageOverride } from "./useImageOverrides";
+import { ImagePickerModal } from "./ImagePickerModal";
 
 const InfoBlock = memo(function InfoBlock({ title, fields }: { title: string; fields: Record<string, string> }) {
   const rows = Object.entries(fields).filter(([key, value]) => value && key !== "Meal ID");
@@ -23,8 +24,9 @@ const InfoBlock = memo(function InfoBlock({ title, fields }: { title: string; fi
   );
 });
 
-function ProductionMatch({ matches, week, upliftPercent, onOpenRecipe, onOpenPlanning, onOpenWms }: {
+function ProductionMatch({ matches, mealId, week, upliftPercent, onOpenRecipe, onOpenPlanning, onOpenWms }: {
   matches: WeekRecipe[];
+  mealId: string;
   week: string;
   upliftPercent: number;
   onOpenRecipe: (code: string) => void;
@@ -36,9 +38,10 @@ function ProductionMatch({ matches, week, upliftPercent, onOpenRecipe, onOpenPla
   }
   const primary = matches[0];
   const total = Math.round(getBaseVerdenVolume(primary) * (1 + upliftPercent / 100));
+  const matchLabel = primary.code === mealId ? "Exakter Code-Match" : `FE/FV-Match über ${primary.code.replace(/[^0-9]/g, "")}`;
   return (
     <section className="catalog-production">
-      <div><span>Produktion · {week}</span><strong>{fmtNum(total)} Meals</strong><small>{primary.code} · FE/FV-Match über {primary.code.replace(/[^0-9]/g, "")}</small></div>
+      <div><span>Produktion · {week}</span><strong>{fmtNum(total)} Meals</strong><small>{primary.code} · {matchLabel}</small></div>
       <div className="catalog-market-volumes">
         {(["BENL", "DKSE", "DE"] as const).filter(market => primary.verdenVolume[market] > 0).map(market => <span key={market}>{market} {fmtNum(primary.verdenVolume[market])}</span>)}
       </div>
@@ -64,6 +67,7 @@ interface CatalogDetailProps {
   onConfirmImage: () => void;
   onRejectImage: () => void;
   onResetImage: () => void;
+  onPickImage: (url: string) => void;
   onToggleFavorite: () => void;
   onToggleCompare: () => void;
   onSelectRelative: (offset: number) => void;
@@ -76,12 +80,13 @@ interface CatalogDetailProps {
 export function CatalogDetail({
   selected, data, selectedWeek, upliftPercent,
   index, total, isFavorite, isInCompare, imageOverride,
-  onConfirmImage, onRejectImage, onResetImage,
+  onConfirmImage, onRejectImage, onResetImage, onPickImage,
   onToggleFavorite, onToggleCompare, onSelectRelative, onSelectWeek,
   onOpenRecipe, onOpenPlanning, onOpenWms,
 }: CatalogDetailProps) {
   const [locale, setLocale] = useState<Locale>("DE");
   const [imgError, setImgError] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
   const culinary = selected.sheets?.["Meal DB_Culinary"] ?? {};
   const product = selected.sheets?.["Meal DB_Product"] ?? {};
@@ -91,10 +96,14 @@ export function CatalogDetail({
 
   const isImageRejected = imageOverride && "hidden" in imageOverride;
   const isImageConfirmed = imageOverride && "url" in imageOverride;
+  const overrideUrl = isImageConfirmed && imageOverride && "url" in imageOverride ? imageOverride.url : undefined;
 
-  const directImage = !imgError && !isImageRejected && selected.photoUrl &&
-    (selected.photoUrl.startsWith("/data/meal-images/") || /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(selected.photoUrl))
-    ? selected.photoUrl : undefined;
+  const effectivePhotoUrl = overrideUrl ?? selected.photoUrl;
+  const directImage = !imgError && !isImageRejected && effectivePhotoUrl &&
+    (effectivePhotoUrl.startsWith("/data/meal-images/") ||
+     effectivePhotoUrl.startsWith("/api/drive-image") ||
+     /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(effectivePhotoUrl))
+    ? effectivePhotoUrl : undefined;
 
   const metrics: [string, string, string][] = [
     ["Gewicht", metric(selected, "MEAL WEIGHT (g)"), "g"],
@@ -137,21 +146,29 @@ export function CatalogDetail({
             {selected.photoSourceUrl && <a href={selected.photoSourceUrl} target="_blank" rel="noreferrer">Bildquelle öffnen</a>}
           </div>
         )}
+        {showPicker && (
+          <ImagePickerModal
+            mealId={selected.mealId}
+            currentUrl={effectivePhotoUrl}
+            onSelect={url => { onPickImage(url); setImgError(false); }}
+            onClose={() => setShowPicker(false)}
+          />
+        )}
       </div>
 
-      {selected.photoUrl && (
-        <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-2 text-[11px]">
-          <span className="font-semibold text-slate-500">Bild:</span>
-          {isImageConfirmed && <span className="text-green-700 font-bold">Bestätigt</span>}
-          {isImageRejected && <span className="text-red-600 font-bold">Abgelehnt</span>}
-          {!imageOverride && <span className="text-slate-400">Nicht bewertet</span>}
-          <span className="ml-auto flex gap-1.5">
-            {!isImageConfirmed && <button type="button" onClick={onConfirmImage} className="border border-green-300 bg-green-50 px-2 py-0.5 text-green-800 hover:bg-green-100">Passt</button>}
-            {!isImageRejected && <button type="button" onClick={onRejectImage} className="border border-red-300 bg-red-50 px-2 py-0.5 text-red-800 hover:bg-red-100">Falsch</button>}
-            {imageOverride && <button type="button" onClick={onResetImage} className="border border-slate-300 px-2 py-0.5 text-slate-600 hover:bg-slate-100">Reset</button>}
-          </span>
-        </div>
-      )}
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-2 text-[11px]">
+        <span className="font-semibold text-slate-500">Bild:</span>
+        {isImageConfirmed && overrideUrl !== selected.photoUrl && <span className="text-cyan-700 font-bold">Geändert</span>}
+        {isImageConfirmed && overrideUrl === selected.photoUrl && <span className="text-green-700 font-bold">Bestätigt</span>}
+        {isImageRejected && <span className="text-red-600 font-bold">Abgelehnt</span>}
+        {!imageOverride && <span className="text-slate-400">Nicht bewertet</span>}
+        <span className="ml-auto flex gap-1.5">
+          <button type="button" onClick={() => setShowPicker(true)} className="border border-cyan-300 bg-cyan-50 px-2 py-0.5 text-cyan-800 hover:bg-cyan-100">Bild wählen</button>
+          {!isImageConfirmed && selected.photoUrl && <button type="button" onClick={onConfirmImage} className="border border-green-300 bg-green-50 px-2 py-0.5 text-green-800 hover:bg-green-100">Passt</button>}
+          {!isImageRejected && selected.photoUrl && <button type="button" onClick={onRejectImage} className="border border-red-300 bg-red-50 px-2 py-0.5 text-red-800 hover:bg-red-100">Falsch</button>}
+          {imageOverride && <button type="button" onClick={onResetImage} className="border border-slate-300 px-2 py-0.5 text-slate-600 hover:bg-slate-100">Reset</button>}
+        </span>
+      </div>
 
       <div className="catalog-metrics">
         {metrics.map(([name, value, unit]) => (
@@ -160,10 +177,10 @@ export function CatalogDetail({
       </div>
 
       <div className="p-5 pb-0 sm:px-7 sm:pt-7">
-        <ProductionMatch matches={currentWeekMatches} week={selectedWeek} upliftPercent={upliftPercent} onOpenRecipe={onOpenRecipe} onOpenPlanning={onOpenPlanning} onOpenWms={onOpenWms} />
+        <ProductionMatch matches={currentWeekMatches} mealId={selected.mealId} week={selectedWeek} upliftPercent={upliftPercent} onOpenRecipe={onOpenRecipe} onOpenPlanning={onOpenPlanning} onOpenWms={onOpenWms} />
         {availableWeeks.length > 0 && (
           <div className="catalog-week-match">
-            <span>Weitere Produktionswochen</span>
+            <span>{availableWeeks.length === 1 && availableWeeks[0] === selectedWeek ? "Produktion nur in dieser KW" : "Alle Produktionswochen"}</span>
             {availableWeeks.map(week => <button key={week} type="button" onClick={() => onSelectWeek(week)} className={week === selectedWeek ? "is-current" : ""}>{week}</button>)}
           </div>
         )}

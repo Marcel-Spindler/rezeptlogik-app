@@ -27,7 +27,7 @@ import { resolveRecipeByCode } from "../lib/helpers";
 function MainPane({ view }: { view: AppView }) {
   const {
     data, selectedWeek, selectedRecipe, upliftPercent,
-    recipesByCode, activeRecipe, setSelectedWeek, setSelectedRecipe, setView,
+    recipesByCode, recipesOfWeek, activeRecipe, setSelectedWeek, setSelectedRecipe, setView,
   } = useAppState();
   if (!data) return null;
 
@@ -57,6 +57,8 @@ function MainPane({ view }: { view: AppView }) {
           cookSchedules={data.cookSchedules}
           processSpecs={data.processSpecs ?? {}}
           upliftPercent={upliftPercent}
+          allRecipes={recipesOfWeek}
+          recipesByCode={recipesByCode}
         />
       ) : (
         <div className="card p-8 text-center text-slate-400">
