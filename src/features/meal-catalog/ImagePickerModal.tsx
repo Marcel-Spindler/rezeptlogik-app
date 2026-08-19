@@ -4,7 +4,7 @@ interface FolderImage {
   name: string;
   score: number;
   label: string;
-  url: string;
+  url: string; // /api/drive-image?p=...
 }
 
 interface Props {
@@ -19,6 +19,7 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
   const [localImages, setLocalImages] = useState<string[]>([]);
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null); // url being saved
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -39,24 +40,51 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !saving) onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, saving]);
+
+  // Drive-Bild auswählen: erst lokal kopieren, dann lokale URL verwenden
+  async function handleDriveSelect(img: FolderImage) {
+    setSaving(img.url);
+    try {
+      const driveP = new URLSearchParams(img.url.split("?")[1] ?? "").get("p") ?? "";
+      const saveUrl = `/api/save-meal-image?mealId=${encodeURIComponent(mealId)}&p=${encodeURIComponent(driveP)}`;
+      const res = await fetch(saveUrl);
+      if (res.ok) {
+        const { url } = await res.json() as { url: string };
+        onSelect(url);
+      } else {
+        // Fallback: Drive-URL direkt speichern (funktioniert nur im Dev-Server)
+        onSelect(img.url);
+      }
+    } catch {
+      onSelect(img.url);
+    } finally {
+      setSaving(null);
+      onClose();
+    }
+  }
 
   const needle = filter.toLowerCase();
-  const filteredFolder = needle ? folderImages.filter(f => f.name.toLowerCase().includes(needle) || f.label.toLowerCase().includes(needle)) : folderImages;
-  const filteredLocal = needle ? localImages.filter(f => f.toLowerCase().includes(needle)) : localImages;
+  const filteredFolder = needle
+    ? folderImages.filter(f => f.name.toLowerCase().includes(needle) || f.label.toLowerCase().includes(needle))
+    : folderImages;
+  const filteredLocal = needle
+    ? localImages.filter(f => f.toLowerCase().includes(needle))
+    : localImages;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-      onMouseDown={onClose}
+      onMouseDown={saving ? undefined : onClose}
     >
       <div
         className="relative flex h-[85vh] w-[90vw] max-w-4xl flex-col rounded-lg bg-white shadow-2xl"
         onMouseDown={e => e.stopPropagation()}
       >
+        {/* Header */}
         <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
           <h2 className="shrink-0 text-sm font-bold text-slate-800">
             Bild wählen · <span className="font-mono text-cyan-700">{mealId}</span>
@@ -71,33 +99,48 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
           />
           <button
             type="button"
-            onClick={onClose}
-            className="shrink-0 text-lg leading-none text-slate-400 hover:text-slate-700"
+            onClick={saving ? undefined : onClose}
+            disabled={!!saving}
+            className="shrink-0 text-lg leading-none text-slate-400 hover:text-slate-700 disabled:opacity-40"
             aria-label="Schließen"
           >
             ✕
           </button>
         </div>
 
+        {/* Saving overlay */}
+        {saving && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80">
+            <div className="text-sm font-semibold text-cyan-700">Bild wird gespeichert…</div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
           {loading ? (
             <div className="flex h-full items-center justify-center text-slate-400">Bilder werden geladen…</div>
           ) : (
             <>
-              {filteredFolder.length > 0 && (
+              {/* ─── Bilder aus dem Meal-Ordner ─── */}
+              {filteredFolder.length > 0 ? (
                 <section>
                   <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-cyan-800">
-                    Aus Bildordner · {filteredFolder.length} {filteredFolder.length !== folderImages.length ? `von ${folderImages.length}` : ""}
+                    Aus Bildordner
+                    {filteredFolder.length !== folderImages.length
+                      ? ` · ${filteredFolder.length} von ${folderImages.length}`
+                      : ` · ${folderImages.length} Bilder`}
                   </h3>
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
                     {filteredFolder.map(img => {
-                      const isCurrent = img.url === currentUrl;
+                      const isSaving = saving === img.url;
                       return (
                         <button
                           key={img.url}
                           type="button"
-                          onClick={() => { onSelect(img.url); onClose(); }}
-                          className={`group flex flex-col overflow-hidden rounded border-2 text-left transition-colors hover:border-cyan-400 ${isCurrent ? "border-cyan-500 ring-2 ring-cyan-200" : "border-slate-200"}`}
+                          disabled={!!saving}
+                          onClick={() => void handleDriveSelect(img)}
+                          className={`group flex flex-col overflow-hidden rounded border-2 text-left transition-colors
+                            ${isSaving ? "border-cyan-500 opacity-60" : "border-slate-200 hover:border-cyan-400"}
+                            disabled:cursor-wait`}
                         >
                           <img
                             src={img.url}
@@ -106,7 +149,9 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
                             loading="lazy"
                           />
                           <div className="bg-slate-50 px-1.5 py-1 group-hover:bg-cyan-50">
-                            <span className="block truncate font-mono text-[10px] text-slate-600">{img.name.replace(/\.[^.]+$/, "")}</span>
+                            <span className="block truncate font-mono text-[10px] text-slate-600">
+                              {img.name.replace(/\.[^.]+$/, "")}
+                            </span>
                             <span className={`text-[9px] font-bold ${img.score >= 8 ? "text-cyan-700" : img.score >= 6 ? "text-green-700" : "text-slate-400"}`}>
                               {img.label}{img.score >= 6 ? " ✓" : ""}
                             </span>
@@ -116,14 +161,15 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
                     })}
                   </div>
                 </section>
+              ) : (
+                !loading && (
+                  <p className="text-sm text-slate-400 italic">
+                    Kein Google-Drive-Ordner für {mealId} gefunden — Drive möglicherweise nicht verbunden.
+                  </p>
+                )
               )}
 
-              {folderImages.length === 0 && !loading && (
-                <p className="text-sm text-slate-400 italic">
-                  Kein Google-Drive-Ordner für {mealId} gefunden — Drive möglicherweise nicht verbunden.
-                </p>
-              )}
-
+              {/* ─── Alle lokalen Bilder ─── */}
               <section>
                 <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
                   Alle lokalen Bilder · {filteredLocal.length}
@@ -139,8 +185,10 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
                         <button
                           key={file}
                           type="button"
+                          disabled={!!saving}
                           onClick={() => { onSelect(url); onClose(); }}
-                          className={`group flex flex-col overflow-hidden rounded border-2 text-left transition-colors hover:border-cyan-400 ${isCurrent ? "border-cyan-500 ring-2 ring-cyan-200" : "border-slate-200"}`}
+                          className={`group flex flex-col overflow-hidden rounded border-2 text-left transition-colors hover:border-cyan-400 disabled:cursor-wait
+                            ${isCurrent ? "border-cyan-500 ring-2 ring-cyan-200" : "border-slate-200"}`}
                         >
                           <img
                             src={url}

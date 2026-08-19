@@ -2,11 +2,11 @@ import { defineConfig, loadEnv } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createConnection } from "node:net";
-import { extname, join } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 /// <reference types="vitest" />
 
@@ -106,14 +106,14 @@ function importLocalPlugin(): Plugin {
   };
 }
 
-const DRIVE_SOURCE_DIR = "G:/.shortcut-targets-by-id/1tSHOPlJpN0vslaIY2JyAEa3gJQT603IF/Factor EU Meal Images";
+const DRIVE_SOURCE_DIR = resolve("G:/.shortcut-targets-by-id/1tSHOPlJpN0vslaIY2JyAEa3gJQT603IF/Factor EU Meal Images");
 
-function extractMealCodeFromFolder(folderName: string): string | null {
-  const withLetter = folderName.match(/^([A-Z]{2}\d{4}[A-Z])/i);
-  if (withLetter) return withLetter[1].toUpperCase();
-  const noLetter = folderName.match(/^([A-Z]{2}\d{4})(?:\s|_|-|$)/i);
-  if (noLetter) return noLetter[1].toUpperCase() + "A";
-  return null;
+function folderMatchesMealId(folderName: string, mealId: string): boolean {
+  // Extract the 4-digit number from the meal code (e.g. "FV0047A" → "0047")
+  const digits = mealId.match(/\d{4}/)?.[0];
+  if (!digits) return false;
+  // Match any folder whose name contains exactly these 4 digits (not part of a longer number)
+  return new RegExp(`(?<!\\d)${digits}(?!\\d)`).test(folderName);
 }
 
 function scoreDriveFile(filename: string): number {
@@ -167,7 +167,7 @@ function mealFolderImagesPlugin(): Plugin {
         if (!mealId || !existsSync(DRIVE_SOURCE_DIR)) { res.end(JSON.stringify([])); return; }
         try {
           const mealDirs = readdirSync(DRIVE_SOURCE_DIR, { withFileTypes: true })
-            .filter((e: Dirent) => e.isDirectory() && extractMealCodeFromFolder(e.name) === mealId)
+            .filter((e: Dirent) => e.isDirectory() && folderMatchesMealId(e.name, mealId))
             .map((e: Dirent) => join(DRIVE_SOURCE_DIR, e.name));
           const allImages: DriveImageEntry[] = mealDirs.flatMap(scanDriveFolder);
           allImages.sort((a, b) => b.score - a.score);
@@ -191,7 +191,7 @@ function driveImagePlugin(): Plugin {
         if (req.method !== "GET") { res.statusCode = 405; res.end(); return; }
         const qs = req.url?.includes("?") ? req.url.slice(req.url.indexOf("?") + 1) : "";
         const p = new URLSearchParams(qs).get("p") ?? "";
-        if (!p || !p.startsWith(DRIVE_SOURCE_DIR)) { res.statusCode = 403; res.end(); return; }
+        if (!p || !resolve(p).startsWith(DRIVE_SOURCE_DIR)) { res.statusCode = 403; res.end(); return; }
         try {
           const buf = readFileSync(p);
           const ext = extname(p).toLowerCase();
@@ -200,6 +200,38 @@ function driveImagePlugin(): Plugin {
           res.setHeader("Cache-Control", "public, max-age=86400");
           res.end(buf);
         } catch { res.statusCode = 404; res.end(); }
+      });
+    },
+  };
+}
+
+function saveMealImagePlugin(): Plugin {
+  return {
+    name: "save-meal-image",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/save-meal-image", (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== "GET") { res.statusCode = 405; res.end(); return; }
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        const qs = req.url?.includes("?") ? req.url.slice(req.url.indexOf("?") + 1) : "";
+        const params = new URLSearchParams(qs);
+        const mealId = (params.get("mealId") ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const srcPath = params.get("p") ?? "";
+        if (!mealId || !srcPath || !resolve(srcPath).startsWith(DRIVE_SOURCE_DIR)) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: "Ungültige Parameter" }));
+          return;
+        }
+        try {
+          const srcExt = extname(srcPath).toLowerCase() || ".jpg";
+          const destDir = join(process.cwd(), "public", "data", "meal-images");
+          const destPath = join(destDir, `${mealId}${srcExt}`);
+          copyFileSync(srcPath, destPath);
+          res.end(JSON.stringify({ url: `/data/meal-images/${mealId}${srcExt}` }));
+        } catch (err) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: String(err) }));
+        }
       });
     },
   };
@@ -243,7 +275,7 @@ function noopRefreshRampUpPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), mealImageListPlugin(), noopRefreshRampUpPlugin(), react()],
+  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(), mealImageListPlugin(), noopRefreshRampUpPlugin(), react()],
   server: {
     port: 5173,
     open: true,
