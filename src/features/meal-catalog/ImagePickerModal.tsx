@@ -17,7 +17,8 @@ interface Props {
 export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Props) {
   const [folderImages, setFolderImages] = useState<FolderImage[]>([]);
   const [localImages, setLocalImages] = useState<string[]>([]);
-  const [filter, setFilter] = useState("");
+  const digits = mealId.match(/\d{4}/)?.[0] ?? "";
+  const [filter, setFilter] = useState(digits);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null); // url being saved
   const inputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +86,11 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
         onMouseDown={e => e.stopPropagation()}
       >
         {/* Header */}
+        {!import.meta.env.DEV && (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-[11px] text-amber-800">
+            Nur lesbar — Bild-Tausch erfordert den lokalen Dev-Server. Dort Bild wählen → Deploy klicken.
+          </div>
+        )}
         <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
           <h2 className="shrink-0 text-sm font-bold text-slate-800">
             Bild wählen · <span className="font-mono text-cyan-700">{mealId}</span>
@@ -121,7 +127,7 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
           ) : (
             <>
               {/* ─── Bilder aus dem Meal-Ordner ─── */}
-              {filteredFolder.length > 0 ? (
+              {filteredFolder.length > 0 && (
                 <section>
                   <h3 className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-cyan-800">
                     Aus Bildordner
@@ -161,12 +167,6 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
                     })}
                   </div>
                 </section>
-              ) : (
-                !loading && (
-                  <p className="text-sm text-slate-400 italic">
-                    Kein Google-Drive-Ordner für {mealId} gefunden — Drive möglicherweise nicht verbunden.
-                  </p>
-                )
               )}
 
               {/* ─── Alle lokalen Bilder ─── */}

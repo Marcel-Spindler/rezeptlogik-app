@@ -271,6 +271,31 @@ function mealImageListPlugin(): Plugin {
   };
 }
 
+function deployPlugin(): Plugin {
+  return {
+    name: "deploy",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/deploy", (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end(); return; }
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Transfer-Encoding", "chunked");
+        res.setHeader("Cache-Control", "no-store");
+        const stripAnsi = (s: string) => stripVTControlCharacters(s);
+        const child = spawn("cmd", ["/c", "npm run build && npx firebase deploy --only hosting"], {
+          cwd: process.cwd(),
+          shell: false,
+          env: { ...process.env, FORCE_COLOR: "0" },
+          windowsHide: true,
+        });
+        child.stdout?.on("data", (d: Buffer) => res.write(stripAnsi(d.toString())));
+        child.stderr?.on("data", (d: Buffer) => res.write(stripAnsi(d.toString())));
+        child.on("close", (code: number | null) => { res.write(`\n__DONE:${code ?? 1}__`); res.end(); });
+        child.on("error", (err: Error) => { res.write(`\nFehler: ${err.message}\n__DONE:1__`); res.end(); });
+      });
+    },
+  };
+}
+
 function noopRefreshRampUpPlugin(): Plugin {
   return {
     name: "noop-refresh-ramp-up",
@@ -288,7 +313,7 @@ function noopRefreshRampUpPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(), mealImageListPlugin(), noopRefreshRampUpPlugin(), react()],
+  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(), mealImageListPlugin(), deployPlugin(), noopRefreshRampUpPlugin(), react()],
   server: {
     port: 5173,
     open: true,

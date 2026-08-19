@@ -7,6 +7,7 @@ import { CompareView } from "./CompareView";
 import { exportCatalogXlsx } from "./catalog-export";
 import { useFavorites } from "./useFavorites";
 import { useImageOverrides } from "./useImageOverrides";
+import { DeployButton } from "./DeployButton";
 
 type Catalog = Record<string, MealCatalogEntry>;
 
@@ -177,6 +178,7 @@ export function MealCatalogView({
           <button type="button" className="btn text-xs" onClick={() => exportCatalogXlsx(filtered, `meal-katalog-${selectedWeek}.xlsx`)}>
             Export XLSX ({filtered.length})
           </button>
+          {import.meta.env.DEV && <DeployButton />}
           <div className="catalog-stat"><span>{meals.filter(m => m.photoUrl).length}</span> Bildquellen verknüpft</div>
         </div>
       </header>
