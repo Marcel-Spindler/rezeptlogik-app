@@ -1,7 +1,8 @@
 // What-If Rechner – Domänen-Typen (flache Zutaten, Sub-Rezept-Aggregate, Bedarfs-Zeilen).
 
 export type Direction = "forward" | "reverse";
-export type SubRecipeScenario = "missing-meals" | "finished-coverage" | "raw-coverage" | "underweight-unit";
+export type SubRecipeScenario = "missing-meals" | "finished-coverage" | "raw-coverage" | "underweight-unit" | "rti-gap";
+export type YieldSource = "csv" | "computed" | "override" | "fallback";
 
 export interface FlatIngredient {
   ingredientId: string;
@@ -14,6 +15,9 @@ export interface FlatIngredient {
   defaultYield?: number;
   effectiveYield: number;
   hasOverride: boolean;
+  yieldSource: YieldSource;
+  yieldMissing: boolean;
+  pricePerKg?: number;
 }
 
 export interface SubRecipeAggregate {
@@ -32,7 +36,7 @@ export interface SubRecipeAggregate {
   instructions?: string;
 }
 
-export interface SubRecipeIngredientNeed {
+export interface IngredientNeed {
   key: string;
   ingredientId: string;
   ingredientName: string;
@@ -42,19 +46,12 @@ export interface SubRecipeIngredientNeed {
   grossTotal: number;
   netTotal: number;
   lossTotal: number;
+  lossPercent: number;
+  costLoss?: number;
 }
 
-export interface FullIngredientNeed {
-  key: string;
-  ingredientId: string;
-  ingredientName: string;
-  uom: string;
-  grossPerPortion: number;
-  netPerPortion: number;
-  grossTotal: number;
-  netTotal: number;
-  lossTotal: number;
-}
+export type SubRecipeIngredientNeed = IngredientNeed;
+export type FullIngredientNeed = IngredientNeed;
 
 // ════════════════════════════════════════════════════════════════════════════
 // HELPERS

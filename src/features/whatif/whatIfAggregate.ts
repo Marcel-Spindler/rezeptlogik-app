@@ -1,6 +1,46 @@
 // What-If Rechner – Sub-Rezept-Baum-Aggregation (Forward/Reverse, yield-aware).
 import type { DetailedSubRecipe, Market, Recipe, RecipeStructure, WeekRecipe } from "../../core/types";
-import type { FlatIngredient, FullIngredientNeed, SubRecipeAggregate, SubRecipeIngredientNeed } from "./whatIfTypes";
+import type { FlatIngredient, FullIngredientNeed, SubRecipeAggregate, SubRecipeIngredientNeed, YieldSource } from "./whatIfTypes";
+
+/**
+ * Normalisiert einen yieldPct-Wert aus den Daten.
+ * - 0 < val <= 2: bereits Dezimal (0.7011 = 70.11%) → direkt verwenden (erlaubt Quellprodukte bis 200%)
+ * - 2 < val <= 100: war Prozentzahl (70.11) → durch 100 teilen
+ * - > 100: ungültig → undefined
+ * - <= 0 oder undefined: kein Yield → undefined
+ */
+export function normalizeYield(val: number | undefined): number | undefined {
+  if (val === undefined || val <= 0) return undefined;
+  if (val <= 2) return val;
+  if (val <= 100) return val / 100;
+  return undefined;
+}
+
+/**
+ * Bestimmt den effektiven Yield und dessen Quelle.
+ * Priorität: Override > CSV yieldPct > berechnet aus netQty/grossQty > Fallback 1.0
+ */
+export function resolveYield(
+  yieldPct: number | undefined,
+  grossQty: number,
+  netQty: number,
+  override: number | undefined
+): { effectiveYield: number; yieldSource: YieldSource; yieldMissing: boolean } {
+  if (override !== undefined) {
+    return { effectiveYield: override, yieldSource: "override", yieldMissing: false };
+  }
+  const normalized = normalizeYield(yieldPct);
+  if (normalized !== undefined) {
+    return { effectiveYield: normalized, yieldSource: "csv", yieldMissing: false };
+  }
+  if (grossQty > 0 && netQty > 0 && netQty !== grossQty) {
+    const computed = netQty / grossQty;
+    if (computed > 0 && computed <= 2) {
+      return { effectiveYield: computed, yieldSource: "computed", yieldMissing: false };
+    }
+  }
+  return { effectiveYield: 1, yieldSource: "fallback", yieldMissing: true };
+}
 
 export function isProducedInVerden(r: WeekRecipe): boolean {
   const c = (r.code ?? "").toUpperCase();
@@ -49,9 +89,9 @@ export function aggregateSubRecipe(
   const ingredients: FlatIngredient[] = (node.ingredients ?? []).map(ing => {
     const ovKey = `${ing.id}__${node.id}`;
     const override = overrides.get(ovKey);
-    const effectiveYield = override !== undefined
-      ? override
-      : (ing.yieldPct !== undefined && ing.yieldPct > 0 && ing.yieldPct <= 1 ? ing.yieldPct : 1);
+    const { effectiveYield, yieldSource, yieldMissing } = resolveYield(
+      ing.yieldPct, ing.grossQty, ing.netQty, override
+    );
     return {
       ingredientId: ing.id,
       ingredientName: ing.name,
@@ -62,7 +102,9 @@ export function aggregateSubRecipe(
       uom: ing.uom,
       defaultYield: ing.yieldPct,
       effectiveYield,
-      hasOverride: override !== undefined
+      hasOverride: override !== undefined,
+      yieldSource,
+      yieldMissing
     };
   });
 
@@ -123,13 +165,19 @@ export function aggregateSubRecipeIngredientNeeds(ingredients: FlatIngredient[],
       netPerPortion: 0,
       grossTotal: 0,
       netTotal: 0,
-      lossTotal: 0
+      lossTotal: 0,
+      lossPercent: 0,
+      costLoss: undefined
     };
     current.grossPerPortion += grossPerPortion;
     current.netPerPortion += netPerPortion;
     current.grossTotal += grossPerPortion * portions;
     current.netTotal += netPerPortion * portions;
     current.lossTotal = current.grossTotal - current.netTotal;
+    current.lossPercent = current.grossTotal > 0 ? (current.lossTotal / current.grossTotal) * 100 : 0;
+    if (ing.pricePerKg !== undefined) {
+      current.costLoss = (current.costLoss ?? 0) + ((grossPerPortion - netPerPortion) * portions / 1000 * ing.pricePerKg);
+    }
     grouped.set(key, current);
   }
   return [...grouped.values()].sort((a, b) => b.grossPerPortion - a.grossPerPortion);
@@ -150,15 +198,50 @@ export function aggregateRecipeIngredientNeeds(ingredients: FlatIngredient[], po
       netPerPortion: 0,
       grossTotal: 0,
       netTotal: 0,
-      lossTotal: 0
+      lossTotal: 0,
+      lossPercent: 0,
+      costLoss: undefined
     };
     current.grossPerPortion += grossPerPortion;
     current.netPerPortion += netPerPortion;
     current.grossTotal += grossPerPortion * portions;
     current.netTotal += netPerPortion * portions;
     current.lossTotal = current.grossTotal - current.netTotal;
+    current.lossPercent = current.grossTotal > 0 ? (current.lossTotal / current.grossTotal) * 100 : 0;
+    if (ing.pricePerKg !== undefined) {
+      current.costLoss = (current.costLoss ?? 0) + ((grossPerPortion - netPerPortion) * portions / 1000 * ing.pricePerKg);
+    }
     grouped.set(key, current);
   }
   return [...grouped.values()].sort((a, b) => b.grossPerPortion - a.grossPerPortion);
+}
+
+/** Findet die Top-N Engpass-Zutaten im Reverse-Modus */
+export function findBottlenecks(ingredients: FlatIngredient[], availableRawGrams: Map<string, number>, topN = 3): Array<{
+  ingredientId: string;
+  ingredientName: string;
+  grossPerPortion: number;
+  availableGrams: number;
+  maxPortions: number;
+  isLimiting: boolean;
+}> {
+  const results = ingredients
+    .filter(ing => ing.grossQty > 0)
+    .map(ing => {
+      const available = availableRawGrams.get(ing.ingredientId) ?? Infinity;
+      return {
+        ingredientId: ing.ingredientId,
+        ingredientName: ing.ingredientName,
+        grossPerPortion: ing.grossQty,
+        availableGrams: available,
+        maxPortions: available === Infinity ? Infinity : Math.floor(available / ing.grossQty),
+        isLimiting: false
+      };
+    })
+    .filter(r => r.maxPortions !== Infinity)
+    .sort((a, b) => a.maxPortions - b.maxPortions);
+
+  if (results.length > 0) results[0].isLimiting = true;
+  return results.slice(0, topN);
 }
 

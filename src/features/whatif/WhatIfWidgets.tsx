@@ -180,7 +180,7 @@ export function IngredientYieldRow({
 
   function commit(): void {
     const pct = parseNumInput(tempValue);
-    if (pct < 0.01 || pct > 100) {
+    if (pct < 0.01 || pct > 200) {
       setTempValue((ing.effectiveYield * 100).toFixed(2));
       setEditing(false);
       return;
@@ -226,32 +226,47 @@ export function IngredientYieldRow({
               onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
               autoFocus
               min="0.01"
-              max="100"
+              max="200"
               step="0.01"
               className="w-16 rounded border border-amber-400 px-1 py-0.5 text-xs font-mono"
             />
             <span className="text-xs">%</span>
           </div>
         ) : (
-          <button
-            onClick={() => { setTempValue((ing.effectiveYield * 100).toFixed(2)); setEditing(true); }}
-            className={`px-2 py-1 rounded font-mono font-bold ${
-              ing.hasOverride
-                ? "bg-amber-200 text-amber-900 ring-1 ring-amber-400"
-                : ing.defaultYield !== undefined
-                  ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-                  : "bg-slate-200 text-slate-500 hover:bg-slate-300"
-            }`}
-            title={ing.hasOverride
-              ? `Override aktiv. Default war: ${ing.defaultYield !== undefined ? (ing.defaultYield * 100).toFixed(2) + "%" : "—"}`
-              : ing.defaultYield !== undefined
-                ? "Yield aus CSV (klick zum Überschreiben)"
-                : "Kein Yield in CSV → angenommen 100% (klick zum Setzen)"
-            }
-          >
-            {(ing.effectiveYield * 100).toFixed(2)}%
-            {ing.hasOverride && " ✏"}
-          </button>
+          <div className="flex flex-col items-center gap-0.5">
+            <button
+              onClick={() => { setTempValue((ing.effectiveYield * 100).toFixed(2)); setEditing(true); }}
+              className={`px-2 py-1 rounded font-mono font-bold ${
+                ing.hasOverride
+                  ? "bg-amber-200 text-amber-900 ring-1 ring-amber-400"
+                  : ing.yieldSource === "csv"
+                    ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                    : ing.yieldSource === "computed"
+                      ? "bg-blue-100 text-blue-800 hover:bg-blue-200"
+                      : "bg-red-100 text-red-600 hover:bg-red-200"
+              }`}
+              title={ing.hasOverride
+                ? `Override aktiv. Default war: ${ing.defaultYield !== undefined ? (ing.defaultYield * 100).toFixed(2) + "%" : "—"}`
+                : ing.yieldSource === "csv"
+                  ? "Yield aus CSV (klick zum Überschreiben)"
+                  : ing.yieldSource === "computed"
+                    ? `Berechnet aus netQty/grossQty (${ing.netQty.toFixed(1)}/${ing.grossQty.toFixed(1)})`
+                    : "Kein Yield in Daten → Fallback 100% (klick zum Setzen)"
+              }
+            >
+              {(ing.effectiveYield * 100).toFixed(2)}%
+              {ing.hasOverride && " ✏"}
+            </button>
+            {ing.effectiveYield > 1 && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 font-bold">Quell</span>
+            )}
+            {ing.yieldMissing && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 font-bold">!Fehlt</span>
+            )}
+            {ing.yieldSource === "computed" && !ing.hasOverride && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-bold">~Berechnet</span>
+            )}
+          </div>
         )}
       </div>
 

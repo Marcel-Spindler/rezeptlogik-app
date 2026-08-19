@@ -24,6 +24,7 @@ import { fmt, fmtMass, parseNumInput } from "./features/whatif/whatIfFormat";
 import {
   isProducedInVerden, getBaseVolume, getStructureForRecipe, buildInstructionsMap, aggregateSubRecipe,
   flattenIngredients, flattenSubRecipes, aggregateSubRecipeIngredientNeeds, aggregateRecipeIngredientNeeds,
+  findBottlenecks,
 } from "./features/whatif/whatIfAggregate";
 import type { IngredientHit } from "./features/whatif/whatIfSearch";
 import { collectIngredientsFromNode, scrollToIngredientRow } from "./features/whatif/whatIfSearch";
@@ -194,6 +195,39 @@ export function WhatIfView({
   const [underweightAvailableUnits, setUnderweightAvailableUnits] = useState<number>(upliftedPortions || 0);
   const [subRecipeExportLoading, setSubRecipeExportLoading] = useState(false);
   const [recipeExportLoading, setRecipeExportLoading] = useState(false);
+
+  // ── Batch-Korrekturfaktor (global auf alle Yields) ─────────────────────
+  const [batchCorrectionPct, setBatchCorrectionPct] = useState(0);
+  const correctionMultiplier = 1 + batchCorrectionPct / 100;
+
+  // ── Szenario-Vergleich ─────────────────────────────────────────────────
+  interface SavedScenario {
+    label: string;
+    targetPortions: number;
+    totalGross: number;
+    totalNet: number;
+    lossGrams: number;
+    lossPercent: number;
+    timestamp: number;
+  }
+  const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
+
+  // ── Multi-Meal Aggregation ─────────────────────────────────────────────
+  // @ts-expect-error prepared for multi-meal feature
+  const [multiMealMode, setMultiMealMode] = useState(false);
+  // @ts-expect-error prepared for multi-meal feature
+  const [selectedMealCodes, setSelectedMealCodes] = useState<Set<string>>(new Set());
+
+  // ── Gewichtskontrolle ──────────────────────────────────────────────────
+  const [weightControlTarget, setWeightControlTarget] = useState(0);
+  const [weightControlActual, setWeightControlActual] = useState(0);
+  const [weightControlDone, setWeightControlDone] = useState(0);
+  const [weightControlTotal, setWeightControlTotal] = useState(0);
+
+  // ── RTI-Gap Szenario ───────────────────────────────────────────────────
+  const [rtiPlannedMeals, setRtiPlannedMeals] = useState<number>(0);
+  const [rtiActualMeals, setRtiActualMeals] = useState<number>(0);
+  const [rtiSubRecipeHoldings, setRtiSubRecipeHoldings] = useState<Map<string, number>>(new Map());
   useEffect(() => {
     setTargetPortions(upliftedPortions || 1000);
     setSubRecipeMissingMeals(upliftedPortions || 1000);
@@ -325,12 +359,13 @@ export function WhatIfView({
   const forwardRows = useMemo(() => {
     return allIngredients.map(ing => {
       const totalGross = ing.grossQty * targetPortions;
-      const totalNet = totalGross * ing.effectiveYield;
+      const correctedYield = Math.min(Math.max(ing.effectiveYield * correctionMultiplier, 0.01), 2);
+      const totalNet = totalGross * correctedYield;
       const lossGrams = totalGross - totalNet;
       const lossPercent = totalGross > 0 ? (lossGrams / totalGross) * 100 : 0;
       return { ing, totalGross, totalNet, lossGrams, lossPercent };
     });
-  }, [allIngredients, targetPortions]);
+  }, [allIngredients, targetPortions, correctionMultiplier]);
 
   const forwardTotals = useMemo(() => {
     const totalGross = forwardRows.reduce((s, r) => s + r.totalGross, 0);
@@ -809,6 +844,37 @@ export function WhatIfView({
             )}
           </div>
         </div>
+
+        {/* Batch-Korrekturfaktor */}
+        <div className="mt-4 p-3 bg-white/60 rounded-lg">
+          <div className="flex items-center gap-4">
+            <label className="text-xs font-bold uppercase text-slate-600 whitespace-nowrap">
+              Batch-Korrektur
+            </label>
+            <input
+              type="range"
+              min="-15"
+              max="15"
+              step="0.5"
+              value={batchCorrectionPct}
+              onChange={e => setBatchCorrectionPct(parseFloat(e.target.value))}
+              className="flex-1 h-2 rounded-lg appearance-none cursor-pointer bg-slate-200"
+            />
+            <span className={`text-sm font-mono font-bold min-w-[4rem] text-right ${
+              batchCorrectionPct === 0 ? "text-slate-500" : batchCorrectionPct > 0 ? "text-emerald-700" : "text-red-700"
+            }`}>
+              {batchCorrectionPct > 0 ? "+" : ""}{batchCorrectionPct.toFixed(1)}%
+            </span>
+            {batchCorrectionPct !== 0 && (
+              <button onClick={() => setBatchCorrectionPct(0)} className="text-xs text-slate-500 hover:text-red-600 underline">
+                Reset
+              </button>
+            )}
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1">
+            Passt alle Yield-Werte um diesen Faktor an (z.B. -5% = Praxis zeigt mehr Verlust als theoretisch)
+          </div>
+        </div>
       </div>
 
       {/* GLOBAL INGREDIENT SEARCH */}
@@ -894,6 +960,69 @@ export function WhatIfView({
           </div>
         )}
       </div>
+
+      {/* YIELD AUDIT PANEL */}
+      {allIngredients.length > 0 && (() => {
+        const auditItems = allIngredients.filter(i => i.yieldMissing || i.yieldSource === "computed");
+        if (auditItems.length === 0) return null;
+        return (
+          <details className="card border-2 border-orange-200 bg-orange-50/50">
+            <summary className="p-4 cursor-pointer flex items-center gap-3">
+              <span className="text-orange-600 font-bold">⚠ Yield-Audit</span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-200 text-orange-800 font-bold">
+                {auditItems.length} Zutaten
+              </span>
+              <span className="text-xs text-slate-500 flex-1">
+                — mit fehlendem oder berechnetem Yield
+              </span>
+            </summary>
+            <div className="px-4 pb-4">
+              <div className="max-h-60 overflow-auto rounded-lg ring-1 ring-orange-200 bg-white">
+                <table className="min-w-full text-xs">
+                  <thead className="sticky top-0 bg-orange-100 text-[10px] uppercase tracking-wide text-orange-700">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Zutat</th>
+                      <th className="px-3 py-2 text-left">Sub-Rezept</th>
+                      <th className="px-3 py-2 text-right">Brutto</th>
+                      <th className="px-3 py-2 text-right">Netto (Daten)</th>
+                      <th className="px-3 py-2 text-center">Status</th>
+                      <th className="px-3 py-2 text-center">Eff. Yield</th>
+                      <th className="px-3 py-2 text-center">Aktion</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-orange-100">
+                    {auditItems.map((ing, idx) => (
+                      <tr key={`${ing.ingredientId}-${ing.subRecipeId}-${idx}`}>
+                        <td className="px-3 py-2 font-medium">{ing.ingredientName}</td>
+                        <td className="px-3 py-2 text-slate-500">{ing.subRecipePath[ing.subRecipePath.length - 1]}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmt(ing.grossQty, 2)} {ing.uom}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmt(ing.netQty, 2)} {ing.uom}</td>
+                        <td className="px-3 py-2 text-center">
+                          {ing.yieldMissing
+                            ? <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 font-bold">Fehlt</span>
+                            : <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">Berechnet</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2 text-center font-mono">{(ing.effectiveYield * 100).toFixed(2)}%</td>
+                        <td className="px-3 py-2 text-center">
+                          {ing.yieldSource === "computed" && (
+                            <button
+                              onClick={() => setIngredientOverride(ing.ingredientId, ing.subRecipeId, ing.effectiveYield)}
+                              className="text-[10px] text-blue-700 hover:text-blue-900 underline"
+                            >
+                              Übernehmen
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+        );
+      })()}
 
       {/* MEAL SELECTOR */}
       <div className="card p-4">
@@ -1010,6 +1139,72 @@ export function WhatIfView({
                 <SummaryTile label="Yield-Verlust" value={fmtMass(forwardTotals.lossGrams)} tone="red" />
                 <SummaryTile label="Verlust-%" value={`${fmt(forwardTotals.lossPercent, 2)}%`} tone="amber" />
               </div>
+
+              {/* Szenario-Vergleich */}
+              <div className="mt-4 flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => {
+                    if (savedScenarios.length >= 3) return;
+                    setSavedScenarios(prev => [...prev, {
+                      label: `Szenario ${prev.length + 1} (${fmt(targetPortions)} P.)`,
+                      targetPortions,
+                      totalGross: forwardTotals.totalGross,
+                      totalNet: forwardTotals.totalNet,
+                      lossGrams: forwardTotals.lossGrams,
+                      lossPercent: forwardTotals.lossPercent,
+                      timestamp: Date.now()
+                    }]);
+                  }}
+                  disabled={savedScenarios.length >= 3}
+                  className="btn text-xs disabled:opacity-50"
+                >
+                  Szenario merken ({savedScenarios.length}/3)
+                </button>
+                {savedScenarios.length > 0 && (
+                  <button onClick={() => setSavedScenarios([])} className="text-xs text-red-600 hover:underline">
+                    Alle löschen
+                  </button>
+                )}
+              </div>
+
+              {savedScenarios.length > 0 && (
+                <div className="mt-3 overflow-hidden rounded-xl ring-1 ring-slate-200">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-slate-100 text-[10px] uppercase tracking-wide text-slate-600">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Szenario</th>
+                        <th className="px-3 py-2 text-right">Portionen</th>
+                        <th className="px-3 py-2 text-right">Rohware</th>
+                        <th className="px-3 py-2 text-right">Fertigware</th>
+                        <th className="px-3 py-2 text-right">Verlust</th>
+                        <th className="px-3 py-2 text-right">Verlust-%</th>
+                        {savedScenarios.length > 1 && <th className="px-3 py-2 text-right">Δ Rohware vs. #1</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {savedScenarios.map((sc, idx) => (
+                        <tr key={sc.timestamp}>
+                          <td className="px-3 py-2 font-medium">{sc.label}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmt(sc.targetPortions)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmtMass(sc.totalGross)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmtMass(sc.totalNet)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-red-600">{fmtMass(sc.lossGrams)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmt(sc.lossPercent, 2)}%</td>
+                          {savedScenarios.length > 1 && (
+                            <td className="px-3 py-2 text-right font-mono font-bold">
+                              {idx === 0 ? "—" : (
+                                <span className={sc.totalGross - savedScenarios[0].totalGross > 0 ? "text-red-600" : "text-emerald-600"}>
+                                  {sc.totalGross - savedScenarios[0].totalGross > 0 ? "+" : ""}{fmtMass(sc.totalGross - savedScenarios[0].totalGross)}
+                                </span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
 
@@ -1057,6 +1252,32 @@ export function WhatIfView({
                     <SummaryTile label="Übrig (Reststoff)" value={fmtMass(reverseResult.leftover)} tone="slate" />
                   </div>
                 )}
+
+                {/* Engpass-Analyse */}
+                {reverseIngredient && reverseResult && reverseResult.maxPortions > 0 && (
+                  <div className="mt-4 p-3 bg-violet-50 rounded-lg ring-1 ring-violet-200">
+                    <div className="text-xs font-bold uppercase text-violet-700 mb-2">
+                      Top-Engpass-Zutaten (limitieren Portionen)
+                    </div>
+                    <div className="space-y-1">
+                      {(() => {
+                        const availMap = new Map<string, number>();
+                        availMap.set(reverseIngredient.ingredientId, reverseRawGrams);
+                        const bottlenecks = findBottlenecks(allIngredients, availMap);
+                        if (bottlenecks.length === 0) return <div className="text-xs text-slate-500">Keine Engpass-Daten (nur 1 Zutat bewertet)</div>;
+                        return bottlenecks.map((bn, idx) => (
+                          <div key={bn.ingredientId} className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${bn.isLimiting ? "bg-red-100 ring-1 ring-red-300" : "bg-white"}`}>
+                            <span className="font-bold text-slate-600 w-4">#{idx + 1}</span>
+                            <span className="flex-1 font-medium truncate">{bn.ingredientName}</span>
+                            <span className="font-mono text-violet-700">{fmt(bn.maxPortions)} Portionen</span>
+                            <span className="font-mono text-slate-500">(je {fmt(bn.grossPerPortion, 1)}g/P.)</span>
+                            {bn.isLimiting && <span className="px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-bold text-[10px]">LIMIT</span>}
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1080,12 +1301,13 @@ export function WhatIfView({
               )}
             </div>
 
-            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
               {([
                 ["missing-meals", "Fehlende Meals", "Wie viel Rohware/Fertigware brauche ich für X fehlende Meals?"],
                 ["finished-coverage", "Fertigware vorhanden", "Wie viele Meals deckt vorhandene Fertigware noch ab?"],
                 ["raw-coverage", "Rohware vorhanden", "Wie viele Meals deckt vorhandene Rohware noch ab?"],
                 ["underweight-unit", "Unter-Grammatur / Stückgewicht", "Wie weit komme ich mit Artikeln, die pro Stück zu leicht sind?"],
+                ["rti-gap", "RTI / Sub-Lücke", "Welche Subrezepte fehlen noch um das Main-Meal fertigzustellen?"],
               ] as Array<[SubRecipeScenario, string, string]>).map(([scenario, title, text]) => {
                 const active = subRecipeScenario === scenario;
                 return (
@@ -1224,6 +1446,36 @@ export function WhatIfView({
                   </div>
                 </>
               )}
+              {subRecipeScenario === "rti-gap" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
+                      Geplante Meals (Target)
+                    </label>
+                    <input
+                      type="number"
+                      value={rtiPlannedMeals}
+                      onChange={e => setRtiPlannedMeals(Math.max(0, Math.floor(parseNumInput(e.target.value))))}
+                      min="0"
+                      step="100"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
+                      Bereits produziert (Actuals)
+                    </label>
+                    <input
+                      type="number"
+                      value={rtiActualMeals}
+                      onChange={e => setRtiActualMeals(Math.max(0, Math.floor(parseNumInput(e.target.value))))}
+                      min="0"
+                      step="100"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-lg font-mono font-bold"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             {subRecipeScenario === "missing-meals" && (
@@ -1352,6 +1604,106 @@ export function WhatIfView({
               </>
             )}
 
+            {/* RTI-GAP ERGEBNIS */}
+            {subRecipeScenario === "rti-gap" && rtiPlannedMeals > 0 && selectedSubRecipe && (() => {
+              const gap = Math.max(0, rtiPlannedMeals - rtiActualMeals);
+              if (gap === 0) return (
+                <div className="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 ring-1 ring-emerald-200">
+                  Alle Meals produziert — kein Rückstand.
+                </div>
+              );
+
+              // Pro Sub-Rezept: Bedarf für die fehlenden Meals und was bereits "on hold" liegt
+              const subNeeds = allSubs.map(sub => {
+                const requiredForGap = sub.subtreeGrossPerPortion * gap;
+                const holding = rtiSubRecipeHoldings.get(sub.subRecipeId) ?? 0;
+                const stillNeeded = Math.max(0, requiredForGap - holding);
+                const coverableMeals = sub.subtreeGrossPerPortion > 0
+                  ? Math.floor(holding / sub.subtreeGrossPerPortion)
+                  : 0;
+                const pctCovered = requiredForGap > 0 ? ((holding / requiredForGap) * 100) : 0;
+                return { sub, requiredForGap, holding, stillNeeded, coverableMeals, pctCovered };
+              }).filter(x => x.requiredForGap > 0);
+
+              const totalRequired = subNeeds.reduce((s, x) => s + x.requiredForGap, 0);
+              const totalHolding = subNeeds.reduce((s, x) => s + x.holding, 0);
+              const totalStillNeeded = subNeeds.reduce((s, x) => s + x.stillNeeded, 0);
+
+              return (
+                <>
+                  <div className="mt-3 grid grid-cols-2 gap-3 xl:grid-cols-5">
+                    <SummaryTile label="Geplant" value={fmt(rtiPlannedMeals)} tone="sky" />
+                    <SummaryTile label="Produziert" value={fmt(rtiActualMeals)} tone="emerald" />
+                    <SummaryTile label="Delta (fehlt)" value={fmt(gap)} tone="red" />
+                    <SummaryTile label="Rohware benötigt" value={fmtMass(totalRequired)} tone="indigo" />
+                    <SummaryTile label="Noch zu produzieren" value={fmtMass(totalStillNeeded)} tone="amber" />
+                  </div>
+
+                  <div className="mt-3 text-xs font-bold uppercase text-slate-500 mb-1">
+                    Vorhandene Fertigware je Sub-Rezept (optional eintragen)
+                  </div>
+                  <div className="mt-1 max-h-60 overflow-auto rounded-lg ring-1 ring-slate-200 bg-white">
+                    <table className="min-w-full text-xs">
+                      <thead className="sticky top-0 bg-slate-100 text-[10px] uppercase tracking-wide text-slate-600">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Sub-Rezept</th>
+                          <th className="px-3 py-2 text-right">Bedarf (g)</th>
+                          <th className="px-3 py-2 text-center">Vorhanden (g)</th>
+                          <th className="px-3 py-2 text-right">Fehlt noch (g)</th>
+                          <th className="px-3 py-2 text-right">Meals gedeckt</th>
+                          <th className="px-3 py-2 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {subNeeds.map(({ sub, requiredForGap, holding, stillNeeded, coverableMeals, pctCovered }) => (
+                          <tr key={sub.subRecipeId} className={pctCovered >= 100 ? "bg-emerald-50" : stillNeeded > 0 ? "bg-red-50/30" : ""}>
+                            <td className="px-3 py-2 font-medium">{sub.name}</td>
+                            <td className="px-3 py-2 text-right font-mono">{fmtMass(requiredForGap)}</td>
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="number"
+                                value={holding || ""}
+                                onChange={e => {
+                                  const val = Math.max(0, parseNumInput(e.target.value));
+                                  setRtiSubRecipeHoldings(prev => {
+                                    const next = new Map(prev);
+                                    next.set(sub.subRecipeId, val);
+                                    return next;
+                                  });
+                                }}
+                                min="0"
+                                step="100"
+                                placeholder="0"
+                                className="w-20 rounded border border-slate-300 px-1 py-0.5 text-xs font-mono text-right"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono font-bold text-red-700">{fmtMass(stillNeeded)}</td>
+                            <td className="px-3 py-2 text-right font-mono">{fmt(coverableMeals)} / {fmt(gap)}</td>
+                            <td className="px-3 py-2 text-center">
+                              {pctCovered >= 100
+                                ? <span className="px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-800 font-bold">OK</span>
+                                : pctCovered > 0
+                                  ? <span className="px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 font-bold">{fmt(pctCovered, 0)}%</span>
+                                  : <span className="px-1.5 py-0.5 rounded bg-red-200 text-red-800 font-bold">FEHLT</span>
+                              }
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {totalHolding > 0 && (
+                    <div className="mt-3 rounded-xl bg-sky-50 px-4 py-3 text-sm text-sky-900 ring-1 ring-sky-200">
+                      <strong>Zusammenfassung:</strong> Für die fehlenden {fmt(gap)} Meals werden {fmtMass(totalRequired)} Rohware benötigt.
+                      {totalHolding > 0 && ` Davon sind bereits ${fmtMass(totalHolding)} als Fertigware vorhanden.`}
+                      {totalStillNeeded > 0 && ` Es fehlen noch ${fmtMass(totalStillNeeded)}.`}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
             {subRecipeScenario === "missing-meals" && selectedSubRecipeNeeds.length > 0 && (
               <div className="mt-4 overflow-hidden rounded-xl ring-1 ring-slate-200">
                 <div className="bg-slate-100 px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
@@ -1387,6 +1739,84 @@ export function WhatIfView({
               </div>
             )}
           </div>
+
+          {/* GEWICHTSKONTROLLE */}
+          <details className="card border-2 border-teal-200 bg-teal-50/30">
+            <summary className="p-4 cursor-pointer flex items-center gap-3">
+              <span className="text-teal-700 font-bold">⚖ Gewichtskontrolle (Produktion)</span>
+              <span className="text-xs text-slate-500">Live-Check: Ist-Gewicht vs. Soll während der Produktion</span>
+            </summary>
+            <div className="px-4 pb-4 space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Soll-Gewicht / Meal (g)</label>
+                  <input
+                    type="number"
+                    value={weightControlTarget}
+                    onChange={e => setWeightControlTarget(Math.max(0, parseNumInput(e.target.value)))}
+                    min="0"
+                    step="1"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Ist-Gewicht (letzte Probe, g)</label>
+                  <input
+                    type="number"
+                    value={weightControlActual}
+                    onChange={e => setWeightControlActual(Math.max(0, parseNumInput(e.target.value)))}
+                    min="0"
+                    step="0.1"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Bisher produziert (Meals)</label>
+                  <input
+                    type="number"
+                    value={weightControlDone}
+                    onChange={e => setWeightControlDone(Math.max(0, Math.floor(parseNumInput(e.target.value))))}
+                    min="0"
+                    step="1"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Ziel-Meals gesamt</label>
+                  <input
+                    type="number"
+                    value={weightControlTotal}
+                    onChange={e => setWeightControlTotal(Math.max(0, Math.floor(parseNumInput(e.target.value))))}
+                    min="0"
+                    step="10"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+                  />
+                </div>
+              </div>
+              {weightControlTarget > 0 && weightControlActual > 0 && weightControlTotal > 0 && (() => {
+                const deviation = weightControlActual - weightControlTarget;
+                const deviationPct = (deviation / weightControlTarget) * 100;
+                const remaining = Math.max(0, weightControlTotal - weightControlDone);
+                const projectedUsage = (weightControlDone * weightControlActual) + (remaining * weightControlActual);
+                const plannedUsage = weightControlTotal * weightControlTarget;
+                const overUnder = projectedUsage - plannedUsage;
+                const tone = Math.abs(deviationPct) < 2 ? "emerald" : Math.abs(deviationPct) < 5 ? "amber" : "red";
+                return (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    <SummaryTile label="Abweichung" value={`${deviation >= 0 ? "+" : ""}${fmt(deviation, 1)} g`} tone={tone} />
+                    <SummaryTile label="Abweichung %" value={`${deviationPct >= 0 ? "+" : ""}${fmt(deviationPct, 2)}%`} tone={tone} />
+                    <SummaryTile label="Restl. Meals" value={fmt(remaining)} tone="sky" />
+                    <SummaryTile label="Progn. Gesamt-Verbrauch" value={fmtMass(projectedUsage)} tone="indigo" />
+                    <SummaryTile
+                      label={overUnder >= 0 ? "Mehr-Verbrauch" : "Einsparung"}
+                      value={fmtMass(Math.abs(overUnder))}
+                      tone={overUnder >= 0 ? "red" : "emerald"}
+                    />
+                  </div>
+                );
+              })()}
+            </div>
+          </details>
 
           {/* SUB-RECIPE TREE */}
           <div className="card p-5">
