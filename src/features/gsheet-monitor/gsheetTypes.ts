@@ -28,6 +28,31 @@ export interface GSheetChange {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// POSTBLAST-WIEGUNGEN (Haupt-Daten-Tab)
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface PostblastEntry {
+  timestamp: string;
+  date: string;
+  workOrder: string;
+  skuCode: string;
+  subRecipeName: string;
+  rawWeightKg: number;
+  subSubRecipe: string;
+  postBlastKg: number;
+  targetKg: number;
+}
+
+export interface PostblastData {
+  entries: PostblastEntry[];
+  byWorkOrder: Map<string, PostblastEntry[]>;
+  bySubRecipe: Map<string, PostblastEntry[]>;
+  totalWeightKg: number;
+  lastEntry: PostblastEntry | null;
+  lastUpdated: number;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // RTI-SPEZIFISCHE TYPEN
 // ════════════════════════════════════════════════════════════════════════════
 

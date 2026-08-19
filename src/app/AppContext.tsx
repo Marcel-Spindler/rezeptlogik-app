@@ -7,10 +7,10 @@ import { useAppData } from "./useAppData";
 import { useRecipeSelection, type RecipeSelection } from "./useRecipeSelection";
 import type { DataBundle } from "../core/types";
 
-export type AppView = "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating";
+export type AppView = "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live";
 export type AppSurface = "full" | "kitchen" | "rundmail";
 
-export const ALL_VIEWS: readonly AppView[] = ["recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating"];
+export const ALL_VIEWS: readonly AppView[] = ["recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating", "postblast-live"];
 
 export interface AppState extends RecipeSelection {
   surface: AppSurface;

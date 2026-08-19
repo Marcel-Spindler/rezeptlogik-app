@@ -229,6 +229,19 @@ export function WhatIfView({
   const [rtiPlannedMeals, setRtiPlannedMeals] = useState<number>(0);
   const [rtiActualMeals, setRtiActualMeals] = useState<number>(0);
   const [rtiSubRecipeHoldings, setRtiSubRecipeHoldings] = useState<Map<string, number>>(new Map());
+
+  // ── RTI Live-Daten aus Google Sheet ────────────────────────────────────
+  const rtiMonitor = useRtiMonitor();
+  const rtiLiveData = rtiMonitor.data;
+
+  // Auto-Fill RTI-Daten wenn das aktuelle Meal im Sheet gefunden wird
+  useEffect(() => {
+    if (!rtiLiveData || !selectedCode || subRecipeScenario !== "rti-gap") return;
+    const mealBlock = rtiLiveData.meals.find(m => m.mealCode === selectedCode);
+    if (!mealBlock) return;
+    setRtiPlannedMeals(mealBlock.plannedTarget);
+    setRtiActualMeals(mealBlock.actuals);
+  }, [rtiLiveData, selectedCode, subRecipeScenario]);
   useEffect(() => {
     setTargetPortions(upliftedPortions || 1000);
     setSubRecipeMissingMeals(upliftedPortions || 1000);
@@ -1452,6 +1465,7 @@ export function WhatIfView({
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
                       Geplante Meals (Target)
+                      {rtiLiveData && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold normal-case">Live</span>}
                     </label>
                     <input
                       type="number"
@@ -1465,6 +1479,7 @@ export function WhatIfView({
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">
                       Bereits produziert (Actuals)
+                      {rtiLiveData && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold normal-case">Live</span>}
                     </label>
                     <input
                       type="number"

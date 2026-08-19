@@ -21,6 +21,7 @@ import { MealCatalogView } from "../features/meal-catalog/MealCatalogView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BlastChillerView } from "../features/blast-chiller/BlastChillerView";
 import { AllergenPlatingView } from "../features/allergen-plating/AllergenPlatingView";
+import { PostblastLiveView } from "../features/gsheet-monitor/PostblastLiveView";
 import { resolveRecipeByCode } from "../lib/helpers";
 
 function MainPane({ view }: { view: AppView }) {
@@ -100,6 +101,9 @@ function MainPane({ view }: { view: AppView }) {
 
     case "allergen-plating":
       return <AllergenPlatingView data={data} />;
+
+    case "postblast-live":
+      return <PostblastLiveView data={data} />;
   }
 }
 
