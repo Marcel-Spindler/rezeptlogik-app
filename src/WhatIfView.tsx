@@ -29,6 +29,7 @@ import {
 import type { IngredientHit } from "./features/whatif/whatIfSearch";
 import { collectIngredientsFromNode, scrollToIngredientRow } from "./features/whatif/whatIfSearch";
 import { SummaryTile, SubRecipeAggregateView } from "./features/whatif/WhatIfWidgets";
+import { useRtiMonitor } from "./features/gsheet-monitor/useGSheetMonitor";
 
 export function WhatIfView({
   data,
