@@ -83,19 +83,21 @@ export function createPoller(
       const parsed = parser(rows);
       const newSnapshot: GSheetSnapshot = { timestamp: Date.now(), hash: newHash, rawCsv: csv, rows, parsed };
 
-      if (lastSnapshot && newHash !== lastSnapshot.hash) {
-        const diff = diffRows(lastSnapshot.rows, rows);
-        onChange({
-          sheetId: config.id,
-          sheetName: config.name,
-          prevHash: lastSnapshot.hash,
-          newHash,
-          changedRowIndices: diff.changedRowIndices,
-          addedRowIndices: diff.addedRowIndices,
-          removedCount: diff.removedCount,
-          timestamp: Date.now()
-        }, newSnapshot);
-      }
+      // Immer onChange feuern — bei erstem Load mit leeren Diff-Arrays
+      const diff = lastSnapshot
+        ? diffRows(lastSnapshot.rows, rows)
+        : { changedRowIndices: [], addedRowIndices: [], removedCount: 0 };
+
+      onChange({
+        sheetId: config.id,
+        sheetName: config.name,
+        prevHash: lastSnapshot?.hash ?? "",
+        newHash,
+        changedRowIndices: diff.changedRowIndices,
+        addedRowIndices: diff.addedRowIndices,
+        removedCount: diff.removedCount,
+        timestamp: Date.now()
+      }, newSnapshot);
 
       lastSnapshot = newSnapshot;
     } catch (err) {

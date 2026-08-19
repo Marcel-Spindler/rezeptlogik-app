@@ -501,10 +501,38 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
         )}
 
         {loadState === "error" && (
-          <div className="card border-rose-300 bg-rose-50 p-4 text-rose-800 text-sm space-y-2">
-            <div>{loadError}</div>
+          <div className="card border-rose-300 bg-rose-50 p-5 text-rose-800 text-sm space-y-4">
+            <div className="font-bold text-base">{loadError}</div>
+            <div className="bg-white border border-rose-200 rounded-lg p-4 space-y-3 text-slate-700">
+              <div className="font-bold text-slate-900">Server starten — Anleitung:</div>
+              <ol className="list-decimal list-inside space-y-2 text-xs">
+                <li>
+                  <strong>Terminal öffnen</strong> (CMD, PowerShell, oder beliebiges Terminal) und ins Projekt navigieren:
+                  <code className="block mt-1 bg-slate-100 rounded px-2 py-1 font-mono text-[11px] text-slate-800">cd C:\Users\MarcelSpindler\Documents\GitHub\rezeptlogik-app</code>
+                </li>
+                <li>
+                  <strong>WMS-Server starten</strong> (verbindet sich mit Snowflake via SSO):
+                  <code className="block mt-1 bg-slate-100 rounded px-2 py-1 font-mono text-[11px] text-slate-800">npm run wms:server</code>
+                  <span className="text-slate-500 text-[10px] block mt-0.5">→ Öffnet den Browser für Snowflake-Login. Nach Login: "Snowflake verbunden."</span>
+                </li>
+                <li>
+                  <strong>Dev-Server starten</strong> (in einem zweiten Terminal):
+                  <code className="block mt-1 bg-slate-100 rounded px-2 py-1 font-mono text-[11px] text-slate-800">npm run dev</code>
+                  <span className="text-slate-500 text-[10px] block mt-0.5">→ Öffnet http://localhost:5173 — startet den WMS-Server auch automatisch wenn noch nicht laufend</span>
+                </li>
+                <li>
+                  <strong>Alternativ: Alles in einem Befehl</strong> (startet beides parallel):
+                  <code className="block mt-1 bg-slate-100 rounded px-2 py-1 font-mono text-[11px] text-slate-800">npm run wms:server &amp; npm run dev</code>
+                </li>
+              </ol>
+              <div className="border-t border-slate-200 pt-2 text-[11px] text-slate-500 space-y-1">
+                <div><strong>Port 3141</strong> = WMS Snowflake Server (muss laufen)</div>
+                <div><strong>Port 5173</strong> = Vite Dev-Server (die App)</div>
+                <div>Falls nur "Server nicht erreichbar" kommt: <code className="bg-slate-100 px-1 rounded">http://localhost:3141/connect</code> im Browser aufrufen → SSO-Login abschließen</div>
+              </div>
+            </div>
             <button type="button" onClick={() => void doLoad(selectedWeek)}
-              className="px-3 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold">
+              className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold">
               ⟳ Erneut versuchen
             </button>
           </div>
