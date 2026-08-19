@@ -504,31 +504,19 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
           <div className="card border-rose-300 bg-rose-50 p-5 text-rose-800 text-sm space-y-4">
             <div className="font-bold text-base">{loadError}</div>
             <div className="bg-white border border-rose-200 rounded-lg p-4 space-y-3 text-slate-700">
-              <div className="font-bold text-slate-900">Server starten — Anleitung:</div>
-              <ol className="list-decimal list-inside space-y-2 text-xs">
-                <li>
-                  <strong>Terminal öffnen</strong> (CMD, PowerShell, oder beliebiges Terminal) und ins Projekt navigieren:
-                  <code className="block mt-1 bg-slate-100 rounded px-2 py-1 font-mono text-[11px] text-slate-800">cd C:\Users\MarcelSpindler\Documents\GitHub\rezeptlogik-app</code>
-                </li>
-                <li>
-                  <strong>WMS-Server starten</strong> (verbindet sich mit Snowflake via SSO):
-                  <code className="block mt-1 bg-slate-100 rounded px-2 py-1 font-mono text-[11px] text-slate-800">npm run wms:server</code>
-                  <span className="text-slate-500 text-[10px] block mt-0.5">→ Öffnet den Browser für Snowflake-Login. Nach Login: "Snowflake verbunden."</span>
-                </li>
-                <li>
-                  <strong>Dev-Server starten</strong> (in einem zweiten Terminal):
-                  <code className="block mt-1 bg-slate-100 rounded px-2 py-1 font-mono text-[11px] text-slate-800">npm run dev</code>
-                  <span className="text-slate-500 text-[10px] block mt-0.5">→ Öffnet http://localhost:5173 — startet den WMS-Server auch automatisch wenn noch nicht laufend</span>
-                </li>
-                <li>
-                  <strong>Alternativ: Alles in einem Befehl</strong> (startet beides parallel):
-                  <code className="block mt-1 bg-slate-100 rounded px-2 py-1 font-mono text-[11px] text-slate-800">npm run wms:server &amp; npm run dev</code>
-                </li>
-              </ol>
-              <div className="border-t border-slate-200 pt-2 text-[11px] text-slate-500 space-y-1">
-                <div><strong>Port 3141</strong> = WMS Snowflake Server (muss laufen)</div>
-                <div><strong>Port 5173</strong> = Vite Dev-Server (die App)</div>
-                <div>Falls nur "Server nicht erreichbar" kommt: <code className="bg-slate-100 px-1 rounded">http://localhost:3141/connect</code> im Browser aufrufen → SSO-Login abschließen</div>
+              <div className="font-bold text-slate-900">WMS-Server starten:</div>
+              <div className="text-xs text-slate-600 mb-2">Kopiere diesen Befehl und führe ihn in einem beliebigen Terminal aus (CMD, PowerShell, Git Bash):</div>
+              <div className="relative group">
+                <code className="block bg-slate-900 text-emerald-400 rounded-lg px-4 py-3 font-mono text-sm select-all cursor-pointer"
+                  onClick={(e) => { navigator.clipboard.writeText((e.currentTarget as HTMLElement).textContent ?? ""); (e.currentTarget as HTMLElement).classList.add("ring-2","ring-emerald-400"); setTimeout(() => (e.currentTarget as HTMLElement).classList.remove("ring-2","ring-emerald-400"), 1000); }}
+                  title="Klicken zum Kopieren">
+                  cd C:\Users\MarcelSpindler\Documents\GitHub\rezeptlogik-app &amp;&amp; npm run dev
+                </code>
+                <span className="absolute top-1 right-2 text-[9px] text-slate-500 group-hover:text-emerald-400 pointer-events-none">click = kopiert</span>
+              </div>
+              <div className="text-[11px] text-slate-500 space-y-1 border-t border-slate-200 pt-2">
+                <div>Das startet App + WMS-Server zusammen. Browser öffnet sich → Snowflake SSO einloggen → fertig.</div>
+                <div>Falls SSO nicht kommt: <a href="http://localhost:3141/connect" target="_blank" rel="noopener" className="text-blue-600 underline hover:text-blue-800">localhost:3141/connect</a> klicken.</div>
               </div>
             </div>
             <button type="button" onClick={() => void doLoad(selectedWeek)}
