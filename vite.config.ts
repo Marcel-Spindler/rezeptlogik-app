@@ -296,6 +296,67 @@ function deployPlugin(): Plugin {
   };
 }
 
+function startWmsServerPlugin(): Plugin {
+  let wmsChild: ReturnType<typeof spawn> | null = null;
+  return {
+    name: "start-wms-server",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/start-wms-server", async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end(); return; }
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Transfer-Encoding", "chunked");
+        res.setHeader("Cache-Control", "no-store");
+
+        if (await isPortOpen(3141)) {
+          res.write("WMS-Server läuft bereits.\n__DONE:0__");
+          res.end();
+          return;
+        }
+
+        const stripAnsi = (s: string) => stripVTControlCharacters(s);
+
+        if (wmsChild && !wmsChild.killed) wmsChild.kill();
+        wmsChild = spawn("npx", ["tsx", "scripts/wms-local-server.ts"], {
+          cwd: process.cwd(),
+          shell: true,
+          env: { ...process.env, FORCE_COLOR: "0" },
+          windowsHide: true,
+        });
+
+        wmsChild.stdout?.on("data", (d: Buffer) => { if (!res.writableEnded) res.write(stripAnsi(d.toString())); });
+        wmsChild.stderr?.on("data", (d: Buffer) => { if (!res.writableEnded) res.write(stripAnsi(d.toString())); });
+        wmsChild.on("error", (err: Error) => {
+          if (!res.writableEnded) { res.write(`\nFehler: ${err.message}\n__DONE:1__`); res.end(); }
+        });
+
+        let elapsed = 0;
+        const poll = setInterval(async () => {
+          elapsed += 500;
+          if (await isPortOpen(3141)) {
+            clearInterval(poll);
+            if (!res.writableEnded) { res.write("\nWMS-Server bereit ✓\n__DONE:0__"); res.end(); }
+          } else if (elapsed >= 30000) {
+            clearInterval(poll);
+            if (!res.writableEnded) { res.write("\nTimeout: Port 3141 nicht erreichbar.\n__DONE:1__"); res.end(); }
+          }
+        }, 500);
+
+        server.httpServer?.once("close", () => {
+          clearInterval(poll);
+          if (wmsChild && !wmsChild.killed) wmsChild.kill();
+        });
+      });
+
+      server.middlewares.use("/api/server-status", async (_req: IncomingMessage, res: ServerResponse) => {
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        const [wms, db] = await Promise.all([isPortOpen(3141), isPortOpen(3142)]);
+        res.end(JSON.stringify({ wms, db }));
+      });
+    },
+  };
+}
+
 function noopRefreshRampUpPlugin(): Plugin {
   return {
     name: "noop-refresh-ramp-up",
@@ -313,7 +374,7 @@ function noopRefreshRampUpPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(), mealImageListPlugin(), deployPlugin(), noopRefreshRampUpPlugin(), react()],
+  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(), mealImageListPlugin(), deployPlugin(), startWmsServerPlugin(), noopRefreshRampUpPlugin(), react()],
   server: {
     port: 5173,
     open: true,

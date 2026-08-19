@@ -31,7 +31,7 @@ export interface BackfillPlan {
   generatedAt: string;
 }
 
-function findEquipmentForSubRecipe(
+export function findEquipmentForSubRecipe(
   subRecipeName: string,
   cookMethods: string | undefined,
   bible: EquipBibleEntry[] | undefined

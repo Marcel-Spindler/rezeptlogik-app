@@ -27,6 +27,114 @@ import { StationsBilanz, SnapshotPanel } from "./features/wms-overview/WmsBilanz
 import { buildMealOperations, MealOperationsBoard } from "./features/wms-overview/WmsMealOperations";
 import { WmsTimelinePanel } from "./features/wms-overview/WmsTimelineView";
 
+function WmsServerErrorPanel({ errorMsg, onRetry }: { errorMsg: string; onRetry: () => void }) {
+  const [phase, setPhase] = React.useState<"idle" | "starting" | "sso" | "done" | "error">("idle");
+  const [log, setLog] = React.useState("");
+  const [showLog, setShowLog] = React.useState(false);
+
+  async function startServer() {
+    setPhase("starting");
+    setLog("");
+    setShowLog(true);
+    try {
+      const res = await fetch("/api/start-wms-server", { method: "POST" });
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error("Kein Stream");
+      let full = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        full += chunk;
+        setLog(full);
+        if (chunk.includes("__DONE:0__")) { setPhase("sso"); break; }
+        if (chunk.includes("__DONE:")) { setPhase("error"); break; }
+      }
+    } catch (e) {
+      setPhase("error");
+      setLog(l => l + `\nFehler: ${String(e)}`);
+    }
+  }
+
+  return (
+    <div className="card border-rose-300 bg-rose-50 p-5 text-rose-800 text-sm space-y-4">
+      <div className="font-bold text-base">{errorMsg}</div>
+
+      {phase === "idle" && (
+        <div className="bg-white border border-rose-200 rounded-lg p-4 space-y-3">
+          <p className="text-slate-600 text-xs">Der WMS-Server (Port 3141) läuft nicht. Hier direkt starten:</p>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={() => void startServer()}
+              className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold">
+              ▶ WMS-Server starten
+            </button>
+            <button type="button" onClick={onRetry}
+              className="px-3 py-2 rounded-lg border border-rose-300 text-rose-700 hover:bg-rose-100 text-sm">
+              ⟳ Erneut versuchen
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase === "starting" && (
+        <div className="bg-white border border-amber-200 rounded-lg p-4 space-y-2">
+          <div className="flex items-center gap-2 text-amber-700 font-semibold text-sm">
+            <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+            WMS-Server startet… (bis zu 30 s)
+          </div>
+          <button type="button" onClick={() => setShowLog(v => !v)}
+            className="text-[11px] text-slate-400 underline">
+            {showLog ? "Log ▲" : "Log ▼"}
+          </button>
+        </div>
+      )}
+
+      {phase === "sso" && (
+        <div className="bg-white border border-emerald-200 rounded-lg p-4 space-y-3">
+          <div className="text-emerald-700 font-semibold">✓ Server läuft — jetzt Snowflake SSO:</div>
+          <a href="http://localhost:3141/connect" target="_blank" rel="noopener"
+            className="inline-block px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold">
+            Snowflake SSO öffnen →
+          </a>
+          <p className="text-[11px] text-slate-500">Im Browser einloggen, dann hier erneut versuchen.</p>
+          <button type="button" onClick={onRetry}
+            className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold">
+            ⟳ Daten laden
+          </button>
+        </div>
+      )}
+
+      {phase === "error" && (
+        <div className="bg-white border border-rose-200 rounded-lg p-4 space-y-2">
+          <div className="text-rose-700 font-semibold">Fehler beim Starten</div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { setPhase("idle"); setLog(""); }}
+              className="px-3 py-1.5 rounded border border-rose-300 text-rose-700 hover:bg-rose-100 text-xs">
+              Zurück
+            </button>
+            <button type="button" onClick={onRetry}
+              className="px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100 text-xs">
+              ⟳ Erneut versuchen
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showLog && log && (
+        <div className="rounded-lg border border-slate-300 bg-slate-950 p-3 max-h-48 overflow-y-auto">
+          <pre className="whitespace-pre-wrap font-mono text-[10px] text-green-400">
+            {log.replace(/__DONE:\d+__/, "").trim()}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const allWmsWeeks = useMemo(() => generateWmsWeeks(2026, 1), []);
 
@@ -97,8 +205,8 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
           console.warn(`WMS WO-Endpoint Fehler HTTP ${woR.status}:`, body);
           return { ok: false, rows: [], error: `WO-Daten nicht verfügbar (HTTP ${woR.status}) — lokaler Server läuft? Snowflake verbunden?` } as WorkordersPayload;
         }),
-        wodR.ok ? wodR.json() as Promise<WoDetailPayload> : Promise.resolve({ ok: true, rows: [] } as WoDetailPayload),
-        plhR.ok ? plhR.json() as Promise<StoredPayload> : Promise.resolve({ ok: true, rows: [] } as StoredPayload),
+        wodR.ok && (wodR.headers.get("content-type") ?? "").includes("json") ? wodR.json() as Promise<WoDetailPayload> : Promise.resolve({ ok: true, rows: [] } as WoDetailPayload),
+        plhR.ok && (plhR.headers.get("content-type") ?? "").includes("json") ? plhR.json() as Promise<StoredPayload> : Promise.resolve({ ok: true, rows: [] } as StoredPayload),
       ]);
       for (const [label, pay] of [["Plating", pl], ["Staging", stg], ["Debox", deb], ["Post-Blast", pb], ["Sleeving", sl], ["Inbound", inb]] as [string, BasePayload][]) {
         if (!pay.ok) throw new Error(`${label}: ${pay.error ?? "Unbekannter Fehler"}`);
@@ -501,29 +609,10 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
         )}
 
         {loadState === "error" && (
-          <div className="card border-rose-300 bg-rose-50 p-5 text-rose-800 text-sm space-y-4">
-            <div className="font-bold text-base">{loadError}</div>
-            <div className="bg-white border border-rose-200 rounded-lg p-4 space-y-3 text-slate-700">
-              <div className="font-bold text-slate-900">WMS-Server starten:</div>
-              <div className="text-xs text-slate-600 mb-2">Kopiere diesen Befehl und führe ihn in einem beliebigen Terminal aus (CMD, PowerShell, Git Bash):</div>
-              <div className="relative group">
-                <code className="block bg-slate-900 text-emerald-400 rounded-lg px-4 py-3 font-mono text-sm select-all cursor-pointer"
-                  onClick={(e) => { navigator.clipboard.writeText((e.currentTarget as HTMLElement).textContent ?? ""); (e.currentTarget as HTMLElement).classList.add("ring-2","ring-emerald-400"); setTimeout(() => (e.currentTarget as HTMLElement).classList.remove("ring-2","ring-emerald-400"), 1000); }}
-                  title="Klicken zum Kopieren">
-                  cd C:\Users\MarcelSpindler\Documents\GitHub\rezeptlogik-app &amp;&amp; npm run dev
-                </code>
-                <span className="absolute top-1 right-2 text-[9px] text-slate-500 group-hover:text-emerald-400 pointer-events-none">click = kopiert</span>
-              </div>
-              <div className="text-[11px] text-slate-500 space-y-1 border-t border-slate-200 pt-2">
-                <div>Das startet App + WMS-Server zusammen. Browser öffnet sich → Snowflake SSO einloggen → fertig.</div>
-                <div>Falls SSO nicht kommt: <a href="http://localhost:3141/connect" target="_blank" rel="noopener" className="text-blue-600 underline hover:text-blue-800">localhost:3141/connect</a> klicken.</div>
-              </div>
-            </div>
-            <button type="button" onClick={() => void doLoad(selectedWeek)}
-              className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold">
-              ⟳ Erneut versuchen
-            </button>
-          </div>
+          <WmsServerErrorPanel
+            errorMsg={loadError ?? "Verbindungsfehler"}
+            onRetry={() => void doLoad(selectedWeek)}
+          />
         )}
         {loadState === "loading" && loadError && (
           <div className="card border-amber-300 bg-amber-50 p-4 text-amber-800 text-sm animate-pulse">{loadError}</div>

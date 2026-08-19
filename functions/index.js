@@ -67,6 +67,26 @@ WHERE WH_ID = ?
 ORDER BY LOCATION_ID, ITEM_NUMBER
 LIMIT ?`;
 
+const WMS_PLATING_HOLDING_SQL = `
+SELECT
+    LOCATION_ID,
+    ITEM_NUMBER,
+    ACTUAL_QTY,
+    LOT_NUMBER,
+    HU_ID,
+    STATUS,
+    FIFO_DATE,
+    EXPIRATION_DATE,
+    DB_CHANGE_COMMIT_TIME,
+    WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
+WHERE WH_ID = ?
+  AND LOCATION_ID ILIKE 'PLH%'
+  AND DB_CHANGE_COMMIT_TIME >= TO_TIMESTAMP_NTZ(?)
+  AND DB_CHANGE_COMMIT_TIME < TO_TIMESTAMP_NTZ(?)
+ORDER BY LOCATION_ID, ITEM_NUMBER
+LIMIT ?`;
+
 const WMS_SLEEVING_SQL = `
 SELECT
     LOCATION_ID AS VON,
@@ -2421,6 +2441,14 @@ exports.wmsPostblast = onRequest({ region: "europe-west3", timeoutSeconds: 60 },
     return;
   }
   await runWmsQuery(req, res, { name: "wms-postblast", sql: WMS_POSTBLAST_SQL, mapper: mapWmsPlatingRow });
+});
+
+exports.wmsPlatingHolding = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+  if (req.method !== "GET") {
+    res.status(405).json({ ok: false, error: "method-not-allowed" });
+    return;
+  }
+  await runWmsQuery(req, res, { name: "wms-plating-holding", sql: WMS_PLATING_HOLDING_SQL, mapper: mapWmsPlatingRow });
 });
 
 exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {

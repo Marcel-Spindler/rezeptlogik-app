@@ -22,19 +22,23 @@ export function respondToChat(input: string, ctx: ChatContext): string {
 
   if (q === "hilfe" || q === "help" || q === "?" || q === "befehle") {
     return [
-      "Verfügbare Abfragen:",
-      "'was fehlt' — Backfill-Übersicht",
+      "Verfügbare Befehle:",
+      "'status' — Gesamtüberblick Schicht",
+      "'was fehlt' — Backfill-Bedarf nach Meal",
+      "'als nächstes' — Top-Prioritäten jetzt",
       "'kritisch' — kritische Work Orders",
-      "'wie viel gewogen' — heutige Wiegungs-Bilanz",
-      "'tempo' — Wiegungs-Pace",
+      "'runs' — Run-Übersicht aller Meals",
+      "'run 2' — Details zu Run 2",
+      "'meals' — alle Meals mit Status",
+      "'tempo' — kg/h Wiegungs-Pace",
       "'prognose' — Schichtende-Projektion",
       "'fertig' — abgeschlossene WOs",
       "'engpass' — Produktions-Bottleneck",
       "'empfehlung' — KI-Handlungsempfehlungen",
-      "'status' — Gesamtüberblick",
-      "'WO 123456' — spezifische Work Order",
-      "'meal XY-001' — spezifisches Meal",
-    ].join(" | ");
+      "'gewogen' — heutige Wiegungs-Bilanz",
+      "'WO 35-209' — spezifische Work Order",
+      "'meal FV0516A' — spezifisches Meal",
+    ].join("\n");
   }
 
   // Gesamtstatus / Überblick
@@ -67,13 +71,25 @@ export function respondToChat(input: string, ctx: ChatContext): string {
     return `${critical.length} kritische WO${critical.length > 1 ? "s" : ""}: ${list}`;
   }
 
-  // Was fehlt / Backfill
+  // Was fehlt / Backfill — aufgeschlüsselt nach Meal
   if (q.includes("was fehlt") || q.includes("backfill") || (q.includes("fehlt") && !q.includes("wo"))) {
-    if (ctx.backfill.length === 0) return "Kein Backfill-Bedarf — Plan wird erfüllt!";
+    if (ctx.backfill.length === 0) return "✓ Kein Backfill-Bedarf — Plan wird erfüllt!";
     const total = ctx.backfill.reduce((s, b) => s + b.missingKg, 0);
     const critical = ctx.backfill.filter(b => b.priority === "critical").length;
     const behind = ctx.backfill.filter(b => b.priority === "behind").length;
-    return `Gesamt fehlt: ${total.toFixed(1)} kg in ${ctx.backfill.length} WOs | ${critical} kritisch | ${behind} hinter Plan`;
+    const mealMap = new Map<string, { kg: number; count: number; hasCritical: boolean }>();
+    for (const b of ctx.backfill) {
+      const cur = mealMap.get(b.recipeCode) ?? { kg: 0, count: 0, hasCritical: false };
+      cur.kg += b.missingKg;
+      cur.count++;
+      if (b.priority === "critical") cur.hasCritical = true;
+      mealMap.set(b.recipeCode, cur);
+    }
+    const lines = [`Backfill-Bedarf: ${ctx.backfill.length} WOs · ${total.toFixed(1)} kg gesamt | ${critical} kritisch | ${behind} hinter Plan`];
+    for (const [code, info] of [...mealMap.entries()].sort((a, b) => b[1].kg - a[1].kg).slice(0, 6)) {
+      lines.push(`${info.hasCritical ? "⚠" : "○"} ${code}: ${info.count} WOs · ${info.kg.toFixed(1)} kg`);
+    }
+    return lines.join("\n");
   }
 
   // Fertige WOs
@@ -81,7 +97,77 @@ export function respondToChat(input: string, ctx: ChatContext): string {
     const done = ctx.matched.filter(m => m.isComplete);
     const pct = ctx.matched.length > 0 ? (done.length / ctx.matched.length * 100).toFixed(0) : "0";
     if (done.length === 0) return "Noch keine Work Orders abgeschlossen.";
-    return `${done.length} von ${ctx.matched.length} Work Orders fertig (${pct}%) | Zuletzt: ${done.slice(-3).map(w => `${w.workOrder} "${w.subRecipe}"`).join(", ")}`;
+    const lines = [`${done.length} von ${ctx.matched.length} WOs fertig (${pct}%)`];
+    done.slice(-4).reverse().forEach(w => lines.push(`✓ ${w.workOrder}: "${w.subRecipe}"`));
+    return lines.join("\n");
+  }
+
+  // Runs-Übersicht
+  if (q === "runs" || q === "alle runs" || q === "run übersicht") {
+    const runMap = new Map<number, { total: number; done: number; critical: number; kg: number; plannedKg: number }>();
+    for (const m of ctx.matched) {
+      const r = m.run ?? 1;
+      const cur = runMap.get(r) ?? { total: 0, done: 0, critical: 0, kg: 0, plannedKg: 0 };
+      cur.total++;
+      if (m.isComplete) cur.done++;
+      if (m.isCritical) cur.critical++;
+      cur.kg += m.actualKg;
+      cur.plannedKg += m.plannedKg;
+      runMap.set(r, cur);
+    }
+    if (runMap.size === 0) return "Keine Run-Daten verfügbar.";
+    const lines = [`Run-Übersicht (${runMap.size} Runs):`];
+    for (const [r, s] of [...runMap.entries()].sort(([a], [b]) => a - b)) {
+      const pct = s.plannedKg > 0 ? (s.kg / s.plannedKg * 100).toFixed(0) : "?";
+      const flag = s.done === s.total ? "✓" : s.critical > 0 ? "⚠" : "○";
+      lines.push(`${flag} Run ${r}: ${s.done}/${s.total} WOs · ${pct}% · ${s.kg.toFixed(1)}/${s.plannedKg.toFixed(1)} kg${s.critical > 0 ? ` · ${s.critical} KRITISCH` : ""}`);
+    }
+    return lines.join("\n");
+  }
+
+  // Spezifischer Run: "run 1", "run 2"
+  const runNumMatch = /^run\s*(\d+)$/.exec(q) || /\brun\s+(\d+)\b/.exec(q);
+  if (runNumMatch && q !== "runs") {
+    const runNum = parseInt(runNumMatch[1], 10);
+    const runWos = ctx.matched.filter(m => (m.run ?? 1) === runNum);
+    if (runWos.length === 0) return `Run ${runNum} nicht gefunden. Tippe 'runs' für eine Übersicht.`;
+    const done = runWos.filter(w => w.isComplete).length;
+    const critical = runWos.filter(w => w.isCritical);
+    const totalKg = runWos.reduce((s, w) => s + w.actualKg, 0);
+    const plannedKg = runWos.reduce((s, w) => s + w.plannedKg, 0);
+    const pct = plannedKg > 0 ? (totalKg / plannedKg * 100).toFixed(0) : "?";
+    const lines = [
+      `Run ${runNum}: ${done}/${runWos.length} WOs fertig · ${pct}% · ${totalKg.toFixed(1)}/${plannedKg.toFixed(1)} kg`,
+    ];
+    if (critical.length > 0) lines.push(`Kritisch: ${critical.slice(0, 3).map(w => `${w.workOrder} "${w.subRecipe}"`).join(" | ")}`);
+    const open = runWos.filter(w => !w.isComplete && !w.isCritical).slice(0, 4);
+    if (open.length > 0) lines.push("Laufend: " + open.map(w => `${w.workOrder} ${w.progressPct.toFixed(0)}%`).join(" | "));
+    return lines.join("\n");
+  }
+
+  // Als nächstes / Priorität
+  if (q.includes("als nächstes") || q.includes("nächste") || q === "zuerst" || q === "priorität" || q.includes("was zuerst")) {
+    const critical = ctx.backfill.filter(b => b.priority === "critical").slice(0, 4);
+    const behind = ctx.backfill.filter(b => b.priority === "behind").slice(0, 3);
+    if (critical.length === 0 && behind.length === 0) return "✓ Alles im Plan — kein dringender Handlungsbedarf!";
+    const lines = ["Sofort starten:"];
+    critical.forEach(b => lines.push(`→ ${b.workOrder} "${b.subRecipe}" (−${b.missingKg.toFixed(1)} kg KRITISCH)`));
+    if (behind.length > 0) {
+      lines.push("Danach:");
+      behind.forEach(b => lines.push(`→ ${b.workOrder} "${b.subRecipe}" (−${b.missingKg.toFixed(1)} kg)`));
+    }
+    return lines.join("\n");
+  }
+
+  // Meals-Liste
+  if (q === "meals" || q === "meal liste" || q.includes("alle meals") || q === "welche meals") {
+    if (ctx.meals.length === 0) return "Keine Meals im Produktionsplan.";
+    const lines = [`${ctx.meals.length} Meals:`];
+    ctx.meals.forEach(m => {
+      const flag = m.criticalWOs.length > 0 ? "⚠" : m.completedWOs === m.totalWOs ? "✓" : "○";
+      lines.push(`${flag} ${m.recipeCode}: ${m.progressPct.toFixed(0)}% · ${m.completedWOs}/${m.totalWOs} WOs`);
+    });
+    return lines.join("\n");
   }
 
   // Tempo / Pace

@@ -198,38 +198,39 @@ function analyzeEquipmentLoad(backfillPlan: BackfillPlan): ProductionAlert[] {
   return alerts;
 }
 
+function shortName(name: string, words = 3): string {
+  return name.split(/[\s\-]+/).slice(0, words).join(" ");
+}
+
 function generateRecommendations(meals: MealProgress[], backfillPlan: BackfillPlan): string[] {
   const recs: string[] = [];
 
-  // Sortierte Priorität: Was zuerst angehen?
+  // Kritisch → sofort
   const critical = backfillPlan.proposals.filter(p => p.priority === "critical");
   if (critical.length > 0) {
-    recs.push(`Sofort starten: ${critical.slice(0, 3).map(c => `${c.subRecipe} (${c.batchCount}× ${c.equipment})`).join(", ")}`);
+    const names = critical.slice(0, 2).map(c => `${shortName(c.subRecipe)} (${c.batchCount}×)`).join(", ");
+    const more = critical.length > 2 ? ` +${critical.length - 2} weitere` : "";
+    recs.push(`Sofort: ${names}${more}`);
   }
 
-  // Meals die fast fertig sind (>80%) → Fokus auf fehlende letzte WOs
-  const almostDone = meals.filter(m => m.progressPct >= 80 && m.progressPct < 100);
+  // Fast fertige Meals zuerst abschließen
+  const almostDone = meals.filter(m => m.progressPct >= 80 && m.completedWOs < m.totalWOs);
   if (almostDone.length > 0) {
-    recs.push(`Fast fertig (>80%): ${almostDone.map(m => `${m.recipeCode} (noch ${m.totalWOs - m.completedWOs} WOs)`).join(", ")} → Zuerst abschließen`);
+    recs.push(`Fast fertig: ${almostDone.slice(0, 3).map(m => `${m.recipeCode} (${m.totalWOs - m.completedWOs} WOs offen)`).join(", ")}`);
   }
 
-  // Equipment-Effizienz: gleiche Sub-Recipes zusammenlegen
-  const subRecipeCounts = new Map<string, number>();
-  for (const p of backfillPlan.proposals) {
-    subRecipeCounts.set(p.subRecipe, (subRecipeCounts.get(p.subRecipe) ?? 0) + 1);
-  }
-  const duplicates = [...subRecipeCounts].filter(([_, count]) => count > 1);
-  if (duplicates.length > 0) {
-    recs.push(`Bündelung möglich: ${duplicates.map(([name, count]) => `"${name}" (${count}× benötigt)`).join(", ")} → Zusammen produzieren spart Umrüstzeit`);
+  // Gleiche Sub-Rezepte bündeln — nur Anzahl, Details stehen im Bündelungs-Block
+  const subCounts = new Map<string, number>();
+  for (const p of backfillPlan.proposals) subCounts.set(p.subRecipe, (subCounts.get(p.subRecipe) ?? 0) + 1);
+  const bundleCount = [...subCounts.values()].filter(n => n > 1).length;
+  if (bundleCount > 0) {
+    recs.push(`${bundleCount} Bündelungs-${bundleCount > 1 ? "Gruppen" : "Gruppe"} erkannt — Rüstzeit sparen (↓ Details)`);
   }
 
-  // Gesamteinschätzung
-  const totalHours = backfillPlan.totalBatches * 0.75; // ~45min pro Charge geschätzt
-  if (totalHours > 8) {
-    recs.push(`Geschätzte Backfill-Dauer: ~${totalHours.toFixed(1)}h. Evtl. Nachtschicht oder 2. Linie einplanen.`);
-  } else if (totalHours > 4) {
-    recs.push(`Geschätzte Backfill-Dauer: ~${totalHours.toFixed(1)}h. Machbar in einer Schicht bei sofortigem Start.`);
-  }
+  // Zeitschätzung — nur wenn nennenswert
+  const hours = backfillPlan.totalBatches * 0.75;
+  if (hours > 8) recs.push(`Backfill ~${hours.toFixed(0)}h — Nachtschicht oder 2. Linie einplanen`);
+  else if (hours > 2) recs.push(`Backfill ~${hours.toFixed(1)}h bei sofortigem Start machbar`);
 
   return recs;
 }

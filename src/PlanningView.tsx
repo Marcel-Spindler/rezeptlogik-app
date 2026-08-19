@@ -171,6 +171,9 @@ export function PlanningView(
     note: "",
   });
 
+  /** Plating-Plan aus Firestore (apps/rezeptlogik/platingPlan/{week}) */
+  const [platingPlan, setPlatingPlan] = useState<import("./core/types").PlatingPlanData | null>(null);
+
   /** Raw schedule aus dem Linienplan (Firestore), keyed als "{PlanDay}|{slotKey}|{lineIdx}" */
   const [linePlanSchedule, setLinePlanSchedule] = useState<Record<string, { code: string; speedPerMin: number } | null>>({});
   const [linePlanCapacityByLane, setLinePlanCapacityByLane] = useState<Record<string, number>>({});
@@ -313,6 +316,22 @@ export function PlanningView(
     return () => unsub?.();
   }, [week]);
 
+  // Plating-Plan aus Firestore laden (apps/rezeptlogik/platingPlan/{week})
+  useEffect(() => {
+    let disposed = false;
+    void (async () => {
+      try {
+        const { subscribePlatingPlan } = await import("./features/plating-import/platingPlanFirestore");
+        if (disposed) return;
+        const unsub = subscribePlatingPlan(week, data => { if (!disposed) setPlatingPlan(data); });
+        return () => { disposed = true; unsub(); };
+      } catch {
+        // Plating-Plan optional
+      }
+    })();
+    return () => { disposed = true; };
+  }, [week]);
+
   const weekState = useMemo(() => getWeekState(storage, week), [storage, week]);
   const scenario = useMemo(() => getActiveScenario(storage, week), [storage, week]);
   const portionMultiplier = 1 + upliftPercent / 100;
@@ -324,6 +343,56 @@ export function PlanningView(
     stationDeviceCounts,
     stationPools
   }), [data, week, scenario, portionMultiplier, stationDeviceCounts, stationPools]);
+
+  // Englische Tagesnamen (aus Plating-Plan CSV) → PlannerDay
+  const PLAT_DAY_TO_PLANNER: Record<string, PlannerDay> = {
+    "Sunday": "So", "Monday": "Mo", "Tuesday": "Di",
+    "Wednesday": "Mi", "Thursday": "Do", "Friday": "Fr", "Saturday": "Sa",
+  };
+
+  // Frühester Plating-Tag pro Rezept (aus importiertem Plating-Plan)
+  const platingDayByRecipe = useMemo((): Record<string, PlannerDay> => {
+    if (!platingPlan) return {};
+    const result: Record<string, PlannerDay> = {};
+    for (const r of platingPlan.recipes) {
+      const days = r.platingDays
+        .map(pd => PLAT_DAY_TO_PLANNER[pd.day])
+        .filter((d): d is PlannerDay => !!d);
+      const earliest = [...days].sort((a, b) => PLANNER_DAYS.indexOf(a) - PLANNER_DAYS.indexOf(b))[0];
+      if (earliest) result[r.recipeCode] = earliest;
+    }
+    return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platingPlan]);
+
+  // Plating-Gesamtmenge pro Tag (für Column-Header-Badge)
+  const platingQtyByDay = useMemo((): Partial<Record<PlannerDay, number>> => {
+    if (!platingPlan) return {};
+    const result: Partial<Record<PlannerDay, number>> = {};
+    for (const r of platingPlan.recipes) {
+      for (const pd of r.platingDays) {
+        const day = PLAT_DAY_TO_PLANNER[pd.day];
+        if (day) result[day] = (result[day] ?? 0) + pd.qty;
+      }
+    }
+    return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platingPlan]);
+
+  // Auto-Fill: wenn ein neuer Plating-Plan importiert wurde, Calendar automatisch befüllen
+  const needsAutoFillRef = useRef(false);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      if ((e as CustomEvent<{ week: string }>).detail?.week === week) needsAutoFillRef.current = true;
+    };
+    window.addEventListener("rezeptlogik:plating-plan-saved", handler);
+    return () => window.removeEventListener("rezeptlogik:plating-plan-saved", handler);
+  }, [week]);
+  useEffect(() => {
+    if (!platingPlan || !needsAutoFillRef.current) return;
+    needsAutoFillRef.current = false;
+    setTimeout(() => handleAutoPlanWeekBoardRef.current(), 80);
+  }, [platingPlan]);
 
   /**
    * Berechnet pro Rezept und Tag, welche Kapazität die Plating-Linien haben.
@@ -365,8 +434,34 @@ export function PlanningView(
         entries.push({ platDay, capacityPortions: portions, slotCount: 1 });
       }
     }
+
+    // Plating-Plan als Fallback: Rezepte die noch keinen Linienplan-Eintrag haben
+    // bekommen ihre Plating-Tage aus dem importierten Plating-Plan (CSV-Upload).
+    if (platingPlan) {
+      const PLAT_DAY_MAP: Record<string, PlannerDay> = {
+        "Sunday": "So", "Monday": "Mo", "Tuesday": "Di",
+        "Wednesday": "Mi", "Thursday": "Do", "Friday": "Fr", "Saturday": "Sa",
+      };
+      for (const recipe of platingPlan.recipes) {
+        if (byRecipe[recipe.recipeCode]) continue; // Linienplan hat Vorrang
+        const entries: LinePlatingEntry[] = [];
+        for (const pd of recipe.platingDays) {
+          const platDay = PLAT_DAY_MAP[pd.day];
+          if (!platDay) continue;
+          const existing = entries.find(e => e.platDay === platDay);
+          if (existing) {
+            existing.capacityPortions += pd.qty;
+            existing.slotCount += 1;
+          } else {
+            entries.push({ platDay, capacityPortions: pd.qty, slotCount: 1 });
+          }
+        }
+        if (entries.length > 0) byRecipe[recipe.recipeCode] = entries;
+      }
+    }
+
     return { byRecipe };
-  }, [linePlanSchedule, linePlanCapacityByLane]);
+  }, [linePlanSchedule, linePlanCapacityByLane, platingPlan]);
 
   const suggestions = useMemo(() => {
     if (!uiSettings.showAutoSuggestions) return {};
@@ -833,11 +928,15 @@ export function PlanningView(
         const keepExistingMain = !!existingMain && existingMain.day !== "Sa" && isShiftActive(existingMain.shift);
         const mainTarget = Math.max(0, Math.round((weekRecipe.totalVerdenVolume ?? 0) * portionMultiplier));
         const rawBatches = resolveMarketFulfillmentBatches(weekRecipe, portionMultiplier, planningRules);
-        const batches = rawBatches.length === 0
-          ? [{ day: "Fr" as PlannerDay, portions: mainTarget }]
-          : mainTarget <= planningRules.singleRunMaxPortions && rawBatches.length > 1
-            ? [{ day: rawBatches[0]!.day, portions: mainTarget }]
-            : normalizeBatches(rawBatches, mainTarget);
+        // Plating-Plan-Override: wenn CSV importiert, hat dieser Vorrang vor markt-basierten Batches
+        const overridePlatingDay = platingDayByRecipe[recipeSummary.recipeCode];
+        const batches = overridePlatingDay
+          ? [{ day: overridePlatingDay, portions: mainTarget }]
+          : rawBatches.length === 0
+            ? [{ day: "Fr" as PlannerDay, portions: mainTarget }]
+            : mainTarget <= planningRules.singleRunMaxPortions && rawBatches.length > 1
+              ? [{ day: rawBatches[0]!.day, portions: mainTarget }]
+              : normalizeBatches(rawBatches, mainTarget);
         const platingDay = safePlannerDay(batches[0]?.day ?? existingMain?.day ?? "Fr");
 
         if (!keepExistingMain) {
@@ -1434,6 +1533,14 @@ export function PlanningView(
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 ring-1 ring-slate-300">{analysis.plannedCount} geplant</span>
               <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-300">{unplanned.length} offen</span>
+              {platingPlan && (
+                <span
+                  className="rounded-full bg-orange-50 px-3 py-1 text-[11px] font-semibold text-orange-800 ring-1 ring-orange-300"
+                  title={`Importiert: ${platingPlan.importedAt}`}
+                >
+                  Plating-Plan {platingPlan.week} · {platingPlan.recipes.length} Rezepte
+                </span>
+              )}
               {Object.keys(linePlanRunSplitByRecipe).length > 0 && (
                 <span className="rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-semibold text-cyan-800 ring-1 ring-cyan-300">
                   Plating Runs: {Object.keys(linePlanRunSplitByRecipe).length} Meals · Ziel 110%

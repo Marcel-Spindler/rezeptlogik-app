@@ -352,6 +352,31 @@ export interface EquipBibleEntry {
   notes?: string;
 }
 
+// === Plating Plan =============================================================
+// Aus "F_VE Production Plan - W{XX} - Plating Plan [WIP].csv".
+// Firestore: apps/rezeptlogik/platingPlan/{week} (z.B. "2026-W36").
+export interface PlatingDayEntry {
+  day: string;          // "Tuesday"
+  dateStr: string;      // "25.08."
+  qty: number;          // gerundete Menge (z.B. 5487)
+  equipment?: string;   // "Cup" | "Slicing" – Gerät am Vortag
+  equipDay?: string;    // "Monday" – Vortag (= Manufacturing Day)
+}
+
+export interface PlatingPlanRecipe {
+  recipeCode: string;
+  recipeName: string;
+  numSubs: number;
+  totalQty: number;     // Total+Buffer aus dem Plan
+  platingDays: PlatingDayEntry[];
+}
+
+export interface PlatingPlanData {
+  week: string;         // "2026-W36"
+  importedAt: string;   // ISO-Timestamp
+  recipes: PlatingPlanRecipe[];
+}
+
 // === Planning Calendar ========================================================
 // Aus "F_VE Production Plan", Tab "Planning Calendar" (siehe scripts/import-planning-calendar.ts).
 // Firestore: apps/rezeptlogik/planningCalendar/current.

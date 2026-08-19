@@ -14,6 +14,7 @@ export interface WoMatchedStatus {
   deltaKg: number;
   isComplete: boolean;
   isCritical: boolean;
+  run: number;
   weighings: PostblastEntry[];
   lastWeighing: string | null;
 }
@@ -54,7 +55,7 @@ export function matchPostblastToWorkOrders(
     const woNum = wo.workOrder;
     const weighings = postblast.byWorkOrder.get(woNum) ?? [];
     const actualKg = weighings.reduce((s, e) => s + e.rawWeightKg, 0);
-    const plannedKg = wo.stagingKg || wo.kitchenKg || wo.postKg || 0;
+    const plannedKg = wo.postKg || wo.kitchenKg || wo.stagingKg || 0;
     const progressPct = plannedKg > 0 ? (actualKg / plannedKg) * 100 : (actualKg > 0 ? 100 : 0);
     const deltaKg = actualKg - plannedKg;
     const isComplete = progressPct >= 95;
@@ -72,6 +73,7 @@ export function matchPostblastToWorkOrders(
       deltaKg,
       isComplete,
       isCritical,
+      run: wo.run ?? 1,
       weighings,
       lastWeighing: weighings.length > 0 ? weighings[weighings.length - 1].timestamp : null,
     });
@@ -121,7 +123,7 @@ export function matchPostblastToWorkOrders(
         priority: missingPct > 80 ? "critical" as const : missingPct > 40 ? "behind" as const : "on-track" as const,
       };
     })
-    .filter(b => b.missingKg > 0)
+    .filter(b => b.missingKg >= 0.5)
     .sort((a, b) => b.missingKg - a.missingKg);
 
   return { matched, meals, backfill };
