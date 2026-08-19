@@ -540,7 +540,7 @@ export function WoDetail({
                   <tr className="bg-slate-50 border-t-2 border-slate-200">
                     <td className="px-4 py-3 font-black text-slate-800 text-[11px] uppercase tracking-wide">Gesamt</td>
                     <td className="px-4 py-3 text-right font-black tabular-nums text-slate-800">{fmtKg(calc.totalKg)}</td>
-                    <td className="px-4 py-3 text-right font-black tabular-nums text-blue-700">{fmtKg(calc.perBatchKg)}</td>
+                    <td className="px-4 py-3 text-right font-black tabular-nums text-blue-700">{fmtKg(calc.batches > 0 ? calc.totalKg / calc.batches : 0)}</td>
                   </tr>
                 </tfoot>
               </table>

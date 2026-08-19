@@ -2,7 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createConnection } from "node:net";
@@ -227,7 +227,20 @@ function saveMealImagePlugin(): Plugin {
           const destDir = join(process.cwd(), "public", "data", "meal-images");
           const destPath = join(destDir, `${mealId}${srcExt}`);
           copyFileSync(srcPath, destPath);
-          res.end(JSON.stringify({ url: `/data/meal-images/${mealId}${srcExt}` }));
+          const localUrl = `/data/meal-images/${mealId}${srcExt}`;
+          // Keep meal-catalog.json and data.json in sync so deployed version shows the image
+          for (const jsonPath of ["public/data/meal-catalog.json", "public/data/data.json"]) {
+            try {
+              const full = join(process.cwd(), jsonPath);
+              const parsed = JSON.parse(readFileSync(full, "utf8"));
+              const catalog: Record<string, { mealId: string; photoUrl?: string; sheets?: object }> = parsed.mealCatalog ?? parsed;
+              if (catalog[mealId]) catalog[mealId].photoUrl = localUrl;
+              else catalog[mealId] = { mealId, photoUrl: localUrl, sheets: {} };
+              const indent = jsonPath.includes("meal-catalog") ? 2 : 0;
+              writeFileSync(full, JSON.stringify(parsed, null, indent), "utf8");
+            } catch { /* non-fatal */ }
+          }
+          res.end(JSON.stringify({ url: localUrl }));
         } catch (err) {
           res.statusCode = 500;
           res.end(JSON.stringify({ error: String(err) }));

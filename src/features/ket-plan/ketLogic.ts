@@ -503,8 +503,8 @@ export function calcBatch(
   const remainderKg = primaryBatch?.remainderKg ?? 0;
 
   for (const ing of ingredients) {
-    ing.perBatchKg = totalKg > 0 && perBatchKg > 0
-      ? +(ing.totalKg / totalKg * perBatchKg).toFixed(3)
+    ing.perBatchKg = batches > 0
+      ? +(ing.totalKg / batches).toFixed(3)
       : 0;
     ing.separate = isSeparate(ing.name);
     ing.spiceRoom = isSpiceRoom(ing.name);
