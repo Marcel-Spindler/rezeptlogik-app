@@ -1872,6 +1872,11 @@ export function PlanningView(
                     title={column.lane === "regular" ? `${column.label} anklicken für Tages-Details & Export` : undefined}
                   >
                     {column.label}{column.lane === "regular" ? " ↓" : ""}
+                    {column.lane === "regular" && platingQtyByDay[column.day] != null && (
+                      <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded bg-orange-100 text-orange-700 align-middle">
+                        {(platingQtyByDay[column.day]! / 1000).toFixed(1)}k
+                      </span>
+                    )}
                   </th>
                 ))}
               </tr>

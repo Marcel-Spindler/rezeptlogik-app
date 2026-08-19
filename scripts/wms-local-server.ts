@@ -1020,10 +1020,64 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  // ─── Redzone Live Plating Status (Factor Verden) ──────────────────────────
+  if (url.pathname === "/redzone-plating-status" && req.method === "GET") {
+    const lookbackHours = Number(url.searchParams.get("hours") ?? 24);
+    const hours = Number.isFinite(lookbackHours) ? Math.min(168, Math.max(1, lookbackHours)) : 24;
+
+    const REDZONE_SQL = `
+      SELECT "areaName", "locationName", "productTypeName", "productTypeSKU",
+             "outCount", "inCount", "startTime", "endTime", "runName"
+      FROM "REDZONE_AWS_EUWEST1_HELLOFRESH_EXTERNAL_SHARE"."hellofresh-org"."v_shiftrunsegment"
+      WHERE "enterpriseUUID" IN (
+        SELECT "enterpriseUUID"
+        FROM "REDZONE_AWS_EUWEST1_HELLOFRESH_EXTERNAL_SHARE"."hellofresh-org"."v_enterprise"
+        WHERE "enterpriseName" = 'Factor Verden'
+      )
+      AND "areaName" IN ('Plating', 'Ovens', 'Braisers')
+      AND "productTypeName" IS NOT NULL
+      AND "productTypeName" != 'None'
+      AND "startTime" >= DATEADD(hour, -${hours}, CURRENT_TIMESTAMP())
+      ORDER BY "startTime" DESC
+      LIMIT 500`;
+
+    try {
+      const conn = await ensureConnection();
+      console.log(`Redzone Plating Status: lookback=${hours}h`);
+      const rows = await executeQuery(conn, REDZONE_SQL, []);
+      const mapped = rows.map((row) => ({
+        areaName: stringValue(row, "areaName"),
+        locationName: stringValue(row, "locationName"),
+        productTypeName: stringValue(row, "productTypeName"),
+        productTypeSKU: stringValue(row, "productTypeSKU"),
+        outCount: numberValue(row, "outCount"),
+        inCount: numberValue(row, "inCount"),
+        startTime: dateValue(row, "startTime"),
+        endTime: dateValue(row, "endTime"),
+        runName: stringValue(row, "runName"),
+      }));
+      sendJson(res, 200, {
+        ok: true,
+        enterprise: "Factor Verden",
+        lookbackHours: hours,
+        generatedAt: new Date().toISOString(),
+        rows: mapped,
+      });
+    } catch (error) {
+      if (cachedConn) {
+        void destroyConnection(cachedConn);
+        cachedConn = undefined;
+      }
+      connectingConn = undefined;
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   sendJson(res, 404, {
     ok: false,
     error: "query-not-configured",
-    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history",
+    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /redzone-plating-status",
   });
 });
 

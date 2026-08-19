@@ -6,6 +6,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type { DataBundle, WorkOrderEntry } from "./core/types";
 import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow, currentHfWeek } from "./lib/wmsCache";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overview/wmsWeeks";
+import { LiveBadge } from "./features/redzone-live/LiveBadge";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
   calcBatch, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
@@ -912,8 +913,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                               )}
                             </div>
                           </div>
-                          <div className={`text-[10px] truncate leading-tight ${isSelected ? "text-blue-200" : "text-slate-600"}`}>
+                          <div className={`text-[10px] truncate leading-tight ${isSelected ? "text-blue-200" : "text-slate-600"} flex items-center gap-1`}>
                             {row.subRecipeName || row.recipeName}
+                            <LiveBadge recipeCode={row.recipeCode} />
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5">
                             <span className={`text-[8px] font-semibold ${isSelected ? "text-blue-300" : "text-slate-400"}`}>

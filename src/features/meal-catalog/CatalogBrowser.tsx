@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { MealCatalogEntry } from "../../core/types";
 import { field, label, titleOf, type CatalogScope, type SortKey } from "./catalog-utils";
+import { LiveDot } from "../redzone-live/LiveBadge";
 
 interface CatalogBrowserProps {
   meals: MealCatalogEntry[];
@@ -146,8 +147,9 @@ export function CatalogBrowser({
                 <span className="catalog-row-mark">{titleOf(meal).slice(0, 1)}</span>
                 <span className="min-w-0 text-left">
                   <span className="block truncate text-sm font-semibold">{isFavorite(meal.mealId) && <span className="mr-1 text-amber-500">&#9733;</span>}{titleOf(meal)}</span>
-                  <span className="mt-0.5 block truncate font-mono text-[11px] text-slate-500">
+                  <span className="mt-0.5 block truncate font-mono text-[11px] text-slate-500 flex items-center gap-1">
                     {meal.mealId} · {field(meal, "Meal DB_Culinary", "CUISINE") || "Meal"}
+                    <LiveDot recipeCode={meal.mealId} />
                   </span>
                 </span>
               </button>

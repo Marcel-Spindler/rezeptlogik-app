@@ -3233,6 +3233,61 @@ exports.wmsBreakdown = onRequest({ region: "europe-west3", timeoutSeconds: 120, 
   }
 });
 
+// ─── Redzone Live Plating Status (Factor Verden) ─────────────────────────────
+
+const REDZONE_STATUS_SQL = `
+SELECT "areaName", "locationName", "productTypeName", "productTypeSKU",
+       "outCount", "inCount", "startTime", "endTime", "runName"
+FROM "REDZONE_AWS_EUWEST1_HELLOFRESH_EXTERNAL_SHARE"."hellofresh-org"."v_shiftrunsegment"
+WHERE "enterpriseUUID" IN (
+  SELECT "enterpriseUUID"
+  FROM "REDZONE_AWS_EUWEST1_HELLOFRESH_EXTERNAL_SHARE"."hellofresh-org"."v_enterprise"
+  WHERE "enterpriseName" = 'Factor Verden'
+)
+AND "areaName" IN ('Plating', 'Ovens', 'Braisers')
+AND "productTypeName" IS NOT NULL
+AND "productTypeName" != 'None'
+AND "startTime" >= DATEADD(hour, ?, CURRENT_TIMESTAMP())
+ORDER BY "startTime" DESC
+LIMIT 500`;
+
+exports.redzoneStatus = onRequest({ region: "europe-west3", timeoutSeconds: 60, cors: true }, async (req, res) => {
+  if (req.method !== "GET") {
+    res.status(405).json({ ok: false, error: "method-not-allowed" });
+    return;
+  }
+
+  const hoursParam = parseInt(req.query.hours || "24", 10);
+  const hours = Number.isFinite(hoursParam) ? Math.min(168, Math.max(1, hoursParam)) : 24;
+
+  try {
+    const conn = await connectSnowflake();
+    const rowsRaw = await executeSnowflakeQuery(conn, REDZONE_STATUS_SQL, [-hours]);
+    const rows = rowsRaw.map(row => ({
+      areaName: String(row.areaName || ""),
+      locationName: String(row.locationName || ""),
+      productTypeName: String(row.productTypeName || ""),
+      productTypeSKU: String(row.productTypeSKU || ""),
+      outCount: row.outCount != null ? Number(row.outCount) : null,
+      inCount: row.inCount != null ? Number(row.inCount) : null,
+      startTime: row.startTime instanceof Date ? row.startTime.toISOString() : row.startTime ? String(row.startTime) : null,
+      endTime: row.endTime instanceof Date ? row.endTime.toISOString() : row.endTime ? String(row.endTime) : null,
+      runName: String(row.runName || ""),
+    }));
+    res.json({
+      ok: true,
+      enterprise: "Factor Verden",
+      lookbackHours: hours,
+      generatedAt: nowIso(),
+      rows,
+    });
+  } catch (error) {
+    cachedWmsConn = null;
+    logger.error("Redzone status failed", { error: error?.message });
+    res.status(500).json({ ok: false, error: error?.message || String(error) });
+  }
+});
+
 // ─── Gemini WO-Instruction Bot ───────────────────────────────────────────────
 
 async function generateGeminiInstructionCloud(context) {

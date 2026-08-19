@@ -22,6 +22,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BlastChillerView } from "../features/blast-chiller/BlastChillerView";
 import { AllergenPlatingView } from "../features/allergen-plating/AllergenPlatingView";
 import { PostblastLiveView } from "../features/gsheet-monitor/PostblastLiveView";
+import { RedzoneLiveView } from "../features/redzone-live/RedzoneLiveView";
 import { resolveRecipeByCode } from "../lib/helpers";
 
 function MainPane({ view }: { view: AppView }) {
@@ -106,6 +107,17 @@ function MainPane({ view }: { view: AppView }) {
 
     case "postblast-live":
       return <PostblastLiveView data={data} />;
+
+    case "redzone-live":
+      if (!import.meta.env.DEV) {
+        return (
+          <div className="card p-8 text-center text-slate-500">
+            <div className="text-lg font-semibold text-slate-700">Redzone Live ist online nicht verfügbar</div>
+            <div className="text-sm mt-1">Bitte lokal starten (Desktop-Verknüpfung „Rezeptlogik App starten").</div>
+          </div>
+        );
+      }
+      return <RedzoneLiveView />;
   }
 }
 
@@ -184,10 +196,31 @@ function FullApp() {
 
 export function Router() {
   const {
-    data, error, kitchenMode, rundmailMode,
+    data, error, kitchenMode, rundmailMode, surface,
     weeks, weekRecipes, selectedWeek, upliftPercent, kitchenLinkCopied,
     setSelectedWeek, setKitchenLinkCopied,
   } = useAppState();
+
+  // Redzone surface: standalone, no DataBundle required.
+  // Braucht den lokalen WMS-Server (Snowflake-Browser-SSO) — die deployte Cloud
+  // Function hat aktuell keinen gültigen Snowflake-Key, deshalb online gesperrt.
+  if (surface === "redzone") {
+    if (!import.meta.env.DEV) {
+      return (
+        <Shell>
+          <div className="card p-8 text-center text-slate-500">
+            <div className="text-lg font-semibold text-slate-700">Redzone Live ist online nicht verfügbar</div>
+            <div className="text-sm mt-1">Bitte lokal starten (Desktop-Verknüpfung „Rezeptlogik App starten").</div>
+          </div>
+        </Shell>
+      );
+    }
+    return (
+      <Shell>
+        <RedzoneLiveView />
+      </Shell>
+    );
+  }
 
   if (error) return <ErrorCard message={error} />;
   if (!data) return <LoadingCard />;

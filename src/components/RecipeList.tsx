@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { WeekRecipe, Recipe, MealCatalogEntry } from "../core/types";
 import { getRampUpHistory } from "../lib/rampUpHistory";
 import { RampHistorySparkline } from "../features/recipe-detail/shared";
+import { LiveDot } from "../features/redzone-live/LiveBadge";
 import {
   adjustedPortions, codeDigits, fmtNum,
   MARKETS, MARKET_COLOR, MARKET_LABEL,
@@ -123,6 +124,7 @@ function RecipeListItem({ wr, recipe, catalogEntry, isActive, week, upliftPercen
             {isFavorite ? "\u2605" : "\u2606"}
           </span>
           <span className="font-mono text-xs mt-0.5" style={tone.code}>{wr.code}</span>
+          <LiveDot recipeCode={wr.code} />
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {sparkValues.length >= 2 && <RampHistorySparkline values={sparkValues} width={56} height={18} />}
