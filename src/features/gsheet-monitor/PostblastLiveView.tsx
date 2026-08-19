@@ -45,10 +45,15 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const behindCount = backfill.filter(b => b.priority === "behind").length;
 
   // Production Intelligence Agent
-  const intelligence = useMemo(() => {
-    const plan = generateBackfillPlan(backfill, data);
-    return analyzeProduction(postblastMonitor.data, meals, plan, data.productionPlan);
-  }, [postblastMonitor.data, meals, backfill, data]);
+  const backfillPlan = useMemo(
+    () => generateBackfillPlan(backfill, data),
+    [backfill, data]
+  );
+
+  const intelligence = useMemo(
+    () => analyzeProduction(postblastMonitor.data, meals, backfillPlan, data.productionPlan),
+    [postblastMonitor.data, meals, backfillPlan, data]
+  );
 
   const lastUpdate = postblastMonitor.lastUpdate
     ? new Date(postblastMonitor.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -282,10 +287,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
       )}
 
       {/* BACKFILL WO GENERATOR */}
-      {backfill.length > 0 && (() => {
-        const plan = generateBackfillPlan(backfill, data);
-        const weekLabel = data.productionPlan?.week ?? "KW??";
-        return (
+      {backfill.length > 0 && backfillPlan.proposals.length > 0 && (
           <div className="card p-5 border-2 border-rose-200 bg-gradient-to-br from-rose-50/50 to-white">
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
@@ -295,7 +297,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                 </p>
               </div>
               <button
-                onClick={() => void exportBackfillPlanExcel(plan, weekLabel)}
+                onClick={() => void exportBackfillPlanExcel(backfillPlan, data.productionPlan?.week ?? "KW??")}
                 className="btn btn-primary text-xs shrink-0"
               >
                 Excel Export
@@ -305,23 +307,23 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
             <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
               <div className="bg-white rounded-lg p-2 ring-1 ring-rose-200 text-center">
                 <div className="text-rose-700 uppercase font-bold">WOs</div>
-                <div className="text-lg font-bold">{plan.proposals.length}</div>
+                <div className="text-lg font-bold">{backfillPlan.proposals.length}</div>
               </div>
               <div className="bg-white rounded-lg p-2 ring-1 ring-rose-200 text-center">
                 <div className="text-rose-700 uppercase font-bold">Chargen</div>
-                <div className="text-lg font-bold">{plan.totalBatches}</div>
+                <div className="text-lg font-bold">{backfillPlan.totalBatches}</div>
               </div>
               <div className="bg-white rounded-lg p-2 ring-1 ring-rose-200 text-center">
                 <div className="text-rose-700 uppercase font-bold">Gesamt kg</div>
-                <div className="text-lg font-bold font-mono">{fmt(plan.totalKg, 1)}</div>
+                <div className="text-lg font-bold font-mono">{fmt(backfillPlan.totalKg, 1)}</div>
               </div>
               <div className="bg-white rounded-lg p-2 ring-1 ring-rose-200 text-center">
                 <div className="text-rose-700 uppercase font-bold">Portionen</div>
-                <div className="text-lg font-bold font-mono">{fmt(plan.totalPortions)}</div>
+                <div className="text-lg font-bold font-mono">{fmt(backfillPlan.totalPortions)}</div>
               </div>
               <div className="bg-white rounded-lg p-2 ring-1 ring-red-300 text-center">
                 <div className="text-red-700 uppercase font-bold">Kritisch</div>
-                <div className="text-lg font-bold text-red-700">{plan.criticalCount}</div>
+                <div className="text-lg font-bold text-red-700">{backfillPlan.criticalCount}</div>
               </div>
             </div>
 
@@ -342,7 +344,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-rose-100 bg-white">
-                    {plan.proposals.map(p => (
+                    {backfillPlan.proposals.map(p => (
                       <tr key={p.backfillWoNumber} className={p.priority === "critical" ? "bg-red-50/50" : ""}>
                         <td className="px-3 py-2">
                           <div className="font-mono font-bold">{p.backfillWoNumber}</div>
@@ -365,8 +367,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               </div>
             </div>
           </div>
-        );
-      })()}
+      )}
 
       {/* LETZTE WIEGUNGEN (Live Feed) */}
       {postblastMonitor.data && postblastMonitor.data.entries.length > 0 && (

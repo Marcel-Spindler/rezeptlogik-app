@@ -111,9 +111,10 @@ export function generateBackfillPlan(
       data.equipmentBible
     );
 
-    // Chargen berechnen
-    const batchCount = Math.ceil(need.missingKg / capacityKg);
-    const totalProducedKg = batchCount * capacityKg;
+    // Chargen berechnen (Guard gegen division by zero)
+    const effectiveCapacity = capacityKg > 0 ? capacityKg : EQUIP_DEFAULTS.BRAISER;
+    const batchCount = Math.ceil(need.missingKg / effectiveCapacity);
+    const totalProducedKg = batchCount * effectiveCapacity;
     const excessKg = totalProducedKg - need.missingKg;
 
     proposals.push({

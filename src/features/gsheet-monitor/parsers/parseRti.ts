@@ -64,9 +64,12 @@ export function parseRti(rows: string[][]): RtiData {
 
           if (/^\d{2,3}-\d{2,4}$/.test(wo) && subName) {
             const holding = num(sr[2] ?? "");
-            const rtiKg = num(sr[3] ?? "") || num(sr[4] ?? "");
+            const rtiKgCol3 = num(sr[3] ?? "");
+            const rtiKgCol4 = num(sr[4] ?? "");
+            const rtiKg = (sr[3] ?? "").trim() !== "" ? rtiKgCol3 : rtiKgCol4;
             const produced = num(sr[5] ?? "");
-            const subDelta = num(sr[6] ?? "") || num(sr[5] ?? "");
+            const subDeltaCol6 = (sr[6] ?? "").trim();
+            const subDelta = subDeltaCol6 !== "" ? num(subDeltaCol6) : num(sr[5] ?? "");
             const subDeltaPct = pct(sr[7] ?? "");
             const statusRaw = (sr[9] ?? sr[8] ?? "").trim().toLowerCase();
             const status: RtiSubRecipeEntry["status"] = statusRaw === "done" ? "done" : statusRaw ? "unknown" : "open";

@@ -10,8 +10,18 @@ function num(s: string): number {
 }
 
 function extractDate(timestamp: string): string {
+  // Format: "M/D/YYYY H:MM:SS" (US-Format aus Google Sheets)
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(timestamp);
-  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  if (m) {
+    const [, part1, part2, year] = m;
+    // Google Sheets exportiert immer M/D/YYYY (US), auch bei DE-Locale
+    return `${year}-${part1.padStart(2, "0")}-${part2.padStart(2, "0")}`;
+  }
+  // Fallback: ISO-Format oder DD.MM.YYYY
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(timestamp);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const de = /^(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec(timestamp);
+  if (de) return `${de[3]}-${de[2].padStart(2, "0")}-${de[1].padStart(2, "0")}`;
   return "";
 }
 
