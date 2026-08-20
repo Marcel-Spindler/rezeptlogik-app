@@ -3404,8 +3404,10 @@ Aussehen - [CHECK]
 ABSOLUTE RULES:
 - You MAY state a batch or total weight ONLY if it is given in context
   (batches/perBatchKg/totalKg) — phrase it approximately ("~50 kg pro Batch"),
-  never invent one. Do not restate individual ingredient quantities — the PDF
-  already has an ingredient table.
+  never invent one, and never add decimal digits beyond what context gives you.
+  Use a period in English ("~11.2 kg") and a comma in German ("~11,2 kg") — never
+  the wrong decimal separator for that language. Do not restate individual
+  ingredient quantities — the PDF already has an ingredient table.
 - Never invent a temperature, time, rpm or other numeric fact absent from
   context → write [CHECK] instead.
 - NEVER list ingredients — the PDF already has an ingredient table

@@ -102,6 +102,15 @@ export function parseInstructionLines(text: string): InstructionLine[] {
   return result;
 }
 
+// Rundet auf 1 Nachkommastelle — calc.totalKg/perBatchKg tragen intern volle
+// Fließkomma-Präzision (z.B. 11.205...); ungerundet an Gemini gegeben, zitiert
+// es genau diese Ziffernkette 1:1 zurück ("~11.205 kg" statt der im Rest der App
+// üblichen "11,2 kg"). Rundung hier, nicht im Prompt, damit Gemini gar nicht erst
+// die Chance hat, mehr Nachkommastellen zu erfinden/übernehmen.
+function roundKg(kg: number): number {
+  return Math.round(kg * 10) / 10;
+}
+
 // calc.subRecipeInstructions/DE kommen aus dem Rezept-Import-Feld "Instructions" —
 // das ist in der Praxis Plating-/Verpackungstext ("NET WEIGHT = 400g", "2ND
 // COMPARTMENT" …), keine Kochanweisung. Deshalb NICHT als sourceInstruction an
@@ -116,8 +125,8 @@ export function buildWoInstructionContext(row: KetRow, calc: BatchCalc): string 
     primaryEquipment: calc.primaryEquip,
     equipment: calc.equipBatches.map((batch) => batch.equip),
     batches: calc.batches > 0 ? calc.batches : null,
-    perBatchKg: calc.perBatchKg > 0 ? calc.perBatchKg : null,
-    totalKg: calc.totalKg > 0 ? calc.totalKg : null,
+    perBatchKg: calc.perBatchKg > 0 ? roundKg(calc.perBatchKg) : null,
+    totalKg: calc.totalKg > 0 ? roundKg(calc.totalKg) : null,
     ingredientFlags: calc.ingredients
       .filter((ing) => ing.separate || ing.spiceRoom)
       .map((ing) => ({ name: ing.name, separate: ing.separate, spiceRoom: ing.spiceRoom })),
