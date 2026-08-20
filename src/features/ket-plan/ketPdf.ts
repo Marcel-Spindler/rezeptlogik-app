@@ -86,8 +86,8 @@ export function buildPdf(
             return `
             <div style="background:#1e3a5f;color:#fff;border-radius:8px;padding:6px 10px;min-width:80px;text-align:center;">
               <div style="font-size:8px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">${eb.label}</div>
-              <div style="font-size:18px;font-weight:900;line-height:1;">${fullBatches}× VOLL</div>
-              <div style="font-size:8px;color:#93c5fd;margin-top:2px;">${eb.capacityKg} kg je Voll-Batch</div>
+              <div style="font-size:18px;font-weight:900;line-height:1;">${fullBatches}×</div>
+              <div style="font-size:8px;color:#93c5fd;margin-top:2px;">${eb.perBatchKg} kg je Batch (Kapazität ${eb.capacityKg} kg)</div>
               ${eb.bibleMatch ? `<div style="font-size:7px;color:#fde68a;font-weight:800;margin-top:2px;">📖 Kuechenbible: ${escHtml(eb.bibleMatch.itemName)}</div>` : ""}
             </div>${remainderTile}`;
           }).join("")}
@@ -95,8 +95,8 @@ export function buildPdf(
       : "";
     const primaryFullBatches = Math.max(0, calc.batches - (calc.remainderKg > 0 ? 1 : 0));
     const batchSummary = calc.remainderKg > 0
-      ? `${primaryFullBatches} volle + 1 Rest-Batch (${calc.remainderKg.toFixed(1)} kg)`
-      : `${primaryFullBatches} volle Batches`;
+      ? `${primaryFullBatches} Batches + 1 Rest-Batch (${calc.remainderKg.toFixed(1)} kg)`
+      : `${primaryFullBatches} Batches à ${fmtKg(calc.perBatchKg)}`;
 
     // Factor-Produktionsregeln (Matteos capacity-rules.js/classify()) — ergänzt die
     // Equipment-Batch-Ansicht oben, ersetzt sie nicht.
@@ -341,7 +341,11 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
   .sval{font-size:15px}.sval.big{font-size:28px}
   .stat{padding:5px 8px}.slabel{font-size:7px}
   .methods{padding:6px 10px;font-size:11px}
-  .methods,.hi-stat,.stat-green,.stat-red{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  /* Breit statt einzelne Klassen: Allergen-/Chiller-Badges und die Equipment-Batch-
+     Kacheln setzen ihre Hintergrundfarbe inline (nicht per Klasse) — ohne *-Regel
+     verlieren sie beim Drucken/Speichern ohne "Hintergrundgrafiken"-Haken lautlos
+     ihre Farbe (bekanntes Muster in diesem Feature, siehe KetWoDetail/ketPdf-Historie). */
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @page{size:A4;margin:8mm}
 }
 </style>

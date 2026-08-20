@@ -153,7 +153,7 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
     const msgs: string[] = [];
     if (fromStructure > 0) msgs.push(`${fromStructure} WOs aus Sub-Rezept-Struktur`);
     if (fromRecipe > 0)    msgs.push(`${fromRecipe} aus Rezept-Fallback`);
-    if (notFound > 0)      msgs.push(`${notFound} ohne Code → KEINE`);
+    if (notFound > 0)      msgs.push(`${notFound} ohne Code → UNBEKANNT (Chiller 6)`);
     showToast(msgs.join(" · ") || "Berechnet ✓");
   }
 

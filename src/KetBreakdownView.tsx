@@ -334,6 +334,16 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
 
 
   const filteredRows = filteredGroups.flatMap(([, rows]) => rows);
+  // Sidebar-Reihenfolge zeigt bewusst den neuesten Tag zuerst (siehe `groups` oben),
+  // aber ein gedruckter/gespeicherter Mehrtages-Stapel soll chronologisch (ältester
+  // Tag zuerst) sein — wie eine Küche einen Papierstapel der Reihe nach abarbeitet.
+  const bulkPrintRows = useMemo(
+    () => [...(filteredRows.length > 0 ? filteredRows : weekFilteredRows)].sort(
+      (a, b) => parseSortKey(a.dateNeeded) - parseSortKey(b.dateNeeded)
+        || a.woNumber.localeCompare(b.woNumber, "de", { numeric: true }),
+    ),
+    [filteredRows, weekFilteredRows],
+  );
   const availableInstructionDays = groups.map(([day]) => day);
   const activeInstructionDays = useMemo(
     () => selectedInstructionDays ?? new Set(availableInstructionDays),
@@ -368,6 +378,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           return;
         }
         setCsvRows(parsed);
+        setSelectedWoKeys(new Set());
         storage.setItem(STORAGE_KEYS.csvRows, parsed, true);
         storage.setItem(STORAGE_KEYS.csvFilename, file.name, false);
         setSelectedKey(parsed[0]?.key ?? null);
@@ -730,6 +741,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               type="button"
               onClick={() => {
                 setCsvRows(null); setCsvFileName(""); setSelectedKey(null);
+                setSelectedWoKeys(new Set());
                 try { localStorage.removeItem("ket-csv-rows-v1"); } catch { /* */ }
                 try { localStorage.removeItem("ket-csv-filename-v1"); } catch { /* */ }
               }}
@@ -965,7 +977,6 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                         <label
                           className="flex shrink-0 items-center px-1 cursor-pointer"
                           title="Für Mehrfachauswahl markieren"
-                          onClick={(e) => e.stopPropagation()}
                         >
                           <input
                             type="checkbox"
@@ -1092,7 +1103,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              onClick={() => printPdf(filteredRows.length > 0 ? filteredRows : weekFilteredRows)}
+              onClick={() => printPdf(bulkPrintRows)}
               disabled={weekFilteredRows.length === 0}
               title="Druckdialog – alle sichtbaren WOs (je WO eine Seite)"
               className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 py-2 rounded-xl transition-colors border border-slate-200"
@@ -1105,7 +1116,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               disabled={weekFilteredRows.length === 0 || bulkDlBusy}
               title="Alle sichtbaren WOs als eine mehrseitige PDF speichern (je WO = 1 Seite)"
               onClick={async () => {
-                const rows = filteredRows.length > 0 ? filteredRows : weekFilteredRows;
+                const rows = bulkPrintRows;
                 setBulkDlBusy(true);
                 setBulkDlError(null);
                 try {
@@ -1128,7 +1139,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             </button>
           </div>
           <div className="text-[8px] text-slate-400 text-center -mt-0.5">
-            Alle sichtbaren ({filteredRows.length > 0 ? filteredRows.length : weekFilteredRows.length}) WOs
+            Alle sichtbaren ({bulkPrintRows.length}) WOs
           </div>
           {bulkDlError && (
             <div className="text-[9px] text-red-600 font-semibold bg-red-50 rounded-lg px-2 py-1.5 border border-red-200">
