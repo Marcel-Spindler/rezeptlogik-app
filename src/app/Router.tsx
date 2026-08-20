@@ -141,9 +141,9 @@ function FullApp() {
           <div className="w-48 shrink-0">
             <NavTabs view={view} onChange={setView} />
           </div>
-          <div className="flex-1 min-w-0">
+          <main className="flex-1 min-w-0">
             <MainPane view={view} />
-          </div>
+          </main>
         </div>
       </Shell>
     );

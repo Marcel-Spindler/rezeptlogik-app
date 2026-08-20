@@ -3,10 +3,8 @@ import type { DataBundle } from "./core/types";
 import { buildSkuInfoIndex, skuKey, weekPlannedSkuSet } from "./lib/wmsSkuEnrichment";
 
 import { STATION_META, STATION_ORDER } from "./features/wms-overview/wmsTypes";
-import type {
-  AllData, BasePayload, InboundPayload, LoadState, SleevingPayload, StationKey,
-  StoredPayload, WoDetailPayload, WorkordersPayload, WoTransactionRow,
-} from "./features/wms-overview/wmsTypes";
+import type { AllData, LoadState, StationKey, WoTransactionRow } from "./features/wms-overview/wmsTypes";
+import { fetchAllWmsStations } from "./features/wms-overview/wmsFetch";
 import { fmtQty } from "./features/wms-overview/wmsFormat";
 import { generateWmsWeeks, resolveSelectedWeekFromStationRows, weekNumFromHfWeek, woMatchesSelectedWeek } from "./features/wms-overview/wmsWeeks";
 import { aggregateInbound, aggregateSleeving, aggregateStored, aggregateWorkorders, buildSkuBilanz, detectKettenbruch } from "./features/wms-overview/wmsAggregate";
@@ -167,61 +165,18 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const selectedWeekNum = useMemo(() => weekNumFromHfWeek(selectedWeek), [selectedWeek]);
   const skuInfoIndex = useMemo(() => buildSkuInfoIndex(data, selectedWeek), [data, selectedWeek]);
 
-  const doLoad = async (week: string, retryCount = 0) => {
+  const doLoad = async (week: string) => {
     setLoadState("loading");
     setLoadError(null);
-    if (retryCount === 0) setAllData(null);
+    setAllData(null);
     try {
-      const p   = new URLSearchParams({ whId: "VF", week, limit: "50000", ts: String(Date.now()) });
-      const pwo = new URLSearchParams({ whId: "VF", week, limit: "50000", ts: String(Date.now()) });
-      const [plR, stgR, debR, pbR, slR, inR, woR, wodR, plhR] = await Promise.all([
-        fetch(`/api/wms-plating?${p}`,    { cache: "no-store" }),
-        fetch(`/api/wms-staging?${p}`,    { cache: "no-store" }),
-        fetch(`/api/wms-debox?${p}`,      { cache: "no-store" }),
-        fetch(`/api/wms-postblast?${p}`,  { cache: "no-store" }),
-        fetch(`/api/wms-sleeving?${p}`,   { cache: "no-store" }),
-        fetch(`/api/wms-inbound?${p}`,    { cache: "no-store" }),
-        fetch(`/api/wms-workorders?${pwo}`,{ cache: "no-store" }),
-        fetch(`/api/wms-wo-detail?${p}`,  { cache: "no-store" }),
-        fetch(`/api/wms-plating-holding?${p}`, { cache: "no-store" }),
-      ]);
-      const ct = plR.headers.get("content-type") ?? "";
-      if (!ct.includes("application/json") && !ct.includes("text/json")) {
-        if (retryCount < 3) {
-          setLoadError(`Warte auf WMS-Server… (Versuch ${retryCount + 1}/3)`);
-          await new Promise(r => setTimeout(r, 2500));
-          return doLoad(week, retryCount + 1);
-        }
-        throw new Error(`WMS-Server nicht erreichbar (HTTP ${plR.status}). Lokalen Server starten: npm run wms:server`);
-      }
-      const [pl, stg, deb, pb, sl, inb, wo, wod, plh] = await Promise.all([
-        plR.json()  as Promise<StoredPayload>,
-        stgR.json() as Promise<StoredPayload>,
-        debR.json() as Promise<StoredPayload>,
-        pbR.json()  as Promise<StoredPayload>,
-        slR.json()  as Promise<SleevingPayload>,
-        inR.json()  as Promise<InboundPayload>,
-        woR.ok ? woR.json() as Promise<WorkordersPayload> : woR.json().catch(() => ({})).then(body => {
-          console.warn(`WMS WO-Endpoint Fehler HTTP ${woR.status}:`, body);
-          return { ok: false, rows: [], error: `WO-Daten nicht verfügbar (HTTP ${woR.status}) — lokaler Server läuft? Snowflake verbunden?` } as WorkordersPayload;
-        }),
-        wodR.ok && (wodR.headers.get("content-type") ?? "").includes("json") ? wodR.json() as Promise<WoDetailPayload> : Promise.resolve({ ok: true, rows: [] } as WoDetailPayload),
-        plhR.ok && (plhR.headers.get("content-type") ?? "").includes("json") ? plhR.json() as Promise<StoredPayload> : Promise.resolve({ ok: true, rows: [] } as StoredPayload),
-      ]);
-      for (const [label, pay] of [["Plating", pl], ["Staging", stg], ["Debox", deb], ["Post-Blast", pb], ["Sleeving", sl], ["Inbound", inb]] as [string, BasePayload][]) {
-        if (!pay.ok) throw new Error(`${label}: ${pay.error ?? "Unbekannter Fehler"}`);
-      }
-      setAllData({ plating: pl, platingHolding: plh, staging: stg, debox: deb, postblast: pb, sleeving: sl, inbound: inb, workorders: wo, woDetail: wod });
-      setGeneratedAt(pl.generatedAt ?? sl.generatedAt ?? inb.generatedAt ?? null);
-      setRangeStart(pl.rangeStart ?? inb.rangeStart ?? null);
-      setRangeEnd(pl.rangeEnd ?? inb.rangeEnd ?? null);
+      const result = await fetchAllWmsStations(week, { onRetry: (_attempt, message) => setLoadError(message) });
+      setAllData(result.data);
+      setGeneratedAt(result.generatedAt);
+      setRangeStart(result.rangeStart);
+      setRangeEnd(result.rangeEnd);
       setLoadState("ready");
     } catch (e) {
-      if (retryCount < 3 && e instanceof TypeError && e.message.includes("fetch")) {
-        setLoadError(`Warte auf WMS-Server… (Versuch ${retryCount + 1}/3)`);
-        await new Promise(r => setTimeout(r, 2500));
-        return doLoad(week, retryCount + 1);
-      }
       setLoadError(e instanceof Error ? e.message : String(e));
       setLoadState("error");
     }

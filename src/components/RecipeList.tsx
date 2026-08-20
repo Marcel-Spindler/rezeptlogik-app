@@ -4,6 +4,7 @@ import type { WeekRecipe, Recipe, MealCatalogEntry } from "../core/types";
 import { getRampUpHistory } from "../lib/rampUpHistory";
 import { RampHistorySparkline } from "../features/recipe-detail/shared";
 import { LiveDot } from "../features/redzone-live/LiveBadge";
+import { useWoReconciliation } from "../features/wo-reconciliation/WoReconciliationContext";
 import {
   adjustedPortions, codeDigits, fmtNum,
   MARKETS, MARKET_COLOR, MARKET_LABEL,
@@ -87,6 +88,24 @@ function MarketPills({ wr }: { wr: WeekRecipe }) {
   );
 }
 
+// WO-Unstimmigkeit (App-Plan/KET/PET/Postblast weichen voneinander ab, siehe
+// WoReconciliationContext) — "auf einen Blick" schon in der Liste sichtbar,
+// bevor man das Rezept überhaupt öffnet.
+function MismatchBadge({ code }: { code: string }) {
+  const reconciliation = useWoReconciliation();
+  const entry = reconciliation?.bySeverityRecipe.get(code);
+  if (!entry) return null;
+  const isCritical = entry.severity === "critical";
+  return (
+    <span
+      title={`${entry.count} WO${entry.count === 1 ? "" : "s"} mit Unstimmigkeit (App-Plan/KET/PET/Postblast) — ${isCritical ? "kritisch" : "Abweichung"}`}
+      className={`text-[10px] leading-none ${isCritical ? "text-red-500" : "text-amber-500"}`}
+    >
+      {isCritical ? "❗" : "⚠"}
+    </span>
+  );
+}
+
 function RecipeListItem({ wr, recipe, catalogEntry, isActive, week, upliftPercent, searchNeedle, isFavorite, onToggleFavorite, onClick }: {
   wr: WeekRecipe;
   recipe: Recipe | undefined;
@@ -125,6 +144,7 @@ function RecipeListItem({ wr, recipe, catalogEntry, isActive, week, upliftPercen
           </span>
           <span className="font-mono text-xs mt-0.5" style={tone.code}>{wr.code}</span>
           <LiveDot recipeCode={wr.code} />
+          <MismatchBadge code={wr.code} />
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {sparkValues.length >= 2 && <RampHistorySparkline values={sparkValues} width={56} height={18} />}

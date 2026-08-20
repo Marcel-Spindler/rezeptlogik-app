@@ -76,9 +76,11 @@ test("Planning OASE cockpit renders on mobile", async ({ page }) => {
   await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
 });
 
-test("Cockpit-Linie V2 and Batch-Split tables render", async ({ page }) => {
+// Cockpit-Linie V2 / Batch-Split Automatik / Schema-Planung cards were removed in
+// 037d278 (replaced by the KI-Planungsassistent panel) — this spec now covers that.
+test("KI-Planungsassistent panel opens from the cockpit toolbar", async ({ page }) => {
   await page.goto(`${BASE_URL}?view=planning&oase=cockpit`);
-  await expect(page.getByText("Cockpit-Linie V2 (Vollansicht)")).toBeVisible({ timeout: 30000 });
-  await expect(page.getByText("Batch-Split Automatik (alle Rezepte)")).toBeVisible();
-  await expect(page.getByText("Schema-Planung (einheitlich)")).toBeVisible();
+  await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible({ timeout: 30000 });
+  await page.getByRole("button", { name: "KI-Assistent" }).click();
+  await expect(page.getByText("KI-Planungsassistent")).toBeVisible();
 });

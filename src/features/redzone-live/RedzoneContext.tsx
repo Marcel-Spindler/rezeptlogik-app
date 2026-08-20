@@ -15,7 +15,12 @@ function durationMinutes(start: string | null, end: string | null): number | nul
 }
 
 function enrichRun(run: RedzoneRun): PlatingRunDisplay {
-  const isActive = run.endTime === null || run.outCount === 0 || run.outCount === null;
+  // Ovens/Braisers melden outCount praktisch nie (immer 0) — dort ist endTime
+  // das einzig verlässliche Signal. Für Plating zählt zusätzlich "noch kein
+  // Output", weil ein Run dort schon vor dem ersten gezählten Stück beginnt.
+  const isActive = run.areaName === "Plating"
+    ? run.endTime === null || run.outCount === 0 || run.outCount === null
+    : run.endTime === null;
   return {
     ...run,
     status: isActive ? "active" : "completed",

@@ -12,9 +12,25 @@ import {
 import { buildLinePlanPdf } from "./features/pet-plan/petPdf";
 import { EmptyState } from "./features/pet-plan/PetSharedUi";
 import { ShiftDetail } from "./features/pet-plan/PetShiftDetail";
+import { PET_CSV_STORAGE_KEY } from "./features/wo-reconciliation/WoReconciliationContext";
+
+// Persistiert (nicht nur Session-State): der WO-Abgleich (WoReconciliationContext)
+// liest denselben Key global mit, damit ein hier hochgeladener Plan auch ohne
+// offenes PET-Plan-Tab in die Unstimmigkeits-Anzeige einfließt.
+function loadStoredCsvRows(): PetRow[] | null {
+  try { const raw = localStorage.getItem(PET_CSV_STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
+  catch { return null; }
+}
 
 export function PetPlanView({ data }: { data: DataBundle }) {
-  const [csvRows, setCsvRows] = useState<PetRow[] | null>(null);
+  const [csvRows, setCsvRowsState] = useState<PetRow[] | null>(loadStoredCsvRows);
+  const setCsvRows = useCallback((rows: PetRow[] | null) => {
+    setCsvRowsState(rows);
+    try {
+      if (rows) localStorage.setItem(PET_CSV_STORAGE_KEY, JSON.stringify(rows));
+      else localStorage.removeItem(PET_CSV_STORAGE_KEY);
+    } catch { /* quota */ }
+  }, []);
   const [csvFileName, setCsvFileName] = useState("");
   const [selectedShift, setSelectedShift] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -46,7 +62,7 @@ export function PetPlanView({ data }: { data: DataBundle }) {
       }
     };
     reader.readAsText(file, "utf-8");
-  }, []);
+  }, [setCsvRows]);
 
   function addImage(recipeCode: string, file: File) {
     const reader = new FileReader();

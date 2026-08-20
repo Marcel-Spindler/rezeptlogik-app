@@ -136,7 +136,7 @@ function WoDots({ wos }: { wos: WoMatchedStatus[] }) {
 // menge in kg. null, wenn für dieses Sub-Rezept kein Gewicht bekannt ist oder
 // keine Portionenzahl vorliegt — dann bleibt die WO "OHNE PLAN" statt eine
 // erfundene Zahl zu zeigen.
-function estimatePlannedKg(
+export function estimatePlannedKg(
   recipeWeights: RecipeWeightLookup | null,
   recipeCode: string,
   subRecipe: string,

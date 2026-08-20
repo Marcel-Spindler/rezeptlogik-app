@@ -14,6 +14,12 @@ function hashColor(code: string): string {
   return CAT_COLORS[Math.abs(h) % CAT_COLORS.length];
 }
 
+// Manche Rezeptnamen in der Datenquelle enthalten den Code bereits ("FV4039A -
+// Salmon ..."); wird der Code daneben schon separat angezeigt, sonst doppelt.
+function stripLeadingCode(name: string): string {
+  return name.replace(/^F[A-Z]\d{4}[A-Z]?\s*[-–]\s*/, "");
+}
+
 // ─── Recipe enrichment from app DataBundle ────────────────────────────────────
 
 interface RecipeInfo { name: string; photoUrl?: string; weeks: string[] }
@@ -29,7 +35,7 @@ function useRecipeEnrichment() {
     for (const [code, r] of Object.entries(data.recipes)) {
       const weeks: string[] = [];
       m.set(norm(code), {
-        name: r.markets?.DE?.recipeNameLocal ?? r.baseName,
+        name: stripLeadingCode(r.markets?.DE?.recipeNameLocal ?? r.baseName),
         photoUrl: r.catalog?.photoUrl,
         weeks,
       });
@@ -76,6 +82,91 @@ function useRecipeEnrichment() {
   return { recipeMap, resolveCode, canNavigate, openRecipe };
 }
 
+// ─── Wochen-Kontingent (Planning OASE) ↔ Redzone-Output verdrahten ────────────
+// Kontingent = Verden-Zielmenge der Woche (alle Märkte) aus data.weekRecipes.
+interface MealTarget { target: number; week: string }
+
+function useMealTargets(): Map<string, MealTarget> {
+  const { data, selectedWeek } = useAppState();
+  return useMemo(() => {
+    const m = new Map<string, MealTarget>();
+    for (const wr of data?.weekRecipes ?? []) {
+      const key = norm(wr.code);
+      const isSelected = wr.hfWeek === selectedWeek;
+      // Bevorzugt die gewählte KW; sonst die erste gefundene (z.B. Vorproduktion).
+      if (!m.has(key) || isSelected) m.set(key, { target: wr.totalVerdenVolume, week: wr.weekShort });
+    }
+    return m;
+  }, [data, selectedWeek]);
+}
+
+interface MealProdEntry { produced: number; active: boolean; runs: number; lastActivity: string | null }
+
+function useMealProduced(plating: PlatingRunDisplay[]): Map<string, MealProdEntry> {
+  return useMemo(() => {
+    const m = new Map<string, MealProdEntry>();
+    for (const r of plating) {
+      if (!r.mealCode) continue;
+      const e = m.get(r.mealCode) ?? { produced: 0, active: false, runs: 0, lastActivity: null };
+      e.produced += r.outCount ?? 0;
+      e.runs += 1;
+      if (r.status === "active") e.active = true;
+      const t = r.endTime ?? r.startTime;
+      if (t && (!e.lastActivity || t > e.lastActivity)) e.lastActivity = t;
+      m.set(r.mealCode, e);
+    }
+    return m;
+  }, [plating]);
+}
+
+export interface MealProgressRow {
+  code: string; name?: string; photoUrl?: string; color: string;
+  target: number | null; produced: number; pct: number | null;
+  active: boolean; runs: number; week: string | null;
+}
+
+function useMealProgressRows(
+  targets: Map<string, MealTarget>,
+  produced: Map<string, MealProdEntry>,
+  recipeMap: Map<string, RecipeInfo>,
+  colorMap: Map<string, string>,
+): MealProgressRow[] {
+  return useMemo(() => {
+    const codes = new Set<string>([...targets.keys(), ...produced.keys()]);
+    const rows: MealProgressRow[] = [...codes].map(code => {
+      const t = targets.get(code);
+      const p = produced.get(code);
+      const info = recipeMap.get(code);
+      const target = t?.target ?? null;
+      const prod = p?.produced ?? 0;
+      return {
+        code,
+        name: info?.name,
+        photoUrl: info?.photoUrl,
+        color: colorMap.get(code) ?? hashColor(code),
+        target,
+        produced: prod,
+        pct: target ? (prod / target) * 100 : null,
+        active: p?.active ?? false,
+        runs: p?.runs ?? 0,
+        week: t?.week ?? null,
+      };
+    });
+    // Reihenfolge fürs "wo stehen wir": zuerst was gerade läuft, dann was heute
+    // schon Output hatte (nach Menge), erst danach noch nicht gestartete Meals
+    // (nach Kontingent-Größe) — sonst verdrängen große Fern-KW-Kontingente ohne
+    // jede heutige Aktivität die eigentlich relevanten Zeilen aus der Top-8-Liste.
+    rows.sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      const aStarted = a.produced > 0, bStarted = b.produced > 0;
+      if (aStarted !== bStarted) return aStarted ? -1 : 1;
+      if (aStarted) return b.produced - a.produced;
+      return (b.target ?? 0) - (a.target ?? 0);
+    });
+    return rows;
+  }, [targets, produced, recipeMap, colorMap]);
+}
+
 // ─── Color map (stable hash) ──────────────────────────────────────────────────
 function useMealColorMap(runs: PlatingRunDisplay[]) {
   return useMemo(() => {
@@ -94,6 +185,12 @@ function fmt(iso: string | null) {
 function fmtDur(min: number | null) {
   if (min === null) return "–";
   return min < 60 ? `${min}m` : `${Math.floor(min / 60)}h ${min % 60}m`;
+}
+
+// "Plating Line 1" → "Line 1" — der gemeinsame Präfix frisst sonst genau die
+// Ziffer, an der sich die Lines in schmalen Labels unterscheiden lassen.
+function shortLine(name: string): string {
+  return name.replace(/^Plating\s+/i, "");
 }
 
 // ─── Line Speed ────────────────────────────────────────────────────────────────
@@ -134,8 +231,8 @@ function LineSpeedPanel({ rates }: { rates: Map<string, number> }) {
   if (sorted.length === 0) return null;
   const max = sorted[0][1];
   return (
-    <div className="card overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-100">
+    <div className="card overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 border-b border-slate-100 shrink-0">
         <h3 className="text-sm font-semibold text-slate-800">Line Speed</h3>
         <p className="text-[10px] text-slate-400 mt-0.5">Ø Portionen/Min · abgeschlossene Runs</p>
       </div>
@@ -143,9 +240,9 @@ function LineSpeedPanel({ rates }: { rates: Map<string, number> }) {
         {sorted.map(([line, rate]) => {
           const pct = (rate / max) * 100;
           return (
-            <div key={line} className="flex items-center gap-2.5">
-              <span className="w-16 shrink-0 text-[11px] font-mono text-slate-600 truncate" title={line}>{line}</span>
-              <div className="relative h-4 flex-1 bg-slate-100 rounded overflow-hidden">
+            <div key={line} className="flex items-center gap-2.5 min-w-0">
+              <span className="w-14 shrink-0 text-[11px] font-mono text-slate-600 truncate" title={line}>{shortLine(line)}</span>
+              <div className="relative h-4 flex-1 bg-slate-100 rounded overflow-hidden min-w-0">
                 <div className="h-full rounded bg-teal-500 transition-all duration-700" style={{ width: `${Math.max(pct, 4)}%` }} />
               </div>
               <span className="w-16 shrink-0 text-right font-mono text-[11px] font-semibold text-slate-700 tabular-nums">
@@ -172,18 +269,105 @@ function KpiTile({ value, label, sub, accent = "text-white" }: {
   value: string | number; label: string; sub?: string; accent?: string;
 }) {
   return (
-    <div className="rounded-xl bg-white/10 ring-1 ring-white/15 p-4 flex flex-col gap-1 backdrop-blur-sm">
-      <div className={`text-2xl font-bold font-mono tabular-nums leading-none ${accent}`}>{value}</div>
+    <div className="rounded-xl bg-white/10 ring-1 ring-white/15 p-4 flex flex-col gap-1 backdrop-blur-sm min-w-0">
+      <div className={`text-2xl font-bold font-mono tabular-nums leading-none truncate ${accent}`}>{value}</div>
       <div className="text-[10px] uppercase tracking-widest text-white/50">{label}</div>
       {sub && <div className="text-[10px] text-white/35">{sub}</div>}
     </div>
   );
 }
 
+function ProgressBar({ pct, color, height = 8 }: { pct: number | null; color: string; height?: number }) {
+  const clamped = pct === null ? 0 : Math.min(100, Math.max(0, pct));
+  const over = pct !== null && pct > 100;
+  const width = pct === null ? 0 : clamped > 0 ? Math.max(clamped, 2.5) : 0;
+  return (
+    <div className="relative rounded-full bg-slate-100 overflow-hidden" style={{ height }}>
+      <div
+        className="h-full rounded-full transition-all duration-700"
+        style={{ width: `${width}%`, backgroundColor: over ? "#dc2626" : color }}
+      />
+    </div>
+  );
+}
+
+// ─── Meal-Fortschritt: Kontingent (Planning OASE) vs. produziert (Redzone) ────
+function MealProgressPanel({ rows, canNavigate, openRecipe }: {
+  rows: MealProgressRow[]; canNavigate: boolean; openRecipe: (c: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (rows.length === 0) return null;
+  const withTarget = rows.filter(r => r.target !== null).length;
+  const visible = expanded ? rows : rows.slice(0, 8);
+
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-slate-800">Meal-Fortschritt</h3>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            Wochen-Kontingent (Planning OASE) vs. Plating-Output (Redzone) · {withTarget}/{rows.length} mit Kontingent
+          </p>
+        </div>
+        {rows.length > 8 && (
+          <button type="button" onClick={() => setExpanded(e => !e)}
+            className="text-[11px] text-slate-500 hover:text-emerald-700 font-medium transition-colors shrink-0">
+            {expanded ? "Weniger ↑" : `Alle ${rows.length} →`}
+          </button>
+        )}
+      </div>
+      <div className="divide-y divide-slate-50">
+        {visible.map(r => {
+          const remaining = r.target !== null ? Math.max(0, r.target - r.produced) : null;
+          const over = r.pct !== null && r.pct > 100;
+          return (
+            <button
+              key={r.code}
+              type="button"
+              onClick={() => openRecipe(r.code)}
+              disabled={!canNavigate}
+              className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors min-w-0 ${canNavigate ? "hover:bg-slate-50 cursor-pointer" : "cursor-default"}`}
+            >
+              {r.photoUrl ? (
+                <img src={r.photoUrl} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+              ) : (
+                <div className="w-9 h-9 rounded-lg shrink-0" style={{ backgroundColor: r.color, opacity: 0.75 }} />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 mb-1 min-w-0">
+                  {r.active && <Pulse />}
+                  <span className="font-mono text-[11px] font-bold shrink-0" style={{ color: r.color }}>{r.code}</span>
+                  {r.name && <span className="text-[11px] text-slate-600 truncate min-w-0">{r.name}</span>}
+                  {r.week && <span className="text-[9px] text-slate-400 font-mono shrink-0 ml-auto pl-2">{r.week}</span>}
+                </div>
+                <ProgressBar pct={r.pct} color={r.color} />
+              </div>
+              <div className="w-36 text-right shrink-0">
+                <div className="font-mono text-[12px] font-bold tabular-nums" style={{ color: over ? "#dc2626" : "#0f172a" }}>
+                  {r.produced.toLocaleString("de-DE")}
+                  {r.target !== null && <span className="text-slate-400 font-normal"> / {r.target.toLocaleString("de-DE")}</span>}
+                </div>
+                <div className="text-[10px] font-mono mt-0.5 truncate" style={{ color: over ? "#dc2626" : "#64748b" }}>
+                  {r.pct === null
+                    ? "kein Kontingent"
+                    : over
+                      ? `+${Math.round(r.pct - 100)}% über Plan`
+                      : `${Math.round(r.pct)}% · Rest ${remaining!.toLocaleString("de-DE")}`}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Active meals strip (hero) ────────────────────────────────────────────────
-function ActiveMealsStrip({ runs, colorMap, recipeMap, openRecipe, canNavigate }: {
+function ActiveMealsStrip({ runs, colorMap, recipeMap, progressByCode, openRecipe, canNavigate }: {
   runs: PlatingRunDisplay[]; colorMap: Map<string, string>;
-  recipeMap: Map<string, RecipeInfo>; openRecipe: (c: string) => void; canNavigate: boolean;
+  recipeMap: Map<string, RecipeInfo>; progressByCode: Map<string, MealProgressRow>;
+  openRecipe: (c: string) => void; canNavigate: boolean;
 }) {
   const active = [...new Map(
     runs.filter(r => r.status === "active" && r.mealCode)
@@ -199,26 +383,38 @@ function ActiveMealsStrip({ runs, colorMap, recipeMap, openRecipe, canNavigate }
           const col = r.mealCode ? (colorMap.get(r.mealCode) ?? "#94a3b8") : "#94a3b8";
           const info = r.mealCode ? recipeMap.get(r.mealCode) : undefined;
           const photo = info?.photoUrl;
+          const prog = r.mealCode ? progressByCode.get(r.mealCode) : undefined;
           return (
             <button
               key={r.mealCode}
               type="button"
               onClick={() => r.mealCode && openRecipe(r.mealCode)}
               disabled={!canNavigate}
-              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/10 ring-1 ring-white/20 text-left transition-colors ${canNavigate ? "hover:bg-white/20 cursor-pointer" : "cursor-default"}`}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/10 ring-1 ring-white/20 text-left transition-colors min-w-0 ${canNavigate ? "hover:bg-white/20 cursor-pointer" : "cursor-default"}`}
             >
               {photo ? (
                 <img src={photo} alt="" className="w-7 h-7 rounded object-cover shrink-0 opacity-90" />
               ) : (
                 <div className="w-7 h-7 rounded shrink-0" style={{ backgroundColor: col, opacity: 0.7 }} />
               )}
-              <div>
+              <div className="min-w-0">
                 <div className="font-mono text-[10px] font-bold leading-none" style={{ color: col }}>
                   {r.mealCode}
                 </div>
                 {info?.name && (
                   <div className="text-[10px] text-white/70 leading-tight mt-0.5 max-w-[160px] truncate">
                     {info.name}
+                  </div>
+                )}
+                {prog?.target != null && (
+                  <div className="mt-1 flex items-center gap-1.5 w-[140px]">
+                    <div className="h-1 flex-1 rounded-full bg-white/15 overflow-hidden min-w-0">
+                      <div className="h-full rounded-full" style={{
+                        width: `${Math.min(100, Math.max(3, prog.pct ?? 0))}%`,
+                        backgroundColor: (prog.pct ?? 0) > 100 ? "#f87171" : "#34d399",
+                      }} />
+                    </div>
+                    <span className="text-[9px] font-mono text-white/50 shrink-0">{Math.round(prog.pct ?? 0)}%</span>
                   </div>
                 )}
               </div>
@@ -343,12 +539,15 @@ function GanttTimeline({ runs, hours, colorMap, recipeMap }: {
           <line x1={nowX} y1={0} x2={nowX} y2={lines.length * RH}
             stroke="#10b981" strokeWidth={1.5} strokeDasharray="5 3" />
           <text x={nowX + 3} y={11} fontSize={8} fill="#10b981" fontWeight="700">JETZT</text>
-          {lines.map((line, i) => (
-            <text key={line} x={LW - 7} y={i * RH + RH / 2 + 4}
-              textAnchor="end" fontSize={10} fill="#475569" fontWeight="500">
-              {line.length > 13 ? line.slice(0, 13) + "…" : line}
-            </text>
-          ))}
+          {lines.map((line, i) => {
+            const label = shortLine(line);
+            return (
+              <text key={line} x={LW - 7} y={i * RH + RH / 2 + 4}
+                textAnchor="end" fontSize={10} fill="#475569" fontWeight="500">
+                {label.length > 13 ? label.slice(0, 13) + "…" : label}
+              </text>
+            );
+          })}
           {ticks.map((t, i) => (
             <text key={i} x={t.x} y={lines.length * RH + 17}
               textAnchor="middle" fontSize={9} fill="#94a3b8">{t.label}</text>
@@ -359,76 +558,13 @@ function GanttTimeline({ runs, hours, colorMap, recipeMap }: {
   );
 }
 
-// ─── Output bar chart ─────────────────────────────────────────────────────────
-function OutputBarChart({ runs, colorMap, recipeMap }: {
-  runs: PlatingRunDisplay[]; colorMap: Map<string, string>; recipeMap: Map<string, RecipeInfo>;
-}) {
-  const meals = useMemo(() => {
-    const m = new Map<string, { code: string; total: number; runs: number }>();
-    for (const r of runs) {
-      if (r.status !== "completed" || !r.outCount) continue;
-      const key = r.mealCode ?? r.productTypeSKU ?? "–";
-      if (!m.has(key)) m.set(key, { code: key, total: 0, runs: 0 });
-      const e = m.get(key)!;
-      e.total += r.outCount;
-      e.runs++;
-    }
-    return [...m.values()].sort((a, b) => b.total - a.total).slice(0, 10);
-  }, [runs]);
-
-  if (meals.length === 0) return null;
-  const maxTotal = meals[0].total;
-
-  return (
-    <div className="card overflow-hidden h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-slate-100 shrink-0">
-        <h3 className="text-sm font-semibold text-slate-800">Output nach Meal</h3>
-        <p className="text-[10px] text-slate-400 mt-0.5">Portionen · abgeschlossene Runs</p>
-      </div>
-      <div className="p-4 space-y-3 flex-1 overflow-y-auto">
-        {meals.map(m => {
-          const pct = (m.total / maxTotal) * 100;
-          const col = colorMap.get(m.code) ?? "#94a3b8";
-          const info = recipeMap.get(m.code);
-          return (
-            <div key={m.code}>
-              <div className="flex items-start justify-between mb-1 gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: col }} />
-                    <span className="font-mono text-[11px] font-bold shrink-0" style={{ color: col }}>{m.code}</span>
-                  </div>
-                  {info?.name && (
-                    <div className="text-[10px] text-slate-500 truncate mt-0.5 pl-3.5">{info.name}</div>
-                  )}
-                </div>
-                <span className="font-mono text-[11px] font-semibold text-slate-700 tabular-nums shrink-0">
-                  {m.total.toLocaleString("de-DE")}
-                </span>
-              </div>
-              <div className="relative h-5 bg-slate-100 rounded overflow-hidden">
-                <div className="h-full rounded flex items-center px-2 transition-all duration-700"
-                  style={{ width: `${Math.max(pct, 4)}%`, backgroundColor: col }}>
-                  {pct > 25 && (
-                    <span className="text-[9px] font-semibold text-white whitespace-nowrap">
-                      {m.runs} Run{m.runs !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ─── Line Card ────────────────────────────────────────────────────────────────
-function LineCard({ line, runs, colorMap, recipeMap, avgDuration, lineSpeed, onOpenRecipe, canNavigate }: {
+function LineCard({ line, runs, colorMap, recipeMap, avgDuration, lineSpeed, progressByCode, onOpenRecipe, canNavigate }: {
   line: string; runs: PlatingRunDisplay[];
   colorMap: Map<string, string>; recipeMap: Map<string, RecipeInfo>;
-  avgDuration: number | null; lineSpeed: number | null; onOpenRecipe: (c: string) => void; canNavigate: boolean;
+  avgDuration: number | null; lineSpeed: number | null;
+  progressByCode: Map<string, MealProgressRow>;
+  onOpenRecipe: (c: string) => void; canNavigate: boolean;
 }) {
   const active = runs.find(r => r.status === "active");
   const done = runs.filter(r => r.status === "completed").slice(0, 4);
@@ -437,20 +573,23 @@ function LineCard({ line, runs, colorMap, recipeMap, avgDuration, lineSpeed, onO
   const pct = elapsedMin !== null && avgDuration ? Math.min(100, (elapsedMin / avgDuration) * 100) : null;
   const col = active?.mealCode ? (colorMap.get(active.mealCode) ?? "#10b981") : "#10b981";
   const activeInfo = active?.mealCode ? recipeMap.get(active.mealCode) : undefined;
+  const activeName = activeInfo?.name
+    ?? active?.productTypeName.replace(active?.mealCode ?? "", "").replace(/^\s*[-–]?\s*/, "");
   const liveRate = active ? ratePerMinForRun(active, Date.now()) : null;
+  const activeProgress = active?.mealCode ? progressByCode.get(active.mealCode) : undefined;
   // r=16 → circumference ≈ 100.53
   const circ = 100.53;
   const dash = pct !== null ? (pct / 100) * circ : 0;
 
   return (
-    <div className={`rounded-xl ring-1 overflow-hidden bg-white transition-shadow ${active ? "ring-emerald-200 shadow-md shadow-emerald-50" : "ring-slate-200"}`}>
+    <div className={`rounded-xl ring-1 overflow-hidden bg-white transition-shadow min-w-0 ${active ? "ring-emerald-200 shadow-md shadow-emerald-50" : "ring-slate-200"}`}>
       {/* Header */}
-      <div className={`px-4 py-2.5 flex items-center justify-between ${active ? "bg-gradient-to-r from-emerald-50 to-teal-50/40" : "bg-slate-50"}`}>
-        <div className="flex items-center gap-2">
-          {active ? <Pulse /> : <span className="w-2.5 h-2.5 rounded-full border-2 border-slate-300" />}
-          <span className="font-semibold text-sm text-slate-800">{line}</span>
+      <div className={`px-4 py-2.5 flex items-center justify-between gap-2 ${active ? "bg-gradient-to-r from-emerald-50 to-teal-50/40" : "bg-slate-50"}`}>
+        <div className="flex items-center gap-2 min-w-0">
+          {active ? <Pulse /> : <span className="w-2.5 h-2.5 rounded-full border-2 border-slate-300 shrink-0" />}
+          <span className="font-semibold text-sm text-slate-800 truncate">{line}</span>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           {lineSpeed !== null && (
             <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-700" title="Ø Portionen/Min (abgeschlossene Runs)">
               Ø {lineSpeed.toFixed(1)}/min
@@ -464,8 +603,8 @@ function LineCard({ line, runs, colorMap, recipeMap, avgDuration, lineSpeed, onO
 
       {/* Active run */}
       {active && (
-        <div className="px-4 py-3 border-b border-slate-100">
-          <div className="flex items-start gap-3">
+        <div className="px-4 py-3 border-b border-slate-100 min-w-0">
+          <div className="flex items-start gap-3 min-w-0">
             {/* Photo or progress arc */}
             <div className="shrink-0 relative">
               {activeInfo?.photoUrl ? (
@@ -495,18 +634,18 @@ function LineCard({ line, runs, colorMap, recipeMap, avgDuration, lineSpeed, onO
             </div>
             {/* Info */}
             <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-1">
-                <div className="min-w-0">
+              <div className="flex items-start justify-between gap-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   {active.mealCode && (
-                    <div className="text-[10px] font-bold font-mono leading-none mb-0.5" style={{ color: col }}>
+                    <div className="text-[10px] font-bold font-mono leading-none mb-0.5 truncate" style={{ color: col }}>
                       {active.mealCode}
                       {activeInfo?.weeks.length ? (
                         <span className="ml-1 font-normal text-slate-400">· {activeInfo.weeks.slice(-1)[0]}</span>
                       ) : null}
                     </div>
                   )}
-                  <div className="text-[12px] font-semibold text-slate-800 leading-tight">
-                    {activeInfo?.name ?? active.productTypeName.replace(active.mealCode ?? "", "").replace(/^\s*[-–]?\s*/, "")}
+                  <div className="text-[12px] font-semibold text-slate-800 leading-tight line-clamp-2">
+                    {activeName}
                   </div>
                 </div>
                 {canNavigate && active.mealCode && (
@@ -531,6 +670,18 @@ function LineCard({ line, runs, colorMap, recipeMap, avgDuration, lineSpeed, onO
                   </span>
                 ) : null}
               </div>
+              {activeProgress?.target != null && (
+                <div className="mt-2 min-w-0">
+                  <div className="flex items-center justify-between text-[10px] mb-1 gap-2">
+                    <span className="text-slate-400 shrink-0">Wochen-Kontingent {activeProgress.week ?? ""}</span>
+                    <span className="font-mono font-semibold text-slate-600 truncate">
+                      {activeProgress.produced.toLocaleString("de-DE")} / {activeProgress.target.toLocaleString("de-DE")}
+                      {" · "}{Math.round(activeProgress.pct ?? 0)}%
+                    </span>
+                  </div>
+                  <ProgressBar pct={activeProgress.pct} color={col} height={5} />
+                </div>
+              )}
             </div>
           </div>
           <div className="mt-2.5 h-1 rounded-full bg-slate-100 overflow-hidden">
@@ -546,12 +697,12 @@ function LineCard({ line, runs, colorMap, recipeMap, avgDuration, lineSpeed, onO
             const c = r.mealCode ? (colorMap.get(r.mealCode) ?? "#94a3b8") : "#94a3b8";
             const info = r.mealCode ? recipeMap.get(r.mealCode) : undefined;
             return (
-              <div key={`${r.startTime ?? i}`} className="flex items-center gap-2 text-[11px]">
+              <div key={`${r.startTime ?? i}`} className="flex items-center gap-2 text-[11px] min-w-0">
                 <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: c }} />
-                <div className="min-w-0 flex-1">
-                  <span className="font-mono text-[10px] font-semibold" style={{ color: c }}>{r.mealCode}</span>
+                <div className="min-w-0 flex-1 flex items-baseline gap-1.5">
+                  <span className="font-mono text-[10px] font-semibold shrink-0" style={{ color: c }}>{r.mealCode}</span>
                   {info?.name && (
-                    <span className="text-slate-500 ml-1.5 truncate">{info.name}</span>
+                    <span className="text-slate-500 truncate min-w-0 flex-1">{info.name}</span>
                   )}
                 </div>
                 <span className="text-slate-400 font-mono shrink-0 text-[10px]">
@@ -572,42 +723,75 @@ function LineCard({ line, runs, colorMap, recipeMap, avgDuration, lineSpeed, onO
 
 // ─── Cooking Grid ─────────────────────────────────────────────────────────────
 function CookingGrid({ runs }: { runs: PlatingRunDisplay[] }) {
+  const active = useMemo(() => runs.filter(r => r.status === "active"), [runs]);
+
   const grouped = useMemo(() => {
     const m = new Map<string, PlatingRunDisplay[]>();
-    for (const r of runs) {
+    for (const r of active) {
       if (!m.has(r.locationName)) m.set(r.locationName, []);
       m.get(r.locationName)!.push(r);
     }
     return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [active]);
+
+  const recentFinished = useMemo(() => {
+    return [...runs]
+      .filter(r => r.status === "completed" && r.endTime)
+      .sort((a, b) => b.endTime!.localeCompare(a.endTime!))
+      .slice(0, 8);
   }, [runs]);
+
   if (runs.length === 0) return null;
+
   return (
-    <div className="card overflow-hidden">
-      <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50/60 border-b border-amber-100 flex items-center gap-2">
+    <div className="card overflow-hidden h-full flex flex-col">
+      <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-orange-50/60 border-b border-amber-100 flex items-center gap-2 shrink-0">
         <svg className="w-4 h-4 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
             d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
         </svg>
-        <h3 className="text-sm font-semibold text-amber-900">Küche — aktiv</h3>
-        <span className="ml-auto text-[10px] font-mono text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-          {runs.length} Geräte
+        <h3 className="text-sm font-semibold text-amber-900">Küche</h3>
+        <span className={`ml-auto text-[10px] font-mono px-2 py-0.5 rounded-full shrink-0 ${active.length > 0 ? "text-amber-700 bg-amber-100" : "text-slate-500 bg-slate-100"}`}>
+          {active.length > 0 ? `${active.length} aktiv` : "gerade nichts im Ofen/Braiser"}
         </span>
       </div>
-      <div className="p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-        {grouped.map(([loc, locRuns]) => (
-          <div key={loc} className="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-2.5">
-            <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wide mb-1.5">{loc}</div>
-            {locRuns.slice(0, 2).map((r, i) => (
-              <div key={i} className="text-[10px] text-slate-600 truncate leading-tight" title={r.productTypeName}>
-                {r.productTypeName.slice(0, 32)}
+
+      {active.length > 0 ? (
+        <div className="p-3 grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+          {grouped.map(([loc, locRuns]) => (
+            <div key={loc} className="rounded-lg bg-amber-50 ring-1 ring-amber-200 p-2.5 min-w-0">
+              <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wide mb-1.5 truncate">{loc}</div>
+              {locRuns.slice(0, 2).map((r, i) => (
+                <div key={i} className="text-[10px] text-slate-600 truncate leading-tight" title={r.productTypeName}>
+                  {r.productTypeName}
+                </div>
+              ))}
+              <div className="mt-1.5 h-0.5 rounded-full bg-amber-200 overflow-hidden">
+                <div className="h-full bg-amber-500 animate-pulse w-full" />
               </div>
-            ))}
-            <div className="mt-1.5 h-0.5 rounded-full bg-amber-200 overflow-hidden">
-              <div className="h-full bg-amber-500 animate-pulse w-full" />
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className="p-4 flex-1">
+          {recentFinished.length > 0 ? (
+            <>
+              <div className="text-[10px] text-slate-400 mb-2">Zuletzt fertig</div>
+              <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))" }}>
+                {recentFinished.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[11px] min-w-0 rounded-lg bg-slate-50 px-2.5 py-1.5 ring-1 ring-slate-100">
+                    <span className="font-mono text-[10px] font-semibold text-slate-500 shrink-0">{r.locationName}</span>
+                    <span className="text-slate-500 truncate min-w-0 flex-1" title={r.productTypeName}>{r.productTypeName}</span>
+                    <span className="text-slate-400 font-mono shrink-0 text-[10px]">{fmt(r.endTime)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-center text-[11px] text-slate-400 py-6">Keine Aktivität im gewählten Zeitraum</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -703,7 +887,7 @@ function CompletedTable({ runs, colorMap, recipeMap, onOpenRecipe, canNavigate }
                           {run.mealCode ?? run.productTypeSKU}
                         </span>
                         {info?.name && (
-                          <span className="ml-2 text-slate-500 text-[11px] truncate max-w-[200px] inline-block align-bottom">
+                          <span className="ml-2 text-slate-500 text-[11px] truncate max-w-[220px] inline-block align-bottom">
                             {info.name}
                           </span>
                         )}
@@ -711,7 +895,7 @@ function CompletedTable({ runs, colorMap, recipeMap, onOpenRecipe, canNavigate }
                           <span className="ml-1.5 text-[9px] text-slate-400 font-mono">{info.weeks.slice(-1)[0]}</span>
                         ) : null}
                         {!info?.name && (
-                          <span className="ml-2 text-slate-400 text-[11px] truncate max-w-[180px] inline-block align-bottom">
+                          <span className="ml-2 text-slate-400 text-[11px] truncate max-w-[200px] inline-block align-bottom">
                             {run.productTypeName.replace(run.mealCode ?? "", "").replace(/^\s*[-–]?\s*/, "")}
                           </span>
                         )}
@@ -764,7 +948,14 @@ export function RedzoneLiveView() {
 
   const plating = useMemo(() => resolvedRuns.filter(r => r.areaName === "Plating"), [resolvedRuns]);
   const platingDone = useMemo(() => plating.filter(r => r.status === "completed"), [plating]);
+  const cooking = useMemo(() => resolvedRuns.filter(r => r.areaName !== "Plating"), [resolvedRuns]);
   const colorMap = useMealColorMap(plating);
+
+  // Planning OASE (Wochen-Kontingent) ↔ Redzone (Ist-Produktion) verdrahten.
+  const mealTargets = useMealTargets();
+  const mealProduced = useMealProduced(plating);
+  const progressRows = useMealProgressRows(mealTargets, mealProduced, recipeMap, colorMap);
+  const progressByCode = useMemo(() => new Map(progressRows.map(r => [r.code, r])), [progressRows]);
 
   const lineRuns = useMemo(() => {
     const m = new Map<string, PlatingRunDisplay[]>();
@@ -781,6 +972,7 @@ export function RedzoneLiveView() {
   }, [platingDone]);
 
   const lineSpeeds = useLineSpeeds(platingDone);
+  const cookingActiveCount = useMemo(() => cooking.filter(r => r.status === "active").length, [cooking]);
 
   if (rz.loading) return (
     <div className="flex items-center justify-center h-64">
@@ -845,54 +1037,59 @@ export function RedzoneLiveView() {
             <KpiTile value={rz.totalPlated.toLocaleString("de-DE")} label="Total Output" sub="Portionen" accent="text-cyan-300" />
             <KpiTile value={fmtDur(avgDuration)} label="Ø Laufzeit" sub="pro Run" accent="text-white" />
             <KpiTile value={fmtRate(lineSpeeds.overall)} label="Ø Line Speed" sub="Stk/min" accent="text-teal-300" />
-            <KpiTile value={rz.cookingNow.length} label="In Küche" sub="Ovens & Braisers" accent="text-amber-300" />
+            <KpiTile value={cookingActiveCount} label="In Küche" sub="Ovens & Braisers" accent="text-amber-300" />
             <KpiTile
               value={rz.lastUpdate
                 ? new Date(rz.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "–"}
               label="Letztes Update" accent="text-white/65" />
           </div>
 
-          {/* Active meals strip with names + photos */}
+          {/* Active meals strip with names + photos + Kontingent-Fortschritt */}
           <ActiveMealsStrip
-            runs={plating} colorMap={colorMap} recipeMap={recipeMap}
+            runs={plating} colorMap={colorMap} recipeMap={recipeMap} progressByCode={progressByCode}
             openRecipe={openRecipe} canNavigate={canNavigate} />
         </div>
       </div>
 
+      {/* ═══ MEAL-FORTSCHRITT: Kontingent (Planning OASE) ↔ Redzone-Output ═══ */}
+      <MealProgressPanel rows={progressRows} canNavigate={canNavigate} openRecipe={openRecipe} />
+
       {/* ═══ GANTT ═══ */}
       <GanttTimeline runs={resolvedRuns} hours={rz.hours} colorMap={colorMap} recipeMap={recipeMap} />
 
-      {/* ═══ OUTPUT + LINES ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          <OutputBarChart runs={plating} colorMap={colorMap} recipeMap={recipeMap} />
-          <LineSpeedPanel rates={lineSpeeds.rates} />
+      {/* ═══ PLATING LINES ═══ */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+          </svg>
+          <h2 className="text-sm font-semibold text-slate-700">Plating Lines</h2>
         </div>
-        <div className="lg:col-span-3 space-y-3">
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-emerald-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-            </svg>
-            <h2 className="text-sm font-semibold text-slate-700">Plating Lines</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {lineRuns.map(([line, runs]) => (
-              <LineCard key={line} line={line} runs={runs} colorMap={colorMap} recipeMap={recipeMap}
-                avgDuration={avgDuration} lineSpeed={lineSpeeds.rates.get(line) ?? null}
-                onOpenRecipe={openRecipe} canNavigate={canNavigate} />
-            ))}
-            {lineRuns.length === 0 && (
-              <div className="col-span-2 card p-8 text-center text-sm text-slate-400">
-                Keine Plating-Lines im gewählten Zeitraum
-              </div>
-            )}
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          {lineRuns.map(([line, runs]) => (
+            <LineCard key={line} line={line} runs={runs} colorMap={colorMap} recipeMap={recipeMap}
+              avgDuration={avgDuration} lineSpeed={lineSpeeds.rates.get(line) ?? null}
+              progressByCode={progressByCode}
+              onOpenRecipe={openRecipe} canNavigate={canNavigate} />
+          ))}
+          {lineRuns.length === 0 && (
+            <div className="sm:col-span-2 xl:col-span-3 card p-8 text-center text-sm text-slate-400">
+              Keine Plating-Lines im gewählten Zeitraum
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ═══ COOKING ═══ */}
-      <CookingGrid runs={rz.cookingNow} />
+      {/* ═══ LINE SPEED + KÜCHE ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+        <div className="lg:col-span-1">
+          <LineSpeedPanel rates={lineSpeeds.rates} />
+        </div>
+        <div className="lg:col-span-2">
+          <CookingGrid runs={cooking} />
+        </div>
+      </div>
 
       {/* ═══ TABLE ═══ */}
       <CompletedTable runs={platingDone} colorMap={colorMap} recipeMap={recipeMap}

@@ -6,9 +6,10 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
 // Baseline "does the app still boot" check for the rebuilt src/app/ shell
 // (AppContext, Router, Shell, NavTabs). Every rewrite phase should keep this green.
 
-test("all 8 nav tabs render via deep link and highlight themselves in the sidebar", async ({ page }) => {
+test("all 13 nav tabs render via deep link and highlight themselves in the sidebar", async ({ page }) => {
   const views: Array<[string, string]> = [
     ["recipe", "Rezept"],
+    ["catalog", "Meal Katalog"],
     ["planning", "Planning OASE"],
     ["wo", "KET Plan / WO"],
     ["pet", "PET Plan / Plating"],
@@ -16,11 +17,19 @@ test("all 8 nav tabs render via deep link and highlight themselves in the sideba
     ["whatif", "What-If Rechner"],
     ["rundmail", "Rundmail"],
     ["import", "CSV Import"],
+    ["blast-chiller", "Blast Chiller Bot"],
+    ["allergen-plating", "Allergen Plating Bot"],
+    ["postblast-live", "Postblast Live"],
+    // Redzone Live is dev-only (needs the local WMS/Snowflake server) — valid to test
+    // here since these specs always run against a local dev server.
+    ["redzone-live", "Redzone Live"],
   ];
 
   for (const [view, label] of views) {
     await page.goto(`${BASE_URL}?view=${view}`);
-    const nav = page.locator("aside nav").first();
+    // "aside nav" for the standard shell, but the two bot views (blast-chiller,
+    // allergen-plating) render NavTabs full-width without the aside wrapper.
+    const nav = page.locator("nav").first();
     await expect(nav).toBeVisible({ timeout: 30000 });
     // active tab is styled with bg-verden-600 — assert via the shared class rather than color
     await expect(nav.getByRole("button", { name: label, exact: true })).toHaveClass(/bg-verden-600/);

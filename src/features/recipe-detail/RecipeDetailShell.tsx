@@ -140,7 +140,7 @@ export function RecipeDetail({ wr, recipe, data, cookSchedules, processSpecs, up
       {!recipe && <div className="card p-4 text-amber-700">Keine Rezept-Stammdaten für {wr.code} gefunden (CSV-Export prüfen).</div>}
 
       {recipe && tab === "overview" && (
-        <OverviewTab wr={wr} recipe={recipe} market={market} md={md} portionsTotal={portionsTotal} upliftPercent={upliftPercent} productionPlan={data.productionPlan} />
+        <OverviewTab wr={wr} recipe={recipe} market={market} md={md} portionsTotal={portionsTotal} upliftPercent={upliftPercent} productionPlan={data.productionPlan} data={data} />
       )}
       {recipe && tab === "subrecipes" && md && (
         <SubRecipesTab recipeCode={wr.code} md={md} cookSchedules={cookSchedules} detailSearch={detailSearch} />
