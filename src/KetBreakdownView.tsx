@@ -183,6 +183,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [woInstructions, setWoInstructions] = useState<Record<string, WoInstruction>>({});
   const [selectedDayFilter, setSelectedDayFilter] = useState<Set<string> | null>(null);
   const [selectedInstructionDays, setSelectedInstructionDays] = useState<Set<string> | null>(null);
+  const [selectedWoKeys, setSelectedWoKeys] = useState<Set<string>>(new Set());
   const [batchInstructionBusy, setBatchInstructionBusy] = useState(false);
   const [batchInstructionStatus, setBatchInstructionStatus] = useState<string | null>(null);
   const [failedInstructions, setFailedInstructions] = useState<Array<{ key: string; woNumber: string; error: string }>>([]);
@@ -291,7 +292,8 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
         const rb = (b.subRecipeName || b.recipeName).toLowerCase();
         return ra.localeCompare(rb, "de") || a.woNumber.localeCompare(b.woNumber, "de", { numeric: true });
       })] as [string, KetRow[]])
-      .sort((a, b) => parseSortKey(a[0]) - parseSortKey(b[0]));
+      // Neuester Tag immer oben — unabhängig von woSortMode, der nur innerhalb eines Tages sortiert.
+      .sort((a, b) => parseSortKey(b[0]) - parseSortKey(a[0]));
   }, [weekFilteredRows]);
 
   const dayFilteredGroups = useMemo(() => {
@@ -396,19 +398,41 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   }, []);
 
   const deleteDay = useCallback((date: string) => {
-    const next = (csvRows ?? []).filter(r => extractDate(r.dateNeeded) !== date);
+    const removedKeys = new Set((csvRows ?? []).filter(r => extractDate(r.dateNeeded) === date).map(r => r.key));
+    const next = (csvRows ?? []).filter(r => !removedKeys.has(r.key));
     // Always check if selectedKey is still valid after deletion
     if (selectedKey && !next.some(r => r.key === selectedKey)) {
       setSelectedKey(null);
     }
+    setSelectedWoKeys((current) => {
+      if (![...removedKeys].some(k => current.has(k))) return current;
+      const nextSel = new Set(current);
+      for (const k of removedKeys) nextSel.delete(k);
+      return nextSel;
+    });
     persistCsvRows(next.length > 0 ? next : null);
   }, [csvRows, selectedKey, persistCsvRows]);
 
   const deleteWo = useCallback((key: string) => {
     const next = (csvRows ?? []).filter(r => r.key !== key);
     if (selectedKey === key) setSelectedKey(null);
+    setSelectedWoKeys((current) => {
+      if (!current.has(key)) return current;
+      const nextSel = new Set(current);
+      nextSel.delete(key);
+      return nextSel;
+    });
     persistCsvRows(next.length > 0 ? next : null);
   }, [csvRows, selectedKey, persistCsvRows]);
+
+  const toggleWoSelection = useCallback((key: string) => {
+    setSelectedWoKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
 
   const source = useMemo(
     () => detectSource(
@@ -532,6 +556,40 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       setBatchInstructionBusy(false);
     }
   }, [instructionRows, calcMap, woInstructions, persistInstructions]);
+
+  // Gezielte Instruction-Generierung für per Checkbox ausgewählte WOs (unabhängig von der
+  // Tage-Auswahl oben) — gleicher Ablauf wie generateInstructionsForSelectedDays, nur mit
+  // selectedWoKeys statt activeInstructionDays als Quelle der zu erzeugenden Zeilen.
+  const generateInstructionsForSelection = useCallback(async () => {
+    const rowsToGenerate = ketRows.filter((row) => selectedWoKeys.has(row.key));
+    if (rowsToGenerate.length === 0) return;
+    setBatchInstructionBusy(true);
+    setBatchInstructionStatus(`Erzeuge ${rowsToGenerate.length} WO-Instructions für Auswahl …`);
+    setFailedInstructions([]);
+    try {
+      const result = await generateWoInstructionsBatch(rowsToGenerate.map((row) => ({
+        key: row.key,
+        row,
+        calc: calcMap.get(row.key)!,
+      })).filter((item) => item.calc), (chunkResult, done, total) => {
+        persistInstructions(chunkResult.generated, rowsToGenerate);
+        setBatchInstructionStatus(`${done} von ${total} ausgewählten WO-Instructions verarbeitet …`);
+      });
+      persistInstructions(result.generated, rowsToGenerate);
+      const genCount = Object.keys(result.generated).length;
+      if (result.failed.length > 0) {
+        setFailedInstructions(result.failed);
+        setBatchInstructionStatus(`${genCount} von ${rowsToGenerate.length} erzeugt · ${result.failed.length} fehlgeschlagen`);
+      } else {
+        setBatchInstructionStatus(`${genCount} WO-Instructions für Auswahl erzeugt`);
+      }
+    } catch (error) {
+      console.error("[KetBreakdown] Selection instruction generation failed:", error);
+      setBatchInstructionStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBatchInstructionBusy(false);
+    }
+  }, [ketRows, selectedWoKeys, calcMap, persistInstructions]);
 
   const retryFailedInstructions = useCallback(async () => {
     if (failedInstructions.length === 0) return;
@@ -850,6 +908,28 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           )}
         </div>
 
+        {/* WO-Mehrfachauswahl (Checkboxen unten in der Liste) — unabhängig von Instruction-Tagen */}
+        {selectedWoKeys.size > 0 && (
+          <div className="border-b border-slate-100 bg-blue-50/60 px-3 py-2 flex items-center gap-2">
+            <span className="flex-1 text-[10px] font-black text-blue-800">{selectedWoKeys.size} WOs ausgewählt</span>
+            <button
+              type="button"
+              disabled={batchInstructionBusy}
+              onClick={() => void generateInstructionsForSelection()}
+              className="rounded-lg bg-blue-700 px-2 py-1.5 text-[9px] font-black text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Instructions für Auswahl erzeugen
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedWoKeys(new Set())}
+              className="rounded-lg bg-slate-200 px-2 py-1.5 text-[9px] font-bold text-slate-600 hover:bg-slate-300"
+            >
+              Auswahl aufheben
+            </button>
+          </div>
+        )}
+
         {/* WO List */}
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
           {filteredGroups.length === 0 ? (
@@ -876,11 +956,24 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                   {rows.map((row) => {
                     const calc = calcMap.get(row.key);
                     const isSelected = selectedKey === row.key;
+                    const isChecked = selectedWoKeys.has(row.key);
                     const sc = statusColors(row.kitchenStatus);
                     const done = row.woCookedPortions ?? 0;
                     const pct = row.targetPortions > 0 ? (done / row.targetPortions) * 100 : 0;
                     return (
                       <div key={row.key} className="flex items-stretch gap-1">
+                        <label
+                          className="flex shrink-0 items-center px-1 cursor-pointer"
+                          title="Für Mehrfachauswahl markieren"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleWoSelection(row.key)}
+                            className="h-3.5 w-3.5 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                          />
+                        </label>
                         <button
                           type="button"
                           onClick={() => setSelectedKey(row.key)}
@@ -916,6 +1009,17 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                           <div className={`text-[10px] truncate leading-tight ${isSelected ? "text-blue-200" : "text-slate-600"} flex items-center gap-1`}>
                             {row.subRecipeName || row.recipeName}
                             <LiveBadge recipeCode={row.recipeCode} />
+                            {calc?.chillerAssignment && (
+                              <span
+                                className="shrink-0 text-[8px] font-black px-1 py-0.5 rounded"
+                                style={{ background: `${calc.chillerAssignment.cfg.cntBg}30`, color: calc.chillerAssignment.cfg.cntBg }}
+                                title={calc.chillerAssignment.unknown
+                                  ? "Blast Chiller: keine Allergen-Daten gefunden — Zuteilung ungesichert, bitte manuell prüfen"
+                                  : `Blast Chiller: ${calc.chillerAssignment.cfg.label} (${calc.chillerAssignment.cfg.sub})`}
+                              >
+                                ❄️{calc.chillerAssignment.key}{calc.chillerAssignment.unknown ? "⚠" : ""}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5">
                             <span className={`text-[8px] font-semibold ${isSelected ? "text-blue-300" : "text-slate-400"}`}>

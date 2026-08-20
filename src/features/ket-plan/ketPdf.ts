@@ -1,7 +1,14 @@
 // Baut das druckbare HTML/PDF für einen Satz Work Orders (Breakdown-Karten je WO).
 import { EQUIP_LABELS, type BatchCalc, type KetRow, type WoInstruction } from "./ketTypes";
 import { escHtml, fmtKg, fmtNum, parseDateShift, sortIngredients } from "./ketLogic";
-import { orderCookingMethods } from "./woInstructionBot";
+import { orderCookingMethods, parseInstructionLines, splitInstructionKeywords } from "./woInstructionBot";
+
+// escHtml je Segment, Stationsnamen (SPICE ROOM, GRILL, OFEN, …) farblich hervorgehoben.
+function escHighlight(text: string, color: string): string {
+  return splitInstructionKeywords(text)
+    .map(seg => seg.isKeyword ? `<b style="color:${color};">${escHtml(seg.text)}</b>` : escHtml(seg.text))
+    .join("");
+}
 
 export function buildPdf(
   rows: KetRow[],
@@ -116,22 +123,24 @@ export function buildPdf(
           ${calc.allergensContains.map(a => `<span style="background:#c62828;color:#fff;font-weight:800;font-size:9px;padding:2px 8px;border-radius:9px;">${escHtml(a)}</span>`).join("")}
         </div>`
       : "";
+    // Gleiche Allergen→Chiller-Zuteilung wie der eigenständige Blast Chiller Bot.
+    const chillerHtml = calc.chillerAssignment
+      ? `<div style="margin:6px 0;padding:5px 10px;background:${calc.chillerAssignment.cfg.headBg};border-radius:6px;display:flex;align-items:center;gap:6px;">
+          <span style="font-weight:900;color:${calc.chillerAssignment.cfg.headColor};font-size:10px;">❄️ ${escHtml(calc.chillerAssignment.cfg.label)}</span>
+          <span style="font-weight:700;color:${calc.chillerAssignment.cfg.headColor};font-size:9px;opacity:.8;">${escHtml(calc.chillerAssignment.cfg.sub)}</span>
+          ${calc.chillerAssignment.unknown ? `<span style="font-weight:900;color:#b45309;font-size:9px;">⚠ unbekannt — bitte manuell prüfen</span>` : ""}
+        </div>`
+      : "";
 
     const generatedInstruction = woInstructions[row.key];
     const renderSteps = (text: string) => {
-      const lines = text.split(/\n+/).map(l => l.trim()).filter(Boolean);
+      const lines = parseInstructionLines(text);
       if (lines.length === 0) return `<div style="font-size:9px;color:#1e293b;white-space:pre-wrap;">${escHtml(text)}</div>`;
-      let stepNum = 0;
       return lines.map(line => {
-        // Station header: "A. VEGGIE DEBOX" / "B. OFEN" etc.
-        if (/^[A-D]\. /.test(line)) {
-          stepNum = 0;
-          return `<div style="margin-top:5px;margin-bottom:2px;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#166534;border-bottom:1px solid #d1fae5;padding-bottom:1px;">${escHtml(line)}</div>`;
+        if (line.isHeader) {
+          return `<div style="margin-top:5px;margin-bottom:2px;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#166534;border-bottom:1px solid #d1fae5;padding-bottom:1px;">${escHtml(line.text)}</div>`;
         }
-        const clean = line.replace(/^\s*[-–•*]\s*/, "").replace(/^\s*\d+[.)]\s*/, "").trim();
-        if (!clean) return "";
-        stepNum++;
-        return `<div style="display:flex;gap:4px;align-items:flex-start;margin-bottom:2px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;background:#166534;color:#fff;border-radius:50%;font-size:7px;font-weight:900;flex-shrink:0;margin-top:1px;">${stepNum}</span><span style="font-size:9px;color:#1e293b;line-height:1.35;white-space:pre-wrap;">${escHtml(clean)}</span></div>`;
+        return `<div style="display:flex;gap:4px;align-items:flex-start;margin-bottom:2px;"><span style="display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;background:#166534;color:#fff;border-radius:50%;font-size:7px;font-weight:900;flex-shrink:0;margin-top:1px;">${line.stepNum}</span><span style="font-size:9px;color:#1e293b;line-height:1.35;white-space:pre-wrap;">${escHighlight(line.text, "#166534")}</span></div>`;
       }).join("");
     };
     const instrHtml = generatedInstruction
@@ -158,8 +167,16 @@ export function buildPdf(
       : null;
 
 
+    // Duplex-Druck: "card-front" (alles außer Zutaten) und "card-back" (Zutaten)
+    // sind je ein page-break-inside:avoid-Block (siehe CSS). Passt beides auf eine
+    // Seite, bleibt es eine Seite; reicht der Platz nicht, rutscht der komplette
+    // card-back-Block als Ganzes auf die Rückseite (nie nur ein Teil der Tabelle).
+    // Die Meal-Kennung wird deshalb im card-back-Block wiederholt — falls er allein
+    // auf der Rückseite landet, weiß man ohne Vorderseite trotzdem, zu welcher WO
+    // die Zutaten gehören.
     return `
 <section class="card" style="page-break-before:${i > 0 ? "always" : "auto"};page-break-after:auto">
+  <div class="card-front">
   <div class="card-top">
     <div>
       <div class="wo-num">WO ${row.woNumber}</div>
@@ -203,6 +220,7 @@ export function buildPdf(
   ${equipBatchHtml}
   ${factorBadgeHtml}
   ${allergenHtml}
+  ${chillerHtml}
 
   <div class="badges">
     <span class="badge ${row.kitchenStatus === "Post Blast" ? "badge-green" : row.kitchenStatus === "Pre Blast" ? "badge-amber" : "badge-gray"}">
@@ -217,7 +235,10 @@ export function buildPdf(
   ${row.workOrderComment ? `<div class="comment warn">⚠ WO Kommentar: ${row.workOrderComment}</div>` : ""}
   ${row.stagingComment ? `<div class="comment info">💬 Staging: ${row.stagingComment}</div>` : ""}
   ${instrHtml}
+  </div>
 
+  <div class="card-back">
+  <div class="back-id">WO ${row.woNumber} · ${escHtml(row.recipeCode)} · ${escHtml(row.subRecipeName || row.recipeName)}</div>
   ${ingRows ? `
   <table class="ings">
     <thead><tr><th>Zutat</th><th class="num hi">Pro Batch</th><th class="num">Total</th></tr></thead>
@@ -229,6 +250,7 @@ export function buildPdf(
     </tr></tfoot>
   </table>` : `
   <div class="no-data">${!calc.recipeFound ? "⚠ Rezept nicht in App-Daten — KG-Berechnung nicht möglich." : "⚠ Sub-Rezept in Zutaten nicht gefunden."}</div>`}
+  </div>
 </section>`;
   }).join("\n");
 
@@ -295,6 +317,7 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
 .hi{color:#1e40af;font-weight:700}
 .cat{display:inline-block;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;background:#f1f5f9;color:#64748b;margin-right:4px}
 .no-data{padding:10px;background:#fef3c7;border-radius:6px;font-size:10px;color:#92400e;margin-top:8px;border-left:3px solid #fbbf24}
+.back-id{display:none}
 @media print{
   body{font-size:9px}
   .page-header,.equip-section{display:none}
@@ -306,6 +329,14 @@ body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
     max-height:none;overflow:visible;
   }
   .card:first-of-type{page-break-before:auto;break-before:auto}
+  /* Duplex: card-front (alles außer Zutaten) und card-back (Zutaten) sind je ein
+     atomarer Block — passt beides auf eine Seite, bleibt es eine; reicht der Platz
+     nicht, rutscht card-back komplett auf die Rückseite statt mittendrin zu reißen. */
+  .card-front,.card-back{page-break-inside:avoid;break-inside:avoid-page}
+  .back-id{
+    display:block;font-size:10px;font-weight:800;color:#1e3a5f;
+    padding-bottom:4px;margin-bottom:6px;border-bottom:2px solid #1e3a5f;
+  }
   .wo-num{font-size:22px}.sub{font-size:15px}
   .sval{font-size:15px}.sval.big{font-size:28px}
   .stat{padding:5px 8px}.slabel{font-size:7px}

@@ -90,8 +90,8 @@ describe("calcBatch equipment resolution", () => {
     expect(calc.resolvedCookMethods).toContain("OVEN");
     expect(calc.primaryEquip).toBe("OVEN");
     expect(calc.batches).toBe(5);
-    expect(calc.perBatchKg).toBe(45);   // volle Batch-Kapazität, kein Durchschnitt
-    expect(calc.remainderKg).toBeCloseTo(20); // 200 - 4×45 = 20 kg Rest-Batch
+    expect(calc.perBatchKg).toBe(40);   // 200kg gleichmäßig auf 5 Batches verteilt, kein Rest-Batch
+    expect(calc.remainderKg).toBe(0);
   });
 
   it("uses a manual equipment override when no automatic source exists", () => {
@@ -198,6 +198,7 @@ describe("calcBatch equipment resolution", () => {
         factorFallbackCapacity: false,
         readyMade: false,
         allergensContains: [],
+        chillerAssignment: null,
         uomWarnings: [],
         factorOverridesEquip: false,
       }]]),
@@ -239,6 +240,7 @@ describe("calcBatch equipment resolution", () => {
       factorFallbackCapacity: false,
       readyMade: false,
       allergensContains: [],
+      chillerAssignment: null,
       uomWarnings: [],
       factorOverridesEquip: false,
     };

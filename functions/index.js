@@ -3296,26 +3296,32 @@ async function generateGeminiInstructionCloud(context) {
   const model = "gemini-2.5-flash";
   const requestBody = JSON.stringify({
     systemInstruction: { parts: [{ text: `Production instruction bot — Factor Verden kitchen.
-Generate MINIMAL bilingual cooking instructions (EN + DE).
+Generate clear, bilingual cooking instructions (EN + DE) for kitchen staff who can
+cook but are not trained chefs — no professional shorthand or jargon, spell out
+what to actually do and how to tell each step is done.
 
-FORMAT: Each cook method from processFlow → one lettered station line + MAX 1 step below it.
-Station names: SPICE PORTIONING→"A. SPICE ROOM"/"A. GEWÜRZRAUM" | VEGGIE DEBOX→"VEGGIE DEBOX"/"GEMÜSE-DEBOX" | PROTEIN DEBOX→"PROTEIN DEBOX"/"PROTEINDEBOX" | BRAISER→"BRAISER" | OVEN→"OFEN" | GRILL→"GRILL" | HORIZONTAL MIXER→"HORIZONTAL MIXER"/"HORIZONTALMISCHER" | PLANETARY MIXER→"PLANETARY MIXER"/"PLANETENMISCHER" | PATTY MAKER→"PATTY MAKER"/"PATTY-PRESSE" | HAND MIX→"HAND MIX"/"HANDMISCHUNG" | MARINADE→"MARINADE" | HAND MARINADE→"HANDMARINADE" | IMMERSION BLENDER→"STABMIXER" | DRAIN→"DRAIN"/"ABTROPFEN" | BLAST CHILLER→"BLAST CHILLER"/"SCHNELLKÜHLER"
+FORMAT: EVERY cook method from processFlow gets its own paragraph, each starting
+on a NEW LINE (real newline character, not just a space) with a sequential letter
+— "A. STATION:", then "B. STATION:", "C. STATION:", … in processFlow order. Never
+run two stations together on one line. After each label, write 3-5 full, clear
+sentences describing the action and a concrete visual/texture/consistency cue for
+when the step is finished.
+Station names: SPICE PORTIONING→"SPICE ROOM"/"GEWÜRZRAUM" | VEGGIE DEBOX→"VEGGIE DEBOX"/"GEMÜSE-DEBOX" | PROTEIN DEBOX→"PROTEIN DEBOX"/"PROTEINDEBOX" | BRAISER→"BRAISER" | OVEN→"OFEN" | GRILL→"GRILL" | HORIZONTAL MIXER→"HORIZONTAL MIXER"/"HORIZONTALMISCHER" | PLANETARY MIXER→"PLANETARY MIXER"/"PLANETENMISCHER" | PATTY MAKER→"PATTY MAKER"/"PATTY-PRESSE" | HAND MIX→"HAND MIX"/"HANDMISCHUNG" | MARINADE→"MARINADE" | HAND MARINADE→"HANDMARINADE" | IMMERSION BLENDER→"STABMIXER" | DRAIN→"DRAIN"/"ABTROPFEN" | BLAST CHILLER→"BLAST CHILLER"/"SCHNELLKÜHLER"
 
 ABSOLUTE RULES:
 - NEVER mention kg, g, grams, kilograms, weights, or quantities of ANY kind
 - NEVER list ingredients — the PDF already has an ingredient table
 - NEVER mention batch counts or batch sizes
-- Each step: MAX 8 words. Only: action + temp/time/texture cue
-- BLAST CHILLER always exactly: "CCP1: Core ≤5°C" / "CCP1: Kern ≤5°C"
-- Total per language: MAX 300 characters (HARD LIMIT — shorter is better)
-- EN and DE must mirror exactly (same stations, same step count)
+- Letter every station A, B, C, … in processFlow order — never leave one unlettered
+- BLAST CHILLER's lettered paragraph always includes exactly: "CCP1: Core ≤5°C" / "CCP1: Kern ≤5°C"
+- EN and DE must mirror exactly (same stations, same letters, same number of sentences)
 - Only use facts from context; if temp/time unknown → [CHECK]
 
 FACTOR RULES (from context — never override):
-- rti=true → output ONLY "RTI → Plating" (both languages, nothing else)
+- rti=true → output ONLY "RTI → Plating" (both languages, nothing else, no letters)
 - neverBatch=true → do NOT mention splitting or batches
-- separate/spiceRoom ingredients → first line: "Separate portioning at Spice Room" / "Separate Portionierung im Gewürzraum"
-- allergensContains non-empty → last line: "⚠ <list>"
+- separate/spiceRoom ingredients → make "SPICE ROOM" the FIRST lettered station ("A."): "A. SPICE ROOM: Separate portioning at Spice Room..." / "A. GEWÜRZRAUM: Separate Portionierung im Gewürzraum..."
+- allergensContains non-empty → final unlettered line: "⚠ <list>"
 
 Return JSON: {"english":"...","german":"...","status":"needs_review"}` }] },
     contents: [{ role: "user", parts: [{ text: `WO context:\n${context}` }] }],
@@ -3330,7 +3336,7 @@ Return JSON: {"english":"...","german":"...","status":"needs_review"}` }] },
         },
         required: ["english", "german", "status"],
       },
-      maxOutputTokens: 1024,
+      maxOutputTokens: 2000,
       temperature: 0.1,
       thinkingConfig: { thinkingBudget: 0 },
     },

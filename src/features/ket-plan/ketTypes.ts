@@ -1,5 +1,6 @@
 // Domänen-Typen und Equipment-Konstanten für KET Plan / WO Breakdown.
 import type { EquipBibleEntry } from "../../core/types";
+import type { ChillerAssignment } from "../blast-chiller/blastChillerLogic";
 
 export type WoSortMode = "date" | "wo" | "recipe" | "status" | "batches" | "kg";
 
@@ -91,9 +92,11 @@ export interface EquipBatch {
   label: string;        // "Braiser"
   capacityKg: number;
   batches: number;
-  perBatchKg: number;   // volle Batch-Kapazität (= capacityKg)
-  remainderKg: number;  // letzter Rest-Batch (0 wenn exakt aufgeht)
-  // Auslastung des letzten Batches in % (0–100). 100 = exakt aufgegangen.
+  // Menge je Batch — Gesamtmenge gleichmäßig auf `batches` verteilt (Küchenchef-Vorgabe:
+  // alle Batches gleich groß, kein kleinerer Rest-Batch). Immer <= capacityKg.
+  perBatchKg: number;
+  remainderKg: number;  // immer 0 (Feld bleibt für bestehende Abfragen erhalten)
+  // Auslastung je Batch in % (0–100), gilt einheitlich für alle Batches dieser Equipment-Gruppe.
   utilizationPct: number;
   // Set only for BRAISER when capacityKg came from a Kuechenbible match
   // (instead of the manual/default caps value) — lets the UI label the source.
@@ -137,6 +140,10 @@ export interface BatchCalc {
   readyMade: boolean;
   // Bilinguale (EN/DE) CONTAINS-Allergenliste, aus DetailedIngredient.allergen gesammelt.
   allergensContains: string[];
+  // HACCP: welchem Blast Chiller (1-6, Allergen-Trennung) diese WO zugeordnet ist —
+  // gleiche Zuteilung wie der eigenständige Blast Chiller Bot. null nur wenn weder
+  // Rezept noch Struktur gefunden wurden (kein Allergen-Datenpunkt verfügbar).
+  chillerAssignment: ChillerAssignment | null;
   // Warnungen zu unbekannten/unkonvertierbaren Einheiten (z.B. "oz", "cup").
   uomWarnings: string[];
   // true wenn Factor-Regeln (neverBatch/rti) die equipBatches-Logik übersteuern.

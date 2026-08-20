@@ -8,6 +8,7 @@ import type {
 import { EQUIP_DEFAULTS, EQUIP_LABELS, EQUIP_PRIORITY, type BatchCalc, type EquipBatch, type IngCalc, type KetRow, type ManualEquipmentOverride } from "./ketTypes";
 import { cleanRecipeName, codeDigits, extractCode, fmtNum, parseSteps } from "../../lib/helpers";
 import { biAllergen, classify, NO_BATCH, READY_MADE, isSeparate, isSpiceRoom } from "./factorRules";
+import { computeWoChiller } from "../blast-chiller/blastChillerLogic";
 
 export { isSeparate, isSpiceRoom } from "./factorRules";
 
@@ -462,14 +463,18 @@ export function calcBatch(
   // whenever a match merely exists but a manual cap has taken precedence.
   const bibleActive = (equipment: string) => !!bibleMatches.get(equipment) && caps[equipment] === undefined;
 
-  // Per-Equipment Batche: jede Cook Method mit bekannter Kapazität berechnet eigenständig
+  // Per-Equipment Batche: jede Cook Method mit bekannter Kapazität berechnet eigenständig.
+  // Küchenchef-Vorgabe: kein kleinerer "Rest-Batch" mehr — die Gesamtmenge wird gleichmäßig
+  // auf alle Batches verteilt (perBatchKg = totalKg/batches), statt (batches-1) volle
+  // Batches + 1 kleineren Rest-Batch zu bilden. remainderKg bleibt im Typ (wird an mehreren
+  // Stellen abgefragt), ist hier aber immer 0.
   const equipBatches: EquipBatch[] = resolvedCookMethods
     .filter(m => effectiveCap(m) > 0)
     .map(m => {
       const cap = effectiveCap(m);
       const batches = totalKg > 0 ? Math.ceil(totalKg / cap) : 0;
-      const remainder = totalKg > 0 ? +(totalKg - (batches - 1) * cap).toFixed(3) : 0;
-      const utilization = batches > 0 ? Math.round((remainder / cap) * 100) : 0;
+      const perBatch = batches > 0 ? +(totalKg / batches).toFixed(3) : 0;
+      const utilization = batches > 0 ? Math.round((perBatch / cap) * 100) : 0;
       const bMatch = bibleActive(m) ? bibleMatches.get(m) ?? null : null;
       const mq: "exact" | "substring" | "none" = !bMatch
         ? "none"
@@ -481,9 +486,9 @@ export function calcBatch(
         label: EQUIP_LABELS[m] ?? m,
         capacityKg: cap,
         batches,
-        perBatchKg: cap,
-        remainderKg: remainder === cap ? 0 : remainder,
-        utilizationPct: remainder === cap ? 100 : utilization,
+        perBatchKg: perBatch,
+        remainderKg: 0,
+        utilizationPct: utilization,
         bibleMatch: bMatch,
         matchQuality: mq,
       };
@@ -535,6 +540,11 @@ export function calcBatch(
   }
   const allergensContains = [...allergenSet].map(biAllergen);
 
+  // HACCP: gleiche Allergen→Chiller-Zuteilung wie der eigenständige Blast Chiller
+  // Bot (blastChillerLogic.ts) — hier direkt aus den bereits geladenen App-Daten,
+  // kein separater CSV-Upload nötig.
+  const chillerAssignment = recipe || structure ? computeWoChiller(data, row.recipeCode, row.subRecipeName) : null;
+
   return {
     totalKg, equipBatches, primaryEquip, capacityKg, primaryCapBibleMatch, batches, perBatchKg, remainderKg,
     resolvedCookMethods, manualEquipment: manualEquipment ?? null,
@@ -546,6 +556,7 @@ export function calcBatch(
     factorFallbackCapacity: !!factorClass.fallback,
     readyMade: READY_MADE.test(row.subRecipeName),
     allergensContains,
+    chillerAssignment,
     uomWarnings,
     factorOverridesEquip: rti || neverBatch,
   };

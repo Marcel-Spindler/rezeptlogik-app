@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import type { DataBundle, DetailedSubRecipe } from "../../core/types";
+import type { DataBundle } from "../../core/types";
+import { CHILLER_CFG, CHILLER_KEYS, assignChiller, computeWoAllergen, normStr, searchSubRec, type ChillerKey } from "./blastChillerLogic";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,43 +17,7 @@ interface DataRow extends CsvRow {
   chiller:  ChillerKey;
 }
 
-type ChillerKey = "1" | "3" | "4" | "5" | "6";
-
-interface ChillerCfg {
-  label: string; sub: string;
-  headBg: string; headColor: string; cntBg: string; cntColor: string;
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const CHILLER_CFG: Record<ChillerKey, ChillerCfg> = {
-  "1": { label:"Chiller 1 & 2", sub:"Allergenfrei",   headBg:"#E8F5E9", headColor:"#1B5E20", cntBg:"#A5D6A7", cntColor:"#1B5E20" },
-  "3": { label:"Chiller 3",     sub:"Sulfite",         headBg:"#FFF8E1", headColor:"#7B3F00", cntBg:"#FFD54F", cntColor:"#7B3F00" },
-  "4": { label:"Chiller 4",     sub:"Milch",           headBg:"#E3F2FD", headColor:"#0D3780", cntBg:"#90CAF9", cntColor:"#0D3780" },
-  "5": { label:"Chiller 5",     sub:"Milch + Sulfite", headBg:"#F3E5F5", headColor:"#4A148C", cntBg:"#CE93D8", cntColor:"#4A148C" },
-  "6": { label:"Chiller 6",     sub:"Rest-Pool",       headBg:"#FFEBEE", headColor:"#B71C1C", cntBg:"#EF9A9A", cntColor:"#B71C1C" },
-};
-
-const CHILLER_KEYS: ChillerKey[] = ["1", "3", "4", "5", "6"];
-
 // ─── Pure Logic ───────────────────────────────────────────────────────────────
-
-function assignChiller(allergen: string): ChillerKey {
-  if (!allergen || allergen.trim().toUpperCase() === "KEINE") return "1";
-  const u = allergen.toUpperCase();
-  const m = u.includes("MILCH");
-  const s = u.includes("SCHWEFELDIOXIDE") || u.includes("SULFITE");
-  const rest = u
-    .replace(/MILCH \(EINSCHLIESSLICH LAKTOSE\)/g, "")
-    .replace(/SCHWEFELDIOXIDE UND SULFITE/g, "")
-    .split(",").map(p => p.trim()).filter(p => p.length > 0);
-  const x = rest.length > 0;
-  if (x)      return "6";
-  if (m && s) return "5";
-  if (s)      return "3";
-  if (m)      return "4";
-  return "6";
-}
 
 function parseCSVLine(line: string): string[] {
   const res: string[] = [];
@@ -77,73 +42,10 @@ function extractRecipeCode(raw: string): string | null {
   return m ? m[1].toUpperCase() : null;
 }
 
-// ─── Allergen from structures ─────────────────────────────────────────────────
-
-function normStr(s: string): string {
-  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function searchSubRec(subs: DetailedSubRecipe[], targetNorm: string): DetailedSubRecipe | null {
-  for (const sub of subs) {
-    if (normStr(sub.name) === targetNorm) return sub;
-    const found = searchSubRec(sub.subRecipes, targetNorm);
-    if (found) return found;
-  }
-  return null;
-}
-
-function collectIngredientAllergens(sub: DetailedSubRecipe, acc: Set<string>): void {
-  for (const ing of sub.ingredients) if (ing.allergen) acc.add(ing.allergen.trim());
-  for (const child of sub.subRecipes) collectIngredientAllergens(child, acc);
-}
-
-/**
- * Compute the declared allergen string for a single sub-recipe (WO) using the
- * detailed structure tree already loaded in the app.
- *
- * Priority:
- *  1. Ingredient-level allergens from the matching sub-recipe node in the structure tree
- *  2. Recipe-level allergen from RecipeMarketDetails (union of all sub-recipes)
- *  3. "KEINE"
- */
-function computeWoAllergen(
-  data: DataBundle,
-  recipeCode: string,
-  subRecipeName: string,
-): string {
-  const structure = data.structures?.[recipeCode];
-
-  if (structure) {
-    const targetNorm = normStr(subRecipeName);
-    for (const market of ["DE", "BENL", "DKSE"] as const) {
-      const subs = structure.markets[market];
-      if (!subs?.length) continue;
-      const found = searchSubRec(subs, targetNorm);
-      if (found) {
-        const acc = new Set<string>();
-        collectIngredientAllergens(found, acc);
-        if (acc.size > 0) return [...acc].join(", ");
-        // Sub-recipe found but has no ingredient-level allergens → KEINE
-        return "KEINE";
-      }
-    }
-  }
-
-  // Fallback: recipe-level allergen (union of all sub-recipes for this recipe)
-  const recipe = data.recipes[recipeCode];
-  if (recipe) {
-    for (const market of ["DE", "BENL", "DKSE"] as const) {
-      const a = recipe.markets[market]?.allergens;
-      if (a) return a;
-    }
-  }
-
-  return "KEINE";
-}
-
 // ─── Pill styling ─────────────────────────────────────────────────────────────
 
 function allergenPillStyle(a: string): { bg: string; color: string; border: string } {
+  if (a.toUpperCase() === "UNBEKANNT") return { bg: "#FFF3E0", color: "#8A4B00", border: "#FFCC80" };
   if (!a || a.toUpperCase() === "KEINE") return { bg: "#E8F5E9", color: "#1B5E20", border: "#A5D6A7" };
   const u = a.toUpperCase();
   const parts = a.split(",").map(p => p.trim()).filter(Boolean);
@@ -217,10 +119,12 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
       // Try to get recipe code from the recipe column, then from sub-recipe name
       const code = extractRecipeCode(row.recipe) ?? extractRecipeCode(row.name);
 
-      let allergen = "KEINE";
+      // raw=null heißt "kein Datenpunkt gefunden" — NICHT mit "keine Allergene"
+      // verwechseln. assignChiller() sortiert das vorsichtshalber in den Rest-Pool
+      // (Chiller 6) statt fälschlich als allergenfrei zu gelten.
+      let raw: string | null = null;
       if (code) {
-        const raw = computeWoAllergen(data, code, row.name);
-        allergen = raw;
+        raw = computeWoAllergen(data, code, row.name);
         // Track source for stats
         const structure = data.structures?.[code];
         if (structure) {
@@ -239,7 +143,7 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
         notFound++;
       }
 
-      return { ...row, allergen, chiller: assignChiller(allergen) };
+      return { ...row, allergen: raw ?? "UNBEKANNT", chiller: assignChiller(raw) };
     });
 
     setAllData(processed);

@@ -19,6 +19,87 @@ export function processOrder(): string[] {
   return [...PROCESS_ORDER];
 }
 
+// Stationsnamen (EN + DE), wie sie der KI-Prompt (GEMINI_INSTRUCTION_SYSTEM_PROMPT /
+// generateGeminiInstructionCloud) für die Kochanweisungen verwendet — zum farblichen
+// Hervorheben derselben Begriffe in der Anzeige (Detailansicht + PDF).
+const STATION_KEYWORDS = [
+  "SPICE ROOM", "SPICE PORTIONING", "GEWÜRZRAUM",
+  "VEGGIE DEBOX", "GEMÜSE-DEBOX",
+  "PROTEIN DEBOX", "PROTEINDEBOX",
+  "HAND MARINADE", "HANDMARINADE",
+  "MARINADE",
+  "BRAISER",
+  "HORIZONTAL MIXER", "HORIZONTALMISCHER",
+  "PLANETARY MIXER", "PLANETENMISCHER",
+  "PATTY MAKER", "PATTY-PRESSE",
+  "HAND MIX", "HANDMISCHUNG",
+  "GRILL",
+  "OVEN", "OFEN",
+  "IMMERSION BLENDER", "STABMIXER",
+  "DRAIN", "ABTROPFEN",
+  "BLAST CHILLER", "SCHNELLKÜHLER",
+];
+
+// Längste zuerst, damit z.B. "HAND MARINADE" vor dem kürzeren "MARINADE" matcht.
+const STATION_KEYWORD_RE = new RegExp(
+  `\\b(${[...STATION_KEYWORDS]
+    .sort((a, b) => b.length - a.length)
+    .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|")})\\b`,
+  "gi",
+);
+
+export interface HighlightSegment { text: string; isKeyword: boolean }
+
+// Zerlegt Kochanweisungs-Text in Segmente und markiert bekannte Stationsnamen
+// (SPICE ROOM, GRILL, OFEN, …), damit UI/PDF sie farblich hervorheben können.
+export function splitInstructionKeywords(text: string): HighlightSegment[] {
+  const segments: HighlightSegment[] = [];
+  let lastIndex = 0;
+  STATION_KEYWORD_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = STATION_KEYWORD_RE.exec(text))) {
+    if (match.index > lastIndex) segments.push({ text: text.slice(lastIndex, match.index), isKeyword: false });
+    segments.push({ text: match[0], isKeyword: true });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) segments.push({ text: text.slice(lastIndex), isKeyword: false });
+  return segments;
+}
+
+export interface InstructionLine {
+  // true = Stations-Header ("A. STATION: ..."), false = Schritt-Satz darunter.
+  isHeader: boolean;
+  // Fortlaufende Nummer je Station (1, 2, 3, …), 0 bei Headern.
+  stepNum: number;
+  text: string;
+}
+
+// Beliebig viele Stationsbuchstaben (nicht nur A-D — bis zu ~14 mögliche Stationen).
+const STATION_HEADER_RE = /^[A-Z]\.\s+/;
+
+// Zerlegt den KI-Kochanweisungstext in Zeilen: erkennt Stations-Header ("A. STATION:",
+// "B. STATION:", …) und nummeriert die Schritt-Sätze darunter je Station neu durch.
+// Geteilt zwischen Detailansicht (React) und Druck-PDF (HTML-String), damit beide
+// dieselbe Zeilen-/Stationsstruktur zeigen statt jede ihre eigene zu parsen.
+export function parseInstructionLines(text: string): InstructionLine[] {
+  const rawLines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const result: InstructionLine[] = [];
+  let stepNum = 0;
+  for (const line of rawLines) {
+    if (STATION_HEADER_RE.test(line)) {
+      stepNum = 0;
+      result.push({ isHeader: true, stepNum: 0, text: line });
+      continue;
+    }
+    const clean = line.replace(/^\s*[-–•*]\s*/, "").replace(/^\s*\d+[.)]\s*/, "").trim();
+    if (!clean) continue;
+    stepNum++;
+    result.push({ isHeader: false, stepNum, text: clean });
+  }
+  return result;
+}
+
 function stripNumericArtifacts(value: string | null | undefined): string | null {
   if (!value) return null;
   return value

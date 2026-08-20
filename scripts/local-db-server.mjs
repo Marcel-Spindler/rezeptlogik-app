@@ -43,18 +43,32 @@ const CLAUDE_CONCURRENCY = 2;
 const CLAUDE_DELAY_MS = 300;
 
 // Systemprompt für den Gemini WO-Instruction-Bot.
-const GEMINI_INSTRUCTION_SYSTEM_PROMPT = `Kitchen WO instructions — Factor Verden. Bilingual, ultra-short.
+const GEMINI_INSTRUCTION_SYSTEM_PROMPT = `Kitchen WO instructions — Factor Verden. Bilingual.
 
-One line per station from processFlow: "STATION: action". Mirror EN/DE exactly.
-No numbers, weights, ingredient names. No intro text.
+Audience: kitchen staff who can cook but are not trained chefs — no professional
+shorthand or jargon, spell out what to actually do and how to tell each step is done.
+
+FORMAT: EVERY station in processFlow gets its own paragraph, each starting on a
+NEW LINE (real newline character, not just a space) with a sequential letter —
+"A. STATION:", then "B. STATION:", "C. STATION:", … in processFlow order. Never
+run two stations together on one line. After each label, write 3-5 full, clear
+sentences describing the action and a concrete visual/texture/consistency cue for
+when the step is finished. Mirror EN and DE exactly (same stations, same letters,
+same number of sentences). No intro text, no closing remarks.
+No numbers, weights, ingredient names — the ingredient table is shown separately.
 Return JSON only: {"english":"...","german":"...","status":"generated"}
 
 FIXED:
-- rti=true → english:"RTI → Plating" german:"RTI → Anrichten"
-- BLAST CHILLER → "BLAST CHILLER: CCP1 core safe" / "SCHNELLKÜHLER: CCP1 Kern sicher"
-- separate/spiceRoom items → first line "A. SPICE ROOM: Portion separately" / "A. GEWÜRZRAUM: Separat portionieren"
+- Letter every station A, B, C, … in the order given by processFlow — never leave
+  a station unlettered, even if there's only one.
+- rti=true → english:"RTI → Plating" german:"RTI → Anrichten" (no letters, nothing else)
+- separate/spiceRoom items → make "SPICE ROOM" the FIRST lettered station ("A."),
+  its sentences describing separate portioning at the spice room.
+  EN "A. SPICE ROOM:" / DE "A. GEWÜRZRAUM:"
+- BLAST CHILLER's lettered paragraph always includes exactly the phrase
+  "CCP1 core safe" / "CCP1 Kern sicher" as its finish cue.
 - neverBatch=true → never mention splits or batches
-- allergensContains → last line "⚠ {allergens list}"
+- allergensContains → final unlettered line "⚠ {allergens list}"
 
 Station names EN→DE: OVEN→OFEN, HAND MIX→HANDMISCHUNG, HORIZONTAL MIXER→HORIZONTALMISCHER, PLANETARY MIXER→PLANETENMISCHER, PATTY MAKER→PATTY-PRESSE, DRAIN→ABTROPFEN, BLAST CHILLER→SCHNELLKÜHLER, VEGGIE DEBOX→GEMÜSE-DEBOX, PROTEIN DEBOX→PROTEINDEBOX, IMMERSION BLENDER→STABMIXER`;
 
@@ -168,7 +182,7 @@ async function generateGeminiInstruction(context) {
           },
           required: ["english", "german", "status"],
         },
-        maxOutputTokens: 400,
+        maxOutputTokens: 1600,
         temperature: 0.1,
         thinkingConfig: { thinkingBudget: 0 },
       },
@@ -197,7 +211,7 @@ async function generateClaudeInstruction(context) {
   const client = new Anthropic({ apiKey, maxRetries: 3 });
   const response = await client.messages.create({
     model,
-    max_tokens: 256,
+    max_tokens: 1200,
     thinking: { type: "disabled" },
     output_config: { effort: "low" },
     system: GEMINI_INSTRUCTION_SYSTEM_PROMPT,

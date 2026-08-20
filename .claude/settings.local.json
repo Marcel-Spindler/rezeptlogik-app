@@ -41,7 +41,8 @@
       "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\inspect-cw23-correct.ts\")",
       "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\inspect-weekly-sheet.ts\")",
       "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\list-drive-folder.ts\")",
-      "Bash(npx ts-node *)"
+      "Bash(npx ts-node *)",
+      "Bash(npx vitest *)"
     ]
   }
 }

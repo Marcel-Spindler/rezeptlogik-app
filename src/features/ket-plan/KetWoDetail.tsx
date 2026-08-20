@@ -4,7 +4,45 @@ import { useEffect, useState } from "react";
 import { EQUIP_LABELS, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction } from "./ketTypes";
 import { catColor, fmtDateHeader, fmtKg, fmtNum, sortIngredients } from "./ketLogic";
 import { StatCard, StatusChip } from "./KetSharedUi";
-import { orderCookingMethods } from "./woInstructionBot";
+import { orderCookingMethods, parseInstructionLines, splitInstructionKeywords } from "./woInstructionBot";
+
+const INSTRUCTION_VARIANTS = {
+  en: { text: "text-emerald-700", bg: "bg-emerald-700", border: "border-emerald-200" },
+  de: { text: "text-blue-700", bg: "bg-blue-700", border: "border-blue-200" },
+} as const;
+
+// Zeigt Kochanweisungs-Text stationsweise: jede "A. STATION:"-Zeile als eigener
+// Abschnitt mit eigener Zeile, Schritt-Sätze darunter nummeriert, bekannte
+// Stationsnamen (SPICE ROOM, GRILL, OFEN, …) farblich hervorgehoben.
+function InstructionBlocks({ text, variant }: { text: string; variant: "en" | "de" }) {
+  const v = INSTRUCTION_VARIANTS[variant];
+  const lines = parseInstructionLines(text);
+  if (lines.length === 0) return <span className="whitespace-pre-wrap">{text}</span>;
+  return (
+    <div className="space-y-1">
+      {lines.map((line, i) =>
+        line.isHeader ? (
+          <div key={i} className={`mt-2 border-b pb-0.5 text-[9px] font-black uppercase tracking-widest first:mt-0 ${v.border} ${v.text}`}>
+            {line.text}
+          </div>
+        ) : (
+          <div key={i} className="flex items-start gap-1.5">
+            <span className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[7px] font-black text-white ${v.bg}`}>
+              {line.stepNum}
+            </span>
+            <span className="leading-relaxed">
+              {splitInstructionKeywords(line.text).map((seg, j) =>
+                seg.isKeyword
+                  ? <span key={j} className={`font-black ${v.text}`}>{seg.text}</span>
+                  : <span key={j}>{seg.text}</span>,
+              )}
+            </span>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
 
 export function WoDetail({
   row,
@@ -132,7 +170,7 @@ export function WoDetail({
       <div className="p-5 space-y-4">
 
         {/* Factor-Produktionsregeln (RTI / nie-batchen-Fleisch / Batch nach Rezeptname / Allergene) */}
-        {(calc.rti || calc.neverBatch || calc.readyMade || calc.factorCapacityKg != null || calc.allergensContains.length > 0) && (
+        {(calc.rti || calc.neverBatch || calc.readyMade || calc.factorCapacityKg != null || calc.allergensContains.length > 0 || calc.chillerAssignment) && (
           <div className="space-y-2">
             {calc.rti && (
               <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs font-bold text-amber-200">
@@ -161,6 +199,25 @@ export function WoDetail({
                 {calc.allergensContains.map(a => (
                   <span key={a} className="text-[9px] font-bold text-white bg-red-600 rounded-full px-2 py-0.5">{a}</span>
                 ))}
+              </div>
+            )}
+            {calc.chillerAssignment && (
+              <div
+                className="rounded-xl border px-3 py-2 flex items-center gap-2 text-xs font-bold"
+                style={{
+                  borderColor: `${calc.chillerAssignment.cfg.cntBg}40`,
+                  background: `${calc.chillerAssignment.cfg.cntBg}1a`,
+                  color: calc.chillerAssignment.cfg.cntBg,
+                }}
+                title={calc.chillerAssignment.unknown
+                  ? "Keine Allergen-Daten gefunden — Zuteilung ungesichert, bitte manuell prüfen"
+                  : `Allergen-Basis: ${calc.chillerAssignment.allergen} · gleiche Zuteilung wie Blast Chiller Bot`}
+              >
+                <span>❄️ {calc.chillerAssignment.cfg.label}</span>
+                <span className="opacity-70 font-semibold">· {calc.chillerAssignment.cfg.sub}</span>
+                {calc.chillerAssignment.unknown && (
+                  <span className="text-amber-300 font-black">⚠ unbekannt, bitte prüfen</span>
+                )}
               </div>
             )}
           </div>
@@ -368,8 +425,8 @@ export function WoDetail({
           )}
           {instruction && !editingInstruction && (
             <div className="grid gap-3 p-4 lg:grid-cols-2">
-              <div><div className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1">Instructions (EN)</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.english}</div></div>
-              <div><div className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1">Anleitung (DE) · {instruction.status === "needs_review" ? "Review erforderlich" : "Gemini"}</div><div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{instruction.german}</div></div>
+              <div><div className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1">Instructions (EN)</div><div className="text-xs leading-relaxed text-slate-700"><InstructionBlocks text={instruction.english} variant="en" /></div></div>
+              <div><div className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1">Anleitung (DE) · {instruction.status === "needs_review" ? "Review erforderlich" : "Gemini"}</div><div className="text-xs leading-relaxed text-slate-700"><InstructionBlocks text={instruction.german} variant="de" /></div></div>
             </div>
           )}
         </section>
