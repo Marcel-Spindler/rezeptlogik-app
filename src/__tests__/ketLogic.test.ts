@@ -130,7 +130,7 @@ describe("calcBatch equipment resolution", () => {
     expect(calc.primaryEquip).toBe("OVEN");
   });
 
-  it("drops numeric quantities from the instruction context so the model stays concise", () => {
+  it("includes computed batch weights but omits the contaminated recipe-import instruction text", () => {
     const context = JSON.parse(buildWoInstructionContext({
       ...row,
       recipeCode: "FV0001A",
@@ -165,9 +165,11 @@ describe("calcBatch equipment resolution", () => {
     }));
 
     expect(context.recipeName).toBe("Test recipe");
-    expect(JSON.stringify(context)).not.toMatch(/\d/);
-    expect(context.sourceInstructionEnglish).toBe("Mix sauce and hold at °C.");
-    expect(context.sourceInstructionGerman).toBe("Mische Sauce und halte bei °C.");
+    expect(context.batches).toBe(2);
+    expect(context.perBatchKg).toBe(60);
+    expect(context.totalKg).toBe(120);
+    expect(context.sourceInstructionEnglish).toBeUndefined();
+    expect(context.sourceInstructionGerman).toBeUndefined();
   });
 
   it("prints English and German instruction blocks in the WO PDF", () => {

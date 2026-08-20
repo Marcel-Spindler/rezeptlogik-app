@@ -24,20 +24,22 @@ export function processOrder(): string[] {
 // Hervorheben derselben Begriffe in der Anzeige (Detailansicht + PDF).
 const STATION_KEYWORDS = [
   "SPICE ROOM", "SPICE PORTIONING", "GEWÜRZRAUM",
-  "VEGGIE DEBOX", "GEMÜSE-DEBOX",
+  "VEGGIE DEBOX", "VEGETARISCHE DEBOX", "GEMÜSE-DEBOX",
   "PROTEIN DEBOX", "PROTEINDEBOX",
   "HAND MARINADE", "HANDMARINADE",
   "MARINADE",
-  "BRAISER",
+  "BRAISER", "SCHMORBRATEN",
   "HORIZONTAL MIXER", "HORIZONTALMISCHER",
   "PLANETARY MIXER", "PLANETENMISCHER",
   "PATTY MAKER", "PATTY-PRESSE",
   "HAND MIX", "HANDMISCHUNG",
-  "GRILL",
+  "GRILL", "GRILLEN",
   "OVEN", "OFEN",
   "IMMERSION BLENDER", "STABMIXER",
   "DRAIN", "ABTROPFEN",
   "BLAST CHILLER", "SCHNELLKÜHLER",
+  "MIDDLE KITCHEN", "PRODUCTION", "PRODUKTION",
+  "PLATING", "PLATTIEREN",
 ];
 
 // Längste zuerst, damit z.B. "HAND MARINADE" vor dem kürzeren "MARINADE" matcht.
@@ -100,16 +102,11 @@ export function parseInstructionLines(text: string): InstructionLine[] {
   return result;
 }
 
-function stripNumericArtifacts(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return value
-    .replace(/\b\d+(?:[.,]\d+)?\s*(?:kg|g|gram|grams|ml|l|pcs|portion|portions|batch|batches)\b/gi, "")
-    .replace(/\b\d+(?:[.,]\d+)?\b/g, "")
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([.,;:!?])/g, "$1")
-    .trim();
-}
-
+// calc.subRecipeInstructions/DE kommen aus dem Rezept-Import-Feld "Instructions" —
+// das ist in der Praxis Plating-/Verpackungstext ("NET WEIGHT = 400g", "2ND
+// COMPARTMENT" …), keine Kochanweisung. Deshalb NICHT als sourceInstruction an
+// Gemini geben (würde den Kontext mit falsch beschrifteten Daten vergiften) —
+// nur die selbst berechneten, verlässlichen Batch-Mengen fließen in den Prompt.
 export function buildWoInstructionContext(row: KetRow, calc: BatchCalc): string {
   const orderedCookMethods = orderCookingMethods(calc.resolvedCookMethods);
   return JSON.stringify({
@@ -118,14 +115,15 @@ export function buildWoInstructionContext(row: KetRow, calc: BatchCalc): string 
     processFlow: orderedCookMethods,
     primaryEquipment: calc.primaryEquip,
     equipment: calc.equipBatches.map((batch) => batch.equip),
+    batches: calc.batches > 0 ? calc.batches : null,
+    perBatchKg: calc.perBatchKg > 0 ? calc.perBatchKg : null,
+    totalKg: calc.totalKg > 0 ? calc.totalKg : null,
     ingredientFlags: calc.ingredients
       .filter((ing) => ing.separate || ing.spiceRoom)
       .map((ing) => ({ name: ing.name, separate: ing.separate, spiceRoom: ing.spiceRoom })),
     rti: calc.rti,
     neverBatch: calc.neverBatch,
     allergensContains: calc.allergensContains,
-    sourceInstructionEnglish: stripNumericArtifacts(calc.subRecipeInstructions),
-    sourceInstructionGerman: stripNumericArtifacts(calc.subRecipeInstructionsDE),
   }, null, 2);
 }
 
