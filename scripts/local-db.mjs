@@ -213,8 +213,34 @@ const ketPath = ketCandidates.find((candidate) => fs.existsSync(candidate));
 const ketRows = loadKetCsv(ketPath);
 if (ketRows.length) {
   const week = ketPath.match(/W(\d{2})/i)?.[1] ?? "";
-  replaceSingle("bundle", "productionPlan", { week: `2026-W${week}`, generatedAt: now, rows: ketRows }, ketPath);
-  replaceCollection("productionPlan", ketRows, ketPath, (entry, index) => `${entry.kitchenDay}::${entry.workOrder}::${entry.recipeCode}::${entry.subRecipe}::${index}`);
+  // Merge KET CSV rows INTO the existing production plan (data.json) rather than
+  // replacing it. The KET CSV has no kg columns (postKg/kitchenKg/stagingKg are 0)
+  // so we enrich KET rows from the existing plan where a matching WO exists.
+  // Additionally, data.json rows for OTHER weeks are preserved so the plan covers
+  // all available weeks, not just the one KET week.
+  const existingRows = data.productionPlan?.rows ?? [];
+  const planByWo = new Map();
+  for (const r of existingRows) {
+    if (r.workOrder) planByWo.set(r.workOrder, r);
+  }
+  const enrichedKetRows = ketRows.map((row) => {
+    const existing = planByWo.get(row.workOrder);
+    if (!existing) return row;
+    return {
+      ...row,
+      stagingKg: existing.stagingKg ?? row.stagingKg,
+      kitchenKg: existing.kitchenKg ?? row.kitchenKg,
+      postKg: existing.postKg ?? row.postKg,
+      yieldPct: existing.yieldPct ?? row.yieldPct,
+      plannedMeals: existing.plannedMeals || row.plannedMeals,
+    };
+  });
+  // Combine: enriched KET rows + data.json rows whose WO is NOT in the KET set
+  const ketWoSet = new Set(ketRows.map((r) => r.workOrder));
+  const combinedRows = [...enrichedKetRows, ...existingRows.filter((r) => !ketWoSet.has(r.workOrder))];
+  const planWeek = data.productionPlan?.week || `2026-W${week}`;
+  replaceSingle("bundle", "productionPlan", { week: planWeek, generatedAt: now, rows: combinedRows }, ketPath);
+  replaceCollection("productionPlan", combinedRows, ketPath, (entry, index) => `${entry.kitchenDay}::${entry.workOrder}::${entry.recipeCode}::${entry.subRecipe}::${index}`);
 }
 
 const biblePath = path.join(root, "public", "data", "gsheet-dump-Bibles_K_Operations_Manager_Supervisors.json");

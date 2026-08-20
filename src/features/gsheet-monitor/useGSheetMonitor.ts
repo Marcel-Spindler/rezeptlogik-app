@@ -1,16 +1,18 @@
 // GSheet Monitor – React Hooks für Live-Sheet-Daten.
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GSheetChange, PostblastData, RtiData } from "./gsheetTypes";
+import type { EtData, GSheetChange, PostblastData, RtiData } from "./gsheetTypes";
 import { GSHEET_REGISTRY } from "./gsheetRegistry";
 import { createPoller } from "./gsheetPoller";
 import { parseRti } from "./parsers/parseRti";
 import { parsePostblast } from "./parsers/parsePostblast";
+import { parseEt } from "./parsers/parseEt";
 
 type ParserFn = (rows: string[][]) => unknown;
 
 const PARSERS: Record<string, ParserFn> = {
   rti: parseRti,
   postblast: parsePostblast,
+  et: parseEt,
 };
 
 export interface GSheetMonitorState<T = unknown> {
@@ -98,6 +100,10 @@ export function useRtiMonitor(): GSheetMonitorState<RtiData> {
 
 export function usePostblastMonitor(): GSheetMonitorState<PostblastData> {
   return useGSheetMonitor<PostblastData>("postblast");
+}
+
+export function useEtMonitor(): GSheetMonitorState<EtData> {
+  return useGSheetMonitor<EtData>("et");
 }
 
 export function useGSheetChangeListener(callback: (event: { sheetKey: string; change: GSheetChange }) => void) {

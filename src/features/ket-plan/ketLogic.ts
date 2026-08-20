@@ -575,7 +575,11 @@ export function parseKetCsv(text: string): ParseKetCsvResult {
   const rows = result.data
     .map((row, idx) => {
       const recipeName = (row["Recipe Name"] ?? "").trim();
-      const recipeCode = extractCode(recipeName);
+      // extractCode erwartet den Code als Präfix ("FV1234A - Name [DE]"). Sehr
+      // vereinzelt kommt aus dem Export auch "[DE] - FV1234A - Name" vorbei
+      // (Markt-Klammer VOR statt nach dem Code) — dann den Marker abstreifen
+      // und erneut versuchen, statt die WO ganz ohne recipeCode zu lassen.
+      const recipeCode = extractCode(recipeName) || extractCode(recipeName.replace(/^\[[A-Z]+\]\s*-?\s*/, ""));
       const woNumber = (row["Work Order Number"] ?? "").trim();
       const dateNeeded = (row["Date Needed"] ?? "").trim();
       const { shift } = parseDateShift(dateNeeded);

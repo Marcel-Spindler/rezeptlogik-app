@@ -7,6 +7,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { loadData } from "./core/dataSource";
+import { getFirebase, doc, getDoc, setDoc, onSnapshot } from "./core/firebase";
 import { usePlanningOasisData } from "./lib/planningOasisData";
 import { analyzePlan, type PlannerDay, type PlannerScenario } from "./lib/planner";
 import type { DataBundle } from "./core/types";
@@ -321,9 +322,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
       // passendes Lineplanning einen KW-spezifischen Pool geliefert haben.
       if (!hasWeekSpecificRecipePool) {
         try {
-          const { getFirebase } = await import("./core/firebase");
-          const { doc, getDoc } = await import("firebase/firestore");
-          const { db } = getFirebase();
+    const { db } = getFirebase();
           const snap = await getDoc(doc(db, `apps/rezeptlogik/weekRecipes/de_${week.replace(/\W/g, "-")}`));
           if (snap.exists()) {
             const manifest = snap.data() as { meals: Array<{ code: string; name: string }> };
@@ -375,10 +374,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     void (async () => {
-      try {
-        const { getFirebase } = await import("./core/firebase");
-        const { doc, onSnapshot } = await import("firebase/firestore");
-        const { db } = getFirebase();
+      try {        const { db } = getFirebase();
         unsubscribe = onSnapshot(
           doc(db, "apps/rezeptlogik/manufacturingPlans", `de_W${weekStr}`),
           (snap) => {
@@ -485,10 +481,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     if (lastLinePlanAutosaveSignatureRef.current === linePlanAutosaveSignature) return;
     const timer = window.setTimeout(async () => {
       lastLinePlanAutosaveSignatureRef.current = linePlanAutosaveSignature;
-      try {
-        const { getFirebase } = await import("./core/firebase");
-        const { doc, setDoc } = await import("firebase/firestore");
-        const { db } = getFirebase();
+      try {        const { db } = getFirebase();
         await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
           week,
           savedAt: new Date().toISOString(),
@@ -512,10 +505,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     void (async () => {
-      try {
-        const { getFirebase } = await import("./core/firebase");
-        const { doc, onSnapshot } = await import("firebase/firestore");
-        const { db } = getFirebase();
+      try {        const { db } = getFirebase();
         unsubscribe = onSnapshot(
           doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`),
           (snap) => {
@@ -553,10 +543,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
   // ─── Save to Firestore ─────────────────────────────────────────────────────
   async function handleSave() {
     setSaving(true);
-    try {
-      const { getFirebase } = await import("./core/firebase");
-      const { doc, setDoc } = await import("firebase/firestore");
-      const { db } = getFirebase();
+    try {      const { db } = getFirebase();
       await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
         week,
         savedAt: new Date().toISOString(),
@@ -592,10 +579,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     setDayLineCount(defaultDayLineCountMap());
     setAutoPlanNotice(`Planung für KW ${weekStr} wurde bereinigt.`);
 
-    try {
-      const { getFirebase } = await import("./core/firebase");
-      const { doc, setDoc } = await import("firebase/firestore");
-      const { db } = getFirebase();
+    try {      const { db } = getFirebase();
       await setDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`), {
         week,
         savedAt: new Date().toISOString(),
@@ -700,10 +684,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
     };
     window.localStorage.setItem(`rezeptlogik-manufacturing-reconcile-${week}`, JSON.stringify(payload));
     window.dispatchEvent(new CustomEvent("rezeptlogik:manufacturing-reconcile-request", { detail: payload }));
-    try {
-      const { getFirebase } = await import("./core/firebase");
-      const { doc, setDoc } = await import("firebase/firestore");
-      const { db } = getFirebase();
+    try {      const { db } = getFirebase();
       await setDoc(doc(db, "apps/rezeptlogik/planningRequests", `de_W${weekStr}`), payload, { merge: true });
     } catch {
       // Local event/localStorage are enough when Firestore is not available.
@@ -1589,10 +1570,7 @@ export function LinePlanningView({ week, locale: _locale, autoPlanTrigger, uplif
             <button
               onClick={async () => {
                 setSaving(true);
-                try {
-                  const { getFirebase } = await import("./core/firebase");
-                  const { doc, setDoc } = await import("firebase/firestore");
-                  const { db } = getFirebase();
+                try {                  const { db } = getFirebase();
 
                   const cockpitByDay: Record<string, Array<{ slot: string; line: number; code: string; name: string; portions: number; run: 1 | 2 }>> = {};
                   const producedBefore = new Map<string, number>();

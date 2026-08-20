@@ -1,12 +1,18 @@
 // Postblast Live View — Echtzeit-Dashboard: GSheet-Wiegungen vs. geplante Work Orders.
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
-import type { DataBundle } from "../../core/types";
-import { usePostblastMonitor, useRtiMonitor } from "./useGSheetMonitor";
+import type { DataBundle, WorkOrderEntry } from "../../core/types";
+import { useEtMonitor, usePostblastMonitor, useRtiMonitor } from "./useGSheetMonitor";
 import { matchPostblastToWorkOrders, type BackfillNeed, type WoMatchedStatus } from "./postblastMatch";
 import { findEquipmentForSubRecipe } from "./backfillGenerator";
 import { analyzeProduction, type AlertSeverity } from "./productionAgent";
 import { respondToChat, type ChatMessage, type ChatContext } from "./postblastChat";
 import { fmt, fmtMass } from "../whatif/whatIfFormat";
+import { currentHfWeek } from "../../lib/hfWeek";
+import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWeeks";
+import { fetchWmsWorkorderCache, filterRowsToWeekWindow, wmsWorkorderRowToEntry } from "../../lib/wmsCache";
+import { parseKetCsv } from "../ket-plan/ketLogic";
+import type { KetRow } from "../ket-plan/ketTypes";
+import { parseExportRecipesCsv, recipeWeightKey, type RecipeWeightLookup } from "./parsers/parseExportRecipes";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -88,11 +94,22 @@ function AlertIcon({ severity }: { severity: AlertSeverity }) {
 }
 
 function StatusBadge({ wo }: { wo: WoMatchedStatus }) {
+  if (!wo.hasPlan)
+    return (
+      <span
+        title="Diese WO ist im System (ET/WMS/KET), hat aber noch kein Mengen-Soll — Fortschritt kann nicht bewertet werden"
+        className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 ring-1 ring-slate-300 font-bold"
+      >
+        ○ OHNE PLAN
+      </span>
+    );
+  const estTitle = wo.isEstimated ? " — Sollmenge GESCHÄTZT aus Portionen × Rezept-Gewicht, kein echtes Firestore-Soll" : "";
+  const estSuffix = wo.isEstimated ? " ≈" : "";
   if (wo.isComplete)
-    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200 font-bold">✓ FERTIG</span>;
+    return <span title={`Fertig${estTitle}`} className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200 font-bold">✓ FERTIG{estSuffix}</span>;
   if (wo.isCritical)
-    return <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 ring-1 ring-red-200 font-bold">⚠ KRITISCH</span>;
-  return <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 ring-1 ring-sky-200 font-bold">LÄUFT</span>;
+    return <span title={`Kritisch${estTitle}`} className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 ring-1 ring-red-200 font-bold">⚠ KRITISCH{estSuffix}</span>;
+  return <span title={`Läuft${estTitle}`} className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 ring-1 ring-sky-200 font-bold">LÄUFT{estSuffix}</span>;
 }
 
 function WoDots({ wos }: { wos: WoMatchedStatus[] }) {
@@ -101,8 +118,9 @@ function WoDots({ wos }: { wos: WoMatchedStatus[] }) {
       {wos.map(wo => (
         <div
           key={wo.workOrder}
-          title={`${wo.workOrder}: ${wo.subRecipe} (${Math.round(wo.progressPct)}%)`}
+          title={!wo.hasPlan ? `${wo.workOrder}: ${wo.subRecipe} (ohne Plan-Soll)` : `${wo.workOrder}: ${wo.subRecipe} (${Math.round(wo.progressPct)}%)`}
           className={`w-3 h-3 rounded-full border-2 border-white shadow-sm ${
+            !wo.hasPlan ? "bg-white ring-1 ring-slate-300" :
             wo.isComplete ? "bg-emerald-400" :
             wo.isCritical ? "bg-red-500 animate-pulse" :
             wo.progressPct >= 60 ? "bg-sky-400" :
@@ -114,12 +132,325 @@ function WoDots({ wos }: { wos: WoMatchedStatus[] }) {
   );
 }
 
+// Ziel-Portionen × Gramm/Portion (aus export-recipes.csv) = geschätzte Ziel-
+// menge in kg. null, wenn für dieses Sub-Rezept kein Gewicht bekannt ist oder
+// keine Portionenzahl vorliegt — dann bleibt die WO "OHNE PLAN" statt eine
+// erfundene Zahl zu zeigen.
+function estimatePlannedKg(
+  recipeWeights: RecipeWeightLookup | null,
+  recipeCode: string,
+  subRecipe: string,
+  targetPortions: number | undefined | null
+): number | null {
+  if (!recipeWeights || !targetPortions || targetPortions <= 0) return null;
+  const grams = recipeWeights.gramsPerPortion.get(recipeWeightKey(recipeCode, subRecipe));
+  if (grams == null) return null;
+  return (grams * targetPortions) / 1000;
+}
+
 // ─── Hauptkomponente ─────────────────────────────────────────────────────────
 
 export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const monitor = usePostblastMonitor();
   const rtiMonitor = useRtiMonitor();
-  const week = data.productionPlan?.week ?? "—";
+  const etMonitor = useEtMonitor();
+
+  // Live-WMS-Cache (wmsCache/workorders, siehe scripts/sync-wms-cache.ts) — der
+  // gleiche Fallback, den KetBreakdownView schon nutzt, wenn der Firestore-Plan
+  // für die aktuelle Woche leer ist. Liefert echte Portionen/Sub-Rezept-Namen
+  // direkt aus dem WMS (Snowflake-Pull), nur eben (noch) ohne kg-Ziel — siehe
+  // wmsWorkorderRowToEntry. Wird nur einmal beim Laden abgefragt, nicht gepollt.
+  const [liveWmsRows, setLiveWmsRows] = useState<WorkOrderEntry[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchWmsWorkorderCache().then(res => {
+      if (cancelled || !res?.rows.length) return;
+      const { kept } = filterRowsToWeekWindow(res.rows, currentHfWeek());
+      const mapped = kept.reduce<WorkOrderEntry[]>((acc, row) => {
+        try { acc.push(wmsWorkorderRowToEntry(row)); }
+        catch (error) { console.warn("[PostblastLive] Skipping malformed WMS row:", error); }
+        return acc;
+      }, []);
+      if (!cancelled && mapped.length) setLiveWmsRows(mapped);
+    }).catch(error => {
+      if (!cancelled) console.error("[PostblastLive] Failed to fetch WMS workorder cache:", error);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // ── Manuelle Datei-Uploads: schließen die kg-Lücke, die weder ET noch der
+  // Live-WMS-Cache füllen können (beide liefern keine Zielmenge). Zwei Dateien:
+  // 1) KET-CSV (dieselbe, die "KET Plan / WO" nutzt — Storage-Key bewusst
+  //    identisch, damit ein dort schon hochgeladener Plan hier sofort mitgilt)
+  //    liefert echte Ziel-Portionen je WO.
+  // 2) "export-recipes*.csv" liefert Gramm/Portion je Sub-Rezept. Portionen ×
+  //    Gramm/Portion = GESCHÄTZTE Ziel-Menge — keine echte Firestore-Zahl,
+  //    daher überall als "isEstimated" markiert (siehe postblastMatch.ts).
+  const KET_CSV_STORAGE_KEY = "ket-csv-rows-v1";
+  const RECIPE_WEIGHTS_STORAGE_KEY = "pb_recipe_weights_v1";
+
+  const [ketCsvRows, setKetCsvRows] = useState<KetRow[] | null>(() => {
+    try { const raw = localStorage.getItem(KET_CSV_STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
+    catch { return null; }
+  });
+  const [ketCsvFileName, setKetCsvFileName] = useState("");
+  const [recipeWeights, setRecipeWeights] = useState<RecipeWeightLookup | null>(() => {
+    try {
+      const raw = localStorage.getItem(RECIPE_WEIGHTS_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { entries: [string, number][]; recipeCount: number; rowCount: number };
+      return { gramsPerPortion: new Map(parsed.entries), recipeCount: parsed.recipeCount, rowCount: parsed.rowCount };
+    } catch { return null; }
+  });
+  const [recipeWeightsFileName, setRecipeWeightsFileName] = useState("");
+  const ketFileInputRef = useRef<HTMLInputElement>(null);
+  const recipeWeightsFileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleKetCsvFile(file: File) {
+    setKetCsvFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = typeof e.target?.result === "string" ? e.target.result : "";
+      if (!text) { alert("Fehler beim Lesen der Datei."); return; }
+      try {
+        const { rows } = parseKetCsv(text);
+        if (!rows.length) { alert("Die CSV-Datei ist leer oder konnte nicht gelesen werden."); return; }
+        setKetCsvRows(rows);
+        try { localStorage.setItem(KET_CSV_STORAGE_KEY, JSON.stringify(rows)); } catch { /* quota */ }
+      } catch (error) {
+        alert(`Fehler beim Verarbeiten der KET-CSV: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+    reader.onerror = () => alert("Fehler beim Lesen der Datei.");
+    reader.readAsText(file, "utf-8");
+  }
+
+  function handleRecipeWeightsFile(file: File) {
+    setRecipeWeightsFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = typeof e.target?.result === "string" ? e.target.result : "";
+      if (!text) { alert("Fehler beim Lesen der Datei."); return; }
+      try {
+        const lookup = parseExportRecipesCsv(text);
+        if (lookup.gramsPerPortion.size === 0) { alert("Keine Portions-Gewichte in dieser Datei gefunden."); return; }
+        setRecipeWeights(lookup);
+        try {
+          localStorage.setItem(RECIPE_WEIGHTS_STORAGE_KEY, JSON.stringify({
+            entries: [...lookup.gramsPerPortion.entries()],
+            recipeCount: lookup.recipeCount,
+            rowCount: lookup.rowCount,
+          }));
+        } catch { /* quota */ }
+      } catch (error) {
+        alert(`Fehler beim Verarbeiten der Rezept-Gewichte: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+    reader.onerror = () => alert("Fehler beim Lesen der Datei.");
+    reader.readAsText(file, "utf-8");
+  }
+
+  // ── Wochen-Auswahl ──
+  // productionPlan.rows bündelt Work Orders aus ALLEN in Firestore vorhandenen
+  // Wochen-Docs (siehe dataSource.ts) — kann aber hinterherhinken, wenn für die
+  // aktuelle KW noch kein Plan-Doc importiert wurde. Tab "ET" (GSheet) und der
+  // Live-WMS-Cache sind die vom WMS live gepflegten Master-WO-Listen über
+  // mehrere Wochen hinweg und schließen genau diese Lücke. Alle drei Quellen
+  // zusammen ergeben die tatsächlich im System vorhandenen Wochen. Die WO-
+  // Nummer selbst trägt serverseitig immer die KW als Präfix ("35-222" =
+  // KW35, siehe weekPrefixFromWoNumber) — zuverlässiger als jedes freie
+  // "week"-Feld.
+  const woCountByWeekNum = useMemo(() => {
+    const byWeek = new Map<number, Set<string>>();
+    const add = (wo: string) => {
+      const n = weekPrefixFromWoNumber(wo);
+      if (n == null) return;
+      if (!byWeek.has(n)) byWeek.set(n, new Set());
+      byWeek.get(n)!.add(wo);
+    };
+    for (const r of data.productionPlan?.rows ?? []) add(r.workOrder);
+    for (const e of etMonitor.data?.entries ?? []) add(e.workOrder);
+    for (const r of liveWmsRows ?? []) add(r.workOrder);
+    for (const r of ketCsvRows ?? []) add(r.woNumber);
+    const counts = new Map<number, number>();
+    for (const [wk, set] of byWeek) counts.set(wk, set.size);
+    return counts;
+  }, [data.productionPlan, etMonitor.data, liveWmsRows, ketCsvRows]);
+
+  // "Tote Karteileichen" (uralte WO-Reste, die irgendwo im Sheet hängen bleiben)
+  // sollen die Wochenauswahl nicht zumüllen — nur ein plausibles Fenster um die
+  // reale Kalenderwoche herum zulassen (2 Monate zurück, 3 Monate voraus).
+  const allowedWeekNums = useMemo(() => {
+    const center = weekNumFromHfWeek(currentHfWeek()) ?? 1;
+    const set = new Set<number>();
+    for (let d = -8; d <= 12; d++) set.add(((center - 1 + d) % 52 + 52) % 52 + 1);
+    return set;
+  }, []);
+
+  const weekOptions = useMemo(() => {
+    const labels = new Set<string>();
+    for (const w of data.weeks) {
+      const n = weekNumFromHfWeek(w);
+      if (n != null && woCountByWeekNum.has(n) && allowedWeekNums.has(n)) labels.add(w);
+    }
+    // Wochen, die ET/Plan schon kennen, die aber noch nicht im "weeks"-Katalog
+    // stehen (z.B. eine ganz frische KW) — Label mit dem Jahr der aktuellen
+    // HF-Woche synthetisieren, damit sie trotzdem wählbar ist.
+    const refYear = currentHfWeek().match(/^(\d{4})/)?.[1];
+    for (const n of woCountByWeekNum.keys()) {
+      if (!allowedWeekNums.has(n)) continue;
+      if ([...labels].some(w => weekNumFromHfWeek(w) === n)) continue;
+      if (refYear) labels.add(`${refYear}-W${String(n).padStart(2, "0")}`);
+    }
+    return [...labels].sort();
+  }, [data.weeks, woCountByWeekNum, allowedWeekNums]);
+
+  // Das RTI-Sheet trägt seine eigene, live vom Menschen im Sheet gepflegte KW
+  // ("KW 34" in Spalte A) — das ist die verlässlichste Quelle dafür, welche
+  // Woche gerade WIRKLICH auf der Schicht läuft, unabhängig davon, welcher
+  // Firestore-Plan-Doc zufällig "der neueste" ist.
+  const rtiWeekNum = useMemo(
+    () => (rtiMonitor.data ? weekNumFromHfWeek(rtiMonitor.data.week) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nur der week-Wert ist relevant, nicht die Objektidentität
+    [rtiMonitor.data?.week]
+  );
+
+  // ET/RTI treffen erst nach ihrem ersten Poll ein (~1-2s nach dem Laden), der
+  // Firestore-Plan dagegen sofort — ein Default, der beim allerersten Tick fix
+  // "einrastet", würde also auf der (u.U. veralteten) Plan-Woche hängen bleiben,
+  // sobald ET/RTI kurz danach eine bessere Woche liefern. Deshalb bleibt die
+  // Auswahl im "Auto"-Modus (folgt RTI/aktueller KW), bis der Mensch selbst am
+  // Dropdown dreht — erst dann "rastet" die Auswahl endgültig ein.
+  const userPickedWeekRef = useRef(false);
+  const [selectedWeek, setSelectedWeek] = useState("");
+  useEffect(() => {
+    if (weekOptions.length === 0) return;
+    setSelectedWeek(prev => {
+      if (userPickedWeekRef.current && prev && weekOptions.includes(prev)) return prev;
+      if (rtiWeekNum != null) {
+        const rtiMatch = weekOptions.find(w => weekNumFromHfWeek(w) === rtiWeekNum);
+        if (rtiMatch) return rtiMatch;
+      }
+      const hf = currentHfWeek();
+      if (weekOptions.includes(hf)) return hf;
+      const planWeek = data.productionPlan?.week;
+      if (planWeek && weekOptions.includes(planWeek)) return planWeek;
+      if (prev && weekOptions.includes(prev)) return prev;
+      return weekOptions[weekOptions.length - 1];
+    });
+  }, [weekOptions, rtiWeekNum, data.productionPlan?.week]);
+
+  function handleSelectWeek(w: string) {
+    userPickedWeekRef.current = true;
+    setSelectedWeek(w);
+  }
+
+  const selectedWeekNum = selectedWeek ? weekNumFromHfWeek(selectedWeek) : null;
+
+  // Effektiver Plan für die gewählte Woche, gestaffelt nach Vertrauenswürdigkeit
+  // — genau die Kette, die KetBreakdownView für dasselbe Problem schon nutzt,
+  // plus eine kg-Schätzung on top:
+  // 1) Firestore-Plan-Zeilen (einzige Quelle mit echtem kg-Soll)
+  // 2) Hochgeladene KET-CSV (echte Ziel-Portionen je WO, manuell aktuell gehalten)
+  // 3) Live-WMS-Cache (echte Portionen/Sub-Rezept-Namen direkt aus dem WMS)
+  // 4) ET-Master-Liste (nur Recipe/Sub-Rezept-Identität, keine Portionen)
+  // Jede Stufe ergänzt nur WOs, die die vorherige noch nicht kennt, damit eine
+  // schwächere Quelle eine stärkere nie überschreibt. Für Stufe 2+3 (mit
+  // Portionen) wird — falls Rezept-Gewichte hochgeladen sind — eine kg-Schätzung
+  // berechnet (Portionen × Gramm/Portion) und als "isEstimated" markiert; ohne
+  // Portionen (Stufe 4) oder ohne Rezept-Gewichte bleibt die WO "OHNE PLAN".
+  const { filteredProductionPlan, unplannedWorkOrders, estimatedWorkOrders } = useMemo(() => {
+    const allRows = data.productionPlan?.rows ?? [];
+    const baseRows = selectedWeekNum == null
+      ? allRows
+      : allRows.filter(r => weekPrefixFromWoNumber(r.workOrder) === selectedWeekNum);
+
+    const known = new Set(baseRows.map(r => r.workOrder));
+    const gapRows: WorkOrderEntry[] = [];
+    const unplanned = new Set<string>();
+    const estimated = new Set<string>();
+
+    function addGapRow(row: WorkOrderEntry, targetPortions: number | undefined | null) {
+      if (known.has(row.workOrder) || weekPrefixFromWoNumber(row.workOrder) !== selectedWeekNum) return;
+      known.add(row.workOrder);
+      const kgEstimate = estimatePlannedKg(recipeWeights, row.recipeCode, row.subRecipe, targetPortions);
+      if (kgEstimate != null) {
+        estimated.add(row.workOrder);
+        gapRows.push({ ...row, postKg: kgEstimate });
+      } else {
+        unplanned.add(row.workOrder);
+        gapRows.push(row);
+      }
+    }
+
+    if (selectedWeekNum != null) {
+      for (const r of ketCsvRows ?? []) {
+        addGapRow({
+          run: 1,
+          kitchenDay: r.dateNeeded,
+          workOrder: r.woNumber,
+          recipeId: r.recipeId,
+          recipeCode: r.recipeCode,
+          recipeName: r.recipeName,
+          subRecipe: r.subRecipeName,
+          plannedMeals: r.targetPortions,
+          targetPortions: r.targetPortions,
+          stagingKg: 0,
+          kitchenKg: 0,
+          postKg: 0,
+          yieldPct: 0,
+          cookMethods: r.cookMethods.join(", "),
+          stagingStatus: r.stagingStatus,
+          kitchenStatus: r.kitchenStatus,
+        }, r.targetPortions);
+      }
+      for (const r of liveWmsRows ?? []) {
+        addGapRow(r, r.targetPortions ?? r.plannedMeals);
+      }
+      for (const e of etMonitor.data?.entries ?? []) {
+        addGapRow({
+          run: 1,
+          kitchenDay: e.cookingDay,
+          workOrder: e.workOrder,
+          recipeCode: e.recipeCode,
+          recipeName: e.recipeName,
+          subRecipe: e.subRecipeName,
+          plannedMeals: 0,
+          stagingKg: 0,
+          kitchenKg: 0,
+          postKg: 0,
+          yieldPct: 0,
+        }, null);
+      }
+    }
+
+    const plan = (baseRows.length === 0 && gapRows.length === 0)
+      ? data.productionPlan
+      : {
+        week: selectedWeek || (data.productionPlan?.week ?? ""),
+        generatedAt: data.productionPlan?.generatedAt ?? "",
+        rows: [...baseRows, ...gapRows],
+      };
+    return { filteredProductionPlan: plan, unplannedWorkOrders: unplanned, estimatedWorkOrders: estimated };
+  }, [data.productionPlan, etMonitor.data, liveWmsRows, ketCsvRows, recipeWeights, selectedWeek, selectedWeekNum]);
+
+  const week = filteredProductionPlan?.week ?? "—";
+
+  // Wiegungen, deren WO-Nummer auf eine ANDERE KW als die ausgewählte zeigt —
+  // z.B. Nachzügler vom Vortag/Vorwoche im selben Sheet-Tab. Diese tauchen in
+  // dieser Ansicht bewusst nicht als Fortschritt auf; wir zeigen aber, dass es
+  // sie gibt, damit nichts "unsichtbar verschwindet".
+  const offWeekWeighingCount = useMemo(() => {
+    if (selectedWeekNum == null) return 0;
+    let n = 0;
+    for (const e of monitor.data?.entries ?? []) {
+      const wn = weekPrefixFromWoNumber(e.workOrder);
+      if (wn != null && wn !== selectedWeekNum) n++;
+    }
+    return n;
+  }, [monitor.data, selectedWeekNum]);
+
+  const rtiWeekMismatch = rtiWeekNum != null && selectedWeekNum != null && rtiWeekNum !== selectedWeekNum;
 
   // ── State ──
   const [expandedMeals, setExpandedMeals] = useState<Set<string>>(new Set());
@@ -139,12 +470,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
   // ── Daten ──
   const { matched, meals, backfill } = useMemo(
-    () => matchPostblastToWorkOrders(monitor.data, data.productionPlan, rtiMonitor.data),
-    [monitor.data, data.productionPlan, rtiMonitor.data]
+    () => matchPostblastToWorkOrders(monitor.data, filteredProductionPlan, rtiMonitor.data, unplannedWorkOrders, estimatedWorkOrders),
+    [monitor.data, filteredProductionPlan, rtiMonitor.data, unplannedWorkOrders, estimatedWorkOrders]
   );
   const intelligence = useMemo(
-    () => analyzeProduction(monitor.data, meals, backfill, data.productionPlan, shiftEndHours),
-    [monitor.data, meals, backfill, data.productionPlan, shiftEndHours]
+    () => analyzeProduction(monitor.data, meals, backfill, filteredProductionPlan, shiftEndHours),
+    [monitor.data, meals, backfill, filteredProductionPlan, shiftEndHours]
   );
   const todayEntries = useMemo(
     () => (monitor.data?.entries ?? []).filter(e => e.date === todayStr),
@@ -186,12 +517,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
     const map = new Map<string, number>();
     for (const m of matched) {
       if (m.plannedKg <= 0) continue;
-      const woEntry = data.productionPlan?.rows.find(r => r.workOrder === m.workOrder);
+      const woEntry = filteredProductionPlan?.rows.find(r => r.workOrder === m.workOrder);
       const { capacityKg } = findEquipmentForSubRecipe(m.subRecipe, woEntry?.cookMethods, data.equipmentBible);
       map.set(m.workOrder, Math.max(1, Math.ceil(m.plannedKg / (capacityKg > 0 ? capacityKg : 100))));
     }
     return map;
-  }, [matched, data]);
+  }, [matched, filteredProductionPlan, data.equipmentBible]);
 
   // ── Sets & Filter ──
   const backfillByWo = useMemo(() => new Map(backfill.map(b => [b.workOrder, b])), [backfill]);
@@ -211,6 +542,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const mealDone = meals.filter(m => m.completedWOs === m.totalWOs).length;
   const mealRunning = meals.length - mealCritical - mealDone;
   const shiftDeltaKg = totalActual - Object.values(shiftStartActual).reduce((s, v) => s + v, 0);
+  const unplannedCount = matched.filter(m => !m.hasPlan).length;
+  const estimatedCount = matched.filter(m => m.isEstimated).length;
 
   const lastUpdate = monitor.lastUpdate
     ? new Date(monitor.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -282,9 +615,47 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               >
                 {rtiMonitor.data ? "● RTI abgeglichen" : "○ RTI wartet"}
               </span>
+              <span
+                title={etMonitor.data ? "ET-Master-WO-Liste verbunden — liefert die live im WMS angelegten WOs über mehrere Wochen hinweg, auch wenn der Produktionsplan für eine Woche noch fehlt" : "ET-Sheet noch nicht geladen — Wochenauswahl nutzt bislang nur den Produktionsplan"}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ring-1 ${
+                  etMonitor.data ? "bg-emerald-400/20 text-emerald-200 ring-emerald-400/40" : "bg-white/10 text-teal-200/60 ring-white/20"
+                }`}
+              >
+                {etMonitor.data ? "● ET abgeglichen" : "○ ET wartet"}
+              </span>
+              <span
+                title={liveWmsRows ? "Live-WMS-Cache verbunden — ergänzt echte Portionen/Sub-Rezept-Namen für WOs, die im Produktionsplan noch fehlen" : "Live-WMS-Cache noch nicht geladen oder leer"}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ring-1 ${
+                  liveWmsRows ? "bg-emerald-400/20 text-emerald-200 ring-emerald-400/40" : "bg-white/10 text-teal-200/60 ring-white/20"
+                }`}
+              >
+                {liveWmsRows ? "● WMS abgeglichen" : "○ WMS wartet"}
+              </span>
+              {rtiWeekMismatch && (
+                <button
+                  onClick={() => {
+                    const match = weekOptions.find(w => weekNumFromHfWeek(w) === rtiWeekNum);
+                    if (match) setSelectedWeek(match);
+                  }}
+                  title="Das RTI-Sheet meldet aktuell eine andere Kalenderwoche als hier ausgewählt — anklicken zum Wechseln"
+                  className="text-[10px] px-2 py-0.5 rounded-full font-bold ring-1 bg-red-400/25 text-red-100 ring-red-300/50 hover:bg-red-400/40 transition"
+                >
+                  ⚠ RTI meldet KW{rtiWeekNum} — wechseln
+                </button>
+              )}
+              {offWeekWeighingCount > 0 && (
+                <span
+                  title="Wiegungen mit einer WO-Nummer aus einer anderen Kalenderwoche als der ausgewählten — werden hier bewusst nicht mitgezählt"
+                  className="text-[10px] px-2 py-0.5 rounded-full font-bold ring-1 bg-amber-400/20 text-amber-100 ring-amber-400/40"
+                >
+                  ⚠ {offWeekWeighingCount} Wiegung{offWeekWeighingCount === 1 ? "" : "en"} andere KW ausgeblendet
+                </span>
+              )}
             </div>
             <h1 className="text-3xl font-bold">Postblast Live Monitor</h1>
-            <p className="mt-1 text-sm text-teal-100/80">{week} · Echtzeit-Wiegungen vs. Produktionsplan</p>
+            <p className="mt-1 text-sm text-teal-100/80">
+              {week} · {meals.length} Meals · {matched.length} WOs · Echtzeit-Wiegungen vs. Produktionsplan
+            </p>
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex items-center gap-2">
@@ -295,6 +666,20 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               >
                 {isRefreshing ? "⟳ Lädt…" : "⟳ Refresh"}
               </button>
+              {weekOptions.length > 0 && (
+                <select
+                  value={selectedWeek}
+                  onChange={e => handleSelectWeek(e.target.value)}
+                  title="Angezeigte Woche — Produktionsplan enthält WOs aus mehreren Wochen, hier filtern"
+                  className="text-xs px-2 py-1.5 rounded-full bg-white/20 text-white ring-1 ring-white/30 border-0 font-medium"
+                >
+                  {weekOptions.map(w => {
+                    const n = weekNumFromHfWeek(w);
+                    const count = n != null ? woCountByWeekNum.get(n) ?? 0 : 0;
+                    return <option key={w} value={w} className="text-slate-900">{w} · {count} WOs</option>;
+                  })}
+                </select>
+              )}
               <select
                 value={shiftEndHours}
                 onChange={e => setShiftEndHours(Number(e.target.value))}
@@ -317,7 +702,9 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               {shiftDeltaKg > 0.5 && snapCount > 1 && (
                 <span className="text-emerald-300 font-medium text-xs">+{fmt(shiftDeltaKg, 1)} kg seit Schichtstart</span>
               )}
-              <span className="font-mono font-bold text-white">{fmt(overallPct, 1)}%</span>
+              <span className="font-mono font-bold text-white">
+                {totalPlanned > 0 ? `${fmt(overallPct, 1)}%` : "— kein Soll"}
+              </span>
               <span className="text-xs text-teal-200/70">{fmtMass(totalActual * 1000)} / {fmtMass(totalPlanned * 1000)}</span>
             </div>
           </div>
@@ -332,7 +719,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         </div>
 
         {/* Stat-Tiles */}
-        <div className="mt-4 grid grid-cols-3 md:grid-cols-6 gap-2">
+        <div className="mt-4 grid grid-cols-4 md:grid-cols-8 gap-2">
           {([
             { label: "Meals", value: meals.length, sub: "gesamt", color: "text-white", bg: "bg-white/15", onClick: undefined as (() => void) | undefined },
             { label: "WOs", value: matched.length, sub: "gesamt", color: "text-white", bg: "bg-white/15", onClick: undefined as (() => void) | undefined },
@@ -340,6 +727,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
             { label: "Kritisch", value: backfill.filter(b => b.priority === "critical").length, sub: "WOs", color: "text-red-300", bg: "bg-red-500/20", onClick: (() => setMealFilter("critical")) as (() => void) | undefined },
             { label: "Meals kritisch", value: mealCritical, sub: "Meals", color: "text-orange-300", bg: "bg-orange-500/20", onClick: (() => setMealFilter("critical")) as (() => void) | undefined },
             { label: "Meals fertig", value: mealDone, sub: `von ${meals.length}`, color: "text-emerald-300", bg: "bg-emerald-500/20", onClick: (() => setMealFilter("done")) as (() => void) | undefined },
+            { label: "≈ Geschätzt", value: estimatedCount, sub: "Soll aus Portionen", color: "text-amber-300", bg: "bg-amber-500/20", onClick: undefined as (() => void) | undefined },
+            { label: "Ohne Plan", value: unplannedCount, sub: "kein Soll bekannt", color: "text-slate-300", bg: "bg-white/10", onClick: undefined as (() => void) | undefined },
           ]).map(s => (
             <button
               key={s.label}
@@ -353,6 +742,66 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* ══ ZUSATZDATEN FÜR KG-SCHÄTZUNG ═══════════════════════════════════ */}
+      <div className="card p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-bold text-slate-500 uppercase tracking-wide text-[10px] shrink-0">Zusatzdaten für Schätzung</span>
+
+          <input
+            ref={ketFileInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleKetCsvFile(f); e.target.value = ""; }}
+          />
+          <button
+            onClick={() => ketFileInputRef.current?.click()}
+            className={`px-3 py-1.5 rounded-full font-medium transition ${ketCsvRows ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          >
+            {ketCsvRows ? `✓ KET-CSV · ${ketCsvRows.length} Zeilen` : "KET-CSV hochladen"}
+          </button>
+          {ketCsvFileName && <span className="text-slate-400 text-[10px]">{ketCsvFileName}</span>}
+          {ketCsvRows && (
+            <button
+              onClick={() => { setKetCsvRows(null); try { localStorage.removeItem(KET_CSV_STORAGE_KEY); } catch { /* quota */ } }}
+              className="text-slate-300 hover:text-slate-500"
+              title="KET-CSV entfernen"
+            >
+              ✕
+            </button>
+          )}
+
+          <div className="w-px h-4 bg-slate-200 mx-1" />
+
+          <input
+            ref={recipeWeightsFileInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleRecipeWeightsFile(f); e.target.value = ""; }}
+          />
+          <button
+            onClick={() => recipeWeightsFileInputRef.current?.click()}
+            className={`px-3 py-1.5 rounded-full font-medium transition ${recipeWeights ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          >
+            {recipeWeights ? `✓ Rezept-Gewichte · ${recipeWeights.recipeCount} Rezepte` : "export-recipes.csv hochladen"}
+          </button>
+          {recipeWeightsFileName && <span className="text-slate-400 text-[10px]">{recipeWeightsFileName}</span>}
+          {recipeWeights && (
+            <button
+              onClick={() => { setRecipeWeights(null); try { localStorage.removeItem(RECIPE_WEIGHTS_STORAGE_KEY); } catch { /* quota */ } }}
+              className="text-slate-300 hover:text-slate-500"
+              title="Rezept-Gewichte entfernen"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        <p className="text-[10px] text-slate-400 mt-2">
+          Beide zusammen ergeben eine <strong>geschätzte</strong> Ziel-Menge (Ziel-Portionen × Gewicht/Portion) für WOs ohne echten Produktionsplan — sichtbar als "≈ GESCHÄTZT", nie als echtes Soll. Die KET-CSV teilt sich den Upload mit "KET Plan / WO".
+        </p>
       </div>
 
       {/* ══ KI PRODUKTIONS-AGENT ═══════════════════════════════════════════ */}
@@ -768,7 +1217,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                             </span>
                                           )}
                                         </td>
-                                        <td className="px-3 py-2 text-right font-mono text-slate-500">{fmt(wo.plannedKg, 1)} kg</td>
+                                        <td className="px-3 py-2 text-right font-mono text-slate-500">
+                                          {wo.isEstimated && (
+                                            <span title="Geschätzt aus Portionen × Rezept-Gewicht — kein echtes Firestore-Soll" className="text-amber-500 mr-0.5">≈</span>
+                                          )}
+                                          {fmt(wo.plannedKg, 1)} kg
+                                        </td>
                                         <td className="px-3 py-2 text-right font-mono font-bold">{fmt(wo.actualKg, 1)} kg</td>
                                         <td className="px-3 py-2 text-right">
                                           <div className="flex items-center justify-end gap-1.5">

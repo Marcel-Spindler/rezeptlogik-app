@@ -5,6 +5,7 @@
 
 import type { WorkOrderEntry } from "../core/types";
 import { currentHfWeek as sharedCurrentHfWeek } from "./hfWeek";
+import { getFirebase, collection, doc, getDoc } from "../core/firebase";
 
 export interface WmsWorkorderCacheRow {
   woNumber: string;
@@ -82,10 +83,6 @@ export function filterRowsToWeekWindow(
 
 export async function fetchWmsWorkorderCache(): Promise<{ rows: WmsWorkorderCacheRow[]; generatedAt: string } | null> {
   try {
-    const [{ getFirebase }, { collection, doc, getDoc }] = await Promise.all([
-      import("../core/firebase"),
-      import("firebase/firestore"),
-    ]);
     const { db } = getFirebase();
     const snap = await getDoc(doc(collection(db, "wmsCache"), "workorders"));
     if (!snap.exists()) return null;

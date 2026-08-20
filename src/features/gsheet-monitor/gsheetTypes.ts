@@ -89,3 +89,27 @@ export interface RtiData {
   meals: RtiMealBlock[];
   lastUpdated: number;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// ET — MASTER-WORKORDER-LISTE (Tab "ET" im selben Sheet)
+// ════════════════════════════════════════════════════════════════════════════
+// Enthält JEDE im WMS angelegte WO über mehrere Kalenderwochen hinweg (die WO-
+// Nummer selbst trägt die KW als Präfix, z.B. "35-222" = KW35) — die einzige
+// Quelle, die live zeigt, welche Wochen gerade WIRKLICH im System sind. Der
+// Firestore-Produktionsplan kann hinterherhinken (nur die "neueste" KW, die
+// zufällig importiert wurde); dieses Tab nicht.
+
+export interface EtEntry {
+  cookingDay: string;   // ISO "2026-08-10", aus "2026/08/10" im Sheet
+  workOrder: string;    // "34-1"
+  recipeId: string;
+  recipeCode: string;   // "FV4055A"
+  recipeName: string;
+  subRecipeName: string;
+}
+
+export interface EtData {
+  entries: EtEntry[];
+  byWorkOrder: Map<string, EtEntry>;
+  lastUpdated: number;
+}

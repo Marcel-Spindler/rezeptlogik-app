@@ -48,6 +48,7 @@ import {
   legacyStorageKey, parseStoredPlan, serializePlanState, storageKey, weekDocId,
   type DragPayload, type EntriesByDataMarket, type LinePlanState, type SharedPlanState,
 } from "./features/planning-oasis/rack/rackPlanState";
+import { getFirebase, doc, collection, onSnapshot, setDoc, addDoc, serverTimestamp } from "./core/firebase";
 import {
   blockTone, buildBoardKey, isPackagingLike, kindDot, marketChipTone, slotPurposeTone, tierTone,
 } from "./features/planning-oasis/rack/rackTone";
@@ -152,16 +153,13 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     let unsubscribe: (() => void) | undefined;
     (async () => {
       try {
-        const [{ getFirebase }, fs] = await Promise.all([
-          import("./core/firebase"),
-          import("firebase/firestore"),
-        ]);
+        
         if (cancelled) return;
         firestoreAvailableRef.current = true;
         setSyncStatus("shared");
         const { db } = getFirebase();
-        const ref = fs.doc(db, "apps", "rezeptlogik", "rackV2Plans", weekDocId(week));
-        unsubscribe = fs.onSnapshot(ref, (snap) => {
+        const ref = doc(db, "apps", "rezeptlogik", "rackV2Plans", weekDocId(week));
+        unsubscribe = onSnapshot(ref, (snap) => {
           if (cancelled || !snap.exists()) return;
           const next = parseStoredPlan(JSON.stringify(snap.data()));
           if (!next) return;
@@ -194,16 +192,13 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
     saveTimerRef.current = setTimeout(() => {
       (async () => {
         try {
-          const [{ getFirebase }, fs] = await Promise.all([
-            import("./core/firebase"),
-            import("firebase/firestore"),
-          ]);
+          
           const { db } = getFirebase();
-          const ref = fs.doc(db, "apps", "rezeptlogik", "rackV2Plans", weekDocId(week));
+          const ref = doc(db, "apps", "rezeptlogik", "rackV2Plans", weekDocId(week));
           const payload = JSON.parse(serialized);
-          await fs.setDoc(ref, {
+          await setDoc(ref, {
             week,
-            updatedAt: fs.serverTimestamp(),
+            updatedAt: serverTimestamp(),
             updatedBy: actorName(),
             ...payload,
           }, { merge: false });
@@ -589,12 +584,9 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
       return nextPlan;
     });
     try {
-      const [{ getFirebase }, fs] = await Promise.all([
-        import("./core/firebase"),
-        import("firebase/firestore"),
-      ]);
+      
       const { db } = getFirebase();
-      await fs.addDoc(fs.collection(db, "apps", "rezeptlogik", "rackV2PlanHistory"), {
+      await addDoc(collection(db, "apps", "rezeptlogik", "rackV2PlanHistory"), {
         week,
         lineId: currentLine.id,
         lineCode: currentLine.code,

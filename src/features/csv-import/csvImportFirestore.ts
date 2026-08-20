@@ -2,15 +2,14 @@
 // Datei-Lese-Helper. Verhalten unverändert aus CsvImportView.tsx übernommen —
 // dies ist der einzige Live-Firestore-Schreibpfad der App.
 
+import { getFirebase } from "../../core/firebase";
+import { doc, collection, writeBatch } from "firebase/firestore";
+
 export async function pushToFirestore(
   recipes: Record<string, unknown>,
   structures: Record<string, unknown>,
   onProgress: (msg: string) => void
 ): Promise<void> {
-  const [{ getFirebase }, { doc, collection, writeBatch }] = await Promise.all([
-    import("../../core/firebase"),
-    import("firebase/firestore"),
-  ]);
   const { db } = getFirebase();
   const ROOT = doc(db, "apps", "rezeptlogik");
 

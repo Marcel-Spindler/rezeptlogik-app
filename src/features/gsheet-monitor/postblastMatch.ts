@@ -14,6 +14,18 @@ export interface WoMatchedStatus {
   deltaKg: number;
   isComplete: boolean;
   isCritical: boolean;
+  // false = diese WO stammt aus der ET-Master-Liste/dem Live-WMS-Cache, weil
+  // für ihre Woche noch kein Mengenplan importiert wurde — es gibt also (noch)
+  // kein Soll (auch keine Schätzung). isComplete/isCritical bleiben dafür
+  // bewusst false, auch wenn schon gewogen wurde, damit "✓ FERTIG" nie etwas
+  // ohne bekanntes Soll behauptet.
+  hasPlan: boolean;
+  // true = plannedKg ist keine echte Firestore-Zielmenge, sondern aus
+  // Ziel-Portionen (KET/WMS) × Rezept-Gewicht/Portion (export-recipes.csv)
+  // GESCHÄTZT — isComplete/isCritical gelten trotzdem, aber die UI markiert
+  // das sichtbar ("≈ GESCHÄTZT"), damit niemand eine Schätzung mit einem
+  // echten Soll verwechselt.
+  isEstimated: boolean;
   run: number;
   weighings: PostblastEntry[];
   lastWeighing: string | null;
@@ -66,7 +78,16 @@ function buildRtiIndex(rtiData: RtiData | null | undefined) {
 export function matchPostblastToWorkOrders(
   postblast: PostblastData | null,
   productionPlan: ProductionPlan | undefined,
-  rtiData?: RtiData | null
+  rtiData?: RtiData | null,
+  // WOs, die nur über die ET-Master-Liste/den Live-WMS-Cache bekannt sind,
+  // weil für ihre Woche noch kein Mengenplan importiert wurde (siehe
+  // PostblastLiveView). Ohne dieses Flag würde plannedKg=0 die WO sofort als
+  // "✓ FERTIG" markieren, sobald irgendetwas gewogen wurde — obwohl das Soll
+  // schlicht unbekannt ist.
+  unplannedWorkOrders?: ReadonlySet<string>,
+  // WOs, deren plannedKg aus Ziel-Portionen × Rezept-Gewicht GESCHÄTZT wurde
+  // (siehe PostblastLiveView) statt aus einem echten Firestore-Soll zu stammen.
+  estimatedWorkOrders?: ReadonlySet<string>
 ): { matched: WoMatchedStatus[]; meals: MealProgress[]; backfill: BackfillNeed[] } {
   if (!productionPlan || !postblast) return { matched: [], meals: [], backfill: [] };
 
@@ -74,13 +95,15 @@ export function matchPostblastToWorkOrders(
 
   for (const wo of productionPlan.rows) {
     const woNum = wo.workOrder;
+    const hasPlan = !unplannedWorkOrders?.has(woNum);
+    const isEstimated = hasPlan && (estimatedWorkOrders?.has(woNum) ?? false);
     const weighings = postblast.byWorkOrder.get(woNum) ?? [];
     const actualKg = weighings.reduce((s, e) => s + e.rawWeightKg, 0);
     const plannedKg = wo.postKg || wo.kitchenKg || wo.stagingKg || 0;
-    const progressPct = plannedKg > 0 ? (actualKg / plannedKg) * 100 : (actualKg > 0 ? 100 : 0);
+    const progressPct = plannedKg > 0 ? (actualKg / plannedKg) * 100 : (actualKg > 0 && hasPlan ? 100 : 0);
     const deltaKg = actualKg - plannedKg;
-    const isComplete = progressPct >= 95;
-    const isCritical = plannedKg > 0 && progressPct < 30 && actualKg === 0;
+    const isComplete = hasPlan && progressPct >= 95;
+    const isCritical = hasPlan && plannedKg > 0 && progressPct < 30 && actualKg === 0;
 
     matched.push({
       workOrder: woNum,
@@ -94,6 +117,8 @@ export function matchPostblastToWorkOrders(
       deltaKg,
       isComplete,
       isCritical,
+      hasPlan,
+      isEstimated,
       run: wo.run ?? 1,
       weighings,
       lastWeighing: weighings.length > 0 ? weighings[weighings.length - 1].timestamp : null,
@@ -138,7 +163,10 @@ export function matchPostblastToWorkOrders(
 
   const bySubRecipeGroup = new Map<string, WoMatchedStatus[]>();
   for (const m of matched) {
-    if (m.plannedKg <= 0) continue;
+    // Geschätzte Sollmengen (Portionen × Rezept-Gewicht statt echtem Firestore-
+    // Soll) sollen nie einen Backfill auslösen — die Unsicherheit der Schätzung
+    // würde sonst direkt eine echte WMS-Aktion anstoßen.
+    if (m.plannedKg <= 0 || m.isEstimated) continue;
     const key = `${m.recipeCode}||${m.subRecipe}`;
     if (!bySubRecipeGroup.has(key)) bySubRecipeGroup.set(key, []);
     bySubRecipeGroup.get(key)!.push(m);

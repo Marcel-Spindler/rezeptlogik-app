@@ -17,6 +17,13 @@ export const GSHEET_REGISTRY: Record<string, GSheetConfig> = {
     pollIntervalMs: 60_000,
     parser: "rti",
   },
+  et: {
+    id: "1-brEn6eKSMFDTubokqA7brq_BzjKP0RpmGw4A1RPspw",
+    name: "ET Work-Order-Liste",
+    sheetTab: "ET",
+    pollIntervalMs: 60_000,
+    parser: "et",
+  },
   // Weitere Sheets hier ergänzen:
   // yield: { id: "...", name: "Weekly Yield", sheetTab: "gid=...", pollIntervalMs: 60_000, parser: "yield" },
 };

@@ -1,4 +1,5 @@
 import type { DataBundle, EquipBibleEntry } from "./types";
+import { getFirebase, doc, collection, getDoc, getDocs, onSnapshot } from "./firebase";
 
 const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "local-db" | "firestore";
 
@@ -51,38 +52,32 @@ export function subscribeRampUpHashChanges(onChanged: () => void): () => void {
   let lastHash = "";
   let unsubscribe: (() => void) | null = null;
 
-  (async () => {
-    try {
-      const [{ getFirebase }, { doc, onSnapshot }] = await Promise.all([
-        import("./firebase"),
-        import("firebase/firestore"),
-      ]);
-      if (disposed) return;
+  try {
+    if (disposed) return () => { disposed = true; };
 
-      const { db } = getFirebase();
-      unsubscribe = onSnapshot(
-        doc(db, "apps", "rezeptlogik"),
-        (snapshot) => {
-          const data = snapshot.data() as { rampUpHash?: string } | undefined;
-          const nextHash = String(data?.rampUpHash ?? "");
-          if (!initialized) {
-            initialized = true;
-            lastHash = nextHash;
-            return;
-          }
-          if (nextHash && nextHash !== lastHash) {
-            lastHash = nextHash;
-            onChanged();
-          }
-        },
-        (err) => {
-          logWarn("Firestore-Listener Fehler (Polling bleibt aktiv)", err);
+    const { db } = getFirebase();
+    unsubscribe = onSnapshot(
+      doc(db, "apps", "rezeptlogik"),
+      (snapshot) => {
+        const data = snapshot.data() as { rampUpHash?: string } | undefined;
+        const nextHash = String(data?.rampUpHash ?? "");
+        if (!initialized) {
+          initialized = true;
+          lastHash = nextHash;
+          return;
         }
-      );
-    } catch (e) {
-      logWarn("Firestore-Verbindung fehlgeschlagen (non-fatal)", e);
-    }
-  })();
+        if (nextHash && nextHash !== lastHash) {
+          lastHash = nextHash;
+          onChanged();
+        }
+      },
+      (err) => {
+        logWarn("Firestore-Listener Fehler (Polling bleibt aktiv)", err);
+      }
+    );
+  } catch (e) {
+    logWarn("Firestore-Verbindung fehlgeschlagen (non-fatal)", e);
+  }
 
   return () => {
     disposed = true;
@@ -160,10 +155,6 @@ async function loadFromLocalDb(): Promise<DataBundle> {
 }
 
 async function loadFromFirestore(): Promise<DataBundle> {
-  const [{ getFirebase }, { collection, doc, getDoc, getDocs }] = await Promise.all([
-    import("./firebase"),
-    import("firebase/firestore"),
-  ]);
   const { db } = getFirebase();
   // Geteiltes Projekt: alle App-Daten unter apps/rezeptlogik/<collection>
   const ROOT = doc(db, "apps", "rezeptlogik");

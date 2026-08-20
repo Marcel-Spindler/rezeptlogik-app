@@ -794,6 +794,12 @@ async function main() {
   writeFileSync(OUT_FILE, JSON.stringify(bundle));
   const sizeMb = (Buffer.byteLength(JSON.stringify(bundle)) / 1024 / 1024).toFixed(2);
   console.log(`✓ ${OUT_FILE}  (${sizeMb} MB)`);
+
+  // Automatisch die lokale SQLite-Datenbank neu bauen, damit der local-db-Server
+  // sofort die aktuellen Daten liefert (kein manuelles `npm run db:build` mehr nötig).
+  console.log("Rebuilding local SQLite database…");
+  const { execSync } = await import("node:child_process");
+  execSync("node scripts/local-db.mjs", { cwd: resolve("."), stdio: "inherit" });
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

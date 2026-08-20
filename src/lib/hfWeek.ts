@@ -15,11 +15,15 @@ export function isoWeekLabel(date: Date): string {
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
 }
 
-export function currentHfWeek(): string {
-  const iso = isoWeekLabel(new Date());
+export function hfWeekForDate(date: Date): string {
+  const iso = isoWeekLabel(date);
   const m = iso.match(/^(20\d{2})-W(\d{2})$/);
   if (!m) return iso;
   const week = Number(m[2]) + 1;
   if (week <= 52) return `${m[1]}-W${String(week).padStart(2, "0")}`;
   return `${Number(m[1]) + 1}-W01`;
+}
+
+export function currentHfWeek(): string {
+  return hfWeekForDate(new Date());
 }

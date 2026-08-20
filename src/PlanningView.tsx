@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { DataBundle, ShelfLifeInfo, WeekRecipe } from "./core/types";
+import { getFirebase, doc, setDoc, onSnapshot } from "./core/firebase";
 import { STATIONS } from "./core/types";
 import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, loadStationDeviceCounts, loadStationPools } from "./lib/equipment";
 import {
@@ -266,10 +267,7 @@ export function PlanningView(
   useEffect(() => {
     let unsub: (() => void) | undefined;
     void (async () => {
-      try {
-        const { getFirebase } = await import("./core/firebase");
-        const { doc, onSnapshot } = await import("firebase/firestore");
-        const { db } = getFirebase();
+      try {        const { db } = getFirebase();
         // Wochenformat "2026-W19" → weekStr "19"
         const weekStr = week.includes("-W") ? week.split("-W")[1] : week;
         unsub = onSnapshot(
@@ -1192,10 +1190,7 @@ export function PlanningView(
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
     void (async () => {
-      try {
-        const { getFirebase } = await import("./core/firebase");
-        const { doc, onSnapshot } = await import("firebase/firestore");
-        const { db } = getFirebase();
+      try {        const { db } = getFirebase();
         if (cancelled) return;
         unsubscribe = onSnapshot(doc(db, "apps/rezeptlogik/planningRequests", `de_W${weekStr}`), (snapshot) => {
           if (!snapshot.exists()) return;
@@ -1340,10 +1335,7 @@ export function PlanningView(
         savedAtIso: snapshot.savedAtIso,
       }
     }));
-    try {
-      const { getFirebase } = await import("./core/firebase");
-      const { doc, setDoc } = await import("firebase/firestore");
-      const { db } = getFirebase();
+    try {      const { db } = getFirebase();
       const weekStr = week.includes("-W") ? week.split("-W")[1] : week;
       await setDoc(doc(db, "apps/rezeptlogik/manufacturingPlans", `de_W${weekStr}`), snapshot, { merge: true });
     } catch {

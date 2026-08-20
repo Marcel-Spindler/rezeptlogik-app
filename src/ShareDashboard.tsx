@@ -17,6 +17,7 @@ import type { NavKey } from "./features/share-dashboard/shareDashboardLogic";
 import { KpiView, QualityView } from "./features/share-dashboard/ShareDashboardWidgets";
 import { KitchenView } from "./features/share-dashboard/ShareKitchenViews";
 import { AslView } from "./features/share-dashboard/ShareAslView";
+import { getFirebase, doc, getDoc } from "./core/firebase";
 
 export function ShareDashboard({ week }: { week: string }) {
   const weekStr  = week.split("-W")[1] ?? week;
@@ -61,9 +62,7 @@ export function ShareDashboard({ week }: { week: string }) {
         if (ketSheet) setKetWOs(parseKet(ketSheet.values));
 
         // Firestore overrides (public read)
-        const { getFirebase }           = await import("./core/firebase");
-        const { doc, getDoc }           = await import("firebase/firestore");
-        const { db }                    = getFirebase();
+        const { db } = getFirebase();
         const snap                      = await getDoc(doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`));
         if (snap.exists()) {
           const d = snap.data() as {

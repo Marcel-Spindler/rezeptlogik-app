@@ -1,8 +1,22 @@
-// Firebase-Initialisierung (optional aktiv).
-// VITE_DATA_SOURCE=local  → Daten aus public/data/data.json (Standard)
-// VITE_DATA_SOURCE=firestore → live aus Firestore (nach push-firestore.ts)
+// Firebase-Initialisierung und Firestore-Re-Exports.
+// Alle Firestore-Funktionen werden hier zentral re-exportiert, damit kein
+// anderes Modul `import("firebase/firestore")` dynamisch laden muss.
 import { initializeApp, type FirebaseApp } from "firebase/app";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import {
+  getFirestore,
+  type Firestore,
+  doc,
+  collection,
+  writeBatch,
+  setDoc,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+
+export { doc, collection, writeBatch, setDoc, getDoc, getDocs, onSnapshot, addDoc, serverTimestamp };
 
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
