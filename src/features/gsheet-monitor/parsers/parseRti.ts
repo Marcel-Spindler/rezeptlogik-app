@@ -24,6 +24,12 @@ function detectWeek(rows: string[][]): string {
   return "";
 }
 
+const FV_HEADER_RE = /^(FV\d{4}[A-Z]?)\s*-\s*(.+)/i;
+
+function isEndOfWeekMarker(row: string[]): boolean {
+  return /end of week count/i.test((row[0] ?? "") + " " + (row[1] ?? ""));
+}
+
 export function parseRti(rows: string[][]): RtiData {
   const meals: RtiMealBlock[] = [];
   const week = detectWeek(rows);
@@ -32,65 +38,77 @@ export function parseRti(rows: string[][]): RtiData {
   while (i < rows.length) {
     const row = rows[i];
 
-    // Erkennung eines neuen Meal-Blocks: Zeile mit "Planned Target" + nächste Zeile hat FV-Code
-    if ((row[3] ?? "").includes("Planned Target")) {
-      // Nächste Zeile = Meal-Header mit FV-Code, Target, Actuals
-      const headerRow = rows[i + 1] ?? rows[i];
-      const mealCell = (headerRow[1] ?? "").trim();
-      const fvMatch = /^(FV\d{4}[A-Z]?)\s*-\s*(.+)/i.exec(mealCell);
+    // Ab hier beginnt der Bilanz-Bereich einer ANDEREN Kalenderwoche im selben Tab —
+    // nicht mehr für die aktuelle Woche auswerten.
+    if (isEndOfWeekMarker(row)) break;
 
-      if (fvMatch) {
-        const mealCode = fvMatch[1].toUpperCase();
-        const mealName = fvMatch[2].replace(/\s*\[.*?\]\s*$/, "").trim();
-        const planned = num(headerRow[3] ?? "");
-        const actuals = num(headerRow[4] ?? "");
-        const delta = num(headerRow[5] ?? "");
-        const deltaPct = pct(headerRow[6] ?? "");
+    // Erkennung eines neuen Meal-Blocks direkt am FV-Code in Spalte B. Jeder Meal-Block
+    // hat seine eigene Header-Zeile — die "Planned Target"-Beschriftung selbst steht nur
+    // EINMAL ganz oben im Tab und darf kein Gate für weitere Meals sein.
+    const headerCell = (row[1] ?? "").trim();
+    const fvMatch = FV_HEADER_RE.exec(headerCell);
 
-        // Skip header + WO-Header zeile
-        i += 2;
-        if (i < rows.length && (rows[i][0] ?? "").includes("WO")) i++;
+    if (fvMatch) {
+      const mealCode = fvMatch[1].toUpperCase();
+      const mealName = fvMatch[2].replace(/\s*\[.*?\]\s*$/, "").trim();
+      const planned = num(row[3] ?? "");
+      const actuals = num(row[4] ?? "");
+      const delta = num(row[5] ?? "");
+      const deltaPct = pct(row[6] ?? "");
 
-        // Sub-Recipes einlesen bis zur nächsten Leerzeile / neuem Meal-Block
-        const subRecipes: RtiSubRecipeEntry[] = [];
-        while (i < rows.length) {
-          const sr = rows[i];
-          const wo = (sr[0] ?? "").trim();
-          const subName = (sr[1] ?? "").trim();
+      // Skip Meal-Header + optionale WO-Header-Zeile
+      i += 1;
+      if (i < rows.length && (rows[i][0] ?? "").includes("WO")) i++;
 
-          // Leer oder neuer Block → stoppen
-          if (!wo && !subName) { i++; break; }
-          if ((sr[3] ?? "").includes("Planned Target")) break;
+      // Sub-Recipes einlesen bis zur nächsten Leerzeile / zum nächsten Meal-Block
+      const subRecipes: RtiSubRecipeEntry[] = [];
+      const seenSubNames = new Set<string>();
+      while (i < rows.length) {
+        const sr = rows[i];
+        const wo = (sr[0] ?? "").trim();
+        const subName = (sr[1] ?? "").trim();
 
-          if (/^\d{2,3}-\d{2,4}$/.test(wo) && subName) {
-            const holding = num(sr[2] ?? "");
-            const rtiKgCol3 = num(sr[3] ?? "");
-            const rtiKgCol4 = num(sr[4] ?? "");
-            const rtiKg = (sr[3] ?? "").trim() !== "" ? rtiKgCol3 : rtiKgCol4;
-            const produced = num(sr[5] ?? "");
-            const subDeltaCol6 = (sr[6] ?? "").trim();
-            const subDelta = subDeltaCol6 !== "" ? num(subDeltaCol6) : num(sr[5] ?? "");
-            const subDeltaPct = pct(sr[7] ?? "");
-            const statusRaw = (sr[9] ?? sr[8] ?? "").trim().toLowerCase();
-            const status: RtiSubRecipeEntry["status"] = statusRaw === "done" ? "done" : statusRaw ? "unknown" : "open";
+        // Nächster Meal-Block folgt direkt (ohne Leerzeile) → NICHT konsumieren, nur stoppen
+        if (FV_HEADER_RE.test(subName) || isEndOfWeekMarker(sr)) break;
+        // Leerzeile → Block Ende
+        if (!wo && !subName) { i++; break; }
 
-            subRecipes.push({
-              workOrder: wo,
-              subRecipeName: subName,
-              platingHoldingKg: holding,
-              rtiPlatingKg: rtiKg,
-              producedQty: produced,
-              delta: subDelta,
-              deltaPct: subDeltaPct,
-              status
-            });
-          }
-          i++;
+        if (/^\d{2,3}-\d{2,4}$/.test(wo) && subName) {
+          const holding = num(sr[2] ?? "");
+          const rtiKgCol3 = num(sr[3] ?? "");
+          const rtiKgCol4 = num(sr[4] ?? "");
+          const rtiKg = (sr[3] ?? "").trim() !== "" ? rtiKgCol3 : rtiKgCol4;
+          const produced = num(sr[5] ?? "");
+          const subDeltaCol6 = (sr[6] ?? "").trim();
+          const subDelta = subDeltaCol6 !== "" ? num(subDeltaCol6) : num(sr[5] ?? "");
+          const subDeltaPct = pct(sr[7] ?? "");
+          const statusRaw = (sr[9] ?? sr[8] ?? "").trim().toLowerCase();
+          const status: RtiSubRecipeEntry["status"] =
+            statusRaw === "done" ? "done" :
+            statusRaw === "no" ? "not-needed" :
+            statusRaw ? "unknown" : "open";
+          // Zweite (oder weitere) Zeile mit demselben Sub-Rezept im selben Meal-Block
+          // = bereits im RTI-Rechner vorbereitete Backfill-Kandidaten-WO.
+          const isBackfillCandidate = seenSubNames.has(subName);
+          seenSubNames.add(subName);
+
+          subRecipes.push({
+            workOrder: wo,
+            subRecipeName: subName,
+            platingHoldingKg: holding,
+            rtiPlatingKg: rtiKg,
+            producedQty: produced,
+            delta: subDelta,
+            deltaPct: subDeltaPct,
+            status,
+            isBackfillCandidate
+          });
         }
-
-        meals.push({ mealCode, mealName, plannedTarget: planned, actuals, delta, deltaPct, subRecipes });
-        continue;
+        i++;
       }
+
+      meals.push({ mealCode, mealName, plannedTarget: planned, actuals, delta, deltaPct, subRecipes });
+      continue;
     }
     i++;
   }

@@ -1,8 +1,7 @@
 // Production Intelligence Agent — regelbasierte + heuristische Produktionsüberwachung.
 // Analysiert Postblast-Daten, erkennt Muster, generiert Alerts und Empfehlungen.
 import type { PostblastData } from "./gsheetTypes";
-import type { MealProgress } from "./postblastMatch";
-import type { BackfillPlan } from "./backfillGenerator";
+import type { BackfillNeed, MealProgress } from "./postblastMatch";
 import type { ProductionPlan } from "../../core/types";
 
 export type AlertSeverity = "critical" | "warning" | "info" | "success";
@@ -171,46 +170,19 @@ function analyzeMealProgress(meals: MealProgress[]): ProductionAlert[] {
   return alerts;
 }
 
-function analyzeEquipmentLoad(backfillPlan: BackfillPlan): ProductionAlert[] {
-  const alerts: ProductionAlert[] = [];
-
-  // Equipment-Auslastung: wenn ein Equipment >10 Chargen hat → Bottleneck
-  const byEquip = new Map<string, number>();
-  for (const p of backfillPlan.proposals) {
-    byEquip.set(p.equipment, (byEquip.get(p.equipment) ?? 0) + p.batchCount);
-  }
-
-  for (const [equip, batches] of byEquip) {
-    if (batches > 8) {
-      alerts.push({
-        id: generateId(),
-        severity: "warning",
-        category: "equipment",
-        title: `${equip} überlastet`,
-        message: `${batches} Chargen für Backfill auf ${equip} geplant. Evtl. auf andere Geräte verteilen oder Schicht verlängern.`,
-        timestamp: Date.now(),
-        actionable: true,
-        suggestedAction: `Kapazitätsplanung prüfen — ${equip} Bottleneck für ${batches} Nachproduktionen`
-      });
-    }
-  }
-
-  return alerts;
-}
-
 function shortName(name: string, words = 3): string {
   return name.split(/[\s\-]+/).slice(0, words).join(" ");
 }
 
-function generateRecommendations(meals: MealProgress[], backfillPlan: BackfillPlan): string[] {
+function generateRecommendations(meals: MealProgress[], backfill: BackfillNeed[]): string[] {
   const recs: string[] = [];
 
-  // Kritisch → sofort
-  const critical = backfillPlan.proposals.filter(p => p.priority === "critical");
+  // Kritisch → sofort, mit fehlender Stückzahl je Sub-Rezept
+  const critical = backfill.filter(b => b.priority === "critical");
   if (critical.length > 0) {
-    const names = critical.slice(0, 2).map(c => `${shortName(c.subRecipe)} (${c.batchCount}×)`).join(", ");
+    const names = critical.slice(0, 2).map(c => `${shortName(c.subRecipe)} (−${fmtInt(c.estimatedPortions)} Stk)`).join(", ");
     const more = critical.length > 2 ? ` +${critical.length - 2} weitere` : "";
-    recs.push(`Sofort: ${names}${more}`);
+    recs.push(`Sofort melden: ${names}${more}`);
   }
 
   // Fast fertige Meals zuerst abschließen
@@ -219,20 +191,19 @@ function generateRecommendations(meals: MealProgress[], backfillPlan: BackfillPl
     recs.push(`Fast fertig: ${almostDone.slice(0, 3).map(m => `${m.recipeCode} (${m.totalWOs - m.completedWOs} WOs offen)`).join(", ")}`);
   }
 
-  // Gleiche Sub-Rezepte bündeln — nur Anzahl, Details stehen im Bündelungs-Block
+  // Gleiche Sub-Rezepte fehlen in mehreren Meals — nur Anzahl, Details im Bündelungs-Block
   const subCounts = new Map<string, number>();
-  for (const p of backfillPlan.proposals) subCounts.set(p.subRecipe, (subCounts.get(p.subRecipe) ?? 0) + 1);
+  for (const b of backfill) subCounts.set(b.subRecipe, (subCounts.get(b.subRecipe) ?? 0) + 1);
   const bundleCount = [...subCounts.values()].filter(n => n > 1).length;
   if (bundleCount > 0) {
-    recs.push(`${bundleCount} Bündelungs-${bundleCount > 1 ? "Gruppen" : "Gruppe"} erkannt — Rüstzeit sparen (↓ Details)`);
+    recs.push(`${bundleCount} Sub-Rezept${bundleCount > 1 ? "e" : ""} fehlen in mehreren Meals — zusammen als einen Backfill anlegen (↓ Details)`);
   }
 
-  // Zeitschätzung — nur wenn nennenswert
-  const hours = backfillPlan.totalBatches * 0.75;
-  if (hours > 8) recs.push(`Backfill ~${hours.toFixed(0)}h — Nachtschicht oder 2. Linie einplanen`);
-  else if (hours > 2) recs.push(`Backfill ~${hours.toFixed(1)}h bei sofortigem Start machbar`);
-
   return recs;
+}
+
+function fmtInt(n: number): string {
+  return Math.round(n).toLocaleString("de-DE");
 }
 
 function computeShiftSummary(postblast: PostblastData, meals: MealProgress[], shiftEndHours = 8): ShiftSummary | null {
@@ -281,7 +252,7 @@ function computeShiftSummary(postblast: PostblastData, meals: MealProgress[], sh
 export function analyzeProduction(
   postblast: PostblastData | null,
   meals: MealProgress[],
-  backfillPlan: BackfillPlan,
+  backfill: BackfillNeed[],
   productionPlan: ProductionPlan | undefined,
   shiftEndHours = 8
 ): ProductionIntelligence {
@@ -291,7 +262,6 @@ export function analyzeProduction(
     ...analyzeWeighingPace(postblast),
     ...analyzeWeightAnomalies(postblast, productionPlan),
     ...analyzeMealProgress(meals),
-    ...analyzeEquipmentLoad(backfillPlan),
   ];
 
   // Deduplizieren (gleiche Kategorie + WO nicht mehrfach)
@@ -307,7 +277,7 @@ export function analyzeProduction(
   const severityOrder: Record<AlertSeverity, number> = { critical: 0, warning: 1, info: 2, success: 3 };
   dedupedAlerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
-  const recommendations = generateRecommendations(meals, backfillPlan);
+  const recommendations = generateRecommendations(meals, backfill);
   const shiftSummary = computeShiftSummary(postblast, meals, shiftEndHours);
 
   return { alerts: dedupedAlerts, shiftSummary, recommendations, lastAnalysis: Date.now() };

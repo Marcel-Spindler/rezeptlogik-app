@@ -64,7 +64,14 @@ export interface RtiSubRecipeEntry {
   producedQty: number;
   delta: number;
   deltaPct: number;
-  status: "done" | "open" | "unknown";
+  // "done" = reguläre WO fertig gewogen (Kitchen hat abgeschlossen).
+  // "not-needed" = Mensch hat im Sheet explizit "kein Backfill nötig" markiert (meist Überschuss).
+  // "open" = noch keine Entscheidung/Wiegung. "unknown" = Status-Zelle mit unerwartetem Wert.
+  status: "done" | "not-needed" | "open" | "unknown";
+  // true = diese Zeile ist eine Wiederholung eines bereits im selben Meal-Block
+  // vorkommenden Sub-Rezepts — d.h. eine im RTI-Rechner bereits vorbereitete
+  // Backfill-Kandidaten-WO mit echter WO-Nummer, keine reguläre Erstproduktion.
+  isBackfillCandidate: boolean;
 }
 
 export interface RtiMealBlock {

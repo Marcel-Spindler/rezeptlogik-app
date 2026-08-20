@@ -1,9 +1,9 @@
 // Postblast Live View — Echtzeit-Dashboard: GSheet-Wiegungen vs. geplante Work Orders.
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import type { DataBundle } from "../../core/types";
-import { usePostblastMonitor } from "./useGSheetMonitor";
+import { usePostblastMonitor, useRtiMonitor } from "./useGSheetMonitor";
 import { matchPostblastToWorkOrders, type BackfillNeed, type WoMatchedStatus } from "./postblastMatch";
-import { generateBackfillPlan, exportBackfillPlanExcel, findEquipmentForSubRecipe } from "./backfillGenerator";
+import { findEquipmentForSubRecipe } from "./backfillGenerator";
 import { analyzeProduction, type AlertSeverity } from "./productionAgent";
 import { respondToChat, type ChatMessage, type ChatContext } from "./postblastChat";
 import { fmt, fmtMass } from "../whatif/whatIfFormat";
@@ -118,6 +118,7 @@ function WoDots({ wos }: { wos: WoMatchedStatus[] }) {
 
 export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const monitor = usePostblastMonitor();
+  const rtiMonitor = useRtiMonitor();
   const week = data.productionPlan?.week ?? "—";
 
   // ── State ──
@@ -138,13 +139,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
   // ── Daten ──
   const { matched, meals, backfill } = useMemo(
-    () => matchPostblastToWorkOrders(monitor.data, data.productionPlan),
-    [monitor.data, data.productionPlan]
+    () => matchPostblastToWorkOrders(monitor.data, data.productionPlan, rtiMonitor.data),
+    [monitor.data, data.productionPlan, rtiMonitor.data]
   );
-  const backfillPlan = useMemo(() => generateBackfillPlan(backfill, data), [backfill, data]);
   const intelligence = useMemo(
-    () => analyzeProduction(monitor.data, meals, backfillPlan, data.productionPlan, shiftEndHours),
-    [monitor.data, meals, backfillPlan, data.productionPlan, shiftEndHours]
+    () => analyzeProduction(monitor.data, meals, backfill, data.productionPlan, shiftEndHours),
+    [monitor.data, meals, backfill, data.productionPlan, shiftEndHours]
   );
   const todayEntries = useMemo(
     () => (monitor.data?.entries ?? []).filter(e => e.date === todayStr),
@@ -169,33 +169,32 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   // ── Verlauf ──
   const { firstSeen, shiftStartActual, snapCount, clear: clearHistory } = useWoHistory(matched, week);
 
-  // ── Bündelungs-Gruppen: gleiche Sub-Rezepte in mehreren Backfill-WOs ──
+  // ── Bündelungs-Gruppen: gleiche Sub-Rezepte fehlen in mehreren Meals ──
   const bundleGroups = useMemo(() => {
-    const map = new Map<string, typeof backfillPlan.proposals>();
-    for (const p of backfillPlan.proposals) {
-      if (!map.has(p.subRecipe)) map.set(p.subRecipe, []);
-      map.get(p.subRecipe)!.push(p);
+    const map = new Map<string, typeof backfill>();
+    for (const b of backfill) {
+      if (!map.has(b.subRecipe)) map.set(b.subRecipe, []);
+      map.get(b.subRecipe)!.push(b);
     }
     return [...map.entries()]
       .filter(([, items]) => items.length > 1)
-      .sort((a, b) => b[1].reduce((s, p) => s + p.missingKg, 0) - a[1].reduce((s, p) => s + p.missingKg, 0));
-  }, [backfillPlan.proposals]);
+      .sort((a, b) => b[1].reduce((s, x) => s + x.missingKg, 0) - a[1].reduce((s, x) => s + x.missingKg, 0));
+  }, [backfill]);
 
-  // ── Chargen-Map ──
+  // ── Chargen-Map: grobe Batch-Schätzung je bestehender WO (rein informativ) ──
   const batchMap = useMemo(() => {
     const map = new Map<string, number>();
-    for (const p of backfillPlan.proposals) map.set(p.originalWo, p.batchCount);
     for (const m of matched) {
-      if (map.has(m.workOrder) || m.plannedKg <= 0) continue;
+      if (m.plannedKg <= 0) continue;
       const woEntry = data.productionPlan?.rows.find(r => r.workOrder === m.workOrder);
       const { capacityKg } = findEquipmentForSubRecipe(m.subRecipe, woEntry?.cookMethods, data.equipmentBible);
       map.set(m.workOrder, Math.max(1, Math.ceil(m.plannedKg / (capacityKg > 0 ? capacityKg : 100))));
     }
     return map;
-  }, [backfillPlan.proposals, matched, data]);
+  }, [matched, data]);
 
   // ── Sets & Filter ──
-  const backfillWoSet = useMemo(() => new Set(backfill.map(b => b.workOrder)), [backfill]);
+  const backfillByWo = useMemo(() => new Map(backfill.map(b => [b.workOrder, b])), [backfill]);
 
   const filteredMeals = useMemo(() => {
     if (mealFilter === "critical") return meals.filter(m => m.criticalWOs.length > 0);
@@ -275,6 +274,14 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               <div className={`w-2.5 h-2.5 rounded-full ${monitor.isPolling ? "bg-emerald-300 animate-pulse" : "bg-slate-400"}`} />
               <span className="text-sm font-medium text-teal-100">{monitor.isPolling ? `Live · ${lastUpdate}` : "Offline"}</span>
               {snapCount > 0 && <span className="text-xs text-teal-200/70">· {snapCount} Snapshots</span>}
+              <span
+                title={rtiMonitor.data ? "RTI-Sheet verbunden — Status & vorbereitete Backfill-WOs werden abgeglichen" : "RTI-Sheet noch nicht geladen — Backfill-Logik nutzt nur Gewichts-Schätzung"}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ring-1 ${
+                  rtiMonitor.data ? "bg-emerald-400/20 text-emerald-200 ring-emerald-400/40" : "bg-white/10 text-teal-200/60 ring-white/20"
+                }`}
+              >
+                {rtiMonitor.data ? "● RTI abgeglichen" : "○ RTI wartet"}
+              </span>
             </div>
             <h1 className="text-3xl font-bold">Postblast Live Monitor</h1>
             <p className="mt-1 text-sm text-teal-100/80">{week} · Echtzeit-Wiegungen vs. Produktionsplan</p>
@@ -400,7 +407,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                 <div className="bg-red-50 rounded-xl p-3 ring-1 ring-red-200">
                   <div className="text-[10px] text-red-600 uppercase font-bold">Fehlprognose</div>
                   <div className="text-xl font-bold font-mono mt-0.5 text-red-700">−{fmt(intelligence.shiftSummary.shortfallAtEndOfShift, 0)} kg</div>
-                  <div className="text-[10px] text-red-500 font-medium">Backfill nötig!</div>
+                  <div className="text-[10px] text-red-500 font-medium">Bei aktuellem Tempo droht Unterdeckung — noch keine bestätigte Backfill-Notwendigkeit</div>
                 </div>
               ) : (
                 <div className="bg-emerald-50 rounded-xl p-3 ring-1 ring-emerald-200">
@@ -576,7 +583,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
           <div className="space-y-2.5">
             {filteredMeals.map(meal => {
               const expanded = expandedMeals.has(meal.recipeCode);
-              const mealBackfillCount = meal.workOrders.filter(wo => backfillWoSet.has(wo.workOrder)).length;
+              const mealBackfillNeeds = meal.workOrders.map(wo => backfillByWo.get(wo.workOrder)).filter((b): b is BackfillNeed => b != null);
+              const mealBackfillPortions = mealBackfillNeeds.reduce((s, b) => s + b.estimatedPortions, 0);
               const isDone = meal.completedWOs === meal.totalWOs;
               const isCritical = meal.criticalWOs.length > 0;
 
@@ -597,8 +605,20 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                 <div
                   id={`meal-${meal.recipeCode}`}
                   key={meal.recipeCode}
-                  className={`rounded-2xl border-2 transition-shadow ${borderColor} ${bgColor} ${expanded ? "shadow-md" : "hover:shadow-sm"}`}
+                  className={`rounded-2xl border-2 overflow-hidden transition-shadow ${borderColor} ${bgColor} ${expanded ? "shadow-md" : "hover:shadow-sm"}`}
                 >
+                  {/* Füllstand-Leiste — läuft langsam voll, solange die Wiegungen reinkommen */}
+                  <div className="h-2 bg-slate-100">
+                    <div
+                      className={`h-full transition-all duration-700 ${
+                        isCritical ? "bg-red-400" :
+                        meal.progressPct >= 95 ? "bg-emerald-400" :
+                        meal.progressPct >= 60 ? "bg-sky-400" :
+                        meal.progressPct >= 30 ? "bg-amber-400" : "bg-slate-300"
+                      }`}
+                      style={{ width: `${Math.min(meal.progressPct, 100)}%` }}
+                    />
+                  </div>
                   {/* Linke Statuslinie */}
                   <div className="flex">
                     <div className={`w-1.5 rounded-l-2xl shrink-0 ${isCritical ? "bg-red-400" : isDone ? "bg-emerald-400" : "bg-sky-300"}`} />
@@ -614,9 +634,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                             <span className="font-bold text-sm text-slate-900">{meal.recipeCode}</span>
                             <span className="text-slate-500 text-sm truncate">{meal.recipeName}</span>
                             {isDone && <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200 font-bold shrink-0">✓ FERTIG</span>}
-                            {mealBackfillCount > 0 && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200 font-bold shrink-0">
-                                {mealBackfillCount}× Backfill
+                            {mealBackfillNeeds.length > 0 && (
+                              <span
+                                title="Reguläre WOs durch, Plan nicht erreicht — Backfill im WMS anlegen"
+                                className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200 font-bold shrink-0"
+                              >
+                                Backfill: −{fmt(mealBackfillPortions)} Stk
                               </span>
                             )}
                             {hasRuns && (
@@ -721,7 +744,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                     const fsTime = fsTs ? new Date(fsTs).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : null;
                                     const startKg = shiftStartActual[wo.workOrder] ?? 0;
                                     const delta = wo.actualKg - startKg;
-                                    const needsBackfill = backfillWoSet.has(wo.workOrder);
+                                    const backfillNeed = backfillByWo.get(wo.workOrder);
                                     const batchCount = batchMap.get(wo.workOrder);
 
                                     rows.push(
@@ -736,8 +759,13 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                         <td className="px-3 py-2 font-mono font-bold text-slate-700 whitespace-nowrap">{wo.workOrder}</td>
                                         <td className="px-3 py-2 max-w-[180px]">
                                           <div className="font-medium truncate" title={wo.subRecipe}>{wo.subRecipe}</div>
-                                          {needsBackfill && (
-                                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200 font-bold">BACKFILL</span>
+                                          {backfillNeed && (
+                                            <span
+                                              title="Reguläre WOs sind durch, Plan wird trotzdem nicht erreicht — Backfill im WMS anlegen"
+                                              className="text-[9px] px-1.5 py-0.5 rounded-full font-bold ring-1 bg-amber-100 text-amber-700 ring-amber-200"
+                                            >
+                                              BACKFILL · −{fmt(backfillNeed.estimatedPortions)} Stk
+                                            </span>
                                           )}
                                         </td>
                                         <td className="px-3 py-2 text-right font-mono text-slate-500">{fmt(wo.plannedKg, 1)} kg</td>
@@ -793,14 +821,16 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         </div>
       )}
 
-      {/* ══ BACKFILL-BEDARF ═════════════════════════════════════════════════ */}
+      {/* ══ BACKFILL-MELDUNGEN ══════════════════════════════════════════════ */}
       {backfill.length > 0 && (
         <div className="card overflow-hidden shadow-sm border-0">
           <div className="px-5 py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <h3 className="text-lg font-bold">Backfill-Bedarf</h3>
-                <p className="text-sm text-amber-100 mt-0.5">Work Orders die noch produziert werden müssen</p>
+                <h3 className="text-lg font-bold">Backfill-Meldungen</h3>
+                <p className="text-sm text-amber-100 mt-0.5">
+                  Reguläre WOs sind komplett durch, Plan wird trotzdem nicht erreicht — Stückzahl zum Anlegen des Backfills im WMS
+                </p>
               </div>
               <div className="flex gap-1.5">
                 {(["all", "critical", "behind"] as const).map(f => (
@@ -821,13 +851,13 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               </div>
             </div>
 
-            {/* Summary-Tiles im Header */}
+            {/* Summary-Tiles im Header — Stückzahl zuerst, kg nur als Zusatzinfo */}
             <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
               {[
-                { label: "Gesamt fehlt", val: fmtMass(backfill.reduce((s, b) => s + b.missingKg, 0) * 1000) },
-                { label: "Kritische WOs", val: String(backfill.filter(b => b.priority === "critical").length) },
+                { label: "Fehlende Stück", val: fmt(backfill.reduce((s, b) => s + b.estimatedPortions, 0)) },
+                { label: "Gesamt fehlt (kg)", val: fmtMass(backfill.reduce((s, b) => s + b.missingKg, 0) * 1000) },
+                { label: "Kritisch", val: String(backfill.filter(b => b.priority === "critical").length) },
                 { label: "Hinter Plan", val: String(backfill.filter(b => b.priority === "behind").length) },
-                { label: "~ Portionen", val: fmt(backfill.reduce((s, b) => s + b.estimatedPortions, 0)) },
               ].map(s => (
                 <div key={s.label} className="bg-white/20 rounded-xl p-2.5 text-center backdrop-blur-sm">
                   <div className="text-[10px] text-amber-100 uppercase font-bold tracking-wide">{s.label}</div>
@@ -842,12 +872,11 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               <table className="min-w-full text-xs">
                 <thead className="sticky top-0 bg-amber-50 text-[10px] uppercase tracking-wide text-amber-800 border-b border-amber-200">
                   <tr>
-                    <th className="px-4 py-2.5 text-left">WO</th>
                     <th className="px-4 py-2.5 text-left">Meal</th>
                     <th className="px-4 py-2.5 text-left">Sub-Rezept</th>
-                    <th className="px-4 py-2.5 text-right">Fehlt</th>
+                    <th className="px-4 py-2.5 text-right">Fehlende Stück</th>
+                    <th className="px-4 py-2.5 text-right">Fehlt (kg)</th>
                     <th className="px-4 py-2.5 text-right">%</th>
-                    <th className="px-4 py-2.5 text-right">~ Port.</th>
                     <th className="px-4 py-2.5 text-center">Status</th>
                     <th className="px-4 py-2.5 text-center">Meal</th>
                   </tr>
@@ -855,12 +884,23 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                 <tbody className="divide-y divide-amber-50 bg-white">
                   {filteredBackfill.map(b => (
                     <tr key={b.workOrder} className={`hover:bg-amber-50/50 transition-colors ${b.priority === "critical" ? "border-l-4 border-l-red-400" : b.priority === "behind" ? "border-l-4 border-l-amber-400" : "border-l-4 border-l-emerald-300"}`}>
-                      <td className="px-4 py-2.5 font-mono font-bold text-slate-700">{b.workOrder}</td>
                       <td className="px-4 py-2.5 font-medium text-slate-600">{b.recipeCode}</td>
-                      <td className="px-4 py-2.5 truncate max-w-[180px]" title={b.subRecipe}>{b.subRecipe}</td>
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-red-700">{fmt(b.missingKg, 1)} kg</td>
+                      <td className="px-4 py-2.5 truncate max-w-[200px]" title={b.subRecipe}>
+                        {b.subRecipe}
+                        {b.rtiConfirmed && (
+                          <span className="ml-1.5 text-[9px] text-emerald-600 font-medium" title="Status 'done' direkt aus dem RTI-Sheet übernommen">✓ RTI-bestätigt</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="font-mono font-bold text-lg text-red-700">{fmt(b.estimatedPortions)}</div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="font-mono text-slate-500">{fmt(b.missingKg, 1)} kg</div>
+                        {b.platingHoldingKg > 0 && (
+                          <div className="text-[9px] text-sky-600" title="Bereits als Fertigware im Holding vorhanden laut RTI-Sheet">+{fmt(b.platingHoldingKg, 1)} kg in Holding</div>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-right font-mono text-slate-500">{fmt(b.missingPct, 0)}%</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-slate-500">{fmt(b.estimatedPortions)}</td>
                       <td className="px-4 py-2.5 text-center"><PriorityBadge priority={b.priority} /></td>
                       <td className="px-4 py-2.5 text-center">
                         <button
@@ -879,88 +919,6 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         </div>
       )}
 
-      {/* ══ BACKFILL WO GENERATOR ═══════════════════════════════════════════ */}
-      {backfill.length > 0 && backfillPlan.proposals.length > 0 && (
-        <div className="card overflow-hidden shadow-sm border-0">
-          <div className="px-5 py-4 bg-gradient-to-r from-rose-600 to-pink-600 text-white">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <h3 className="text-lg font-bold">Backfill Work Orders</h3>
-                <p className="text-sm text-rose-100 mt-0.5">Auto-generierte Nachproduktions-WOs mit Equipment & Chargen</p>
-              </div>
-              <button
-                onClick={() => void exportBackfillPlanExcel(backfillPlan, week)}
-                className="px-4 py-2 rounded-full bg-white text-rose-700 text-xs font-bold hover:bg-rose-50 transition shadow-sm"
-              >
-                Excel Export
-              </button>
-            </div>
-
-            <div className="mt-3 grid grid-cols-3 md:grid-cols-5 gap-2">
-              {[
-                { label: "WOs", value: backfillPlan.proposals.length },
-                { label: "Chargen", value: backfillPlan.totalBatches },
-                { label: "Gesamt kg", value: fmt(backfillPlan.totalKg, 1) },
-                { label: "Portionen", value: fmt(backfillPlan.totalPortions) },
-                { label: "Kritisch", value: backfillPlan.criticalCount },
-              ].map(s => (
-                <div key={s.label} className="bg-white/20 rounded-xl p-2.5 text-center">
-                  <div className="text-[10px] text-rose-200 uppercase font-bold tracking-wide">{s.label}</div>
-                  <div className="text-xl font-bold font-mono text-white">{s.value}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="overflow-hidden">
-            <div className="max-h-[400px] overflow-auto">
-              <table className="min-w-full text-xs">
-                <thead className="sticky top-0 bg-rose-50 text-[10px] uppercase tracking-wide text-rose-800 border-b border-rose-200">
-                  <tr>
-                    <th className="px-4 py-2.5 text-left">Backfill-WO</th>
-                    <th className="px-4 py-2.5 text-left">Sub-Rezept</th>
-                    <th className="px-4 py-2.5 text-left">Equipment</th>
-                    <th className="px-4 py-2.5 text-right">Kap.</th>
-                    <th className="px-4 py-2.5 text-right">Chargen</th>
-                    <th className="px-4 py-2.5 text-right">Fehlt</th>
-                    <th className="px-4 py-2.5 text-right">Produziert</th>
-                    <th className="px-4 py-2.5 text-right">
-                      <span title="Mehrproduktion durch Chargenrundung — kein Bestand">Chargen-Plus ↑</span>
-                    </th>
-                    <th className="px-4 py-2.5 text-center">Prio</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-rose-50 bg-white">
-                  {backfillPlan.proposals.map(p => (
-                    <tr key={p.backfillWoNumber} className={`hover:bg-rose-50/30 transition-colors ${p.priority === "critical" ? "border-l-4 border-l-red-500" : "border-l-4 border-l-rose-300"}`}>
-                      <td className="px-4 py-2.5">
-                        <div className="font-mono font-bold text-slate-800">{p.backfillWoNumber}</div>
-                        <div className="text-[10px] text-slate-400">← {p.originalWo}</div>
-                      </td>
-                      <td className="px-4 py-2.5 font-medium truncate max-w-[160px]" title={p.subRecipe}>{p.subRecipe}</td>
-                      <td className="px-4 py-2.5">
-                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] ring-1 ring-slate-200">{p.equipment}</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-slate-500">{fmt(p.capacityKg, 0)} kg</td>
-                      <td className="px-4 py-2.5 text-right">
-                        <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">{p.batchCount}×</span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-red-700">{fmt(p.missingKg, 1)} kg</td>
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-indigo-700">{fmt(p.totalProducedKg, 1)} kg</td>
-                      <td className="px-4 py-2.5 text-right font-mono text-slate-400">+{fmt(p.excessKg, 1)} kg</td>
-                      <td className="px-4 py-2.5 text-center"><PriorityBadge priority={p.priority} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400">
-              ↑ Chargen-Plus = Mehrproduktion durch Rundung auf volle Chargengröße (kein vorhandener Bestand).
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ══ BÜNDELUNGS-VORSCHLÄGE ═══════════════════════════════════════════ */}
       {bundleGroups.length > 0 && (
         <div className="card overflow-hidden shadow-sm border-0">
@@ -968,9 +926,9 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
             <div className="flex items-center gap-3">
               <span className="text-2xl">🔗</span>
               <div>
-                <h3 className="text-lg font-bold">Bündelungs-Vorschläge</h3>
+                <h3 className="text-lg font-bold">Bündelungs-Hinweis</h3>
                 <p className="text-sm text-violet-100 mt-0.5">
-                  {bundleGroups.length} Sub-Rezept{bundleGroups.length > 1 ? "e" : ""} werden in mehreren WOs benötigt — einmal zusammen produzieren statt einzeln
+                  {bundleGroups.length} Sub-Rezept{bundleGroups.length > 1 ? "e" : ""} fehlen in mehreren Meals — als einen gemeinsamen Backfill anlegen statt einzeln
                 </p>
               </div>
               <div className="ml-auto text-right">
@@ -985,19 +943,17 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
             <div className="flex gap-3 p-3 rounded-xl bg-violet-50 border border-violet-100 text-sm text-violet-800">
               <span className="text-violet-400 text-base shrink-0 mt-0.5">ℹ</span>
               <div>
-                <span className="font-semibold">Was bedeutet Bündelung?</span> Wenn dasselbe Sub-Rezept für mehrere Work Orders gebraucht wird,
-                kann man es in <em>einem</em> Produktionslauf herstellen — statt das Equipment mehrfach umzurüsten.
-                Das spart Rüstzeit und macht die Produktion effizienter.
+                <span className="font-semibold">Was bedeutet das?</span> Dasselbe Sub-Rezept fehlt bei mehreren Meals gleichzeitig.
+                Ein Backfill deckt dann mehrere Meals ab — beim Anlegen im WMS die Stückzahlen einfach zusammenzählen.
               </div>
             </div>
 
             {/* Gruppen */}
             <div className="grid gap-3 md:grid-cols-2">
               {bundleGroups.map(([subRecipe, items]) => {
-                const totalKg = items.reduce((s, p) => s + p.missingKg, 0);
-                const totalBatches = items.reduce((s, p) => s + p.batchCount, 0);
-                const equipment = items[0].equipment;
-                const hasCritical = items.some(p => p.priority === "critical");
+                const totalKg = items.reduce((s, b) => s + b.missingKg, 0);
+                const totalPortions = items.reduce((s, b) => s + b.estimatedPortions, 0);
+                const hasCritical = items.some(b => b.priority === "critical");
                 return (
                   <div
                     key={subRecipe}
@@ -1007,9 +963,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div>
                         <div className="font-bold text-sm text-slate-900 leading-tight">{subRecipe}</div>
-                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5">
-                          <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px] ring-1 ring-slate-200">{equipment}</span>
-                          <span>{items.length}× benötigt für {items.length} WOs</span>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          fehlt bei {items.length} Meals
                         </div>
                       </div>
                       {hasCritical && (
@@ -1017,17 +972,16 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                       )}
                     </div>
 
-                    {/* WO-Liste */}
+                    {/* Meal-Liste */}
                     <div className="space-y-1.5 mb-3">
-                      {items.map((p, i) => (
-                        <div key={p.backfillWoNumber} className="flex items-center gap-2 text-xs">
+                      {items.map((b, i) => (
+                        <div key={b.workOrder} className="flex items-center gap-2 text-xs">
                           <span className="text-slate-300 font-mono text-[10px] w-3 shrink-0">{i === items.length - 1 ? "└" : "├"}</span>
-                          <span className="font-mono font-bold text-slate-700 shrink-0">{p.originalWo}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${p.priority === "critical" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
-                            {p.recipeCode}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0 ${b.priority === "critical" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                            {b.recipeCode}
                           </span>
-                          <span className="text-red-600 font-mono font-bold shrink-0">−{p.missingKg.toFixed(1)} kg</span>
-                          <span className="text-slate-400 shrink-0">{p.batchCount}×</span>
+                          <span className="font-mono font-bold text-red-700 shrink-0">−{fmt(b.estimatedPortions)} Stk</span>
+                          <span className="text-slate-400 shrink-0">({b.missingKg.toFixed(1)} kg)</span>
                         </div>
                       ))}
                     </div>
@@ -1036,12 +990,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                     <div className="pt-2.5 border-t border-slate-100">
                       <div className="flex items-center justify-between">
                         <div className="text-[11px] text-slate-500">
-                          Zusammen: <span className="font-mono font-bold text-slate-700">{totalKg.toFixed(1)} kg</span>
+                          Zusammen: <span className="font-mono font-bold text-red-700">{fmt(totalPortions)} Stk</span>
                           {" · "}
-                          <span className="font-mono font-bold text-indigo-700">{totalBatches} Charge{totalBatches !== 1 ? "n" : ""}</span>
+                          <span className="font-mono font-bold text-slate-700">{totalKg.toFixed(1)} kg</span>
                         </div>
                         <div className="text-[10px] font-semibold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
-                          {items.length} Läufe → 1 Lauf ✓
+                          {items.length} Meals → 1 Backfill ✓
                         </div>
                       </div>
                     </div>

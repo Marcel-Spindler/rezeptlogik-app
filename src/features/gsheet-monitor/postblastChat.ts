@@ -8,6 +8,10 @@ export interface ChatMessage {
   text: string;
 }
 
+function fmtInt(n: number): string {
+  return Math.round(n).toLocaleString("de-DE");
+}
+
 export interface ChatContext {
   meals: MealProgress[];
   backfill: BackfillNeed[];
@@ -67,7 +71,7 @@ export function respondToChat(input: string, ctx: ChatContext): string {
   if (q.includes("kritisch")) {
     const critical = ctx.backfill.filter(b => b.priority === "critical");
     if (critical.length === 0) return "Keine kritischen Work Orders — alles im grünen Bereich.";
-    const list = critical.slice(0, 5).map(b => `${b.workOrder} "${b.subRecipe}" (−${b.missingKg.toFixed(1)} kg)`).join(" | ");
+    const list = critical.slice(0, 5).map(b => `${b.recipeCode} "${b.subRecipe}" (−${fmtInt(b.estimatedPortions)} Stk / −${b.missingKg.toFixed(1)} kg)`).join(" | ");
     return `${critical.length} kritische WO${critical.length > 1 ? "s" : ""}: ${list}`;
   }
 
@@ -150,11 +154,11 @@ export function respondToChat(input: string, ctx: ChatContext): string {
     const critical = ctx.backfill.filter(b => b.priority === "critical").slice(0, 4);
     const behind = ctx.backfill.filter(b => b.priority === "behind").slice(0, 3);
     if (critical.length === 0 && behind.length === 0) return "✓ Alles im Plan — kein dringender Handlungsbedarf!";
-    const lines = ["Sofort starten:"];
-    critical.forEach(b => lines.push(`→ ${b.workOrder} "${b.subRecipe}" (−${b.missingKg.toFixed(1)} kg KRITISCH)`));
+    const lines = ["Sofort als Backfill anlegen:"];
+    critical.forEach(b => lines.push(`→ ${b.recipeCode} "${b.subRecipe}" (−${fmtInt(b.estimatedPortions)} Stk / −${b.missingKg.toFixed(1)} kg KRITISCH)`));
     if (behind.length > 0) {
       lines.push("Danach:");
-      behind.forEach(b => lines.push(`→ ${b.workOrder} "${b.subRecipe}" (−${b.missingKg.toFixed(1)} kg)`));
+      behind.forEach(b => lines.push(`→ ${b.recipeCode} "${b.subRecipe}" (−${fmtInt(b.estimatedPortions)} Stk / −${b.missingKg.toFixed(1)} kg)`));
     }
     return lines.join("\n");
   }
