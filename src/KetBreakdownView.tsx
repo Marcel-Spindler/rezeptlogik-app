@@ -78,6 +78,18 @@ function sanitizeFilename(name: string): string {
 }
 
 /**
+ * Dateiname einer einzelnen WO-PDF: WO-Nummer + Mealcode (recipeCode, z.B.
+ * FV1234A) + Sub-Rezept-/Rezeptname — damit sich die abgelegte Datei ohne
+ * Öffnen genauso identifizieren lässt wie die WO selbst.
+ */
+function woFilename(row: KetRow): string {
+  const parts = [`WO_${row.woNumber}`];
+  if (row.recipeCode) parts.push(row.recipeCode);
+  parts.push(row.subRecipeName || row.recipeName);
+  return parts.join("_");
+}
+
+/**
  * Type-safe FileReader result extraction
  */
 function getFileReaderText(result: unknown): string | null {
@@ -188,6 +200,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [batchInstructionStatus, setBatchInstructionStatus] = useState<string | null>(null);
   const [failedInstructions, setFailedInstructions] = useState<Array<{ key: string; woNumber: string; error: string }>>([]);
   const [bulkDlBusy, setBulkDlBusy] = useState(false);
+  const [bulkDlStatus, setBulkDlStatus] = useState<string | null>(null);
 
   const [bulkDlError, setBulkDlError] = useState<string | null>(null);
   // "Hat Zeilen" reicht nicht - der GSheet→Firestore-Plan kann 300+ Zeilen für
@@ -1088,8 +1101,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               title="Als PDF-Datei speichern (1 WO = 1 Seite)"
               onClick={() => {
                 if (!selectedRow) return;
-                const name = `WO_${selectedRow.woNumber}_${selectedRow.subRecipeName || selectedRow.recipeName}`;
-                void downloadPdf([selectedRow], name);
+                void downloadPdf([selectedRow], woFilename(selectedRow));
               }}
               className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-700 hover:bg-emerald-800 disabled:opacity-30 disabled:cursor-not-allowed text-white py-2 rounded-xl transition-colors"
             >
@@ -1114,19 +1126,26 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             <button
               type="button"
               disabled={weekFilteredRows.length === 0 || bulkDlBusy}
-              title="Alle sichtbaren WOs als eine mehrseitige PDF speichern (je WO = 1 Seite)"
+              title="Jede sichtbare WO als eigene PDF-Datei speichern (WO-Nummer + Mealcode im Dateinamen)"
               onClick={async () => {
                 const rows = bulkPrintRows;
                 setBulkDlBusy(true);
                 setBulkDlError(null);
-                try {
-                  const dateTag = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }).replace(".", "");
-                  await downloadPdf(rows, `KET_Breakdown_${dateTag}_${rows.length}WOs`);
-                } catch (error) {
-                  setBulkDlError(error instanceof Error ? error.message : String(error));
-                } finally {
-                  setBulkDlBusy(false);
+                setBulkDlStatus(null);
+                const failed: string[] = [];
+                for (let i = 0; i < rows.length; i++) {
+                  const row = rows[i];
+                  setBulkDlStatus(`${i + 1} von ${rows.length} gespeichert …`);
+                  try {
+                    await downloadPdf([row], woFilename(row));
+                  } catch (error) {
+                    console.error(`[KetBreakdown] Download failed for WO ${row.woNumber}:`, error);
+                    failed.push(row.woNumber);
+                  }
                 }
+                setBulkDlStatus(null);
+                setBulkDlError(failed.length > 0 ? `${failed.length} von ${rows.length} fehlgeschlagen: WO ${failed.join(", ")}` : null);
+                setBulkDlBusy(false);
               }}
               className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 disabled:opacity-30 disabled:cursor-not-allowed text-emerald-800 py-2 rounded-xl transition-colors border border-emerald-200"
             >
@@ -1141,6 +1160,11 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           <div className="text-[8px] text-slate-400 text-center -mt-0.5">
             Alle sichtbaren ({bulkPrintRows.length}) WOs
           </div>
+          {bulkDlStatus && (
+            <div className="text-[9px] text-emerald-700 font-semibold text-center">
+              {bulkDlStatus}
+            </div>
+          )}
           {bulkDlError && (
             <div className="text-[9px] text-red-600 font-semibold bg-red-50 rounded-lg px-2 py-1.5 border border-red-200">
               {bulkDlError}
@@ -1201,8 +1225,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               }}
               onDownload={async () => {
                 if (!selectedRow) return;
-                const name = `WO_${selectedRow.woNumber}_${selectedRow.subRecipeName || selectedRow.recipeName}`;
-                await downloadPdf([selectedRow], name);
+                await downloadPdf([selectedRow], woFilename(selectedRow));
               }}
               manualEquipment={manualEquipment[selectedRow.key]}
               onManualEquipmentChange={(override) => {
