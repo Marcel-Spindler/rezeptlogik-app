@@ -204,12 +204,35 @@ replaceSingle("bundle", "mealCatalog", mealCatalog, "public/data/meal-catalog.js
 replaceCollection("mealCatalog", Object.values(mealCatalog), "public/data/meal-catalog.json", (entry) => entry.mealId);
 replaceCollection("wmsCache", wmsCache.rows ?? [], "public/data/wms-cache.json", (entry, index) => `${entry.woNumber ?? index}::${entry.submealItemNumber ?? ""}`);
 
-const ketCandidates = [
-  process.env.KET_CSV_PATH,
-  path.join(root, "imports", "KET-Verden-2026-W34 (2).csv"),
-  path.join(process.env.USERPROFILE ?? "", "Downloads", "KET-Verden-2026-W34.csv"),
-].filter(Boolean);
-const ketPath = ketCandidates.find((candidate) => fs.existsSync(candidate));
+// Dynamic KET CSV discovery: find the latest available KET file by week number.
+// Priority: KET_CSV_PATH env override > imports/ dir > Downloads/ dir.
+function findLatestKetCsv() {
+  if (process.env.KET_CSV_PATH && fs.existsSync(process.env.KET_CSV_PATH)) {
+    return process.env.KET_CSV_PATH;
+  }
+  const dirs = [
+    path.join(root, "imports"),
+    path.join(process.env.USERPROFILE ?? "", "Downloads"),
+  ];
+  const ketPattern = /KET-Verden-\d{4}-W(\d{2})/i;
+  let best = null;
+  let bestWeek = -1;
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue;
+    for (const file of fs.readdirSync(dir)) {
+      if (!file.endsWith(".csv")) continue;
+      const m = ketPattern.exec(file);
+      if (!m) continue;
+      const weekNum = parseInt(m[1], 10);
+      if (weekNum > bestWeek) {
+        bestWeek = weekNum;
+        best = path.join(dir, file);
+      }
+    }
+  }
+  return best;
+}
+const ketPath = findLatestKetCsv();
 const ketRows = loadKetCsv(ketPath);
 if (ketRows.length) {
   const week = ketPath.match(/W(\d{2})/i)?.[1] ?? "";
@@ -228,10 +251,10 @@ if (ketRows.length) {
     if (!existing) return row;
     return {
       ...row,
-      stagingKg: existing.stagingKg ?? row.stagingKg,
-      kitchenKg: existing.kitchenKg ?? row.kitchenKg,
-      postKg: existing.postKg ?? row.postKg,
-      yieldPct: existing.yieldPct ?? row.yieldPct,
+      stagingKg: existing.stagingKg || 0,
+      kitchenKg: existing.kitchenKg || 0,
+      postKg: existing.postKg || 0,
+      yieldPct: existing.yieldPct || 0,
       plannedMeals: existing.plannedMeals || row.plannedMeals,
     };
   });

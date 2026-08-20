@@ -370,6 +370,10 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
     const unplanned = new Set<string>();
     const estimated = new Set<string>();
 
+    // Index over ALL plan rows (not just week-filtered) for kg-value fallback
+    const allRowsByWo = new Map<string, WorkOrderEntry>();
+    for (const r of allRows) { if (r.workOrder) allRowsByWo.set(r.workOrder, r); }
+
     function addGapRow(row: WorkOrderEntry, targetPortions: number | undefined | null) {
       if (known.has(row.workOrder) || weekPrefixFromWoNumber(row.workOrder) !== selectedWeekNum) return;
       known.add(row.workOrder);
@@ -378,8 +382,15 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         estimated.add(row.workOrder);
         gapRows.push({ ...row, postKg: kgEstimate });
       } else {
-        unplanned.add(row.workOrder);
-        gapRows.push(row);
+        // Fallback: if the full production plan has kg values for this WO, use them
+        const planRow = allRowsByWo.get(row.workOrder);
+        const fallbackKg = planRow ? (planRow.postKg || planRow.kitchenKg || planRow.stagingKg || 0) : 0;
+        if (fallbackKg > 0) {
+          gapRows.push({ ...row, postKg: planRow!.postKg, kitchenKg: planRow!.kitchenKg, stagingKg: planRow!.stagingKg });
+        } else {
+          unplanned.add(row.workOrder);
+          gapRows.push(row);
+        }
       }
     }
 

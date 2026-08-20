@@ -5,6 +5,7 @@ import { parseRecipesCsv, parseDetailedCsv, mergeGrossIntoRecipes } from "./lib/
 import { pushToFirestore, readFileText } from "./features/csv-import/csvImportFirestore";
 import { parsePlatingPlanCsv } from "./features/plating-import/parsePlatingPlan";
 import { savePlatingPlanToFirestore } from "./features/plating-import/platingPlanFirestore";
+import { KetPlanImport } from "./features/ket-plan/KetPlanImport";
 
 // ─── Komponente ──────────────────────────────────────────────────────────────
 
@@ -423,6 +424,9 @@ export function CsvImportView({ data }: { data: DataBundle }) {
           </pre>
         )}
       </div>
+
+      {/* ── KET-Plan-Import ──────────────────────────────────────────────────── */}
+      <KetPlanImport />
 
       {/* ── Dev-Server-Import (nur lokal) ─────────────────────────────────────── */}
       <details className="card p-4">
