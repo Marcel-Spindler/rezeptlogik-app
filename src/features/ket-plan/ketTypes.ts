@@ -81,10 +81,77 @@ export interface IngCalc {
   yieldPct: number | null;
   // Stückzahl-Zutaten (pcs/stk/ea): kg bleibt 0, Menge hier.
   totalPcs: number;
+  // Allergen dieser konkreten Zutat (aus DetailedIngredient.allergen, nur auf dem
+  // Struktur-Pfad verfügbar) — zeigt in der Zutatentabelle direkt, WELCHE Zutat
+  // das WO-weite "CONTAINS"-Badge auslöst, statt nur die Gesamtliste zu kennen.
+  allergen?: string;
   // Factor-Regeln (Matteos capacity-rules.js): SEPARATE-Tag bzw. Spice-Room-Zutat —
   // wird in der PDF/UI immer zuerst sortiert + unterstrichen dargestellt.
   separate: boolean;
   spiceRoom: boolean;
+  // GN-Blech-Bedarf dieser Zutat (siehe ketLogic.resolveGnTrays) — kg-basiert über
+  // die Kuechenbible/VEGGIE-DEBOX-Kapazitätsdichte oder stückbasiert über
+  // PROTEIN-DEBOX-Tray-Specs. null = keine Blech-Kennzahl für diese Zutat bekannt
+  // (z.B. Flüssigkeiten/Saucen, die nur in die Wanne gehen).
+  gnTrays: number | null;
+  gnType: string | null; // z.B. "GN 2/1"
+}
+
+// Aufsummierter GN-Blech-Bedarf, gruppiert nach GN-Größe (nicht austauschbar —
+// "12× GN 2/1" und "3× GN 1/1" dürfen nicht zu einer Zahl verschmolzen werden).
+export interface GnTraySummary {
+  gnType: string;
+  trays: number;
+}
+
+// Portionierwerkzeug (Scoop/Ladle/…) aus der Sub-Rezept-Definition (Recipe.markets
+// SubRecipe.methodType/methodColor, siehe wrResolveSubRecipeYieldInfo) — beantwortet
+// "welcher Scoop wird genommen" direkt aus den Rezeptdaten, kein manueller Eintrag nötig.
+export interface ScoopInfo {
+  yieldGrams: number | null;
+  yieldUom: string | null;
+  methodType: string | null;
+  methodColor: string | null;
+}
+
+// Eine eigenständige Zubereitungskomponente innerhalb einer WO — entsteht, wenn
+// das gematchte Sub-Rezept im Rezeptbaum selbst ≥2 Kind-Sub-Rezepte mit eigenen,
+// unterschiedlichen Cook Methods hat (z.B. "Stuffed Pepper Casserole Base-V2" =
+// "Ground Beef - cooked" [BRAISER] + "Stuffed Pepper Casserole Vegetable Mix"
+// [OVEN]). Jede Komponente braucht eine eigene, separate Kochanweisung — die
+// echten Factor-Produktionsblätter drucken sie als eigene Abschnitte auf
+// derselben WO-Karte, nicht als eine vermischte Anweisung.
+export interface WoComponent {
+  name: string;
+  ingredients: IngCalc[];
+  totalKg: number;
+  resolvedCookMethods: string[];
+  equipBatches: EquipBatch[];
+  primaryEquip: string | null;
+  capacityKg: number | null;
+  primaryCapBibleMatch?: EquipBibleEntry | null;
+  batches: number;
+  perBatchKg: number;
+  instructionsEnglish: string | null;
+  instructionsGerman: string | null;
+  instructionsGermanFallback: boolean;
+  // Factor-Produktionsregeln, klassifiziert nach DIESER Komponente eigenem Namen
+  // (z.B. "Ground Beef - cooked" → neverBatch) — nicht nach dem zusammengesetzten
+  // WO-Namen, der per Zufall ein unpassendes Schlüsselwort treffen kann (z.B.
+  // "Stuffed PEPPER Casserole Base-V2" träfe die Paprika-VEG-Regel, obwohl die
+  // Komponente eigentlich das Rindfleisch ist). Siehe factorRules.classify().
+  rti: boolean;
+  neverBatch: boolean;
+  factorCapacityKg: number | null;
+  factorBatches: number | null;
+  factorBatchQtyKg: number | null;
+  factorFallbackCapacity: boolean;
+  readyMade: boolean;
+  // GN-Blech-Bedarf dieser Komponente, aufsummiert über ihre eigenen Zutaten
+  // (siehe IngCalc.gnTrays), gruppiert nach GN-Größe.
+  gnTraySummary: GnTraySummary[];
+  // Portionierwerkzeug für DIESE Komponente (eigener Name) — siehe ScoopInfo oben.
+  scoopInfo: ScoopInfo | null;
 }
 
 export interface EquipBatch {
@@ -148,4 +215,19 @@ export interface BatchCalc {
   uomWarnings: string[];
   // true wenn Factor-Regeln (neverBatch/rti) die equipBatches-Logik übersteuern.
   factorOverridesEquip: boolean;
+  // Zubereitungskomponenten mit eigener Kochanweisung — leer beim normalen
+  // Einzel-Sub-Rezept-Fall, gefüllt nur bei zusammengesetzten Sub-Rezepten
+  // (siehe WoComponent oben). equipBatches/batches/perBatchKg oben bleiben in
+  // diesem Fall der reine Gesamt-Rohware-Überblick — die belastbaren Batch-
+  // Zahlen je Equipment stehen dann in den einzelnen components[].
+  components: WoComponent[];
+  // GN-Blech-Bedarf über ALLE Zutaten dieser WO (siehe IngCalc.gnTrays), gruppiert
+  // nach GN-Größe. Bei zusammengesetzten Sub-Rezepten die Summe aller Komponenten
+  // PLUS gemeinsamer/nicht komponenten-gebundener Zutaten (z.B. geteilte Gewürze) —
+  // die belastbare Pro-Komponente-Aufschlüsselung steht in components[].gnTraySummary.
+  gnTraySummary: GnTraySummary[];
+  // Portionierwerkzeug (Scoop/Ladle/…) für das gematchte Sub-Rezept dieser WO — null
+  // im zusammengesetzten Fall (components.length > 0), dort steht es je Komponente
+  // in components[].scoopInfo statt hier vermischt für die ganze WO.
+  scoopInfo: ScoopInfo | null;
 }

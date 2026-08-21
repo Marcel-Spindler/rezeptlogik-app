@@ -1,7 +1,7 @@
 // Detailansicht für eine einzelne Work Order: Cook Methods, Batch-Kapazitäten
 // (inline editierbar), Zutaten-Tabelle, Kochanweisungen.
 import { useEffect, useState } from "react";
-import { EQUIP_LABELS, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction } from "./ketTypes";
+import { EQUIP_LABELS, type BatchCalc, type GnTraySummary, type KetRow, type ManualEquipmentOverride, type WoComponent, type WoInstruction } from "./ketTypes";
 import { catColor, fmtDateHeader, fmtKg, fmtNum, sortIngredients } from "./ketLogic";
 import { StatCard, StatusChip } from "./KetSharedUi";
 import { orderCookingMethods, parseInstructionLines, splitInstructionKeywords } from "./woInstructionBot";
@@ -44,6 +44,270 @@ function InstructionBlocks({ text, variant }: { text: string; variant: "en" | "d
   );
 }
 
+// Kleines Allergen-Tag direkt an der Zutat — zeigt, WELCHE Zutat das WO-weite
+// "CONTAINS"-Badge auslöst (statt nur die aggregierte Liste am WO-Kopf).
+function AllergenTag({ allergen }: { allergen?: string }) {
+  if (!allergen) return null;
+  return (
+    <span
+      title={`Allergen: ${allergen}`}
+      className="ml-1.5 inline-flex items-center text-[7px] font-black uppercase tracking-wide text-red-700 bg-red-100 rounded-md px-1 py-0.5 align-middle"
+    >
+      ⚠ {allergen}
+    </span>
+  );
+}
+
+// GN-Blech-Bedarf dieser einen Zutat (siehe ketLogic.resolveGnTrays) — null,
+// wenn für diese Zutat keine Kapazitäts-/Tray-Quelle bekannt ist (z.B. Saucen,
+// die nur in die Wanne gehen, nie geraten).
+function GnTag({ trays, gnType }: { trays: number | null; gnType: string | null }) {
+  if (!trays || !gnType) return null;
+  return (
+    <span
+      title={`${trays}× ${gnType} für diese Zutat`}
+      className="ml-1.5 inline-flex items-center text-[7px] font-black uppercase tracking-wide text-sky-700 bg-sky-100 rounded-md px-1 py-0.5 align-middle"
+    >
+      📦 {trays}× {gnType}
+    </span>
+  );
+}
+
+// Zusammenfassung des GN-Blech-Bedarfs, gruppiert nach GN-Größe — nie zu einer
+// Zahl verschmelzen, unterschiedliche Größen sind nicht austauschbar.
+function GnTraySummaryLine({ summary }: { summary: GnTraySummary[] }) {
+  if (summary.length === 0) return null;
+  return (
+    <div className="text-[10px] font-bold text-sky-700 tabular-nums">
+      📦 {summary.map((s) => `${s.trays}× ${s.gnType}`).join(" · ")}
+    </div>
+  );
+}
+
+// Eine eigenständige Zubereitungskomponente innerhalb einer WO (siehe
+// ketTypes.WoComponent) — eigene Zutatentabelle, eigenes Equipment/Batche,
+// eigene, unabhängig generierte Kochanweisung. Eigener lokaler State pro
+// Instanz (React hält das automatisch pro component.name/key auseinander).
+function ComponentSection({
+  component,
+  instruction,
+  onGenerate,
+  onEdit,
+  manualEquipment,
+  onManualEquipmentChange,
+}: {
+  component: WoComponent;
+  instruction?: WoInstruction;
+  onGenerate: () => Promise<void>;
+  onEdit?: (updated: WoInstruction) => void;
+  manualEquipment?: ManualEquipmentOverride;
+  onManualEquipmentChange?: (override: ManualEquipmentOverride | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [enDraft, setEnDraft] = useState("");
+  const [deDraft, setDeDraft] = useState("");
+  const [showEquipOverride, setShowEquipOverride] = useState(false);
+  const [equipDraft, setEquipDraft] = useState(manualEquipment?.equipment ?? "");
+  const [capDraft, setCapDraft] = useState(manualEquipment ? String(manualEquipment.capacityKg) : "");
+
+  useEffect(() => {
+    setEquipDraft(manualEquipment?.equipment ?? "");
+    setCapDraft(manualEquipment ? String(manualEquipment.capacityKg) : "");
+  }, [component.name, manualEquipment]);
+
+  async function generate() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onGenerate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const visibleIngredients = [...component.ingredients]
+    .filter((i) => i.totalKg > 0.0005 || i.totalPcs > 0)
+    .sort(sortIngredients);
+
+  return (
+    <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-[#0f2240] px-4 py-2.5">
+        <div className="min-w-0">
+          <div className="text-[7px] font-black uppercase tracking-[0.12em] text-blue-400">Komponente</div>
+          <div className="text-sm font-black text-white leading-tight truncate">{component.name}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 justify-end">
+          {orderCookingMethods(component.resolvedCookMethods).map((m) => (
+            <span key={m} className={`text-[9px] font-bold px-2 py-1 rounded-lg ${m === component.primaryEquip ? "bg-blue-500 text-white" : "bg-white/10 text-blue-200"}`}>
+              {EQUIP_LABELS[m] ?? m}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {component.equipBatches.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 bg-slate-50 border-b border-slate-100">
+          {component.equipBatches.map((eb) => (
+            <div key={eb.equip} className="rounded-lg px-2.5 py-1.5 bg-white border border-slate-200 text-center">
+              <div className="text-[7px] font-bold text-slate-400 uppercase tracking-wide">{eb.label}</div>
+              <div className="text-xs font-black text-[#1e3a5f] tabular-nums">
+                {eb.batches}× <span className="text-[9px] font-semibold text-slate-500">à {fmtKg(eb.perBatchKg)}</span>
+              </div>
+            </div>
+          ))}
+          <div className="ml-auto text-[10px] font-bold text-slate-500 tabular-nums">{fmtKg(component.totalKg)} gesamt</div>
+        </div>
+      )}
+
+      {component.gnTraySummary.length > 0 && (
+        <div className="px-4 py-1.5 border-b border-slate-100 bg-sky-50/60">
+          <GnTraySummaryLine summary={component.gnTraySummary} />
+        </div>
+      )}
+
+      {/* Equipment-Ausnahme NUR für diese Komponente — z.B. wenn gar kein
+          Equipment erkannt wurde ("Concentrated Tomatoes" o.ä.). Standardmäßig
+          eingeklappt, damit Komponenten mit korrekt erkanntem Equipment nicht
+          unnötig Platz verlieren. */}
+      {onManualEquipmentChange && (
+        <div className="px-4 py-1.5 border-b border-slate-100 bg-slate-50/60">
+          {!showEquipOverride ? (
+            <button type="button" onClick={() => setShowEquipOverride(true)}
+              className="text-[9px] font-semibold text-slate-400 hover:text-slate-600">
+              ⚙ Equipment-Ausnahme{manualEquipment ? `: ${manualEquipment.equipment} (${manualEquipment.capacityKg} kg/Batch)` : " (nur für diese Komponente)"}
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-1.5 py-0.5">
+              <input value={equipDraft} onChange={(e) => setEquipDraft(e.target.value)} placeholder="Equipment, z. B. OVEN"
+                aria-label={`Manuelles Equipment für ${component.name}`}
+                className="min-w-[140px] flex-1 rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-800 outline-none" />
+              <input type="number" min={0.1} step={0.1} value={capDraft} onChange={(e) => setCapDraft(e.target.value)} placeholder="kg/Batch"
+                aria-label={`Manuelle Kapazität für ${component.name}`}
+                className="w-20 rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-800 outline-none" />
+              <button type="button" onClick={() => {
+                const equipment = equipDraft.trim().toUpperCase();
+                const capacityKg = Number(capDraft.replace(",", "."));
+                if (equipment && Number.isFinite(capacityKg) && capacityKg > 0) onManualEquipmentChange({ equipment, capacityKg });
+              }} className="rounded-md bg-blue-500 px-2 py-1 text-[9px] font-bold text-white hover:bg-blue-400">Anwenden</button>
+              {manualEquipment && (
+                <button type="button" onClick={() => onManualEquipmentChange(null)}
+                  className="rounded-md px-1.5 py-1 text-[9px] font-bold text-slate-400 hover:text-red-600">Löschen</button>
+              )}
+              <button type="button" onClick={() => setShowEquipOverride(false)}
+                className="rounded-md px-1.5 py-1 text-[9px] font-bold text-slate-400 hover:text-slate-600">Zu</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Factor-Produktionsregeln für DIESE Komponente (eigener Name, siehe
+          ketLogic.buildWoComponents) — z.B. "Ground Beef - cooked" ist
+          neverBatch, auch wenn der WO-Name selbst kein Fleisch-Keyword trifft. */}
+      {(component.rti || component.neverBatch || component.readyMade || component.factorCapacityKg != null) && (
+        <div className="px-4 py-2 border-b border-slate-100 space-y-1">
+          {component.rti && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-2.5 py-1 text-[10px] font-bold text-amber-800">
+              RTI · Ready to Eat → direkt zum Plating (kein Batch)
+            </div>
+          )}
+          {component.neverBatch && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-2.5 py-1 text-[10px] font-bold text-red-700">
+              ⚠ Kein Batch — wird als Gesamtmenge produziert (Fleisch/Fisch-Regel)
+            </div>
+          )}
+          {component.readyMade && (
+            <div className="rounded-lg bg-purple-50 border border-purple-200 px-2.5 py-1 text-[10px] font-bold text-purple-700">
+              Fertigprodukt — wöchentlich vorbereitet, nicht expandieren
+            </div>
+          )}
+          {!component.rti && !component.neverBatch && component.factorCapacityKg != null && (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+              Batch (Factor-Regel): {component.factorBatches ?? "—"}× {component.factorBatchQtyKg != null ? fmtKg(component.factorBatchQtyKg) : "—"}
+              {" "}(Kapazität {component.factorCapacityKg} kg{component.factorFallbackCapacity ? " · Fallback" : ""})
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Reihenfolge bewusst: Sub-Rezept (Kopf oben) → Kochanweisung → Zutaten,
+          dann erst der nächste Komponenten-Block — nicht umgekehrt. */}
+      <div className="p-3 border-b border-slate-100">
+        {error && <div className="mb-2 rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-[10px] font-semibold text-rose-700">{error}</div>}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="text-[9px] font-black uppercase tracking-widest text-emerald-700">Kochanweisung</div>
+          <div className="flex gap-1.5">
+            {instruction && onEdit && !editing && (
+              <button type="button" onClick={() => { setEnDraft(instruction.english); setDeDraft(instruction.german); setEditing(true); }}
+                className="rounded-lg bg-slate-200 px-2 py-1 text-[9px] font-bold text-slate-700 hover:bg-slate-300">
+                Bearbeiten
+              </button>
+            )}
+            <button type="button" onClick={() => void generate()} disabled={busy}
+              className="rounded-lg bg-emerald-700 px-2.5 py-1 text-[9px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+              {busy ? "Erzeuge …" : instruction ? "Neu erzeugen" : "Erzeugen"}
+            </button>
+          </div>
+        </div>
+        {editing && instruction ? (
+          <div className="space-y-2">
+            <textarea value={enDraft} onChange={(e) => setEnDraft(e.target.value)} rows={4}
+              className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] leading-relaxed text-slate-800 resize-y" />
+            <textarea value={deDraft} onChange={(e) => setDeDraft(e.target.value)} rows={4}
+              className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] leading-relaxed text-slate-800 resize-y" />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => { onEdit?.({ ...instruction, english: enDraft, german: deDraft }); setEditing(false); }}
+                className="rounded-lg bg-emerald-700 px-2.5 py-1 text-[9px] font-bold text-white hover:bg-emerald-800">
+                Speichern
+              </button>
+              <button type="button" onClick={() => setEditing(false)}
+                className="rounded-lg bg-slate-100 px-2.5 py-1 text-[9px] font-bold text-slate-600 hover:bg-slate-200">
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        ) : instruction ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div><div className="text-[8px] font-black uppercase tracking-widest text-emerald-700 mb-1">English</div><div className="text-[11px] leading-relaxed text-slate-700"><InstructionBlocks text={instruction.english} variant="en" /></div></div>
+            <div><div className="text-[8px] font-black uppercase tracking-widest text-blue-700 mb-1">Deutsch</div><div className="text-[11px] leading-relaxed text-slate-700"><InstructionBlocks text={instruction.german} variant="de" /></div></div>
+          </div>
+        ) : (
+          <div className="text-[10px] text-slate-400 italic">Noch keine Kochanweisung erzeugt.</div>
+        )}
+      </div>
+
+      {visibleIngredients.length > 0 && (
+        <table className="w-full text-[11px]">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-100">
+              <th className="text-left px-4 py-1.5 text-[8px] font-black uppercase tracking-wide text-slate-400">Zutat</th>
+              <th className="text-right px-4 py-1.5 text-[8px] font-black uppercase tracking-wide text-slate-400">Total</th>
+              <th className="text-right px-4 py-1.5 text-[8px] font-black uppercase tracking-wide text-blue-600">Pro Batch</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleIngredients.map((ing, idx) => (
+              <tr key={idx} className="border-b border-slate-50">
+                <td className="px-4 py-1.5">
+                  {ing.category && <span className={`text-[7px] font-black px-1 py-0.5 rounded mr-1 ${catColor(ing.category)}`}>{ing.category}</span>}
+                  <span className="font-medium text-slate-700">{ing.name}</span>
+                  <AllergenTag allergen={ing.allergen} />
+                  <GnTag trays={ing.gnTrays} gnType={ing.gnType} />
+                </td>
+                <td className="px-4 py-1.5 text-right font-semibold tabular-nums text-slate-600">{ing.totalPcs > 0 ? `${Math.round(ing.totalPcs)} Stk` : fmtKg(ing.totalKg)}</td>
+                <td className="px-4 py-1.5 text-right font-black tabular-nums text-blue-700">{ing.totalPcs > 0 ? `${Math.round(ing.totalPcs)} Stk` : fmtKg(ing.perBatchKg)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export function WoDetail({
   row,
   calc,
@@ -52,9 +316,15 @@ export function WoDetail({
   instruction,
   onGenerateInstruction,
   onInstructionEdit,
+  componentInstructions,
+  onGenerateComponentInstruction,
+  onComponentInstructionEdit,
+  onGenerateAllComponentInstructions,
   onDownload,
   manualEquipment,
   onManualEquipmentChange,
+  componentManualEquipment,
+  onComponentManualEquipmentChange,
 }: {
   row: KetRow;
   calc: BatchCalc | null;
@@ -63,9 +333,20 @@ export function WoDetail({
   instruction?: WoInstruction;
   onGenerateInstruction: () => Promise<void>;
   onInstructionEdit?: (updated: WoInstruction) => void;
+  // Zusammengesetzte Sub-Rezepte (calc.components, siehe ketTypes.WoComponent):
+  // eine eigene Instruction je Komponente statt einer für die ganze WO.
+  componentInstructions?: Record<string, WoInstruction>;
+  onGenerateComponentInstruction?: (component: WoComponent) => Promise<void>;
+  onComponentInstructionEdit?: (component: WoComponent, updated: WoInstruction) => void;
+  // Erzeugt in einem Klick alle (noch fehlenden) Komponenten-Instructions dieser WO.
+  onGenerateAllComponentInstructions?: () => Promise<void>;
   onDownload: () => Promise<void>;
   manualEquipment?: ManualEquipmentOverride;
   onManualEquipmentChange: (override: ManualEquipmentOverride | null) => void;
+  // Equipment-Ausnahme je Komponente (keyed by component.name) — unabhängig von
+  // manualEquipment oben, das nur für die WO-Gesamtansicht gilt.
+  componentManualEquipment?: Record<string, ManualEquipmentOverride>;
+  onComponentManualEquipmentChange?: (componentName: string, override: ManualEquipmentOverride | null) => void;
 }) {
   const [editingEquip, setEditingEquip] = useState<string | null>(null);
   const [capDraft, setCapDraft] = useState("");
@@ -73,6 +354,8 @@ export function WoDetail({
   const [manualCapacityDraft, setManualCapacityDraft] = useState("");
   const [instructionBusy, setInstructionBusy] = useState(false);
   const [instructionError, setInstructionError] = useState<string | null>(null);
+  const [allComponentsBusy, setAllComponentsBusy] = useState(false);
+  const [allComponentsError, setAllComponentsError] = useState<string | null>(null);
   const [editingInstruction, setEditingInstruction] = useState(false);
   const [instrEnDraft, setInstrEnDraft] = useState("");
   const [instrDeDraft, setInstrDeDraft] = useState("");
@@ -105,6 +388,18 @@ export function WoDetail({
       setInstructionError(error instanceof Error ? error.message : String(error));
     } finally {
       setInstructionBusy(false);
+    }
+  }
+
+  async function generateAllComponents() {
+    setAllComponentsBusy(true);
+    setAllComponentsError(null);
+    try {
+      await onGenerateAllComponentInstructions?.();
+    } catch (error) {
+      setAllComponentsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAllComponentsBusy(false);
     }
   }
 
@@ -169,25 +464,30 @@ export function WoDetail({
 
       <div className="p-5 space-y-4">
 
-        {/* Factor-Produktionsregeln (RTI / nie-batchen-Fleisch / Batch nach Rezeptname / Allergene) */}
-        {(calc.rti || calc.neverBatch || calc.readyMade || calc.factorCapacityKg != null || calc.allergensContains.length > 0 || calc.chillerAssignment) && (
+        {/* Factor-Produktionsregeln (RTI / nie-batchen-Fleisch / Batch nach Rezeptname / Allergene).
+            Bei zusammengesetzten Sub-Rezepten (calc.components) werden RTI/neverBatch/
+            readyMade/Kapazität NICHT hier gezeigt — sie würden nach dem zusammengesetzten
+            WO-Namen klassifiziert (z.B. "Stuffed PEPPER Casserole Base-V2" träfe zufällig
+            die Paprika-Regel, obwohl es um Rindfleisch + Gemüse geht) und stattdessen pro
+            Komponente unten korrekt angezeigt (siehe ComponentSection). */}
+        {((!calc.components.length && (calc.rti || calc.neverBatch || calc.readyMade || calc.factorCapacityKg != null)) || calc.allergensContains.length > 0 || calc.chillerAssignment) && (
           <div className="space-y-2">
-            {calc.rti && (
+            {!calc.components.length && calc.rti && (
               <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-xs font-bold text-amber-200">
                 RTI · Ready to Eat → direkt zum Plating (kein Batch)
               </div>
             )}
-            {calc.neverBatch && (
+            {!calc.components.length && calc.neverBatch && (
               <div className="rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-200">
                 ⚠ Kein Batch — wird als Gesamtmenge produziert (Fleisch/Fisch-Regel)
               </div>
             )}
-            {calc.readyMade && (
+            {!calc.components.length && calc.readyMade && (
               <div className="rounded-xl border border-purple-400/40 bg-purple-500/10 px-3 py-2 text-xs font-bold text-purple-200">
                 Fertigprodukt — wöchentlich vorbereitet, nicht expandieren
               </div>
             )}
-            {!calc.rti && !calc.neverBatch && calc.factorCapacityKg != null && (
+            {!calc.components.length && !calc.rti && !calc.neverBatch && calc.factorCapacityKg != null && (
               <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-200">
                 Batch (Factor-Regel): {calc.factorBatches ?? "—"}× {calc.factorBatchQtyKg != null ? fmtKg(calc.factorBatchQtyKg) : "—"}
                 {" "}(Kapazität {calc.factorCapacityKg} kg{calc.factorFallbackCapacity ? " · Fallback" : ""})
@@ -223,36 +523,37 @@ export function WoDetail({
           </div>
         )}
 
-        {/* Cook Methods + Per-Equipment Batche */}
-        <div className="bg-[#0f2240] rounded-2xl px-5 py-4">
-          <div className="text-[8px] font-black uppercase tracking-[0.15em] text-blue-400 mb-2.5">
+        {/* Cook Methods + Per-Equipment Batche — bewusst klein: die Details stehen
+            unten je Zubereitungskomponente, das hier ist nur der Kopf-Überblick. */}
+        <div className="bg-[#0f2240] rounded-2xl px-4 py-3">
+          <div className="text-[7px] font-black uppercase tracking-[0.15em] text-blue-400 mb-1.5">
             Cook Methods
           </div>
-          <div className="flex flex-wrap gap-2 mb-3">
+          <div className="flex flex-wrap gap-1.5 mb-2">
             {orderCookingMethods(calc.resolvedCookMethods).length > 0 ? orderCookingMethods(calc.resolvedCookMethods).map(m => (
               <span key={m}
-                className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl ${
-                  m === calc.primaryEquip ? "bg-blue-500 text-white ring-2 ring-blue-300/40" : "bg-white/10 text-blue-200"
+                className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg ${
+                  m === calc.primaryEquip ? "bg-blue-500 text-white ring-1 ring-blue-300/40" : "bg-white/10 text-blue-200"
                 }`}>
-                {m === calc.primaryEquip && <span className="w-1.5 h-1.5 rounded-full bg-blue-300"></span>}
+                {m === calc.primaryEquip && <span className="w-1 h-1 rounded-full bg-blue-300"></span>}
                 {EQUIP_LABELS[m] ?? m}
               </span>
-            )) : <span className="text-blue-400/60 text-sm italic">Keine Cook Methods</span>}
+            )) : <span className="text-blue-400/60 text-xs italic">Keine Cook Methods</span>}
           </div>
 
           {/* Per-Equipment Batche mit editierbarer Kapazität */}
           {calc.equipBatches.length > 0 && (
             <div>
-              <div className="text-[8px] font-black uppercase tracking-[0.12em] text-blue-400 mb-2">
-                Batche je Equipment — {fmtKg(calc.totalKg)} Gesamt
+              <div className="text-[7px] font-black uppercase tracking-[0.12em] text-blue-400 mb-1.5">
+                Batche je Equipment — {fmtKg(calc.totalKg)} Gesamt{calc.components.length > 0 ? " (aus Komponenten)" : ""}
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {calc.equipBatches.map(eb => (
                   <div key={eb.equip}
-                    className={`rounded-xl px-3 py-2.5 border ${eb.equip === calc.primaryEquip ? "bg-blue-600/30 border-blue-400/40" : "bg-white/10 border-white/10"}`}>
-                    <div className="text-[9px] font-bold text-blue-200 mb-1">{eb.label}</div>
-                    <div className="text-2xl font-black text-white tabular-nums">{eb.batches}×</div>
-                    <div className="text-[9px] text-blue-300 mt-0.5">
+                    className={`rounded-lg px-2.5 py-2 border ${eb.equip === calc.primaryEquip ? "bg-blue-600/30 border-blue-400/40" : "bg-white/10 border-white/10"}`}>
+                    <div className="text-[8px] font-bold text-blue-200 mb-0.5">{eb.label}</div>
+                    <div className="text-base font-black text-white tabular-nums">{eb.batches}×</div>
+                    <div className="text-[8px] text-blue-300 mt-0.5">
                       à {fmtKg(eb.perBatchKg)}
                       {eb.remainderKg > 0 && <span className="text-amber-300"> · Rest {fmtKg(eb.remainderKg)} ({eb.utilizationPct}%)</span>}
                     </div>
@@ -304,6 +605,12 @@ export function WoDetail({
               </div>
             </div>
           )}
+          {calc.gnTraySummary.length > 0 && (
+            <div className="mt-1.5 text-[10px] font-bold text-sky-300 tabular-nums">
+              📦 {calc.gnTraySummary.map((s) => `${s.trays}× ${s.gnType}`).join(" · ")}
+              {calc.components.length > 0 ? " (aus Komponenten)" : ""}
+            </div>
+          )}
           {equip && calc.equipBatches.length === 0 && (
             <div className="mt-1 text-[10px] text-blue-300">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block mr-1.5"></span>
@@ -321,6 +628,9 @@ export function WoDetail({
             </div>
             <div className="text-[10px] text-blue-200/70 mb-2">
               Nur verwenden, wenn WO, ProcessSpec und Bible kein Equipment liefern.
+              {calc.components.length > 0 && (
+                <span className="text-amber-200"> Wirkt nur auf diese WO-Gesamtansicht — nicht auf die einzelnen Komponenten unten, auch nicht auf eine ohne erkanntes Equipment.</span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <input
@@ -376,86 +686,130 @@ export function WoDetail({
           </div>
         )}
 
-        {/* Stats Grid */}
-        <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 overflow-hidden">
-          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-emerald-200">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[.12em] text-emerald-800">Google Gemini WO Instruction Bot</div>
-              <div className="text-[10px] text-emerald-700 mt-0.5">Individuelle Arbeitsanweisung für diese WO und dieses Sub-Rezept</div>
+        {/* Zusammengesetztes Sub-Rezept: eigene Sektion je Komponente statt der
+            einen WO-weiten Instruction — jede braucht ihre eigene Anweisung
+            (siehe ketLogic.buildWoComponents / Diagnose "WO 35-169"). */}
+        {calc.components.length > 0 ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
+                Zubereitungskomponenten ({calc.components.length}) — jede mit eigener Kochanweisung
+              </div>
+              {onGenerateAllComponentInstructions && (() => {
+                const missingCount = calc.components.filter((c) => !componentInstructions?.[c.name]).length;
+                return (
+                  <button type="button" onClick={() => void generateAllComponents()} disabled={allComponentsBusy}
+                    className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[10px] font-black text-white hover:bg-emerald-800 disabled:opacity-50">
+                    {allComponentsBusy
+                      ? "Erzeuge alle …"
+                      : missingCount > 0
+                        ? `Alle ${missingCount} fehlenden erzeugen`
+                        : `Alle ${calc.components.length} neu erzeugen`}
+                  </button>
+                );
+              })()}
             </div>
-            <div className="flex gap-1.5">
-              {instruction && onInstructionEdit && !editingInstruction && (
-                <button type="button" onClick={() => { setInstrEnDraft(instruction.english); setInstrDeDraft(instruction.german); setEditingInstruction(true); }}
-                  className="rounded-lg bg-slate-200 px-2.5 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-300">
-                  Bearbeiten
-                </button>
-              )}
-              <button type="button" onClick={() => void generateInstruction()} disabled={instructionBusy}
-                className="rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
-                {instructionBusy ? "Erzeuge …" : instruction ? "Neu erzeugen" : "Instruction erzeugen"}
-              </button>
-            </div>
+            {allComponentsError && (
+              <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-[10px] font-semibold text-rose-700">{allComponentsError}</div>
+            )}
+            {calc.components.map((component, index) => (
+              <ComponentSection
+                // Manche Rezepte (z.B. FV0401A) wiederholen denselben Zubereitungsschritt
+                // (gleicher Name) an mehreren Stellen im Baum — Index hält den React-Key
+                // eindeutig, auch wenn component.name kollidiert.
+                key={`${component.name}-${index}`}
+                component={component}
+                instruction={componentInstructions?.[component.name]}
+                onGenerate={async () => { await onGenerateComponentInstruction?.(component); }}
+                onEdit={onComponentInstructionEdit ? (updated) => onComponentInstructionEdit(component, updated) : undefined}
+                manualEquipment={componentManualEquipment?.[component.name]}
+                onManualEquipmentChange={onComponentManualEquipmentChange ? (override) => onComponentManualEquipmentChange(component.name, override) : undefined}
+              />
+            ))}
           </div>
-          {instructionError && <div className="px-4 py-2 text-[10px] font-semibold text-rose-700 bg-rose-50 border-b border-rose-200">{instructionError}</div>}
-          {editingInstruction && instruction && (
-            <div className="p-4 space-y-3 border-b border-emerald-200 bg-white">
+        ) : (
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-emerald-200">
               <div>
-                <label className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1 block">English</label>
-                <textarea value={instrEnDraft} onChange={e => setInstrEnDraft(e.target.value)} rows={6}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-800 resize-y" />
+                <div className="text-[10px] font-black uppercase tracking-[.12em] text-emerald-800">Google Gemini WO Instruction Bot</div>
+                <div className="text-[10px] text-emerald-700 mt-0.5">Individuelle Arbeitsanweisung für diese WO und dieses Sub-Rezept</div>
               </div>
-              <div>
-                <label className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1 block">Deutsch</label>
-                <textarea value={instrDeDraft} onChange={e => setInstrDeDraft(e.target.value)} rows={6}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-800 resize-y" />
-              </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => {
-                  onInstructionEdit?.({ ...instruction, english: instrEnDraft, german: instrDeDraft });
-                  setEditingInstruction(false);
-                }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-emerald-800">
-                  Speichern
-                </button>
-                <button type="button" onClick={() => setEditingInstruction(false)}
-                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-200">
-                  Abbrechen
+              <div className="flex gap-1.5">
+                {instruction && onInstructionEdit && !editingInstruction && (
+                  <button type="button" onClick={() => { setInstrEnDraft(instruction.english); setInstrDeDraft(instruction.german); setEditingInstruction(true); }}
+                    className="rounded-lg bg-slate-200 px-2.5 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-300">
+                    Bearbeiten
+                  </button>
+                )}
+                <button type="button" onClick={() => void generateInstruction()} disabled={instructionBusy}
+                  className="rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
+                  {instructionBusy ? "Erzeuge …" : instruction ? "Neu erzeugen" : "Instruction erzeugen"}
                 </button>
               </div>
             </div>
-          )}
-          {instruction && !editingInstruction && (
-            <div className="grid gap-3 p-4 lg:grid-cols-2">
-              <div><div className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1">Instructions (EN)</div><div className="text-xs leading-relaxed text-slate-700"><InstructionBlocks text={instruction.english} variant="en" /></div></div>
-              <div><div className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1">Anleitung (DE) · {instruction.status === "needs_review" ? "Review erforderlich" : "Gemini"}</div><div className="text-xs leading-relaxed text-slate-700"><InstructionBlocks text={instruction.german} variant="de" /></div></div>
-            </div>
-          )}
-        </section>
+            {instructionError && <div className="px-4 py-2 text-[10px] font-semibold text-rose-700 bg-rose-50 border-b border-rose-200">{instructionError}</div>}
+            {editingInstruction && instruction && (
+              <div className="p-4 space-y-3 border-b border-emerald-200 bg-white">
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1 block">English</label>
+                  <textarea value={instrEnDraft} onChange={e => setInstrEnDraft(e.target.value)} rows={6}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-800 resize-y" />
+                </div>
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1 block">Deutsch</label>
+                  <textarea value={instrDeDraft} onChange={e => setInstrDeDraft(e.target.value)} rows={6}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-800 resize-y" />
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => {
+                    onInstructionEdit?.({ ...instruction, english: instrEnDraft, german: instrDeDraft });
+                    setEditingInstruction(false);
+                  }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-emerald-800">
+                    Speichern
+                  </button>
+                  <button type="button" onClick={() => setEditingInstruction(false)}
+                    className="rounded-lg bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-200">
+                    Abbrechen
+                  </button>
+                </div>
+              </div>
+            )}
+            {instruction && !editingInstruction && (
+              <div className="grid gap-3 p-4 lg:grid-cols-2">
+                <div><div className="text-[9px] font-black uppercase tracking-widest text-emerald-700 mb-1">Instructions (EN)</div><div className="text-xs leading-relaxed text-slate-700"><InstructionBlocks text={instruction.english} variant="en" /></div></div>
+                <div><div className="text-[9px] font-black uppercase tracking-widest text-blue-700 mb-1">Anleitung (DE) · {instruction.status === "needs_review" ? "Review erforderlich" : "Gemini"}</div><div className="text-xs leading-relaxed text-slate-700"><InstructionBlocks text={instruction.german} variant="de" /></div></div>
+              </div>
+            )}
+          </section>
+        )}
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <StatCard label="Ziel-Portionen" value={fmtNum(row.targetPortions)} />
+        {/* Stats Grid — bewusst kompakt, siehe StatCard compact-Variante */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <StatCard compact label="Ziel-Portionen" value={fmtNum(row.targetPortions)} />
           <StatCard
+            compact
             label="Gekocht / Rest"
             value={`${fmtNum(done)} / ${fmtNum(remaining)}`}
             sub={donePct > 0 ? `${donePct}% fertig` : undefined}
             subGreen={donePct > 0}
           />
           <StatCard
+            compact
             label="Total KG (Roh)"
             value={calc.totalKg > 0 ? fmtKg(calc.totalKg) : "—"}
             warn={!calc.recipeFound ? "Rezept nicht gefunden" : !calc.subRecipeFound ? "Sub-Rezept ?" : undefined}
           />
           {equip && (
-            <StatCard label="Primär-Equipment" value={equip}
+            <StatCard compact label="Primär-Equipment" value={equip}
               sub={calc.batches > 0 ? `${calc.batches} Batche à ${fmtKg(calc.perBatchKg)}` : undefined}
               badge={calc.primaryCapBibleMatch ? "📖" : undefined}
               badgeTitle={calc.primaryCapBibleMatch ? `Kapazität aus Kuechenbible: "${calc.primaryCapBibleMatch.itemName}" (provisorisch)` : undefined} />
           )}
-          <StatCard label="Batche" value={calc.batches > 0 ? String(calc.batches) : "—"} highlight
+          <StatCard compact label="Batche" value={calc.batches > 0 ? String(calc.batches) : "—"} highlight
             sub={calc.perBatchKg > 0 ? `à ${fmtKg(calc.perBatchKg)}${calc.remainderKg > 0 ? ` + Rest ${fmtKg(calc.remainderKg)}` : ""}` : undefined}
             badge={calc.primaryCapBibleMatch ? "📖" : undefined}
             badgeTitle={calc.primaryCapBibleMatch ? `Batch-Anzahl basiert auf Kuechenbible-Kapazität: "${calc.primaryCapBibleMatch.itemName}" (provisorisch, noch nicht vollständig produktionsvalidiert)` : undefined} />
-          <StatCard label="Pro Batch" value={calc.perBatchKg > 0 ? fmtKg(calc.perBatchKg) : "—"}
+          <StatCard compact label="Pro Batch" value={calc.perBatchKg > 0 ? fmtKg(calc.perBatchKg) : "—"}
             sub={calc.remainderKg > 0 ? `Rest: ${fmtKg(calc.remainderKg)}` : undefined} />
         </div>
 
@@ -546,7 +900,7 @@ export function WoDetail({
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
-                Zutaten{calc.batches > 0 ? ` · ${calc.batches} Batche` : ""}
+                {calc.components.length > 0 ? "Alle Zutaten (gesamt)" : "Zutaten"}{calc.batches > 0 ? ` · ${calc.batches} Batche` : ""}
               </div>
               <div className="text-[9px] font-bold text-slate-500 tabular-nums">
                 {fmtKg(calc.totalKg)} gesamt
@@ -578,6 +932,8 @@ export function WoDetail({
                             </span>
                           )}
                           <span className="font-medium text-slate-800">{ing.name}</span>
+                          <AllergenTag allergen={ing.allergen} />
+                  <GnTag trays={ing.gnTrays} gnType={ing.gnType} />
                           {ing.yieldPct && ing.yieldPct < 1 && (
                             <span className="ml-1.5 text-[8px] text-amber-600 font-bold">
                               {Math.round((1 - ing.yieldPct) * 100)}% Verlust

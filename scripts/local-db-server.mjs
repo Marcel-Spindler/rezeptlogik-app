@@ -169,6 +169,11 @@ FACTOR RULES (from context — never override):
 - neverBatch=true → do NOT mention splitting or batches
 - separate/spiceRoom ingredients → make "SPICE ROOM" the FIRST lettered station ("A."): "A. SPICE ROOM: Separate portioning at Spice Room..." / "A. GEWÜRZRAUM: Separate Portionierung im Gewürzraum..."
 - allergensContains non-empty → final unlettered line: "⚠ <list>"
+- componentName present → this WO is made of several physically separate preparation
+  steps (e.g. a meat piece cooked in the Braiser while a vegetable piece roasts in the
+  Oven at the same time, later combined). Write instructions for ONLY this one
+  component — its own process/equipment/quantities from context — never mention or
+  describe the other component(s) or treat this as the whole dish.
 
 Return JSON: {"english":"...","german":"...","status":"needs_review"}`;
 

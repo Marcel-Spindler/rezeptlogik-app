@@ -203,6 +203,9 @@ describe("calcBatch equipment resolution", () => {
         chillerAssignment: null,
         uomWarnings: [],
         factorOverridesEquip: false,
+        components: [],
+        gnTraySummary: [],
+        scoopInfo: null,
       }]]),
       {},
       "WO test",
@@ -245,6 +248,9 @@ describe("calcBatch equipment resolution", () => {
       chillerAssignment: null,
       uomWarnings: [],
       factorOverridesEquip: false,
+      components: [],
+      gnTraySummary: [],
+      scoopInfo: null,
     };
     const secondRow = { ...row, key: "wo::34-2", woNumber: "34-2" };
     const pdf = buildPdf([row, secondRow], new Map([[row.key, calc], [secondRow.key, calc]]), {}, "WO test");
@@ -257,6 +263,167 @@ describe("calcBatch equipment resolution", () => {
   it("keeps every cooking method exactly once in process order", () => {
     expect(orderCookingMethods(["OVEN", "SPICE PORTIONING", "OVEN", "BRAISER", "CUSTOM STATION"]))
       .toEqual(["SPICE PORTIONING", "BRAISER", "OVEN", "CUSTOM STATION"]);
+  });
+});
+
+describe("calcBatch composite sub-recipes", () => {
+  // Mirrors the real "Stuffed Pepper Casserole Base-V2" WMS structure: the WO's
+  // sub-recipe is itself a composite of two children on different equipment
+  // (e.g. "Ground Beef - cooked" [BRAISER] + "...Vegetable Mix" [OVEN]), each
+  // of which needs its own cooking instruction and its own batch math — NOT
+  // the combined total applied to both pieces of equipment.
+  const compositeRow: KetRow = {
+    ...row,
+    recipeCode: "FV0002A",
+    subRecipeName: "Composite Base",
+  };
+  const compositeData = {
+    ...data,
+    recipes: { FV0002A: { code: "FV0002A", baseName: "Composite recipe", markets: {}, grossIngredients: { DE: [] } } },
+    structures: {
+      FV0002A: {
+        code: "FV0002A",
+        recipeId: "REC-002",
+        name: "Composite recipe",
+        markets: {
+          DE: [{
+            id: "SUB-BASE",
+            name: "Composite Base",
+            categories: "BRAISER",
+            subRecipes: [
+              {
+                id: "SUB-MEAT",
+                name: "Meat Part",
+                categories: "BRAISER",
+                subRecipes: [],
+                ingredients: [{ id: "ING-MEAT", name: "Ground meat", grossQty: 1, netQty: 1, uom: "kg", allergen: "SOJA" }],
+              },
+              {
+                id: "SUB-VEG",
+                name: "Veg Part",
+                categories: "OVEN",
+                subRecipes: [],
+                ingredients: [{ id: "ING-VEG", name: "Chopped veg", grossQty: 0.5, netQty: 0.5, uom: "kg" }],
+              },
+            ],
+            ingredients: [{ id: "ING-SPICE", name: "Shared spice mix", grossQty: 0.1, netQty: 0.1, uom: "kg" }],
+          }],
+        },
+      },
+    },
+    processSpecs: {},
+  } as DataBundle;
+
+  it("splits a composite sub-recipe into per-equipment components with independent batch math", () => {
+    const calc = calcBatch(compositeRow, { BRAISER: 40, OVEN: 20 }, compositeData);
+
+    // Gesamt-Rohware bleibt der volle kombinierte Wert (100 + 50 + 10 Zutaten-Anteil).
+    expect(calc.totalKg).toBeCloseTo(160, 5);
+
+    expect(calc.components).toHaveLength(2);
+    const meat = calc.components.find((c) => c.name === "Meat Part")!;
+    const veg = calc.components.find((c) => c.name === "Veg Part")!;
+    expect(meat).toBeTruthy();
+    expect(veg).toBeTruthy();
+
+    // Jede Komponente rechnet mit ihrer EIGENEN Menge, nicht mit den kombinierten 160 kg.
+    expect(meat.totalKg).toBeCloseTo(100, 5);
+    expect(meat.resolvedCookMethods).toEqual(["BRAISER"]);
+    expect(meat.batches).toBe(3); // ceil(100 / 40)
+    expect(meat.perBatchKg).toBeCloseTo(100 / 3, 2);
+
+    expect(veg.totalKg).toBeCloseTo(50, 5);
+    expect(veg.resolvedCookMethods).toEqual(["OVEN"]);
+    expect(veg.batches).toBe(3); // ceil(50 / 20)
+    expect(veg.perBatchKg).toBeCloseTo(50 / 3, 2);
+
+    // Allergen einer Komponenten-Zutat bleibt bis in die Zutatentabelle erhalten
+    // (zeigt in der UI/PDF direkt an der Zutat, statt nur im WO-weiten Badge).
+    expect(meat.ingredients.find((i) => i.name === "Ground meat")?.allergen).toBe("SOJA");
+
+    // Top-Level equipBatches/batches spiegeln jetzt die je-Komponente korrekt
+    // berechneten Werte wider (der ursprüngliche Bug: dieselbe kombinierte
+    // Gesamtmenge fälschlich auf beide Equipments angewendet).
+    const topBraiser = calc.equipBatches.find((eb) => eb.equip === "BRAISER");
+    const topOven = calc.equipBatches.find((eb) => eb.equip === "OVEN");
+    expect(topBraiser?.batches).toBe(3);
+    expect(topOven?.batches).toBe(3);
+  });
+
+  it("does not split when children share the same equipment (not a real composite)", () => {
+    const sameEquipData = {
+      ...compositeData,
+      structures: {
+        FV0002A: {
+          ...compositeData.structures!.FV0002A,
+          markets: {
+            DE: [{
+              ...compositeData.structures!.FV0002A.markets.DE![0],
+              subRecipes: compositeData.structures!.FV0002A.markets.DE![0].subRecipes.map((s) => ({ ...s, categories: "BRAISER" })),
+            }],
+          },
+        },
+      },
+    } as DataBundle;
+
+    const calc = calcBatch(compositeRow, { BRAISER: 40, OVEN: 20 }, sameEquipData);
+    expect(calc.components).toHaveLength(0);
+  });
+
+  it("classifies Factor rules (neverBatch/RTI/capacity) per component name, not the composite WO name", () => {
+    // Regression: the WO's own subRecipeName ("Composite Base") never matches a
+    // meat pattern, so classify(row.subRecipeName, ...) at the top level would
+    // never flag this — but the "Meat Part" component IS beef and must be
+    // recognized as neverBatch via its OWN name, same as the real
+    // "Stuffed Pepper Casserole Base-V2" → "Ground Beef - cooked" case.
+    const beefNamedData = {
+      ...compositeData,
+      structures: {
+        FV0002A: {
+          ...compositeData.structures!.FV0002A,
+          markets: {
+            DE: [{
+              ...compositeData.structures!.FV0002A.markets.DE![0],
+              subRecipes: [
+                { ...compositeData.structures!.FV0002A.markets.DE![0].subRecipes[0], name: "Ground Beef - cooked" },
+                compositeData.structures!.FV0002A.markets.DE![0].subRecipes[1],
+              ],
+            }],
+          },
+        },
+      },
+    } as DataBundle;
+
+    const calc = calcBatch(compositeRow, { BRAISER: 40, OVEN: 20 }, beefNamedData);
+    const beef = calc.components.find((c) => c.name === "Ground Beef - cooked")!;
+    expect(beef).toBeTruthy();
+    expect(beef.neverBatch).toBe(true);
+    expect(beef.rti).toBe(false);
+    expect(beef.factorCapacityKg).toBeNull();
+  });
+
+  it("applies a manual equipment override to a single component without affecting the others", () => {
+    // OVEN bewusst NICHT in caps gesetzt: die globale Sidebar-Kapazität (caps[e])
+    // hat laut effectiveCap()-Priorität immer Vorrang vor einem manuellen
+    // Override — ein Override wirkt nur, wo die Sidebar für dieses Equipment
+    // noch keinen Wert gesetzt hat (deckt sich mit dem bestehenden WO-weiten
+    // Override-Verhalten, hier nur pro Komponente statt für die ganze WO).
+    const calc = calcBatch(
+      compositeRow,
+      { BRAISER: 40 },
+      compositeData,
+      null,
+      { "Veg Part": { equipment: "OVEN", capacityKg: 5 } },
+    );
+    const meat = calc.components.find((c) => c.name === "Meat Part")!;
+    const veg = calc.components.find((c) => c.name === "Veg Part")!;
+
+    // Veg Part: 50 kg über die manuelle 5kg-Kapazität statt der Sidebar-caps (20kg).
+    expect(veg.batches).toBe(10); // ceil(50 / 5)
+    expect(veg.equipBatches.find((eb) => eb.equip === "OVEN")?.capacityKg).toBe(5);
+
+    // Meat Part bleibt unverändert bei der normalen 40kg-Kapazität.
+    expect(meat.batches).toBe(3); // ceil(100 / 40)
   });
 });
 
@@ -392,5 +559,76 @@ WO-001,FV0001A Test,2026-08-12,Sauce,100,BRAISER`;
     expect(rows.length).toBe(1);
     expect(warnings.length).toBe(0);
     expect(rows[0].woNumber).toBe("WO-001");
+  });
+});
+
+describe("GN-Blech-Berechnung (resolveGnTrays)", () => {
+  const gnRow: KetRow = { ...row, recipeCode: "FV0003A", subRecipeName: "Pepper Mix", targetPortions: 100 };
+  const gnData = {
+    ...data,
+    recipes: { FV0003A: { code: "FV0003A", baseName: "Pepper Mix Recipe", markets: {}, grossIngredients: { DE: [] } } },
+    structures: {
+      FV0003A: {
+        code: "FV0003A",
+        recipeId: "REC-003",
+        name: "Pepper Mix Recipe",
+        markets: {
+          DE: [{
+            id: "SUB-PEP",
+            name: "Pepper Mix",
+            categories: "OVEN",
+            subRecipes: [],
+            // Realer Namensstil: Länderpräfix + bilingual ("EN /DE") — muss vor
+            // dem Lookup bereinigt werden (siehe cleanIngredientNameForGnLookup).
+            ingredients: [
+              { id: "ING-PEP", name: "FA-DE Bell Peppers, Red, Diced 10mm /Paprika, rot, gewürfelt 10 mm", grossQty: 0.08, netQty: 0.08, uom: "kg" },
+              { id: "ING-CHK", name: "FA-DE Chicken Breast, Boneless Skinless /Hähnchenbrust", grossQty: 0.6, netQty: 0.6, uom: "ea" },
+            ],
+          }],
+        },
+      },
+    },
+    processSpecs: {},
+  } as DataBundle;
+
+  it("resolves kg-based GN trays via the hardcoded capacity table, cleaning FA-DE/bilingual names first", () => {
+    const calc = calcBatch(gnRow, {}, gnData);
+    const pepper = calc.ingredients.find((i) => i.name.includes("Bell Peppers"))!;
+    expect(pepper.totalKg).toBeCloseTo(8, 5); // 0.08 kg × 100 Portionen
+    expect(pepper.gnTrays).toBe(1); // 8 kg / 8 kg pro GN 2:1 ("10mm Diced Pepper")
+    expect(pepper.gnType).toBe("GN 2/1");
+  });
+
+  it("resolves piece-based GN trays from supplied tray hints", () => {
+    const gnHints = {
+      trayHints: [{ key: "chicken breast", pcsPerTray: 30, gnType: "GN 2/1" }],
+      pieceWeightKg: new Map<string, number>(),
+    };
+    const calc = calcBatch(gnRow, {}, gnData, null, undefined, gnHints);
+    const chicken = calc.ingredients.find((i) => i.name.includes("Chicken Breast"))!;
+    expect(chicken.totalPcs).toBeCloseTo(60, 5); // 0.6 Stk × 100 Portionen
+    expect(chicken.gnTrays).toBe(2); // ceil(60 / 30)
+    expect(chicken.gnType).toBe("GN 2/1");
+  });
+
+  it("groups the WO-level GN tray summary by GN size instead of merging into one number", () => {
+    const gnHints = {
+      trayHints: [{ key: "chicken breast", pcsPerTray: 30, gnType: "GN 1/1" }],
+      pieceWeightKg: new Map<string, number>(),
+    };
+    const calc = calcBatch(gnRow, {}, gnData, null, undefined, gnHints);
+    expect(calc.gnTraySummary).toEqual(
+      expect.arrayContaining([
+        { gnType: "GN 1/1", trays: 2 },
+        { gnType: "GN 2/1", trays: 1 },
+      ]),
+    );
+  });
+
+  it("never guesses — leaves gnTrays null for ingredients with no matching capacity/tray source", () => {
+    const calc = calcBatch(gnRow, {}, gnData); // keine trayHints übergeben
+    const chicken = calc.ingredients.find((i) => i.name.includes("Chicken Breast"))!;
+    expect(chicken.gnTrays).toBeNull();
+    expect(chicken.gnType).toBeNull();
   });
 });

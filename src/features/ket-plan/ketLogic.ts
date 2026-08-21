@@ -5,10 +5,14 @@ import type {
   DataBundle, DetailedIngredient, DetailedSubRecipe, EquipBibleEntry, GrossIngredient,
   Recipe, RecipeStructure, WorkOrderEntry,
 } from "../../core/types";
-import { EQUIP_DEFAULTS, EQUIP_LABELS, EQUIP_PRIORITY, type BatchCalc, type EquipBatch, type IngCalc, type KetRow, type ManualEquipmentOverride } from "./ketTypes";
+import { EQUIP_DEFAULTS, EQUIP_LABELS, EQUIP_PRIORITY, type BatchCalc, type EquipBatch, type GnTraySummary, type IngCalc, type KetRow, type ManualEquipmentOverride, type ScoopInfo, type WoComponent } from "./ketTypes";
 import { cleanRecipeName, codeDigits, extractCode, fmtNum, parseSteps } from "../../lib/helpers";
 import { biAllergen, classify, NO_BATCH, READY_MADE, isSeparate, isSpiceRoom } from "./factorRules";
 import { computeWoChiller } from "../blast-chiller/blastChillerLogic";
+import { lookupEquipmentCapacity, calcEquipmentNeeds } from "../kitchen-mode/wrEquipmentCapacityDB";
+import { wrLookupPieceKg, wrLookupTrayPcs } from "../kitchen-mode/wrEquipmentHints";
+import { wrLookupGnType, type WRTrayHint } from "../kitchen-mode/wrEquipmentTypes";
+import { wrResolveSubRecipeYieldInfo } from "../kitchen-mode/wrEquipmentCalc";
 
 export { isSeparate, isSpiceRoom } from "./factorRules";
 
@@ -317,11 +321,422 @@ function uomToKgFactor(uom: string): { factor: number; isPcs: boolean; unknown: 
 }
 
 
+// ── Equipment-/Batch-Berechnung — geteilt zwischen der ganzen WO (Top-Level)
+// und einzelnen WoComponents (zusammengesetzte Sub-Rezepte, siehe unten) ──────
+interface EquipmentBatchResult {
+  resolvedCookMethods: string[];
+  equipBatches: EquipBatch[];
+  primaryEquip: string | null;
+  capacityKg: number | null;
+  primaryCapBibleMatch: EquipBibleEntry | null;
+  batches: number;
+  perBatchKg: number;
+  remainderKg: number;
+}
+
+function computeEquipmentBatches(
+  matchName: string,
+  cookMethods: string[],
+  totalKg: number,
+  caps: Record<string, number>,
+  equipmentBible: EquipBibleEntry[] | undefined,
+  processSpec: ReturnType<typeof findProcessSpec>,
+  manualEquipment?: ManualEquipmentOverride | null,
+): EquipmentBatchResult {
+  const uniqueCookMethods = (() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const method of cookMethods) {
+      const key = method.trim().toUpperCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      result.push(key);
+    }
+    return result;
+  })();
+
+  const bibleMatches = new Map<string, EquipBibleEntry>();
+  for (const equipment of uniqueCookMethods) {
+    const match = equipment === "BRAISER"
+      ? findBraiserBibleMatch(matchName, equipmentBible)
+      : findBibleCapacity(matchName, equipment, equipmentBible);
+    if (match) bibleMatches.set(equipment, match);
+  }
+
+  const methods = [...uniqueCookMethods];
+  if (manualEquipment?.equipment && manualEquipment.capacityKg > 0) {
+    const manualName = manualEquipment.equipment.trim().toUpperCase();
+    if (manualName && !methods.includes(manualName)) methods.push(manualName);
+  }
+
+  const effectiveCap = (e: string) => {
+    // Ein expliziter manueller Cap — inklusive bewusster "0" zum Deaktivieren
+    // dieses Equipments — gewinnt immer. Der Kuechenbible-Treffer füllt nur,
+    // wenn der Nutzer für dieses Equipment noch nichts gesetzt hat.
+    if (caps[e] !== undefined) return caps[e];
+    const bibleMatch = bibleMatches.get(e);
+    if (bibleMatch) return bibleMatch.maxKg;
+    if (manualEquipment?.equipment.trim().toUpperCase() === e && manualEquipment.capacityKg > 0) return manualEquipment.capacityKg;
+    if (
+      processSpec?.batchSizeKg && processSpec.batchSizeKg > 0
+      && equipmentNamesFromText(processSpec.primaryStation ?? "").includes(e)
+    ) return processSpec.batchSizeKg;
+    return EQUIP_DEFAULTS[e] ?? 0;
+  };
+
+  const bibleActive = (equipment: string) => !!bibleMatches.get(equipment) && caps[equipment] === undefined;
+
+  const equipBatches: EquipBatch[] = methods
+    .filter(m => effectiveCap(m) > 0)
+    .map(m => {
+      const cap = effectiveCap(m);
+      const batches = totalKg > 0 ? Math.ceil(totalKg / cap) : 0;
+      const perBatch = batches > 0 ? +(totalKg / batches).toFixed(3) : 0;
+      const utilization = batches > 0 ? Math.round((perBatch / cap) * 100) : 0;
+      const bMatch = bibleActive(m) ? bibleMatches.get(m) ?? null : null;
+      const mq: "exact" | "substring" | "none" = !bMatch
+        ? "none"
+        : normBibleStr(bMatch.itemName ?? "") === normBibleStr(matchName)
+          ? "exact"
+          : "substring";
+      return {
+        equip: m,
+        label: EQUIP_LABELS[m] ?? m,
+        capacityKg: cap,
+        batches,
+        perBatchKg: perBatch,
+        remainderKg: 0,
+        utilizationPct: utilization,
+        bibleMatch: bMatch,
+        matchQuality: mq,
+      };
+    });
+
+  const primaryEquip =
+    EQUIP_PRIORITY.find(e => methods.includes(e) && effectiveCap(e) > 0) ??
+    methods.find(m => effectiveCap(m) > 0) ??
+    null;
+
+  const capacityKg = primaryEquip ? effectiveCap(primaryEquip) : null;
+  const primaryCapBibleMatch = primaryEquip && bibleActive(primaryEquip) ? bibleMatches.get(primaryEquip) ?? null : null;
+  const primaryBatch = equipBatches.find(eb => eb.equip === primaryEquip);
+  const batches = primaryBatch?.batches ?? 0;
+  const perBatchKg = primaryBatch?.perBatchKg ?? (capacityKg ?? 0);
+  const remainderKg = primaryBatch?.remainderKg ?? 0;
+
+  return { resolvedCookMethods: methods, equipBatches, primaryEquip, capacityKg, primaryCapBibleMatch, batches, perBatchKg, remainderKg };
+}
+
+// Equipment-Namen direkt aus den categories/processSpec eines Kind-Sub-Rezepts
+// (kein CSV-Cook-Methods-Feld auf dieser Ebene verfügbar wie bei der WO selbst).
+function resolveComponentCookMethods(name: string, categories: string, data: DataBundle): string[] {
+  const methods = new Set<string>(equipmentNamesFromText(categories));
+  const processSpec = findProcessSpec(data, name);
+  for (const m of equipmentNamesFromText(processSpec?.primaryStation ?? "")) methods.add(m);
+  return [...methods];
+}
+
+// Reichert Zutaten (typischerweise strukturbasiert, category="") mit der
+// Kategorie (PRO/PHF/SPI/DRY) aus den Gross-Ingredients an, gematcht über den
+// übergebenen Sub-Rezept-Namen — dieselbe Logik wie der Top-Level-Merge in
+// calcBatch, aber wiederverwendbar für einzelne Komponenten (deren Zutaten
+// sonst nie eine Kategorie/Farbcodierung bekämen, siehe buildWoComponents).
+function mergeGrossCategories(ingredients: IngCalc[], recipe: Recipe | undefined, subName: string): void {
+  if (!recipe) return;
+  const grossHits = matchGrossIngredients(recipe.grossIngredients, subName);
+  if (!grossHits.length) return;
+  const stripPrefix = (s: string) => s.replace(/^[A-Z]{2}-[A-Z]{2}\s+/i, "");
+  const catLookup = new Map<string, string>();
+  for (const g of grossHits) {
+    const cat = g.ingredientCategory ?? "";
+    catLookup.set(normStr(g.ingredient), cat);
+    catLookup.set(normStr(stripPrefix(g.ingredient)), cat);
+  }
+  for (const ing of ingredients) {
+    if (!ing.category) {
+      ing.category = catLookup.get(normStr(ing.name)) || catLookup.get(normStr(stripPrefix(ing.name))) || "";
+    }
+  }
+}
+
+// GN-Blech-Hints aus dem Kuechenbible-GSheet-Dump (siehe features/kitchen-mode,
+// wrBuildHintsFromDumps) — optional. Ohne Hints greift für Zutaten mit Treffer
+// in der fest codierten Kapazitäts-Tabelle (lookupEquipmentCapacity) trotzdem
+// eine kg-basierte Schätzung; nur die stückbasierte Protein-Schätzung entfällt
+// dann (siehe resolveGnTrays).
+export interface GnHints {
+  trayHints: WRTrayHint[];
+  pieceWeightKg: Map<string, number>;
+}
+
+export const EMPTY_GN_HINTS: GnHints = { trayHints: [], pieceWeightKg: new Map() };
+
+// Ermittelt den GN-Blech-Bedarf einer einzelnen Zutat — zwei unabhängige Wege je
+// nachdem was für diese Zutat bekannt ist (Kern-Lookups wiederverwendet aus dem
+// Kitchen-Mode-Rechner, src/features/kitchen-mode/):
+//   1. Stückbasiert (v.a. Proteine): "Stück pro Tray" aus der PROTEIN-DEBOX-Bible
+//      bzw. VEGGIE-DEBOX "MAX. TRAY"-Spalte (wrLookupTrayPcs) + Stückgewicht
+//      (wrLookupPieceKg), um aus kg die Stückzahl abzuleiten.
+//   2. kg-basiert (v.a. Gemüse): feste kg-pro-GN-2:1-Dichte aus der fest
+//      codierten Kapazitäts-Tabelle (lookupEquipmentCapacity/calcEquipmentNeeds) —
+//      funktioniert auch ganz ohne GnHints.
+// Kein Treffer in keiner der beiden Quellen → null (nie raten, siehe uomWarnings-Konvention).
+// Strukturzutaten tragen oft "FA-DE Name, Details /Deutsche Übersetzung"
+// (Länderpräfix + bilinguale Kurzform) — die Kitchen-Mode-Kapazitätsquellen
+// sind auf kurze, englische Namen ausgelegt (z.B. "10mm Diced Pepper"). Ohne
+// Bereinigung verdünnt der lange, zweisprachige Name jeden Fuzzy-Match auf
+// nahezu 0. Gleiches Präfix-Muster wie mergeGrossCategories oben, zusätzlich
+// wird nur der englische Teil vor dem "/" behalten.
+function cleanIngredientNameForGnLookup(name: string): string {
+  const withoutPrefix = name.replace(/^[A-Z]{2}-[A-Z]{2}\s+/i, "");
+  const slashIdx = withoutPrefix.indexOf("/");
+  const english = (slashIdx >= 0 ? withoutPrefix.slice(0, slashIdx) : withoutPrefix).trim();
+  // lookupEquipmentCapacity() scores matches by raw token-overlap-count ÷ larger
+  // side — a plural needle word ("Peppers") never token-matches a singular DB
+  // entry ("10mm Diced Pepper"), so a more specific match can silently lose a
+  // scoring tie to a less specific one that happens to share the same overlap
+  // count (e.g. generic "Mixed Diced Vegetables"). Naive singularization here
+  // (only on our side, the DB text itself is untouched) fixes that without
+  // touching the shared kitchen-mode matcher other features also rely on.
+  return english.replace(/\b([a-z]{3,})s\b/gi, (word, stem: string) =>
+    /s$/i.test(stem) ? word : stem);
+}
+
+function resolveGnTrays(ing: IngCalc, hints: GnHints): { trays: number | null; gnType: string | null } {
+  const lookupName = cleanIngredientNameForGnLookup(ing.name);
+  const trayPcsHint = wrLookupTrayPcs(hints.trayHints, lookupName, ing.id);
+  if (trayPcsHint && trayPcsHint > 0) {
+    const gnType = wrLookupGnType(hints.trayHints, lookupName, ing.id) ?? "GN 2/1";
+    if (ing.totalPcs > 0) {
+      return { trays: Math.ceil(ing.totalPcs / trayPcsHint), gnType };
+    }
+    if (ing.totalKg > 0) {
+      const pieceKg = wrLookupPieceKg(hints.pieceWeightKg, lookupName, ing.id);
+      if (pieceKg && pieceKg > 0) {
+        return { trays: Math.ceil((ing.totalKg / pieceKg) / trayPcsHint), gnType };
+      }
+    }
+  }
+  if (ing.totalKg > 0) {
+    const cap = lookupEquipmentCapacity(lookupName);
+    if (cap?.kgPerGn21 && cap.kgPerGn21 > 0) {
+      const needs = calcEquipmentNeeds(ing.totalKg, cap);
+      if (needs.trays) return { trays: needs.trays, gnType: "GN 2/1" };
+    }
+  }
+  return { trays: null, gnType: null };
+}
+
+// Trägt gnTrays/gnType direkt in die Zutatenliste ein (mutiert wie separate/
+// spiceRoom weiter oben) und baut daraus die nach GN-Größe gruppierte Summe —
+// unterschiedliche GN-Größen dürfen nicht zu einer Zahl verschmolzen werden.
+function applyGnTrays(ingredients: IngCalc[], hints: GnHints): GnTraySummary[] {
+  const totals = new Map<string, number>();
+  for (const ing of ingredients) {
+    const { trays, gnType } = resolveGnTrays(ing, hints);
+    ing.gnTrays = trays;
+    ing.gnType = gnType;
+    if (trays && gnType) totals.set(gnType, (totals.get(gnType) ?? 0) + trays);
+  }
+  return [...totals.entries()]
+    .map(([gnType, trays]) => ({ gnType, trays }))
+    .sort((a, b) => a.gnType.localeCompare(b.gnType));
+}
+
+// Portionierwerkzeug (Scoop/Ladle/…) für ein Sub-Rezept — dieselbe Quelle wie
+// BreakdownEquipmentView (wrResolveSubRecipeYieldInfo), hier nur mit einer statt
+// drei Sub-Ebenen aufgerufen (KetRow/WoComponent kennen nur einen flachen Namen).
+// null wenn weder Method-Typ/-Farbe noch eine Portionsmenge im Rezept hinterlegt ist.
+function resolveScoopInfo(recipe: Recipe | undefined, subName: string): ScoopInfo | null {
+  if (!recipe || !subName) return null;
+  const info = wrResolveSubRecipeYieldInfo(recipe, subName, "—", "—");
+  if (!info.yieldGrams && !info.methodType && !info.methodColor) return null;
+  return info;
+}
+
+// Gruppierungs-Schlüssel für "unterschiedliche Equipment-Gruppe" — zwei Kinder
+// mit identischem Equipment-Set gehören zum selben Zubereitungsschritt und
+// werden NICHT als getrennte Komponenten behandelt.
+function componentEquipmentKey(name: string, categories: string, data: DataBundle): string {
+  return resolveComponentCookMethods(name, categories, data).sort().join("+");
+}
+
+// Findet rekursiv die "Blätter" der Zubereitungs-Baumstruktur unterhalb eines
+// Knotens — jedes Blatt ist eine physisch eigenständige Zubereitungskomponente
+// mit eigener Kochanweisung. Ein Knoten wird NUR aufgespalten, wenn er ≥2
+// Kinder mit (rekursiv) eigenen Zutaten UND ≥2 unterschiedlichen Equipment-
+// Gruppen hat — sonst ist der Knoten selbst das Blatt (inkl. aller eigenen +
+// verschachtelten Zutaten, wie bisher). Ein Kind, das selbst wieder so ein
+// Split ist (ein "Sub-Sub-Meal"), wird weiter aufgelöst statt als ein Block
+// behandelt zu werden — jede echte Zubereitungskomponente auf jeder Ebene
+// bekommt am Ende ihre eigene WoComponent.
+function flattenLeafSubRecipes(node: DetailedSubRecipe, data: DataBundle): DetailedSubRecipe[] {
+  const substantial = (node.subRecipes ?? []).filter((c) => collectDetailedIngredients(c).length > 0);
+  if (substantial.length < 2) return [node];
+  const distinctEquip = new Set(substantial.map((c) => componentEquipmentKey(c.name, c.categories, data)));
+  if (distinctEquip.size < 2) return [node];
+  return substantial.flatMap((child) => flattenLeafSubRecipes(child, data));
+}
+
+// Erkennt zusammengesetzte Sub-Rezepte (z.B. "Stuffed Pepper Casserole Base-V2"
+// = "Ground Beef - cooked" [BRAISER] + "...Vegetable Mix" [OVEN], beliebig tief
+// verschachtelt) und baut für jedes Blatt mit eigenen Zutaten + eigenem
+// Equipment eine eigenständige WoComponent mit eigener Batch-Rechnung und
+// eigener Kochanweisungs-Suche.
+function buildWoComponents(
+  matchedSub: DetailedSubRecipe,
+  targetPortions: number,
+  recipe: Recipe | undefined,
+  data: DataBundle,
+  caps: Record<string, number>,
+  componentManualEquipment: Record<string, ManualEquipmentOverride> | undefined,
+  gnHints: GnHints,
+): { components: WoComponent[]; uomWarnings: string[] } {
+  const leaves = flattenLeafSubRecipes(matchedSub, data);
+  // Kein Split gefunden → matchedSub selbst ist das einzige Blatt, kein
+  // zusammengesetztes Sub-Rezept (normaler Einzel-Fall, unverändert).
+  if (leaves.length < 2) return { components: [], uomWarnings: [] };
+
+  const uomWarnings: string[] = [];
+  const components: WoComponent[] = leaves.map((child) => {
+    const ings = collectDetailedIngredients(child);
+    const ingredients: IngCalc[] = [];
+    let totalKg = 0;
+    for (const ing of ings) {
+      const { factor, isPcs, unknown } = uomToKgFactor(ing.uom);
+      if (unknown) uomWarnings.push(`${child.name} / ${ing.name}: unbekannte Einheit "${ing.uom}" (als Gramm behandelt)`);
+      const ingKg = isPcs ? 0 : factor * ing.grossQty * targetPortions;
+      const ingPcs = isPcs ? ing.grossQty * targetPortions : 0;
+      totalKg += ingKg;
+      ingredients.push({
+        name: ing.name,
+        id: ing.id,
+        category: "",
+        uom: ing.uom,
+        totalKg: ingKg,
+        perBatchKg: 0,
+        yieldPct: ing.yieldPct ?? null,
+        totalPcs: ingPcs,
+        separate: isSeparate(ing.name),
+        spiceRoom: isSpiceRoom(ing.name),
+        allergen: ing.allergen || undefined,
+        gnTrays: null,
+        gnType: null,
+      });
+    }
+
+    mergeGrossCategories(ingredients, recipe, child.name);
+
+    const cookMethods = resolveComponentCookMethods(child.name, child.categories, data);
+    const processSpec = findProcessSpec(data, child.name);
+    const equipResult = computeEquipmentBatches(
+      child.name, cookMethods, totalKg, caps, data.equipmentBible, processSpec, componentManualEquipment?.[child.name] ?? null,
+    );
+
+    for (const ing of ingredients) {
+      ing.perBatchKg = equipResult.batches > 0 ? +(ing.totalKg / equipResult.batches).toFixed(3) : 0;
+    }
+    ingredients.sort(sortIngredients);
+    const gnTraySummary = applyGnTrays(ingredients, gnHints);
+
+    const instructionPair = findSubRecipeInstructions(recipe, data.mealCatalog, data.instructions, child.name);
+
+    // Factor-Regeln nach dem NAMEN DIESER KOMPONENTE klassifizieren, nicht nach
+    // dem zusammengesetzten WO-Namen — "Ground Beef - cooked" muss als
+    // neverBatch erkannt werden, auch wenn der WO-Name (z.B. "Stuffed Pepper
+    // Casserole Base-V2") zufällig ein anderes Schlüsselwort ("Pepper") trifft.
+    const componentFactorClass = classify(child.name, equipResult.resolvedCookMethods);
+    const componentRti = componentFactorClass.rti;
+    const componentNeverBatch = !componentRti && componentFactorClass.capacityKg === NO_BATCH;
+    const componentFactorCapacityKg = !componentRti && !componentNeverBatch ? componentFactorClass.capacityKg : null;
+    const componentFactorBatches = componentRti
+      ? null
+      : componentNeverBatch
+        ? (totalKg > 0 ? 1 : 0)
+        : (totalKg > 0 && componentFactorCapacityKg ? Math.ceil(totalKg / componentFactorCapacityKg) : null);
+    const componentFactorBatchQtyKg = componentFactorBatches && componentFactorBatches > 0
+      ? +(totalKg / componentFactorBatches).toFixed(3)
+      : null;
+
+    return {
+      name: child.name,
+      ingredients,
+      totalKg,
+      resolvedCookMethods: equipResult.resolvedCookMethods,
+      equipBatches: equipResult.equipBatches,
+      primaryEquip: equipResult.primaryEquip,
+      capacityKg: equipResult.capacityKg,
+      primaryCapBibleMatch: equipResult.primaryCapBibleMatch,
+      batches: equipResult.batches,
+      perBatchKg: equipResult.perBatchKg,
+      instructionsEnglish: instructionPair.english,
+      instructionsGerman: instructionPair.german,
+      instructionsGermanFallback: instructionPair.germanIsFallback,
+      rti: componentRti,
+      neverBatch: componentNeverBatch,
+      factorCapacityKg: componentFactorCapacityKg,
+      factorBatches: componentFactorBatches,
+      factorBatchQtyKg: componentFactorBatchQtyKg,
+      factorFallbackCapacity: !!componentFactorClass.fallback,
+      readyMade: READY_MADE.test(child.name),
+      gnTraySummary,
+      scoopInfo: resolveScoopInfo(recipe, child.name),
+    };
+  });
+
+  return { components, uomWarnings };
+}
+
+// Fasst die je-Komponente korrekt berechneten equipBatches zu einer WO-weiten
+// Übersicht zusammen — nie erneut "totalKg / capacity" rechnen (das wäre exakt
+// der ursprüngliche Bug: die kombinierte Gesamtmenge auf jedes Equipment
+// angewendet, obwohl z.B. nur das Fleisch in den Braiser und nur das Gemüse in
+// den Ofen geht). Nutzen zwei Komponenten dasselbe Equipment, werden ihre
+// bereits korrekten Batch-Zahlen einfach addiert.
+function mergeComponentEquipBatches(components: WoComponent[]): EquipBatch[] {
+  const merged = new Map<string, EquipBatch>();
+  for (const component of components) {
+    for (const eb of component.equipBatches) {
+      const existing = merged.get(eb.equip);
+      if (!existing) {
+        merged.set(eb.equip, { ...eb });
+        continue;
+      }
+      const combinedKg = existing.perBatchKg * existing.batches + eb.perBatchKg * eb.batches;
+      const batches = existing.batches + eb.batches;
+      // Zwei Komponenten aus unterschiedlichen Ästen können zufällig dasselbe
+      // Equipment nutzen, aber unterschiedliche Kuechenbible-Kapazitätsquellen
+      // haben — die zusammengeführte Kachel darf dann nicht einfach die erste
+      // Quelle als "die" Quelle für den gesamten Batch-Betrag ausgeben.
+      const sameBibleSource = existing.bibleMatch?.itemName === eb.bibleMatch?.itemName;
+      merged.set(eb.equip, {
+        ...existing,
+        batches,
+        perBatchKg: batches > 0 ? +(combinedKg / batches).toFixed(3) : 0,
+        utilizationPct: batches > 0
+          ? Math.round((existing.utilizationPct * existing.batches + eb.utilizationPct * eb.batches) / batches)
+          : 0,
+        bibleMatch: sameBibleSource ? existing.bibleMatch : null,
+        matchQuality: sameBibleSource ? existing.matchQuality : "none",
+      });
+    }
+  }
+  return [...merged.values()];
+}
+
 export function calcBatch(
   row: KetRow,
   caps: Record<string, number>,
   data: DataBundle,
   manualEquipment?: ManualEquipmentOverride | null,
+  // Equipment-Ausnahme je Komponente (keyed by component.name) — unabhängig von
+  // manualEquipment oben, das nur für den Nicht-Komponenten-Fall bzw. als
+  // WO-weiter Fallback gilt (siehe buildWoComponents).
+  componentManualEquipment?: Record<string, ManualEquipmentOverride>,
+  // GN-Blech-Hints aus dem Kuechenbible-GSheet-Dump (siehe GnHints oben) —
+  // optional, ohne sie greift für viele Zutaten trotzdem die fest codierte
+  // kg-basierte Kapazitäts-Tabelle.
+  gnHints: GnHints = EMPTY_GN_HINTS,
 ): BatchCalc {
   const recipe = data.recipes[row.recipeCode];
   const structure = data.structures?.[row.recipeCode];
@@ -360,6 +775,9 @@ export function calcBatch(
             totalPcs: ingPcs,
             separate: false,
             spiceRoom: false,
+            allergen: ing.allergen || undefined,
+            gnTrays: null,
+            gnType: null,
           });
         }
       }
@@ -386,6 +804,8 @@ export function calcBatch(
           totalPcs: ingPcs,
           separate: false,
           spiceRoom: false,
+          gnTrays: null,
+          gnType: null,
         });
       }
     }
@@ -413,99 +833,34 @@ export function calcBatch(
     }
   }
 
-  const uniqueCookMethods = (() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const method of resolvedCookMethods) {
-      const key = method.trim().toUpperCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      result.push(method.trim().toUpperCase());
-    }
-    return result;
-  })();
-  resolvedCookMethods.splice(0, resolvedCookMethods.length, ...uniqueCookMethods);
+  const equipResult = computeEquipmentBatches(
+    row.subRecipeName, resolvedCookMethods, totalKg, caps, data.equipmentBible, processSpec, manualEquipment,
+  );
+  resolvedCookMethods.splice(0, resolvedCookMethods.length, ...equipResult.resolvedCookMethods);
 
-  const bibleMatches = new Map<string, EquipBibleEntry>();
-  for (const equipment of resolvedCookMethods) {
-    const match = equipment === "BRAISER"
-      ? findBraiserBibleMatch(row.subRecipeName, data.equipmentBible)
-      : findBibleCapacity(row.subRecipeName, equipment, data.equipmentBible);
-    if (match) bibleMatches.set(equipment, match);
-  }
+  // Zusammengesetzte Sub-Rezepte (z.B. "Stuffed Pepper Casserole Base-V2" aus
+  // "Ground Beef - cooked" [BRAISER] + "...Vegetable Mix" [OVEN]) — jede
+  // Komponente braucht eine eigene Kochanweisung + eigene Batch-Rechnung, statt
+  // die kombinierte Gesamtmenge fälschlich auf jedes Equipment anzuwenden.
+  const { components, uomWarnings: componentUomWarnings } = matchedSub
+    ? buildWoComponents(matchedSub, row.targetPortions, recipe, data, caps, componentManualEquipment, gnHints)
+    : { components: [] as WoComponent[], uomWarnings: [] as string[] };
+  uomWarnings.push(...componentUomWarnings);
 
-  if (manualEquipment?.equipment && manualEquipment.capacityKg > 0) {
-    const manualName = manualEquipment.equipment.trim().toUpperCase();
-    if (manualName && !resolvedCookMethods.some((method) => method.trim().toUpperCase() === manualName)) {
-      resolvedCookMethods.push(manualName);
-    }
-  }
-
-  const effectiveCap = (e: string) => {
-    // An explicit manual cap — including an intentional "0" to disable this
-    // equipment entirely, a supported value in the sidebar — always wins.
-    // The Kuechenbible match only fills in when the user hasn't set anything
-    // for this equipment; it must never silently override a manual choice.
-    if (caps[e] !== undefined) return caps[e];
-    const bibleMatch = bibleMatches.get(e);
-    if (bibleMatch) return bibleMatch.maxKg;
-    if (manualEquipment?.equipment.trim().toUpperCase() === e && manualEquipment.capacityKg > 0) return manualEquipment.capacityKg;
-    if (
-      processSpec?.batchSizeKg && processSpec.batchSizeKg > 0
-      && equipmentNamesFromText(processSpec.primaryStation ?? "").includes(e)
-    ) return processSpec.batchSizeKg;
-    return EQUIP_DEFAULTS[e] ?? 0;
-  };
-
-  // Whether the Bible match is actually the value effectiveCap("BRAISER") used
-  // (i.e. no manual override is set) — the UI must only show the "📖
-  // Kuechenbible" tag when that entry is truly the active capacity, not
-  // whenever a match merely exists but a manual cap has taken precedence.
-  const bibleActive = (equipment: string) => !!bibleMatches.get(equipment) && caps[equipment] === undefined;
-
-  // Per-Equipment Batche: jede Cook Method mit bekannter Kapazität berechnet eigenständig.
-  // Küchenchef-Vorgabe: kein kleinerer "Rest-Batch" mehr — die Gesamtmenge wird gleichmäßig
-  // auf alle Batches verteilt (perBatchKg = totalKg/batches), statt (batches-1) volle
-  // Batches + 1 kleineren Rest-Batch zu bilden. remainderKg bleibt im Typ (wird an mehreren
-  // Stellen abgefragt), ist hier aber immer 0.
-  const equipBatches: EquipBatch[] = resolvedCookMethods
-    .filter(m => effectiveCap(m) > 0)
-    .map(m => {
-      const cap = effectiveCap(m);
-      const batches = totalKg > 0 ? Math.ceil(totalKg / cap) : 0;
-      const perBatch = batches > 0 ? +(totalKg / batches).toFixed(3) : 0;
-      const utilization = batches > 0 ? Math.round((perBatch / cap) * 100) : 0;
-      const bMatch = bibleActive(m) ? bibleMatches.get(m) ?? null : null;
-      const mq: "exact" | "substring" | "none" = !bMatch
-        ? "none"
-        : normBibleStr(bMatch.itemName ?? "") === normBibleStr(row.subRecipeName)
-          ? "exact"
-          : "substring";
-      return {
-        equip: m,
-        label: EQUIP_LABELS[m] ?? m,
-        capacityKg: cap,
-        batches,
-        perBatchKg: perBatch,
-        remainderKg: 0,
-        utilizationPct: utilization,
-        bibleMatch: bMatch,
-        matchQuality: mq,
-      };
-    });
-
-  // Primär-Equipment für Ingredient-Aufschlüsselung = erstes aus EQUIP_PRIORITY
-  const primaryEquip =
-    EQUIP_PRIORITY.find(e => resolvedCookMethods.includes(e) && effectiveCap(e) > 0) ??
-    resolvedCookMethods.find(m => effectiveCap(m) > 0) ??
-    null;
-
-  const capacityKg = primaryEquip ? effectiveCap(primaryEquip) : null;
-  const primaryCapBibleMatch = primaryEquip && bibleActive(primaryEquip) ? bibleMatches.get(primaryEquip) ?? null : null;
-  const primaryBatch = equipBatches.find(eb => eb.equip === primaryEquip);
-  const batches = primaryBatch?.batches ?? 0;
-  const perBatchKg = primaryBatch?.perBatchKg ?? (capacityKg ?? 0);
-  const remainderKg = primaryBatch?.remainderKg ?? 0;
+  // Bei Komponenten: equipBatches/batches/perBatchKg oben durch die korrekt
+  // je-Komponente gerechneten Werte ersetzen (siehe mergeComponentEquipBatches)
+  // — sonst würde die WO-Kopfzeile weiterhin die kombinierte Gesamtmenge
+  // fälschlich auf jedes Equipment anwenden.
+  const equipBatches = components.length > 0 ? mergeComponentEquipBatches(components) : equipResult.equipBatches;
+  const primaryEquip = components.length > 0
+    ? (EQUIP_PRIORITY.find((e) => equipBatches.some((eb) => eb.equip === e)) ?? equipBatches[0]?.equip ?? null)
+    : equipResult.primaryEquip;
+  const primaryBatch = components.length > 0 ? equipBatches.find((eb) => eb.equip === primaryEquip) : undefined;
+  const capacityKg = components.length > 0 ? (primaryBatch?.capacityKg ?? null) : equipResult.capacityKg;
+  const primaryCapBibleMatch = components.length > 0 ? (primaryBatch?.bibleMatch ?? null) : equipResult.primaryCapBibleMatch;
+  const batches = components.length > 0 ? (primaryBatch?.batches ?? 0) : equipResult.batches;
+  const perBatchKg = components.length > 0 ? (primaryBatch?.perBatchKg ?? 0) : equipResult.perBatchKg;
+  const remainderKg = components.length > 0 ? 0 : equipResult.remainderKg;
 
   for (const ing of ingredients) {
     ing.perBatchKg = batches > 0
@@ -515,6 +870,7 @@ export function calcBatch(
     ing.spiceRoom = isSpiceRoom(ing.name);
   }
   ingredients.sort(sortIngredients);
+  const gnTraySummary = applyGnTrays(ingredients, gnHints);
 
   const instructionPair = findSubRecipeInstructions(recipe, data.mealCatalog, data.instructions, row.subRecipeName);
 
@@ -559,6 +915,11 @@ export function calcBatch(
     chillerAssignment,
     uomWarnings,
     factorOverridesEquip: rti || neverBatch,
+    components,
+    gnTraySummary,
+    // Nur für den Nicht-Komponenten-Fall — bei zusammengesetzten Sub-Rezepten steht
+    // es je Komponente in components[].scoopInfo (siehe Kommentar bei BatchCalc.scoopInfo).
+    scoopInfo: components.length === 0 ? resolveScoopInfo(recipe, row.subRecipeName) : null,
   };
 }
 
@@ -683,6 +1044,8 @@ export function catColor(cat: string): string {
 // Stabiler Cache-Key für WO-Instructions: basiert auf Rezeptcode + Sub-Rezeptname,
 // damit Instructions über Wochen hinweg wiederverwendet werden (gleiche Gerichte
 // wiederholen sich alle 3–8 Wochen mit neuen WO-Nummern).
-export function instructionCacheKey(row: KetRow): string {
-  return `${row.recipeCode}::${row.subRecipeName}`;
+export function instructionCacheKey(row: KetRow, componentName?: string): string {
+  return componentName
+    ? `${row.recipeCode}::${row.subRecipeName}::${componentName}`
+    : `${row.recipeCode}::${row.subRecipeName}`;
 }

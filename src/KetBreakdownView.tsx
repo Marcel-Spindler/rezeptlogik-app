@@ -7,14 +7,18 @@ import type { DataBundle, WorkOrderEntry } from "./core/types";
 import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow, currentHfWeek } from "./lib/wmsCache";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overview/wmsWeeks";
 import { LiveBadge } from "./features/redzone-live/LiveBadge";
-import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
+import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoComponent, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
-  calcBatch, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
+  calcBatch, EMPTY_GN_HINTS, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
+  type GnHints,
 } from "./features/ket-plan/ketLogic";
 import { buildPdf } from "./features/ket-plan/ketPdf";
 import { EmptyState, KetWoOverview, MissingDataScreen } from "./features/ket-plan/KetSharedUi";
 import { WoDetail } from "./features/ket-plan/KetWoDetail";
 import { generateWoInstruction, generateWoInstructionsBatch } from "./features/ket-plan/woInstructionBot";
+import { computeRunAssignments, shiftLabel } from "./features/ket-plan/ketRunLogic";
+import { KetEquipmentPanel } from "./features/ket-plan/KetEquipmentPanel";
+import { wrBuildHintsFromDumps } from "./features/kitchen-mode/wrEquipmentHints";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS & PATTERNS
@@ -24,7 +28,10 @@ const STORAGE_KEYS = {
   csvRows: "ket-csv-rows-v1",
   csvFilename: "ket-csv-filename-v1",
   woInstructions: "ket-wo-instructions-v1",
+  printedWoNumbers: "ket-printed-wo-numbers-v1",
 } as const;
+
+const PRINTED_WO_MAX = 2000; // Deckelt den localStorage-Eintrag; älteste zuerst raus.
 
 const INSTRUCTION_CACHE_MAX = 500;
 
@@ -90,6 +97,50 @@ function woFilename(row: KetRow): string {
 }
 
 /**
+ * Ein Ziel für die Gemini-Instruction-Generierung: normalerweise die ganze WO
+ * (component=undefined), bei zusammengesetzten Sub-Rezepten (calc.components,
+ * siehe ketLogic.buildWoComponents) je ein Ziel PRO Komponente — jede braucht
+ * ihre eigene, unabhängig generierte Kochanweisung statt einer vermischten.
+ * `key` adressiert den Laufzeit-State (woInstructions), `cacheKey` den
+ * localStorage-Cache (bleibt über Wochen stabil, siehe instructionCacheKey).
+ */
+interface GenerationTarget {
+  key: string;
+  cacheKey: string;
+  row: KetRow;
+  calc: BatchCalc;
+  component?: WoComponent;
+}
+
+function generationTargetsForRow(row: KetRow, calc: BatchCalc): GenerationTarget[] {
+  if (calc.components.length > 0) {
+    // Manche Rezepte (z.B. FV0401A "Keto Crack Chicken Thigh") wiederholen
+    // denselben Zubereitungsschritt (identischer Name, identische Zutaten) an
+    // mehreren Stellen im Baum — die WoDetail-Ansicht zeigt bewusst jedes
+    // Vorkommen (die Küche muss es ggf. mehrfach physisch tun), aber für die
+    // Gemini-Generierung wäre ein zweiter Aufruf für exakt denselben Namen nur
+    // verschwendetes Kontingent, da beide ohnehin denselben Cache-Eintrag
+    // (instructionCacheKey ist name-basiert) teilen würden. Pro Zeile also nur
+    // ein Ziel je eindeutigem Komponentennamen erzeugen.
+    const seen = new Set<string>();
+    const targets: GenerationTarget[] = [];
+    for (const component of calc.components) {
+      if (seen.has(component.name)) continue;
+      seen.add(component.name);
+      targets.push({
+        key: `${row.key}::${component.name}`,
+        cacheKey: instructionCacheKey(row, component.name),
+        row,
+        calc,
+        component,
+      });
+    }
+    return targets;
+  }
+  return [{ key: row.key, cacheKey: instructionCacheKey(row), row, calc }];
+}
+
+/**
  * Type-safe FileReader result extraction
  */
 function getFileReaderText(result: unknown): string | null {
@@ -150,12 +201,40 @@ function saveInstructionCache(cache: InstructionCache): void {
   }
 }
 
-// Löst aktuelle row.keys → cache-basierte Instructions auf
-function resolveInstructionsFromCache(rows: KetRow[], cache: InstructionCache): Record<string, WoInstruction> {
+// ── "Bereits gedruckt/gespeichert"-Cache: überlebt CSV-Neu-Uploads ──────────
+// Marcel kann vom WMS nur den KOMPLETTEN aktuellen Stand exportieren (neue +
+// bereits abgearbeitete WOs gemischt), nicht nur die neuen. Damit ein erneuter
+// Upload nicht versehentlich alle schon gedruckten WOs erneut in den Bulk-
+// Druck/-Speicher-Lauf mit reinzieht, merken wir uns "gedruckt am" je
+// woNumber — stabil über Re-Uploads hinweg (anders als row.key, das den
+// CSV-Zeilenindex enthält und sich bei jedem Upload ändert).
+type PrintedWoCache = Record<string, string>; // woNumber -> ISO-Zeitstempel
+
+function loadPrintedWoCache(): PrintedWoCache {
+  return storage.getItem<PrintedWoCache>(STORAGE_KEYS.printedWoNumbers, true) ?? {};
+}
+
+function savePrintedWoCache(cache: PrintedWoCache): void {
+  const entries = Object.entries(cache);
+  if (entries.length > PRINTED_WO_MAX) {
+    entries.sort((a, b) => a[1].localeCompare(b[1]));
+    storage.setItem(STORAGE_KEYS.printedWoNumbers, Object.fromEntries(entries.slice(entries.length - PRINTED_WO_MAX)), true);
+  } else {
+    storage.setItem(STORAGE_KEYS.printedWoNumbers, cache, true);
+  }
+}
+
+// Löst aktuelle Generierungsziele (WO oder — bei zusammengesetzten Sub-Rezepten
+// — einzelne Komponenten, siehe generationTargetsForRow) → cache-basierte
+// Instructions auf.
+function resolveInstructionsFromCache(rows: KetRow[], calcMap: Map<string, BatchCalc>, cache: InstructionCache): Record<string, WoInstruction> {
   const resolved: Record<string, WoInstruction> = {};
   for (const row of rows) {
-    const ck = instructionCacheKey(row);
-    if (cache[ck]) resolved[row.key] = cache[ck];
+    const calc = calcMap.get(row.key);
+    if (!calc) continue;
+    for (const target of generationTargetsForRow(row, calc)) {
+      if (cache[target.cacheKey]) resolved[target.key] = cache[target.cacheKey];
+    }
   }
   return resolved;
 }
@@ -173,13 +252,19 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [dragOver, setDragOver] = useState(false);
   const [showEquip, setShowEquip] = useState(false);
   const [woSearch, setWoSearch] = useState("");
-  const [mainViewMode, setMainViewMode] = useState<"detail" | "list">("detail");
+  const [mainViewMode, setMainViewMode] = useState<"detail" | "list" | "equipment">("detail");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [woSortMode, setWoSortMode] = useState<WoSortMode>("date");
   const [liveWmsRows, setLiveWmsRows] = useState<WorkOrderEntry[] | null>(null);
   const [wmsDroppedWeeks, setWmsDroppedWeeks] = useState<string[]>([]);
   const [weekFilterEnabled, setWeekFilterEnabled] = useState(true);
+  // Schicht-/Run-Anzeige — beide bewusst standardmäßig aus ("später zuschaltbar",
+  // Marcel 2026-08-21): Schicht ist eine reine Uhrzeit-Anzeige (unverändert
+  // korrekt), Run ist eine SCHÄTZUNG (kumulierte Wochen-Portionen je Meal, siehe
+  // ketRunLogic.ts) — keine WMS-verifizierte Tatsache, daher als Vorschau/Toggle.
+  const [showShifts, setShowShifts] = useState(false);
+  const [showRuns, setShowRuns] = useState(false);
 
   const [caps, setCaps] = useState<Record<string, number>>(() => {
     const saved = storage.getItem<Record<string, number>>(LS_CAPS_KEY, true);
@@ -191,14 +276,37 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     ),
   );
   const [manualEquipment, setManualEquipment] = useState<Record<string, ManualEquipmentOverride>>({});
+  // Equipment-Ausnahme je Komponente einer zusammengesetzten WO: row.key → componentName → Override.
+  const [componentManualEquipment, setComponentManualEquipment] = useState<Record<string, Record<string, ManualEquipmentOverride>>>({});
+  // GN-Blech-Hints aus dem Kuechenbible-GSheet-Dump (PROTEIN-DEBOX/VEGGIE-DEBOX
+  // Bible-Tabs) — derselbe Dump, den auch der Kitchen-Mode-Rechner nutzt (siehe
+  // src/features/kitchen-mode/). Einmalig geladen; ohne Treffer bleibt für viele
+  // Zutaten trotzdem die fest codierte kg-Kapazitäts-Tabelle als Fallback aktiv
+  // (siehe ketLogic.resolveGnTrays), daher hier kein harter Fehlerzustand nötig.
+  const [gnHints, setGnHints] = useState<GnHints>(EMPTY_GN_HINTS);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/data/gsheet-dump-Bibles_K_Operations_Manager_Supervisors.json")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((bibles) => {
+        if (cancelled || !bibles) return;
+        const { trayHints, pieceWeightKg } = wrBuildHintsFromDumps(null, bibles);
+        setGnHints({ trayHints, pieceWeightKg });
+      })
+      .catch((error) => console.warn("[KetBreakdown] GN-Blech-Hints konnten nicht geladen werden:", error));
+    return () => { cancelled = true; };
+  }, []);
   const instructionCacheRef = useRef<InstructionCache>(loadInstructionCache());
   const [woInstructions, setWoInstructions] = useState<Record<string, WoInstruction>>({});
+  const printedWoCacheRef = useRef<PrintedWoCache>(loadPrintedWoCache());
+  const [printedWoNumbers, setPrintedWoNumbers] = useState<Record<string, string>>(() => ({ ...printedWoCacheRef.current }));
+  const [includeAlreadyPrinted, setIncludeAlreadyPrinted] = useState(false);
   const [selectedDayFilter, setSelectedDayFilter] = useState<Set<string> | null>(null);
   const [selectedInstructionDays, setSelectedInstructionDays] = useState<Set<string> | null>(null);
   const [selectedWoKeys, setSelectedWoKeys] = useState<Set<string>>(new Set());
   const [batchInstructionBusy, setBatchInstructionBusy] = useState(false);
   const [batchInstructionStatus, setBatchInstructionStatus] = useState<string | null>(null);
-  const [failedInstructions, setFailedInstructions] = useState<Array<{ key: string; woNumber: string; error: string }>>([]);
+  const [failedInstructions, setFailedInstructions] = useState<Array<{ key: string; woNumber: string; componentName?: string; error: string }>>([]);
   const [bulkDlBusy, setBulkDlBusy] = useState(false);
   const [bulkDlStatus, setBulkDlStatus] = useState<string | null>(null);
 
@@ -224,15 +332,6 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     if (rows?.length) return woEntriesToKetRows(rows); // stale but still better than nothing
     return [];
   }, [csvRows, data.productionPlan?.rows, productionPlanHasLiveWeek, liveWmsRows]);
-
-  // Bei Rows-Änderung: gecachte Instructions aus localStorage auflösen
-  useEffect(() => {
-    if (!ketRows.length) return;
-    const cached = resolveInstructionsFromCache(ketRows, instructionCacheRef.current);
-    if (Object.keys(cached).length > 0) {
-      setWoInstructions((prev) => ({ ...cached, ...prev }));
-    }
-  }, [ketRows]);
 
   // Lowest-priority fallback: only reach for the live WMS/Snowflake cache when
   // neither manual CSV nor the established GSheet→Firestore plan has rows for
@@ -279,15 +378,35 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
 
   const calcMap = useMemo(() => {
     const m = new Map<string, BatchCalc>();
-    for (const row of ketRows) m.set(row.key, calcBatch(row, caps, data, manualEquipment[row.key]));
+    for (const row of ketRows) m.set(row.key, calcBatch(row, caps, data, manualEquipment[row.key], componentManualEquipment[row.key], gnHints));
     return m;
-  }, [ketRows, caps, data, manualEquipment]);
+  }, [ketRows, caps, data, manualEquipment, componentManualEquipment, gnHints]);
+
+  // Bei Rows-/Berechnungsänderung: gecachte Instructions aus localStorage auflösen
+  // (inkl. Komponenten-Instructions zusammengesetzter Sub-Rezepte, siehe calcMap oben).
+  useEffect(() => {
+    if (!ketRows.length) return;
+    const cached = resolveInstructionsFromCache(ketRows, calcMap, instructionCacheRef.current);
+    if (Object.keys(cached).length > 0) {
+      setWoInstructions((prev) => ({ ...cached, ...prev }));
+    }
+  }, [ketRows, calcMap]);
 
   const liveWeekNum = useMemo(() => weekNumFromHfWeek(liveWeek), [liveWeek]);
   const weekFilteredRows = useMemo(() => {
     if (!weekFilterEnabled || liveWeekNum == null) return ketRows;
     return ketRows.filter((row) => weekPrefixFromWoNumber(row.woNumber) === liveWeekNum);
   }, [ketRows, weekFilterEnabled, liveWeekNum]);
+
+  // Run-Zuteilung ist eine SCHÄTZUNG (kumulierte Wochen-Portionen je Meal,
+  // siehe ketRunLogic.ts) — nur berechnet, wenn showRuns aktiv ist. Bewusst auf
+  // Basis von weekFilteredRows (nicht ketRows): Runs sind ein Innerhalb-der-
+  // Woche-Konzept; bei deaktiviertem Wochenfilter ("Alle Wochen") würden sich
+  // sonst Portionen verschiedener Wochen fälschlich zu einem Run summieren.
+  const runAssignments = useMemo(
+    () => (showRuns ? computeRunAssignments(weekFilteredRows) : new Map()),
+    [weekFilteredRows, showRuns],
+  );
 
   const groups = useMemo(() => {
     const m = new Map<string, KetRow[]>();
@@ -469,6 +588,26 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   );
 
 
+  // Markiert WOs als "gedruckt/gespeichert" — übersteht CSV-Re-Uploads (siehe
+  // PrintedWoCache oben), damit "Alle sichtbaren WOs" nicht versehentlich
+  // längst abgearbeitete WOs erneut mit ausdruckt.
+  const markAsPrinted = useCallback((rows: KetRow[]) => {
+    if (rows.length === 0) return;
+    const cache = printedWoCacheRef.current;
+    const now = new Date().toISOString();
+    for (const row of rows) cache[row.woNumber] = now;
+    printedWoCacheRef.current = cache;
+    savePrintedWoCache(cache);
+    setPrintedWoNumbers({ ...cache });
+  }, []);
+
+  // Löscht alle "gedruckt"-Markierungen (z.B. wenn eine neue Produktionswoche beginnt).
+  const clearPrintedWoCache = useCallback(() => {
+    printedWoCacheRef.current = {};
+    storage.setItem(STORAGE_KEYS.printedWoNumbers, null, true);
+    setPrintedWoNumbers({});
+  }, []);
+
   const printPdf = useCallback((rows: KetRow[]) => {
     try {
       const title = `KET Breakdown – ${new Date().toLocaleDateString("de-DE")}`;
@@ -481,11 +620,14 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       w.document.write(html);
       w.document.close();
       setTimeout(() => { w.focus(); w.print(); }, PDF_PRINT_DELAY_MS);
+      // Optimistisch markiert (window.print() liefert keinen Abschluss-Callback,
+      // dasselbe Limit gilt bereits für den bestehenden Druck-Flow).
+      markAsPrinted(rows);
     } catch (error) {
       console.error("[KetBreakdown] Print PDF failed:", error);
       alert(`Fehler beim Drucken: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [calcMap, caps, source, woInstructions]);
+  }, [calcMap, caps, source, woInstructions, markAsPrinted]);
 
   const downloadPdf = useCallback(async (rows: KetRow[], suggestedName: string) => {
     let url: string | null = null;
@@ -513,20 +655,22 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      markAsPrinted(rows);
     } catch (error) {
       console.error("[KetBreakdown] Download PDF failed:", error);
       setBulkDlError(error instanceof Error ? error.message : String(error));
     } finally {
       if (url) URL.revokeObjectURL(url);
     }
-  }, [calcMap, caps, source, woInstructions]);
+  }, [calcMap, caps, source, woInstructions, markAsPrinted]);
 
   // Persistiert neue Instructions im localStorage-Cache und aktualisiert State
-  const persistInstructions = useCallback((generated: Record<string, WoInstruction>, rows: KetRow[]) => {
+  // (targets: WO-Ebene oder einzelne Komponenten, siehe generationTargetsForRow).
+  const persistInstructions = useCallback((generated: Record<string, WoInstruction>, targets: GenerationTarget[]) => {
     const cache = instructionCacheRef.current;
-    for (const row of rows) {
-      const inst = generated[row.key];
-      if (inst) cache[instructionCacheKey(row)] = inst;
+    for (const target of targets) {
+      const inst = generated[target.key];
+      if (inst) cache[target.cacheKey] = inst;
     }
     instructionCacheRef.current = cache;
     saveInstructionCache(cache);
@@ -541,35 +685,40 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     setBatchInstructionStatus("Instruction-Cache geleert");
   }, []);
 
+
+  // Baut alle Generierungsziele für eine Menge Zeilen — bei zusammengesetzten
+  // Sub-Rezepten ein Ziel pro Komponente statt eines pro WO (siehe
+  // generationTargetsForRow).
+  const targetsForRows = useCallback((rows: KetRow[]): GenerationTarget[] =>
+    rows.flatMap((row) => {
+      const calc = calcMap.get(row.key);
+      return calc ? generationTargetsForRow(row, calc) : [];
+    }), [calcMap]);
+
   const generateInstructionsForSelectedDays = useCallback(async (forceAll = false) => {
     if (instructionRows.length === 0) return;
-    // Delta-Logik: nur WOs ohne bestehende Instruction generieren
-    const rowsToGenerate = forceAll
-      ? instructionRows
-      : instructionRows.filter((row) => !woInstructions[row.key]);
-    if (rowsToGenerate.length === 0) {
+    const allTargets = targetsForRows(instructionRows);
+    // Delta-Logik: nur Ziele ohne bestehende Instruction generieren
+    const targetsToGenerate = forceAll ? allTargets : allTargets.filter((t) => !woInstructions[t.key]);
+    if (targetsToGenerate.length === 0) {
       setBatchInstructionStatus("Alle WOs haben bereits Instructions (aus Cache)");
       return;
     }
     setBatchInstructionBusy(true);
-    const skipped = instructionRows.length - rowsToGenerate.length;
+    const skipped = allTargets.length - targetsToGenerate.length;
     const skipNote = skipped > 0 ? ` (${skipped} aus Cache)` : "";
-    setBatchInstructionStatus(`Erzeuge ${rowsToGenerate.length} WO-Instructions${skipNote} …`);
+    setBatchInstructionStatus(`Erzeuge ${targetsToGenerate.length} WO-Instructions${skipNote} …`);
     setFailedInstructions([]);
     try {
-      const result = await generateWoInstructionsBatch(rowsToGenerate.map((row) => ({
-        key: row.key,
-        row,
-        calc: calcMap.get(row.key)!,
-      })).filter((item) => item.calc), (chunkResult, done, total) => {
-        persistInstructions(chunkResult.generated, rowsToGenerate);
+      const result = await generateWoInstructionsBatch(targetsToGenerate, (chunkResult, done, total) => {
+        persistInstructions(chunkResult.generated, targetsToGenerate);
         setBatchInstructionStatus(`${done} von ${total} WO-Instructions verarbeitet${skipNote} …`);
       });
-      persistInstructions(result.generated, rowsToGenerate);
+      persistInstructions(result.generated, targetsToGenerate);
       const genCount = Object.keys(result.generated).length;
       if (result.failed.length > 0) {
         setFailedInstructions(result.failed);
-        setBatchInstructionStatus(`${genCount} von ${rowsToGenerate.length} erzeugt · ${result.failed.length} fehlgeschlagen${skipNote}`);
+        setBatchInstructionStatus(`${genCount} von ${targetsToGenerate.length} erzeugt · ${result.failed.length} fehlgeschlagen${skipNote}`);
       } else {
         setBatchInstructionStatus(`${genCount} WO-Instructions erzeugt${skipNote}`);
       }
@@ -579,31 +728,28 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [instructionRows, calcMap, woInstructions, persistInstructions]);
+  }, [instructionRows, targetsForRows, woInstructions, persistInstructions]);
 
   // Gezielte Instruction-Generierung für per Checkbox ausgewählte WOs (unabhängig von der
   // Tage-Auswahl oben) — gleicher Ablauf wie generateInstructionsForSelectedDays, nur mit
   // selectedWoKeys statt activeInstructionDays als Quelle der zu erzeugenden Zeilen.
   const generateInstructionsForSelection = useCallback(async () => {
     const rowsToGenerate = ketRows.filter((row) => selectedWoKeys.has(row.key));
-    if (rowsToGenerate.length === 0) return;
+    const targetsToGenerate = targetsForRows(rowsToGenerate);
+    if (targetsToGenerate.length === 0) return;
     setBatchInstructionBusy(true);
-    setBatchInstructionStatus(`Erzeuge ${rowsToGenerate.length} WO-Instructions für Auswahl …`);
+    setBatchInstructionStatus(`Erzeuge ${targetsToGenerate.length} WO-Instructions für Auswahl …`);
     setFailedInstructions([]);
     try {
-      const result = await generateWoInstructionsBatch(rowsToGenerate.map((row) => ({
-        key: row.key,
-        row,
-        calc: calcMap.get(row.key)!,
-      })).filter((item) => item.calc), (chunkResult, done, total) => {
-        persistInstructions(chunkResult.generated, rowsToGenerate);
+      const result = await generateWoInstructionsBatch(targetsToGenerate, (chunkResult, done, total) => {
+        persistInstructions(chunkResult.generated, targetsToGenerate);
         setBatchInstructionStatus(`${done} von ${total} ausgewählten WO-Instructions verarbeitet …`);
       });
-      persistInstructions(result.generated, rowsToGenerate);
+      persistInstructions(result.generated, targetsToGenerate);
       const genCount = Object.keys(result.generated).length;
       if (result.failed.length > 0) {
         setFailedInstructions(result.failed);
-        setBatchInstructionStatus(`${genCount} von ${rowsToGenerate.length} erzeugt · ${result.failed.length} fehlgeschlagen`);
+        setBatchInstructionStatus(`${genCount} von ${targetsToGenerate.length} erzeugt · ${result.failed.length} fehlgeschlagen`);
       } else {
         setBatchInstructionStatus(`${genCount} WO-Instructions für Auswahl erzeugt`);
       }
@@ -613,23 +759,20 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [ketRows, selectedWoKeys, calcMap, persistInstructions]);
+  }, [ketRows, selectedWoKeys, targetsForRows, persistInstructions]);
 
   const retryFailedInstructions = useCallback(async () => {
     if (failedInstructions.length === 0) return;
     setBatchInstructionBusy(true);
     const retryKeys = new Set(failedInstructions.map((f) => f.key));
-    const retryItems = instructionRows
-      .filter((row) => retryKeys.has(row.key))
-      .map((row) => ({ key: row.key, row, calc: calcMap.get(row.key)! }))
-      .filter((item) => item.calc);
+    const retryItems = targetsForRows(instructionRows).filter((t) => retryKeys.has(t.key));
     setBatchInstructionStatus(`Wiederhole ${retryItems.length} fehlgeschlagene WOs …`);
     try {
       const result = await generateWoInstructionsBatch(retryItems, (chunkResult, done, total) => {
-        persistInstructions(chunkResult.generated, retryItems.map(i => i.row));
+        persistInstructions(chunkResult.generated, retryItems);
         setBatchInstructionStatus(`${done} von ${total} Wiederholungen verarbeitet …`);
       });
-      persistInstructions(result.generated, retryItems.map(i => i.row));
+      persistInstructions(result.generated, retryItems);
       const genCount = Object.keys(result.generated).length;
       if (result.failed.length > 0) {
         setFailedInstructions(result.failed);
@@ -643,7 +786,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [failedInstructions, instructionRows, calcMap, persistInstructions]);
+  }, [failedInstructions, instructionRows, targetsForRows, persistInstructions]);
   const totalBatches = weekFilteredRows.reduce((s, row) => s + (calcMap.get(row.key)?.batches ?? 0), 0);
 
   if (ketRows.length === 0) {
@@ -696,6 +839,26 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                 : `◯ Alle Wochen (${ketRows.length})`}
             </button>
           )}
+          {/* Schicht/Run — beide "später zuschaltbar" (siehe ketRunLogic.ts),
+              standardmäßig aus. Run ist eine Schätzung, kein WMS-Fakt. */}
+          <div className="mt-1.5 flex gap-1.5">
+            <button
+              type="button"
+              title="Schicht-Uhrzeiten (Frühschicht 06-14 / Spätschicht 14-22 Uhr) anzeigen"
+              className={`flex-1 rounded-lg px-2 py-1 text-[9px] font-bold transition-colors ${showShifts ? "bg-blue-600 text-white" : "bg-white/10 text-blue-200 hover:bg-white/20"}`}
+              onClick={() => setShowShifts((v) => !v)}
+            >
+              🕒 Schicht
+            </button>
+            <button
+              type="button"
+              title="Run 1/2 anzeigen — geschätzt aus kumulierten Wochen-Portionen je Meal, keine WMS-verifizierte Tatsache"
+              className={`flex-1 rounded-lg px-2 py-1 text-[9px] font-bold transition-colors ${showRuns ? "bg-amber-600 text-white" : "bg-white/10 text-blue-200 hover:bg-white/20"}`}
+              onClick={() => setShowRuns((v) => !v)}
+            >
+              🔁 Run (Schätzung)
+            </button>
+          </div>
           {source && (
             <div
               className={`text-[9px] mt-1 font-mono truncate ${source === "LiveWMS" ? "text-amber-300 font-bold" : source === "FirestoreStale" ? "text-red-400 font-bold" : "text-blue-400"}`}
@@ -899,11 +1062,15 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             {batchInstructionBusy
               ? "Instructions werden erzeugt …"
               : (() => {
-                  const cached = instructionRows.filter((r) => woInstructions[r.key]).length;
-                  const newCount = instructionRows.length - cached;
+                  // Zählt Ziele (targets), nicht WO-Zeilen: eine zusammengesetzte
+                  // WO hat mehrere Instructions (eine je Komponente) — row.key
+                  // allein trägt für sie nie eine Instruction (siehe woInstructions).
+                  const targets = targetsForRows(instructionRows);
+                  const cached = targets.filter((t) => woInstructions[t.key]).length;
+                  const newCount = targets.length - cached;
                   return newCount > 0
-                    ? `Instructions für ${newCount} neue WOs erzeugen${cached > 0 ? ` (${cached} aus Cache)` : ""}`
-                    : `Alle ${instructionRows.length} WOs haben Instructions`;
+                    ? `${newCount} neue Kochanweisungen erzeugen${cached > 0 ? ` (${cached} aus Cache)` : ""}`
+                    : `Alle ${targets.length} Kochanweisungen vorhanden`;
                 })()
             }
           </button>
@@ -926,7 +1093,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               <details className="mt-1">
                 <summary className="cursor-pointer text-[9px] text-red-700 font-semibold">Fehlgeschlagene WOs anzeigen</summary>
                 <ul className="mt-0.5 space-y-0.5 text-[8px] text-red-600 max-h-24 overflow-y-auto">
-                  {failedInstructions.map((f) => <li key={f.key}>WO {f.woNumber}: {f.error}</li>)}
+                  {failedInstructions.map((f) => <li key={f.key}>WO {f.woNumber}{f.componentName ? ` · ${f.componentName}` : ""}: {f.error}</li>)}
                 </ul>
               </details>
             </div>
@@ -1010,6 +1177,14 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                           <div className="flex items-start justify-between gap-1 mb-1">
                             <span className={`text-[11px] font-black leading-tight ${isSelected ? "text-white" : "text-[#1e3a5f]"}`}>
                               WO {row.woNumber}
+                              {printedWoNumbers[row.woNumber] && (
+                                <span
+                                  className={`ml-1 text-[9px] font-black ${isSelected ? "text-emerald-300" : "text-emerald-600"}`}
+                                  title={`Bereits gedruckt/gespeichert am ${new Date(printedWoNumbers[row.woNumber]).toLocaleString("de-DE")}`}
+                                >
+                                  ✓
+                                </span>
+                              )}
                             </span>
                             <div className="flex items-center gap-1 shrink-0">
                               {calc && calc.batches > 0 && (
@@ -1033,6 +1208,16 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                           <div className={`text-[10px] truncate leading-tight ${isSelected ? "text-blue-200" : "text-slate-600"} flex items-center gap-1`}>
                             {row.subRecipeName || row.recipeName}
                             <LiveBadge recipeCode={row.recipeCode} />
+                            {showRuns && runAssignments.get(row.key) && (
+                              <span
+                                className="shrink-0 text-[8px] font-black px-1 py-0.5 rounded bg-amber-500/20 text-amber-700"
+                                title={runAssignments.get(row.key)!.isSplit
+                                  ? `Geschätzt: ${Math.round(runAssignments.get(row.key)!.cumulativeSharePct * 100)}% des Wochenvolumens dieses Meals bis einschließlich diesem Tag — keine WMS-verifizierte Tatsache`
+                                  : "Nur ein Produktionstag diese Woche — kein echter Run-Split"}
+                              >
+                                🔁 Run {runAssignments.get(row.key)!.run}
+                              </span>
+                            )}
                             {calc?.chillerAssignment && (
                               <span
                                 className="shrink-0 text-[8px] font-black px-1 py-0.5 rounded"
@@ -1046,8 +1231,11 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                             )}
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5">
-                            <span className={`text-[8px] font-semibold ${isSelected ? "text-blue-300" : "text-slate-400"}`}>
-                              Shift {row.dateNeeded.match(/[-–]\s*(\d+)$/)?.[1] ?? "—"}
+                            <span
+                              className={`text-[8px] font-semibold ${isSelected ? "text-blue-300" : "text-slate-400"}`}
+                              title={showShifts ? shiftLabel(row.shift) ?? undefined : undefined}
+                            >
+                              {showShifts && shiftLabel(row.shift) ? shiftLabel(row.shift) : `Shift ${row.dateNeeded.match(/[-–]\s*(\d+)$/)?.[1] ?? "—"}`}
                             </span>
                             <span className={`text-[8px] font-semibold px-1.5 py-0.5 rounded-md ${isSelected ? `${sc.bg} ${sc.text}` : `${sc.bg} ${sc.text}`}`}>
                               {row.kitchenStatus || "—"}
@@ -1111,55 +1299,87 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           </div>
           <div className="text-[8px] text-slate-400 text-center -mt-0.5">Ausgewählte WO</div>
 
-          {/* Alle / gefilterte WOs */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => printPdf(bulkPrintRows)}
-              disabled={weekFilteredRows.length === 0}
-              title="Druckdialog – alle sichtbaren WOs (je WO eine Seite)"
-              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 py-2 rounded-xl transition-colors border border-slate-200"
-            >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-              Drucken
-            </button>
-            <button
-              type="button"
-              disabled={weekFilteredRows.length === 0 || bulkDlBusy}
-              title="Jede sichtbare WO als eigene PDF-Datei speichern (WO-Nummer + Mealcode im Dateinamen)"
-              onClick={async () => {
-                const rows = bulkPrintRows;
-                setBulkDlBusy(true);
-                setBulkDlError(null);
-                setBulkDlStatus(null);
-                const failed: string[] = [];
-                for (let i = 0; i < rows.length; i++) {
-                  const row = rows[i];
-                  setBulkDlStatus(`${i + 1} von ${rows.length} gespeichert …`);
-                  try {
-                    await downloadPdf([row], woFilename(row));
-                  } catch (error) {
-                    console.error(`[KetBreakdown] Download failed for WO ${row.woNumber}:`, error);
-                    failed.push(row.woNumber);
-                  }
-                }
-                setBulkDlStatus(null);
-                setBulkDlError(failed.length > 0 ? `${failed.length} von ${rows.length} fehlgeschlagen: WO ${failed.join(", ")}` : null);
-                setBulkDlBusy(false);
-              }}
-              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 disabled:opacity-30 disabled:cursor-not-allowed text-emerald-800 py-2 rounded-xl transition-colors border border-emerald-200"
-            >
-              {bulkDlBusy ? (
-                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-              ) : (
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              )}
-              Speichern
-            </button>
-          </div>
-          <div className="text-[8px] text-slate-400 text-center -mt-0.5">
-            Alle sichtbaren ({bulkPrintRows.length}) WOs
-          </div>
+          {/* Alle / gefilterte WOs — bereits gedruckte/gespeicherte WOs werden
+              standardmäßig übersprungen (siehe markAsPrinted), damit ein
+              erneuter CSV-Upload (der immer alte + neue WOs gemischt enthält)
+              nicht versehentlich alles nochmal ausdruckt. Nur nach explizitem
+              Häkchen werden sie erneut mit eingeschlossen. */}
+          {(() => {
+            const newBulkRows = bulkPrintRows.filter((r) => !printedWoNumbers[r.woNumber]);
+            const alreadyPrintedCount = bulkPrintRows.length - newBulkRows.length;
+            const effectiveBulkRows = includeAlreadyPrinted ? bulkPrintRows : newBulkRows;
+            return (
+              <>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => printPdf(effectiveBulkRows)}
+                    disabled={effectiveBulkRows.length === 0}
+                    title="Druckdialog – alle sichtbaren, noch nicht gedruckten WOs (je WO eine Seite)"
+                    className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 py-2 rounded-xl transition-colors border border-slate-200"
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                    Drucken
+                  </button>
+                  <button
+                    type="button"
+                    disabled={effectiveBulkRows.length === 0 || bulkDlBusy}
+                    title="Jede sichtbare, noch nicht gedruckte WO als eigene PDF-Datei speichern"
+                    onClick={async () => {
+                      const rows = effectiveBulkRows;
+                      setBulkDlBusy(true);
+                      setBulkDlError(null);
+                      setBulkDlStatus(null);
+                      const failed: string[] = [];
+                      for (let i = 0; i < rows.length; i++) {
+                        const row = rows[i];
+                        setBulkDlStatus(`${i + 1} von ${rows.length} gespeichert …`);
+                        try {
+                          await downloadPdf([row], woFilename(row));
+                        } catch (error) {
+                          console.error(`[KetBreakdown] Download failed for WO ${row.woNumber}:`, error);
+                          failed.push(row.woNumber);
+                        }
+                      }
+                      setBulkDlStatus(null);
+                      setBulkDlError(failed.length > 0 ? `${failed.length} von ${rows.length} fehlgeschlagen: WO ${failed.join(", ")}` : null);
+                      setBulkDlBusy(false);
+                    }}
+                    className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 disabled:opacity-30 disabled:cursor-not-allowed text-emerald-800 py-2 rounded-xl transition-colors border border-emerald-200"
+                  >
+                    {bulkDlBusy ? (
+                      <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                    ) : (
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                    )}
+                    Speichern
+                  </button>
+                </div>
+                <div className="text-[8px] text-slate-400 text-center -mt-0.5">
+                  {alreadyPrintedCount > 0
+                    ? `${newBulkRows.length} neue WOs${includeAlreadyPrinted ? ` + ${alreadyPrintedCount} bereits gedruckte` : ""}`
+                    : `Alle sichtbaren (${bulkPrintRows.length}) WOs`}
+                </div>
+                {alreadyPrintedCount > 0 && (
+                  <label className="flex items-center justify-center gap-1.5 text-[9px] font-semibold text-slate-500 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeAlreadyPrinted}
+                      onChange={(e) => setIncludeAlreadyPrinted(e.target.checked)}
+                      className="h-3 w-3 rounded border-slate-300"
+                    />
+                    {alreadyPrintedCount} bereits gedruckte auch einschließen
+                  </label>
+                )}
+                {alreadyPrintedCount > 0 && (
+                  <button type="button" onClick={clearPrintedWoCache}
+                    className="w-full text-[8px] text-slate-300 hover:text-red-500 transition-colors">
+                    × Alle "gedruckt"-Markierungen zurücksetzen
+                  </button>
+                )}
+              </>
+            );
+          })()}
           {bulkDlStatus && (
             <div className="text-[9px] text-emerald-700 font-semibold text-center">
               {bulkDlStatus}
@@ -1195,16 +1415,31 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             >
               Alle WOs
             </button>
+            <button
+              type="button"
+              onClick={() => setMainViewMode("equipment")}
+              className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "equipment" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
+            >
+              Equipment
+            </button>
           </div>
         </div>
 
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-          {mainViewMode === "list" ? (
+          {mainViewMode === "equipment" ? (
+            <KetEquipmentPanel
+              rows={ketRows}
+              calcMap={calcMap}
+              runAssignments={runAssignments}
+            />
+          ) : mainViewMode === "list" ? (
             <KetWoOverview
               groups={filteredGroups}
               calcMap={calcMap}
               selectedKey={selectedKey}
               onSelect={(key) => { setSelectedKey(key); setMainViewMode("detail"); }}
+              printedWoNumbers={printedWoNumbers}
+              runAssignments={showRuns ? runAssignments : undefined}
             />
           ) : !selectedRow ? (
             <EmptyState />
@@ -1218,10 +1453,54 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               onGenerateInstruction={async () => {
                 if (!selectedCalc) throw new Error("Keine Berechnung für diese WO vorhanden");
                 const instruction = await generateWoInstruction(selectedRow, selectedCalc);
-                persistInstructions({ [selectedRow.key]: instruction }, [selectedRow]);
+                persistInstructions({ [selectedRow.key]: instruction }, [{ key: selectedRow.key, cacheKey: instructionCacheKey(selectedRow), row: selectedRow, calc: selectedCalc }]);
               }}
               onInstructionEdit={(updated) => {
-                persistInstructions({ [selectedRow.key]: updated }, [selectedRow]);
+                if (!selectedCalc) return;
+                persistInstructions({ [selectedRow.key]: updated }, [{ key: selectedRow.key, cacheKey: instructionCacheKey(selectedRow), row: selectedRow, calc: selectedCalc }]);
+              }}
+              componentInstructions={Object.fromEntries(
+                (selectedCalc?.components ?? [])
+                  .map((c) => [c.name, woInstructions[`${selectedRow.key}::${c.name}`]] as const)
+                  .filter((entry): entry is [string, WoInstruction] => !!entry[1]),
+              )}
+              onGenerateComponentInstruction={async (component) => {
+                if (!selectedCalc) throw new Error("Keine Berechnung für diese WO vorhanden");
+                const instruction = await generateWoInstruction(selectedRow, selectedCalc, component);
+                const target: GenerationTarget = {
+                  key: `${selectedRow.key}::${component.name}`,
+                  cacheKey: instructionCacheKey(selectedRow, component.name),
+                  row: selectedRow,
+                  calc: selectedCalc,
+                  component,
+                };
+                persistInstructions({ [target.key]: instruction }, [target]);
+              }}
+              onComponentInstructionEdit={(component, updated) => {
+                if (!selectedCalc) return;
+                const target: GenerationTarget = {
+                  key: `${selectedRow.key}::${component.name}`,
+                  cacheKey: instructionCacheKey(selectedRow, component.name),
+                  row: selectedRow,
+                  calc: selectedCalc,
+                  component,
+                };
+                persistInstructions({ [target.key]: updated }, [target]);
+              }}
+              onGenerateAllComponentInstructions={async () => {
+                if (!selectedCalc) throw new Error("Keine Berechnung für diese WO vorhanden");
+                // Dedupliziert bereits gleichnamige Komponenten (z.B. wiederholte
+                // Zubereitungsschritte im selben Baum, siehe generationTargetsForRow).
+                const allTargets = generationTargetsForRow(selectedRow, selectedCalc);
+                const missing = allTargets.filter((t) => !woInstructions[t.key]);
+                // Sind schon alle erzeugt, erzeugt der Button bewusst ALLE neu
+                // (gleiche "erneut erzeugen"-Konvention wie die Einzel-Buttons).
+                const toGenerate = missing.length > 0 ? missing : allTargets;
+                const result = await generateWoInstructionsBatch(toGenerate);
+                persistInstructions(result.generated, toGenerate);
+                if (result.failed.length > 0) {
+                  throw new Error(`${result.failed.length} von ${toGenerate.length} Kochanweisungen fehlgeschlagen: ${result.failed.map((f) => f.componentName ?? f.woNumber).join(", ")}`);
+                }
               }}
               onDownload={async () => {
                 if (!selectedRow) return;
@@ -1232,6 +1511,18 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                 setManualEquipment((current) => {
                   const next = { ...current };
                   if (override) next[selectedRow.key] = override;
+                  else delete next[selectedRow.key];
+                  return next;
+                });
+              }}
+              componentManualEquipment={componentManualEquipment[selectedRow.key]}
+              onComponentManualEquipmentChange={(componentName, override) => {
+                setComponentManualEquipment((current) => {
+                  const rowMap = { ...(current[selectedRow.key] ?? {}) };
+                  if (override) rowMap[componentName] = override;
+                  else delete rowMap[componentName];
+                  const next = { ...current };
+                  if (Object.keys(rowMap).length > 0) next[selectedRow.key] = rowMap;
                   else delete next[selectedRow.key];
                   return next;
                 });

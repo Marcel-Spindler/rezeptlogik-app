@@ -3,6 +3,7 @@
 import { useState, type RefObject } from "react";
 import { fmtDateHeader, fmtKg, fmtNum, statusColors } from "./ketLogic";
 import type { BatchCalc, KetRow } from "./ketTypes";
+import type { RunInfo } from "./ketRunLogic";
 
 export function EmptyState() {
   return (
@@ -89,11 +90,19 @@ export function KetWoOverview({
   calcMap,
   selectedKey,
   onSelect,
+  printedWoNumbers,
+  runAssignments,
 }: {
   groups: [string, KetRow[]][];
   calcMap: Map<string, BatchCalc>;
   selectedKey: string | null;
   onSelect: (key: string) => void;
+  // WO-Nummer → ISO-Zeitstempel, wann zuletzt gedruckt/gespeichert (siehe
+  // KetBreakdownView.markAsPrinted) — optional, nur für die "✓"-Markierung.
+  printedWoNumbers?: Record<string, string>;
+  // row.key → geschätzte Run-Zuteilung (siehe ketRunLogic.ts) — nur gesetzt,
+  // wenn der "Run"-Toggle in KetBreakdownView aktiv ist.
+  runAssignments?: Map<string, RunInfo>;
 }) {
   const totalRows = groups.reduce((s, [, rows]) => s + rows.length, 0);
 
@@ -139,6 +148,19 @@ export function KetWoOverview({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-black text-[#1e3a5f]">WO {row.woNumber}</span>
+                          {printedWoNumbers?.[row.woNumber] && (
+                            <span className="text-[10px] font-black text-emerald-600" title={`Bereits gedruckt/gespeichert am ${new Date(printedWoNumbers[row.woNumber]).toLocaleString("de-DE")}`}>✓</span>
+                          )}
+                          {runAssignments?.get(row.key) && (
+                            <span
+                              className="text-[8px] font-black px-1 py-0.5 rounded bg-amber-100 text-amber-700"
+                              title={runAssignments.get(row.key)!.isSplit
+                                ? `Geschätzt: ${Math.round(runAssignments.get(row.key)!.cumulativeSharePct * 100)}% des Wochenvolumens dieses Meals bis einschließlich diesem Tag`
+                                : "Nur ein Produktionstag diese Woche — kein echter Run-Split"}
+                            >
+                              🔁 Run {runAssignments.get(row.key)!.run}
+                            </span>
+                          )}
                           {row.recipeCode && (
                             <span className="text-[9px] font-mono text-slate-400">{row.recipeCode}</span>
                           )}
@@ -201,23 +223,26 @@ export function KetWoOverview({
 // ── Micro components ───────────────────────────────────────────────────────
 
 export function StatCard({
-  label, value, sub, subGreen, highlight, warn, badge, badgeTitle,
+  label, value, sub, subGreen, highlight, warn, badge, badgeTitle, compact,
 }: {
   label: string; value: string; sub?: string; subGreen?: boolean; highlight?: boolean; warn?: string;
   // Small, always-visible indicator (e.g. "📖" for a Kuechenbible-sourced
   // value) — shown next to the label so the source is clear without
   // requiring a hover, per label with an optional tooltip for detail.
   badge?: string; badgeTitle?: string;
+  // Kleinere Variante — die WO-Kopfzeile (Ziel-Portionen/Total KG/Batche/…)
+  // soll gegenüber den neuen Komponenten-Blöcken darunter optisch zurücktreten.
+  compact?: boolean;
 }) {
   return (
-    <div className={`rounded-2xl px-4 py-3.5 border ${
+    <div className={`rounded-2xl border ${compact ? "px-3 py-2" : "px-4 py-3.5"} ${
       highlight
         ? "bg-[#1e3a5f] border-[#1e3a5f]"
         : warn
           ? "bg-amber-50 border-amber-200"
           : "bg-white border-slate-200 shadow-sm"
     }`}>
-      <div className={`flex items-center gap-1 text-[8px] font-black uppercase tracking-[0.12em] mb-1.5 ${
+      <div className={`flex items-center gap-1 text-[7px] font-black uppercase tracking-[0.12em] ${compact ? "mb-1" : "mb-1.5"} ${
         highlight ? "text-blue-300" : warn ? "text-amber-500" : "text-slate-400"
       }`}>
         <span>{label}</span>
@@ -225,11 +250,11 @@ export function StatCard({
           <span title={badgeTitle} aria-label={badgeTitle ?? "Kuechenbible"} className="cursor-help">{badge}</span>
         )}
       </div>
-      <div className={`text-xl font-black tabular-nums leading-tight ${
+      <div className={`${compact ? "text-sm" : "text-xl"} font-black tabular-nums leading-tight ${
         highlight ? "text-white" : warn ? "text-amber-800" : "text-slate-900"
       }`}>{value}</div>
       {sub && (
-        <div className={`text-[10px] font-medium mt-0.5 ${
+        <div className={`text-[9px] font-medium mt-0.5 ${
           subGreen ? "text-emerald-600" : highlight ? "text-blue-300" : "text-slate-400"
         }`}>{sub}</div>
       )}

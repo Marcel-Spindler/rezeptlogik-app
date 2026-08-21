@@ -1,4 +1,4 @@
-import type { BatchCalc, KetRow, WoInstruction } from "./ketTypes";
+import type { BatchCalc, KetRow, WoComponent, WoInstruction } from "./ketTypes";
 
 const PROCESS_ORDER = [
   "SPICE PORTIONING", "VEGGIE DEBOX", "PROTEIN DEBOX", "MARINADE", "HAND MARINADE",
@@ -116,7 +116,33 @@ function roundKg(kg: number): number {
 // COMPARTMENT" …), keine Kochanweisung. Deshalb NICHT als sourceInstruction an
 // Gemini geben (würde den Kontext mit falsch beschrifteten Daten vergiften) —
 // nur die selbst berechneten, verlässlichen Batch-Mengen fließen in den Prompt.
-export function buildWoInstructionContext(row: KetRow, calc: BatchCalc): string {
+// Für zusammengesetzte Sub-Rezepte (calc.components — siehe ketTypes.WoComponent):
+// ein optionales `component` liefert einen auf NUR diese Zubereitungskomponente
+// verengten Kontext (eigene Zutaten, eigenes Equipment, eigene Batch-Mengen),
+// statt der kombinierten WO-Gesamtmenge über mehrere physisch getrennte
+// Zubereitungsschritte hinweg (z.B. Rindfleisch-Schmoren + Gemüse-Rösten).
+export function buildWoInstructionContext(row: KetRow, calc: BatchCalc, component?: WoComponent): string {
+  if (component) {
+    const orderedCookMethods = orderCookingMethods(component.resolvedCookMethods);
+    return JSON.stringify({
+      recipeName: row.recipeName,
+      subRecipeName: row.subRecipeName,
+      componentName: component.name,
+      processFlow: orderedCookMethods,
+      primaryEquipment: component.primaryEquip,
+      equipment: component.equipBatches.map((batch) => batch.equip),
+      batches: component.batches > 0 ? component.batches : null,
+      perBatchKg: component.perBatchKg > 0 ? roundKg(component.perBatchKg) : null,
+      totalKg: component.totalKg > 0 ? roundKg(component.totalKg) : null,
+      ingredientFlags: component.ingredients
+        .filter((ing) => ing.separate || ing.spiceRoom)
+        .map((ing) => ({ name: ing.name, separate: ing.separate, spiceRoom: ing.spiceRoom })),
+      rti: false,
+      neverBatch: false,
+      allergensContains: calc.allergensContains,
+    }, null, 2);
+  }
+
   const orderedCookMethods = orderCookingMethods(calc.resolvedCookMethods);
   return JSON.stringify({
     recipeName: row.recipeName,
@@ -136,14 +162,14 @@ export function buildWoInstructionContext(row: KetRow, calc: BatchCalc): string 
   }, null, 2);
 }
 
-export async function generateWoInstruction(row: KetRow, calc: BatchCalc): Promise<WoInstruction> {
+export async function generateWoInstruction(row: KetRow, calc: BatchCalc, component?: WoComponent): Promise<WoInstruction> {
   const endpoint = typeof window === "undefined"
     ? "http://127.0.0.1:3142/api/local-db/gemini-instruction"
     : "/api/local-db/gemini-instruction";
   const response = await fetchWithTimeout(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ context: buildWoInstructionContext(row, calc) }),
+    body: JSON.stringify({ context: buildWoInstructionContext(row, calc, component) }),
   });
   const raw = await response.text();
   let payload: { instruction?: WoInstruction; error?: string };
@@ -160,7 +186,7 @@ export async function generateWoInstruction(row: KetRow, calc: BatchCalc): Promi
 
 export interface WoBatchResult {
   generated: Record<string, WoInstruction>;
-  failed: Array<{ key: string; woNumber: string; error: string }>;
+  failed: Array<{ key: string; woNumber: string; componentName?: string; error: string }>;
 }
 
 // Firebase-Hosting-Rewrites zu Cloud Functions werden vom Loadbalancer nach ~60s
@@ -179,7 +205,7 @@ function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs = FETCH_TIME
 }
 
 async function generateWoInstructionsChunk(
-  items: Array<{ key: string; row: KetRow; calc: BatchCalc }>,
+  items: Array<{ key: string; row: KetRow; calc: BatchCalc; component?: WoComponent }>,
 ): Promise<WoBatchResult> {
   const endpoint = typeof window === "undefined"
     ? "http://127.0.0.1:3142/api/local-db/gemini-instructions-batch"
@@ -190,7 +216,7 @@ async function generateWoInstructionsChunk(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ items: items.map((item) => ({
       key: item.key,
-      context: buildWoInstructionContext(item.row, item.calc),
+      context: buildWoInstructionContext(item.row, item.calc, item.component),
     })) }),
   });
   const raw = await response.text();
@@ -206,21 +232,21 @@ async function generateWoInstructionsChunk(
   }
 
   const generated: Record<string, WoInstruction> = {};
-  const failed: Array<{ key: string; woNumber: string; error: string }> = [];
+  const failed: Array<{ key: string; woNumber: string; componentName?: string; error: string }> = [];
 
   for (const item of items) {
     const result = payload.results[item.key];
     if (result?.ok && result.instruction) {
       generated[item.key] = result.instruction;
     } else {
-      failed.push({ key: item.key, woNumber: item.row.woNumber, error: result?.error || "Unbekannter Fehler" });
+      failed.push({ key: item.key, woNumber: item.row.woNumber, componentName: item.component?.name, error: result?.error || "Unbekannter Fehler" });
     }
   }
   return { generated, failed };
 }
 
 export async function generateWoInstructionsBatch(
-  items: Array<{ key: string; row: KetRow; calc: BatchCalc }>,
+  items: Array<{ key: string; row: KetRow; calc: BatchCalc; component?: WoComponent }>,
   onChunkDone?: (result: WoBatchResult, doneCount: number, totalCount: number) => void,
 ): Promise<WoBatchResult> {
   const generated: Record<string, WoInstruction> = {};
