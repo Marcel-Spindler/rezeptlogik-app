@@ -93,6 +93,16 @@ export function KetWoOverview({
   printedWoNumbers,
   runAssignments,
   instructionCache,
+  selectedWoKeys,
+  onToggleWoSelection,
+  onToggleDaySelection,
+  onClearSelection,
+  onPrintSelection,
+  onSaveSelection,
+  onGenerateInstructions,
+  bulkBusy,
+  bulkStatus,
+  bulkError,
 }: {
   groups: [string, KetRow[]][];
   calcMap: Map<string, BatchCalc>;
@@ -101,8 +111,22 @@ export function KetWoOverview({
   printedWoNumbers?: Record<string, string>;
   runAssignments?: Map<string, RunInfo>;
   instructionCache?: Map<string, WoInstruction>;
+  // Massenauswahl (Checkboxen + Sticky-Aktionsleiste) — nur aktiv, wenn der
+  // Aufrufer selectedWoKeys mitgibt. Ohne diese Props verhält sich die
+  // Komponente wie zuvor (reines Durchklicken, keine Checkboxen).
+  selectedWoKeys?: Set<string>;
+  onToggleWoSelection?: (key: string) => void;
+  onToggleDaySelection?: (dayRows: KetRow[]) => void;
+  onClearSelection?: () => void;
+  onPrintSelection?: () => void;
+  onSaveSelection?: () => void;
+  onGenerateInstructions?: () => void;
+  bulkBusy?: boolean;
+  bulkStatus?: string | null;
+  bulkError?: string | null;
 }) {
   const totalRows = groups.reduce((s, [, rows]) => s + rows.length, 0);
+  const selectionCount = selectedWoKeys?.size ?? 0;
 
   if (totalRows === 0) {
     return (
@@ -113,10 +137,64 @@ export function KetWoOverview({
   }
 
   return (
-    <div className="p-4 space-y-5">
-      {groups.map(([date, rows]) => (
+    <>
+      {selectedWoKeys && selectionCount > 0 && (
+        <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 px-4 py-2.5 bg-[#1e3a5f] shadow-md">
+          <span className="text-xs font-black text-white">{selectionCount} WO{selectionCount !== 1 ? "s" : ""} ausgewählt</span>
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            {bulkStatus && <span className="text-[10px] font-semibold text-blue-200">{bulkStatus}</span>}
+            <button
+              type="button"
+              onClick={onPrintSelection}
+              disabled={bulkBusy}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white text-[#1e3a5f] hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              🖨 Drucken
+            </button>
+            <button
+              type="button"
+              onClick={onSaveSelection}
+              disabled={bulkBusy}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ⬇ Speichern
+            </button>
+            {onGenerateInstructions && (
+              <button
+                type="button"
+                onClick={onGenerateInstructions}
+                disabled={bulkBusy}
+                className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                ✎ Anweisungen erzeugen
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClearSelection}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
+            >
+              Auswahl aufheben
+            </button>
+          </div>
+          {bulkError && <div className="w-full text-[10px] font-semibold text-red-200">{bulkError}</div>}
+        </div>
+      )}
+      <div className="p-4 space-y-5">
+      {groups.map(([date, rows]) => {
+        const allDaySelected = !!selectedWoKeys && rows.length > 0 && rows.every(r => selectedWoKeys.has(r.key));
+        return (
         <div key={date}>
           <div className="flex items-center gap-2 mb-2 px-1">
+            {onToggleDaySelection && (
+              <input
+                type="checkbox"
+                checked={allDaySelected}
+                onChange={() => onToggleDaySelection(rows)}
+                title="Alle WOs dieses Tages auswählen"
+                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-700 focus:ring-blue-500 cursor-pointer"
+              />
+            )}
             <span className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
               {fmtDateHeader(date)}
             </span>
@@ -135,18 +213,32 @@ export function KetWoOverview({
               const hasVeggieDebox = methods.includes("VEGGIE DEBOX");
               const hasProteinDebox = methods.includes("PROTEIN DEBOX");
               const gnTotal = calc?.gnTraySummary?.reduce((s, t) => s + t.trays, 0) ?? 0;
+              const isChecked = selectedWoKeys?.has(row.key) ?? false;
 
               return (
-                <button
-                  type="button"
-                  key={row.key}
-                  onClick={() => onSelect(row.key)}
-                  className={`w-full text-left rounded-xl bg-white border shadow-sm hover:shadow transition-all overflow-hidden ${
-                    isSelected ? "border-[#1e3a5f] ring-2 ring-[#1e3a5f]/20" : "border-slate-200"
-                  }`}
-                  style={{ borderLeft: `4px solid ${isSelected ? "#1e3a5f" : "#cbd5e1"}` }}
-                >
-                  <div className="px-4 py-3">
+                <div key={row.key} className="flex items-stretch gap-2">
+                  {onToggleWoSelection && (
+                    <label
+                      className="flex w-9 shrink-0 items-center justify-center rounded-xl cursor-pointer hover:bg-slate-100 transition-colors"
+                      title="Für Massenauswahl markieren"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => onToggleWoSelection(row.key)}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </label>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onSelect(row.key)}
+                    className={`min-w-0 flex-1 text-left rounded-xl bg-white border shadow-sm hover:shadow transition-all overflow-hidden ${
+                      isSelected ? "border-[#1e3a5f] ring-2 ring-[#1e3a5f]/20" : isChecked ? "border-blue-300 ring-2 ring-blue-200" : "border-slate-200"
+                    }`}
+                    style={{ borderLeft: `4px solid ${isSelected ? "#1e3a5f" : isChecked ? "#3b82f6" : "#cbd5e1"}` }}
+                  >
+                    <div className="px-4 py-3">
                     {/* Row 1: WO number + recipe info + kg/batches */}
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
@@ -261,13 +353,16 @@ export function KetWoOverview({
                       </span>
                     </div>
                   </div>
-                </button>
+                  </button>
+                </div>
               );
             })}
           </div>
         </div>
-      ))}
-    </div>
+        );
+      })}
+      </div>
+    </>
   );
 }
 
