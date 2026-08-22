@@ -302,6 +302,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [printedWoNumbers, setPrintedWoNumbers] = useState<Record<string, string>>(() => ({ ...printedWoCacheRef.current }));
   const [includeAlreadyPrinted, setIncludeAlreadyPrinted] = useState(false);
   const [selectedDayFilter, setSelectedDayFilter] = useState<Set<string> | null>(null);
+  const [deboxFilter, setDeboxFilter] = useState<"all" | "protein" | "veggie">("all");
   const [selectedInstructionDays, setSelectedInstructionDays] = useState<Set<string> | null>(null);
   const [selectedWoKeys, setSelectedWoKeys] = useState<Set<string>>(new Set());
   const [batchInstructionBusy, setBatchInstructionBusy] = useState(false);
@@ -433,6 +434,23 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     return groups.filter(([day]) => selectedDayFilter.has(day));
   }, [groups, selectedDayFilter]);
 
+  // Debox-Filter: WOs nach Protein/Veggie Debox trennen.
+  // Protein = neverBatch (Fleisch/Fisch, Factor-Regel "nie splitten") oder factorCapacityKg === ONE_BATCH (sonstige Proteine).
+  // Veggie = alles andere (nicht RTI, nicht Protein).
+  const deboxFilteredGroups = useMemo(() => {
+    if (deboxFilter === "all") return dayFilteredGroups;
+    return dayFilteredGroups
+      .map(([day, rows]) => [day, rows.filter((r) => {
+        const calc = calcMap.get(r.key);
+        if (!calc) return false;
+        // RTI-Artikel (Rohware ohne Cook Methods) gehören zu keiner Debox-Station
+        if (calc.rti) return false;
+        const isProtein = calc.neverBatch || calc.factorCapacityKg === 999999 || calc.factorCapacityKg === 1000;
+        return deboxFilter === "protein" ? isProtein : !isProtein;
+      })] as [string, KetRow[]])
+      .filter(([, rows]) => rows.length > 0);
+  }, [dayFilteredGroups, deboxFilter, calcMap]);
+
   const needle = useMemo(
     () => woSearch.trim().toLowerCase(),
     [woSearch],
@@ -440,8 +458,8 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   
   const filteredGroups = useMemo(() => {
     const base = !needle
-      ? dayFilteredGroups
-      : dayFilteredGroups
+      ? deboxFilteredGroups
+      : deboxFilteredGroups
           .map(([k, rows]) => [k, rows.filter((r) =>
             [r.woNumber, r.recipeCode, r.recipeName, r.subRecipeName].join(" ").toLowerCase().includes(needle)
           )] as [string, KetRow[]])
@@ -462,7 +480,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       });
       return [date, sorted] as [string, KetRow[]];
     });
-  }, [dayFilteredGroups, needle, woSortMode, calcMap]);
+  }, [deboxFilteredGroups, needle, woSortMode, calcMap]);
 
 
   const filteredRows = filteredGroups.flatMap(([, rows]) => rows);
@@ -991,6 +1009,27 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               {label}
             </button>
           ))}
+        </div>
+
+        {/* Debox-Filter: Protein / Veggie */}
+        <div className="px-3 py-1.5 border-b border-slate-100">
+          <div className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-500">Debox</div>
+          <div className="flex gap-1">
+            {([ ["all","Alle"], ["protein","Protein"], ["veggie","Veggie"] ] as ["all"|"protein"|"veggie", string][]).map(([mode, label]) => (
+              <button key={mode} type="button" onClick={() => setDeboxFilter(mode)}
+                className={`flex-1 text-[9px] font-bold px-2 py-1 rounded-md border transition-colors ${
+                  deboxFilter === mode
+                    ? mode === "protein"
+                      ? "bg-red-600 text-white border-red-600"
+                      : mode === "veggie"
+                        ? "bg-green-600 text-white border-green-600"
+                        : "bg-[#1e3a5f] text-white border-[#1e3a5f]"
+                    : "bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-700"
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tag-Filter für WO-Liste */}
