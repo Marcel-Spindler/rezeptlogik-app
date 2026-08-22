@@ -145,9 +145,10 @@ function buildComponentsHtml(row: KetRow, calc: BatchCalc, woInstructions: Recor
 
     return `
     <div class="component-block">
+      <div class="component-wo-ref">WO ${escHtml(row.woNumber)} · ${escHtml(row.recipeCode)} · ${escHtml(row.subRecipeName || row.recipeName)}</div>
       <div class="component-head">
         <span class="component-name">${escHtml(component.name)}</span>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;">${equipTiles}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">${equipTiles}</div>
       </div>
       ${componentFactorHtml}
       ${componentGnHtml}
@@ -194,22 +195,21 @@ export function buildPdf(
     // Per-Equipment Batch-Übersicht — Rest-Batch als eigene Kachel neben den Voll-Batches,
     // statt als Zusatzzeile innerhalb der Voll-Batch-Kachel (bessere Lesbarkeit).
     const equipBatchHtml = calc.equipBatches.length > 0
-      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;">
+      ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin:3px 0;">
           ${calc.equipBatches.map(eb => {
             const fullBatches = Math.max(0, eb.batches - (eb.remainderKg > 0 ? 1 : 0));
             const remainderTile = eb.remainderKg > 0
-              ? `<div style="background:#78350f;color:#fff;border-radius:8px;padding:6px 10px;min-width:80px;text-align:center;">
-                  <div style="font-size:8px;color:#fde68a;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">${eb.label} · Rest</div>
-                  <div style="font-size:18px;font-weight:900;line-height:1;">1× REST</div>
-                  <div style="font-size:8px;color:#fde68a;margin-top:2px;">${eb.remainderKg.toFixed(1)} kg</div>
+              ? `<div style="background:#78350f;color:#fff;border-radius:5px;padding:3px 7px;min-width:60px;text-align:center;">
+                  <div style="font-size:6px;color:#fde68a;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${eb.label} · Rest</div>
+                  <div style="font-size:11px;font-weight:900;line-height:1;">1× REST</div>
+                  <div style="font-size:7px;color:#fde68a;">${eb.remainderKg.toFixed(1)} kg</div>
                 </div>`
               : "";
             return `
-            <div style="background:#1e3a5f;color:#fff;border-radius:8px;padding:6px 10px;min-width:80px;text-align:center;">
-              <div style="font-size:8px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;">${eb.label}</div>
-              <div style="font-size:18px;font-weight:900;line-height:1;">${fullBatches}×</div>
-              <div style="font-size:8px;color:#93c5fd;margin-top:2px;">${eb.perBatchKg} kg je Batch (Kapazität ${eb.capacityKg} kg)</div>
-              ${eb.bibleMatch ? `<div style="font-size:7px;color:#fde68a;font-weight:800;margin-top:2px;">📖 Kuechenbible: ${escHtml(eb.bibleMatch.itemName)}</div>` : ""}
+            <div style="background:#1e3a5f;color:#fff;border-radius:5px;padding:3px 7px;min-width:60px;text-align:center;">
+              <div style="font-size:6px;color:#93c5fd;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${eb.label}</div>
+              <div style="font-size:11px;font-weight:900;line-height:1;">${fullBatches}×</div>
+              <div style="font-size:7px;color:#93c5fd;">${eb.perBatchKg} kg je Batch (Kap. ${eb.capacityKg} kg)</div>
             </div>${remainderTile}`;
           }).join("")}
         </div>`
@@ -219,7 +219,7 @@ export function buildPdf(
       ? `${primaryFullBatches} Batches + 1 Rest-Batch (${calc.remainderKg.toFixed(1)} kg)`
       : `${primaryFullBatches} Batches à ${fmtKg(calc.perBatchKg)}`;
     const gnTrayHtml = calc.gnTraySummary.length > 0
-      ? `<div style="margin:4px 0 6px;font-size:10px;font-weight:800;color:#0369a1;">📦 ${calc.gnTraySummary.map(s => `${s.trays}× ${escHtml(s.gnType)}`).join(" · ")}${calc.components.length > 0 ? " (aus Komponenten)" : ""}</div>`
+      ? `<div style="margin:2px 0;font-size:8px;font-weight:800;color:#0369a1;">📦 ${calc.gnTraySummary.map(s => `${s.trays}× ${escHtml(s.gnType)}`).join(" · ")}${calc.components.length > 0 ? " (aus Komponenten)" : ""}</div>`
       : "";
 
     // Factor-Produktionsregeln (Matteos capacity-rules.js/classify()) — ergänzt die
@@ -231,33 +231,32 @@ export function buildPdf(
     // buildComponentsHtml.
     const factorBadgeHtml = calc.components.length > 0 ? "" : [
       calc.rti
-        ? `<div style="margin:6px 0;padding:6px 10px;background:#fff8f0;border:1px solid #e0a94f;border-radius:6px;font-size:10px;font-weight:800;color:#9a5b0e;">RTI · Ready to Eat → direkt zum Plating (kein Batch)</div>`
+        ? `<div style="margin:3px 0;padding:3px 8px;background:#fff8f0;border:1px solid #e0a94f;border-radius:4px;font-size:8px;font-weight:800;color:#9a5b0e;">RTI · Ready to Eat → direkt zum Plating (kein Batch)</div>`
         : "",
       calc.neverBatch
-        ? `<div style="margin:6px 0;padding:6px 10px;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;font-size:10px;font-weight:800;color:#991b1b;">⚠ Kein Batch — wird als Gesamtmenge produziert (Fleisch/Fisch-Regel, Matteo 2026-07-08)</div>`
+        ? `<div style="margin:3px 0;padding:3px 8px;background:#fef2f2;border:1px solid #fca5a5;border-radius:4px;font-size:8px;font-weight:800;color:#991b1b;">⚠ Kein Batch — Gesamtmenge (Fleisch/Fisch)</div>`
         : "",
       calc.readyMade
-        ? `<div style="margin:6px 0;padding:6px 10px;background:#faf5ff;border:1px solid #d8b4fe;border-radius:6px;font-size:10px;font-weight:800;color:#6b21a8;">Fertigprodukt — wöchentlich vorbereitet, nicht expandieren</div>`
+        ? `<div style="margin:3px 0;padding:3px 8px;background:#faf5ff;border:1px solid #d8b4fe;border-radius:4px;font-size:8px;font-weight:800;color:#6b21a8;">Fertigprodukt — wöchentlich vorbereitet</div>`
         : "",
       !calc.rti && !calc.neverBatch && calc.factorCapacityKg
-        ? `<div style="margin:6px 0;padding:6px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:10px;font-weight:700;color:#166534;">
-            Batch (Factor-Regel): <strong>${calc.factorBatches ?? "—"}×</strong> ${calc.factorBatchQtyKg != null ? fmtKg(calc.factorBatchQtyKg) : "—"}
-            (Kapazität ${calc.factorCapacityKg} kg${calc.factorFallbackCapacity ? " · Fallback, unklares Gemüse" : ""})
+        ? `<div style="margin:3px 0;padding:3px 8px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;font-size:8px;font-weight:700;color:#166534;">
+            Batch (Factor): <strong>${calc.factorBatches ?? "—"}×</strong> ${calc.factorBatchQtyKg != null ? fmtKg(calc.factorBatchQtyKg) : "—"}
+            (Kap. ${calc.factorCapacityKg} kg${calc.factorFallbackCapacity ? " · Fallback" : ""})
           </div>`
         : "",
     ].join("");
     const allergenHtml = calc.allergensContains.length > 0
-      ? `<div style="margin:6px 0;padding:5px 10px;background:#fff8f6;border-bottom:2px solid #f0d8d0;border-radius:6px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
-          <span style="font-weight:900;color:#c62828;font-size:10px;text-decoration:underline;text-decoration-color:#c62828;">⚠ CONTAINS</span>
-          ${calc.allergensContains.map(a => `<span style="background:#c62828;color:#fff;font-weight:800;font-size:9px;padding:2px 8px;border-radius:9px;">${escHtml(a)}</span>`).join("")}
+      ? `<div style="margin:3px 0;padding:3px 8px;background:#fff8f6;border-bottom:1px solid #f0d8d0;border-radius:4px;display:flex;flex-wrap:wrap;gap:3px;align-items:center;">
+          <span style="font-weight:900;color:#c62828;font-size:8px;">⚠ CONTAINS</span>
+          ${calc.allergensContains.map(a => `<span style="background:#c62828;color:#fff;font-weight:800;font-size:7px;padding:1px 5px;border-radius:6px;">${escHtml(a)}</span>`).join("")}
         </div>`
       : "";
-    // Gleiche Allergen→Chiller-Zuteilung wie der eigenständige Blast Chiller Bot.
     const chillerHtml = calc.chillerAssignment
-      ? `<div style="margin:6px 0;padding:5px 10px;background:${calc.chillerAssignment.cfg.headBg};border-radius:6px;display:flex;align-items:center;gap:6px;">
-          <span style="font-weight:900;color:${calc.chillerAssignment.cfg.headColor};font-size:10px;">❄️ ${escHtml(calc.chillerAssignment.cfg.label)}</span>
-          <span style="font-weight:700;color:${calc.chillerAssignment.cfg.headColor};font-size:9px;opacity:.8;">${escHtml(calc.chillerAssignment.cfg.sub)}</span>
-          ${calc.chillerAssignment.unknown ? `<span style="font-weight:900;color:#b45309;font-size:9px;">⚠ unbekannt — bitte manuell prüfen</span>` : ""}
+      ? `<div style="margin:3px 0;padding:3px 8px;background:${calc.chillerAssignment.cfg.headBg};border-radius:4px;display:flex;align-items:center;gap:4px;">
+          <span style="font-weight:900;color:${calc.chillerAssignment.cfg.headColor};font-size:8px;">❄️ ${escHtml(calc.chillerAssignment.cfg.label)}</span>
+          <span style="font-weight:700;color:${calc.chillerAssignment.cfg.headColor};font-size:7px;opacity:.8;">${escHtml(calc.chillerAssignment.cfg.sub)}</span>
+          ${calc.chillerAssignment.unknown ? `<span style="font-weight:900;color:#b45309;font-size:7px;">⚠ unbekannt</span>` : ""}
         </div>`
       : "";
 
@@ -392,109 +391,87 @@ export function buildPdf(
 <title>${title}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;font-size:11px;color:#111;background:#fff}
-.page-header{padding:14px 16px 8px;border-bottom:3px solid #1e3a5f;background:linear-gradient(135deg,#0f2240 0%,#1e3a5f 100%);color:#fff}
-.page-title{font-size:20px;font-weight:900;color:#fff;letter-spacing:-.02em}
-.page-meta{font-size:9px;color:#93c5fd;margin-top:3px}
-.equip-section{display:flex;gap:16px;align-items:flex-start;padding:8px 16px;background:#f8fafc;border-bottom:1px solid #e5e7eb}
-.equip-label{font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
-.equip-grid{display:flex;flex-wrap:wrap;gap:4px}
-.equip-chip{background:#1e3a5f;color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px}
-.card{padding:14px 16px;border:1.5px solid #e2e8f0;border-radius:10px;margin:8px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.wo-num{font-size:28px;font-weight:900;color:#1e3a5f;line-height:1}
-.date-tag{font-size:10px;color:#6b7280;margin-top:3px}
+body{font-family:Arial,sans-serif;font-size:9px;color:#111;background:#fff}
+.page-header,.equip-section{display:none}
+.card{padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;margin:4px;background:#fff}
+.card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.wo-num{font-size:13px;font-weight:900;color:#1e3a5f;line-height:1}
+.date-tag{font-size:8px;color:#6b7280;margin-top:1px}
 .recipe-tag{text-align:right}
-.code{font-size:10px;font-weight:700;color:#9ca3af;font-family:monospace}
-.rname{font-size:11px;font-weight:600;color:#374151;max-width:260px;text-align:right}
-.sub{font-size:18px;font-weight:900;color:#111;border-bottom:2px solid #e2e8f0;padding-bottom:7px;margin-bottom:8px}
-.methods{background:linear-gradient(135deg,#0f2240,#1e3a5f);color:#fff;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:700;letter-spacing:.04em;margin-bottom:10px}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:6px}
-.stat{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:3px 6px}
+.code{font-size:8px;font-weight:700;color:#9ca3af;font-family:monospace}
+.rname{font-size:8px;font-weight:600;color:#374151;max-width:220px;text-align:right}
+.sub{font-size:11px;font-weight:900;color:#111;border-bottom:1px solid #e2e8f0;padding-bottom:3px;margin-bottom:4px}
+.methods{background:linear-gradient(135deg,#0f2240,#1e3a5f);color:#fff;border-radius:4px;padding:3px 8px;font-size:8px;font-weight:700;letter-spacing:.03em;margin-bottom:4px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-bottom:4px}
+.stat{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:2px 4px}
 .hi-stat{background:#1e3a5f;border-color:#1e3a5f}
 .stat-green{background:#f0fdf4;border-color:#bbf7d0}
 .stat-red{background:#fef2f2;border-color:#fecaca}
-.slabel{font-size:6.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#9ca3af;margin-bottom:1px}
+.slabel{font-size:5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin-bottom:0}
 .hi-stat .slabel{color:#93c5fd}
 .stat-green .slabel{color:#16a34a}
 .stat-red .slabel{color:#dc2626}
-.sval{font-size:11px;font-weight:900;color:#111;line-height:1.1}
+.sval{font-size:9px;font-weight:900;color:#111;line-height:1.1}
 .hi-stat .sval{color:#fff}
 .stat-green .sval{color:#15803d}
 .stat-red .sval{color:#b91c1c}
-.sval.big{font-size:18px}
-.stat-scoop .sval{font-size:9.5px;line-height:1.25}
-.components-section{margin-bottom:10px}
-.components-title{font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px}
-.component-block{border:1.5px solid #dbe3ee;border-radius:9px;margin-bottom:8px;overflow:hidden;page-break-inside:avoid;break-inside:avoid-page}
-.component-head{background:#0f2240;color:#fff;padding:7px 10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
-.component-name{font-size:12px;font-weight:900}
-.progress-wrap{height:4px;background:#e5e7eb;border-radius:2px;margin-top:4px;overflow:hidden}
-.progress-bar{height:100%;border-radius:2px;transition:width .3s}
-.badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px}
-.badge{font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px}
+.sval.big{font-size:11px}
+.stat-scoop .sval{font-size:8px;line-height:1.2}
+.components-section{margin-bottom:4px}
+.components-title{font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin:4px 0 3px;padding-top:4px;border-top:1px solid #e2e8f0}
+.component-block{border:1px solid #dbe3ee;border-radius:6px;margin-bottom:4px;overflow:hidden;page-break-inside:avoid;break-inside:avoid-page}
+.component-head{background:#0f2240;color:#fff;padding:4px 8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px}
+.component-name{font-size:10px;font-weight:900}
+.component-wo-ref{font-size:7px;font-weight:700;color:#64748b;padding:2px 8px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.badges{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:3px}
+.badge{font-size:8px;font-weight:700;padding:1px 5px;border-radius:4px}
 .badge-green{background:#d1fae5;color:#065f46}
 .badge-amber{background:#fef3c7;color:#92400e}
 .badge-orange{background:#ffedd5;color:#9a3412}
 .badge-blue{background:#dbeafe;color:#1e40af}
 .badge-gray{background:#f1f5f9;color:#475569}
 .badge-red{background:#fee2e2;color:#991b1b}
-.comment{font-size:10px;padding:6px 10px;border-radius:6px;margin-bottom:5px;border-left:3px solid transparent}
+.comment{font-size:8px;padding:3px 8px;border-radius:4px;margin-bottom:3px;border-left:2px solid transparent}
 .comment.warn{background:#fef3c7;color:#92400e;border-color:#fbbf24}
 .comment.info{background:#f1f5f9;color:#374151;border-color:#94a3b8}
 .comment.instr{background:#eff6ff;color:#1e40af;border-color:#93c5fd}
-.ings{width:100%;border-collapse:collapse;margin-top:8px;font-size:10px}
-.ings th{background:#f1f5f9;padding:5px 8px;text-align:left;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #e2e8f0;color:#475569}
-.ings td{padding:4px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.ings{width:100%;border-collapse:collapse;margin-top:4px;font-size:8px}
+.ings th{background:#f1f5f9;padding:2px 6px;text-align:left;font-weight:700;font-size:7px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e2e8f0;color:#475569}
+.ings td{padding:2px 6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 .ings thead{display:table-header-group}
 .ings tr{break-inside:avoid;page-break-inside:avoid}
 .ings{break-inside:auto;page-break-inside:auto}
-.ings tfoot td{border-top:2px solid #1e3a5f;padding-top:6px;background:#f8fafc}
+.ings tfoot td{border-top:1.5px solid #1e3a5f;padding-top:3px;background:#f8fafc}
 .num{text-align:right;white-space:nowrap;font-weight:600}
 .hi{color:#1e40af;font-weight:700}
-.cat{display:inline-block;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;background:#f1f5f9;color:#64748b;margin-right:4px}
-.no-data{padding:10px;background:#fef3c7;border-radius:6px;font-size:10px;color:#92400e;margin-top:8px;border-left:3px solid #fbbf24}
+.cat{display:inline-block;font-size:7px;font-weight:700;padding:0 3px;border-radius:2px;background:#f1f5f9;color:#64748b;margin-right:3px}
+.no-data{padding:6px;background:#fef3c7;border-radius:4px;font-size:8px;color:#92400e;margin-top:4px;border-left:2px solid #fbbf24}
 .back-id{display:none}
 @media print{
-  body{font-size:9px}
-  .page-header,.equip-section{display:none}
+  body{font-size:8px}
   .card{
     page-break-before:always;page-break-after:auto;page-break-inside:auto;
     break-before:page;break-after:auto;break-inside:auto;
-    margin:0;border-width:1px;box-shadow:none;border-radius:6px;
-    padding:10px 12px;
+    margin:0;border-width:1px;box-shadow:none;border-radius:4px;
+    padding:6px 8px;
     max-height:none;overflow:visible;
   }
   .card:first-of-type{page-break-before:auto;break-before:auto}
-  /* Duplex: card-front (alles außer Zutaten) und card-back (Zutaten) sind je ein
-     atomarer Block — passt beides auf eine Seite, bleibt es eine; reicht der Platz
-     nicht, rutscht card-back komplett auf die Rückseite statt mittendrin zu reißen. */
   .card-front,.card-back{page-break-inside:avoid;break-inside:avoid-page}
   .back-id{
-    display:block;font-size:10px;font-weight:800;color:#1e3a5f;
-    padding-bottom:4px;margin-bottom:6px;border-bottom:2px solid #1e3a5f;
+    display:block;font-size:8px;font-weight:800;color:#1e3a5f;
+    padding-bottom:2px;margin-bottom:3px;border-bottom:1.5px solid #1e3a5f;
   }
-  .wo-num{font-size:22px}.sub{font-size:15px}
-  .stats{gap:3px;margin-bottom:5px}
-  .sval{font-size:9px}.sval.big{font-size:15px}
-  .stat{padding:2px 5px}.slabel{font-size:5.5px}
-  .stat-scoop .sval{font-size:8px}
-  .methods{padding:6px 10px;font-size:11px}
-  .component-name{font-size:11px}
-  /* Jedes Sub-Rezept einer zusammengesetzten WO (Zubereitungskomponente, siehe
-     ketLogic.buildWoComponents) bekommt eine eigene, frische Seite — sonst
-     drängen sich mehrere Subs je nach Platz zufällig auf eine Seite oder reißen
-     mittendrin um (Marcel 2026-08-21: "jedes sub eine Seite im Ausdruck"). Bricht
-     vor dem Titel (nicht vor jedem Block einzeln) und dann vor jedem WEITEREN
-     Block, damit Titel + erste Komponente zusammen auf der neuen Seite starten
-     statt zwei Umbrüche (= leere Seite) hintereinander zu erzeugen.
-  */
-  .components-title{page-break-before:always;break-before:page}
-  .component-block+.component-block{page-break-before:always;break-before:page}
-  /* Breit statt einzelne Klassen: Allergen-/Chiller-Badges und die Equipment-Batch-
-     Kacheln setzen ihre Hintergrundfarbe inline (nicht per Klasse) — ohne *-Regel
-     verlieren sie beim Drucken/Speichern ohne "Hintergrundgrafiken"-Haken lautlos
-     ihre Farbe (bekanntes Muster in diesem Feature, siehe KetWoDetail/ketPdf-Historie). */
+  .wo-num{font-size:11px}.sub{font-size:10px}
+  .stats{gap:2px;margin-bottom:3px}
+  .sval{font-size:8px}.sval.big{font-size:10px}
+  .stat{padding:1px 3px}.slabel{font-size:5px}
+  .stat-scoop .sval{font-size:7px}
+  .methods{padding:3px 6px;font-size:8px}
+  .component-name{font-size:9px}
+  /* Sub-Meals dürfen nie durch einen Seitenumbruch getrennt werden,
+     aber auch nicht erzwungen auf neue Seiten — so wenig Papier wie möglich. */
+  .component-block{page-break-inside:avoid;break-inside:avoid-page}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   @page{size:A4;margin:8mm}
 }
