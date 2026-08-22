@@ -7,7 +7,7 @@ import type {
 } from "../../core/types";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, EQUIP_PRIORITY, type BatchCalc, type EquipBatch, type GnTraySummary, type IngCalc, type KetRow, type ManualEquipmentOverride, type ScoopInfo, type WoComponent } from "./ketTypes";
 import { cleanRecipeName, codeDigits, extractCode, fmtNum, parseSteps } from "../../lib/helpers";
-import { biAllergen, classify, NO_BATCH, READY_MADE, isSeparate, isSpiceRoom } from "./factorRules";
+import { biAllergen, classify, NO_BATCH, ONE_BATCH, READY_MADE, isSeparate, isSpiceRoom } from "./factorRules";
 import { computeWoChiller } from "../blast-chiller/blastChillerLogic";
 import { lookupEquipmentCapacity, calcEquipmentNeeds } from "../kitchen-mode/wrEquipmentCapacityDB";
 import { wrLookupPieceKg, wrLookupTrayPcs } from "../kitchen-mode/wrEquipmentHints";
@@ -1039,6 +1039,22 @@ export function catColor(cat: string): string {
   if (c === "SPI") return "text-amber-700 bg-amber-50";
   if (c === "DRY") return "text-slate-600 bg-slate-100";
   return "text-slate-500 bg-slate-50";
+}
+
+// Debox-Department (Shopfloor-Dashboard, Sidebar-Filter): Protein Debox
+// (Fleisch/Fisch/sonstige Proteine) vs. Veggie Debox (alles andere). Primär
+// über eine explizite "VEGGIE DEBOX"/"PROTEIN DEBOX"-Cook-Method (falls die
+// Datenquelle das liefert, z.B. aus manueller Zuweisung), sonst über die
+// Factor-Klassifizierung (neverBatch = Fleisch/Fisch nie gesplittet,
+// factorCapacityKg ONE_BATCH/NO_BATCH = sonstige Proteine) — dieselbe
+// Heuristik, mit der praktisch jede nicht-RTI-WO eindeutig einer der beiden
+// Debox-Stationen zugeordnet werden kann, auch ohne explizite Cook-Method.
+export function classifyDeboxDepartment(calc: BatchCalc): "protein" | "veggie" | null {
+  if (calc.rti) return null;
+  if (calc.resolvedCookMethods.includes("PROTEIN DEBOX")) return "protein";
+  if (calc.resolvedCookMethods.includes("VEGGIE DEBOX")) return "veggie";
+  const isProtein = calc.neverBatch || calc.factorCapacityKg === NO_BATCH || calc.factorCapacityKg === ONE_BATCH;
+  return isProtein ? "protein" : "veggie";
 }
 
 // Stabiler Cache-Key für WO-Instructions: basiert auf Rezeptcode + Sub-Rezeptname,

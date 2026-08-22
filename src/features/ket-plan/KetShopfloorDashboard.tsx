@@ -4,14 +4,14 @@
 import { useMemo, useState } from "react";
 import type { BatchCalc, KetRow, WoInstruction } from "./ketTypes";
 import type { RunInfo } from "./ketRunLogic";
-import { fmtKg, parseDateShift } from "./ketLogic";
+import { classifyDeboxDepartment, fmtKg, parseDateShift } from "./ketLogic";
 import { allergenSortScore, computeFullResourceDemand } from "./ketEquipmentSummary";
 
 type Department = "veggie" | "protein";
 
-const DEPT_CONFIG: Record<Department, { label: string; method: string; color: string; bg: string; border: string }> = {
-  veggie: { label: "Veggie Debox", method: "VEGGIE DEBOX", color: "text-green-700", bg: "bg-green-50", border: "border-green-200" },
-  protein: { label: "Protein Debox", method: "PROTEIN DEBOX", color: "text-rose-700", bg: "bg-rose-50", border: "border-rose-200" },
+const DEPT_CONFIG: Record<Department, { label: string; color: string; bg: string; border: string }> = {
+  veggie: { label: "Veggie Debox", color: "text-green-700", bg: "bg-green-50", border: "border-green-200" },
+  protein: { label: "Protein Debox", color: "text-rose-700", bg: "bg-rose-50", border: "border-rose-200" },
 };
 
 interface DeptWo {
@@ -50,9 +50,9 @@ export function KetShopfloorDashboard({
       if (activeDay && parseDateShift(row.dateNeeded).date !== activeDay) return false;
       const calc = calcMap.get(row.key);
       if (!calc) return false;
-      return calc.resolvedCookMethods.includes(cfg.method);
+      return classifyDeboxDepartment(calc) === dept;
     });
-  }, [rows, calcMap, cfg.method, activeDay]);
+  }, [rows, calcMap, dept, activeDay]);
 
   // WOs sortiert nach Allergen-Score (allergenfrei zuerst)
   const deptWos = useMemo(() => {
@@ -146,7 +146,7 @@ export function KetShopfloorDashboard({
           <div className="space-y-2">
             {deptWos.map(({ row, calc, allergenScore }) => {
               const hasInstruction = instructionCache?.has(row.key) ?? false;
-              const methods = calc.resolvedCookMethods.filter(m => m !== cfg.method && m !== "SPICE PORTIONING" && m !== "BLAST CHILLER");
+              const methods = calc.resolvedCookMethods.filter(m => m !== "VEGGIE DEBOX" && m !== "PROTEIN DEBOX" && m !== "SPICE PORTIONING" && m !== "BLAST CHILLER");
               const gnTotal = calc.gnTraySummary.reduce((s, t) => s + t.trays, 0);
 
               return (

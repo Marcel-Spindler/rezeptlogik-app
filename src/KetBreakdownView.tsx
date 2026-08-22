@@ -9,7 +9,7 @@ import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overvi
 import { LiveBadge } from "./features/redzone-live/LiveBadge";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoComponent, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
-  calcBatch, EMPTY_GN_HINTS, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
+  calcBatch, classifyDeboxDepartment, EMPTY_GN_HINTS, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
   type GnHints,
 } from "./features/ket-plan/ketLogic";
 import { buildPdf } from "./features/ket-plan/ketPdf";
@@ -438,19 +438,16 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     return groups.filter(([day]) => selectedDayFilter.has(day));
   }, [groups, selectedDayFilter]);
 
-  // Debox-Filter: WOs nach Protein/Veggie Debox trennen.
-  // Protein = neverBatch (Fleisch/Fisch, Factor-Regel "nie splitten") oder factorCapacityKg === ONE_BATCH (sonstige Proteine).
-  // Veggie = alles andere (nicht RTI, nicht Protein).
+  // Debox-Filter: WOs nach Protein/Veggie Debox trennen (siehe
+  // classifyDeboxDepartment — dieselbe Klassifizierung nutzt auch das
+  // Shopfloor-Dashboard und die Debox-Badges in der Alle-WOs-Ansicht).
   const deboxFilteredGroups = useMemo(() => {
     if (deboxFilter === "all") return dayFilteredGroups;
     return dayFilteredGroups
       .map(([day, rows]) => [day, rows.filter((r) => {
         const calc = calcMap.get(r.key);
         if (!calc) return false;
-        // RTI-Artikel (Rohware ohne Cook Methods) gehören zu keiner Debox-Station
-        if (calc.rti) return false;
-        const isProtein = calc.neverBatch || calc.factorCapacityKg === 999999 || calc.factorCapacityKg === 1000;
-        return deboxFilter === "protein" ? isProtein : !isProtein;
+        return classifyDeboxDepartment(calc) === deboxFilter;
       })] as [string, KetRow[]])
       .filter(([, rows]) => rows.length > 0);
   }, [dayFilteredGroups, deboxFilter, calcMap]);

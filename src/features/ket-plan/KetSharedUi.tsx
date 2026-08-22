@@ -1,7 +1,7 @@
 // Kleinere, wiederverwendete Bausteine für KET Plan / WO: leere Zustände,
 // Datei-Upload-Bildschirm, die WO-Gesamtübersicht, Stat-/Status-Chips.
 import { useState, Component, type RefObject, type ReactNode } from "react";
-import { fmtDateHeader, fmtKg, fmtNum, statusColors } from "./ketLogic";
+import { classifyDeboxDepartment, fmtDateHeader, fmtKg, fmtNum, statusColors } from "./ketLogic";
 import type { BatchCalc, KetRow, WoInstruction } from "./ketTypes";
 import type { RunInfo } from "./ketRunLogic";
 
@@ -210,8 +210,9 @@ export function KetWoOverview({
               const pct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
               const hasInstruction = instructionCache?.has(row.key) ?? false;
               const methods = calc?.resolvedCookMethods ?? row.cookMethods;
-              const hasVeggieDebox = methods.includes("VEGGIE DEBOX");
-              const hasProteinDebox = methods.includes("PROTEIN DEBOX");
+              const deboxDept = calc ? classifyDeboxDepartment(calc) : null;
+              const hasVeggieDebox = deboxDept === "veggie";
+              const hasProteinDebox = deboxDept === "protein";
               const gnTotal = calc?.gnTraySummary?.reduce((s, t) => s + t.trays, 0) ?? 0;
               const isChecked = selectedWoKeys?.has(row.key) ?? false;
 
