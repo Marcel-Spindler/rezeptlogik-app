@@ -457,6 +457,17 @@ export function buildKitchenShareUrl(week: string): string {
   return url.toString();
 }
 
+// Kiosk-Link für einen Debox-Shopfloor-Laptop (Veggie/Protein sind zwei
+// getrennte physische Küchen, siehe ShopfloorKioskSurface) — je ein Link pro
+// Küche, einmal auf dem jeweiligen Laptop als Startseite hinterlegt.
+export function buildShopfloorShareUrl(dept: "veggie" | "protein", week?: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set("surface", "shopfloor");
+  url.searchParams.set("dept", dept);
+  if (week) url.searchParams.set("week", week);
+  return url.toString();
+}
+
 // ─── Market constants ──────────────────────────────────────────────────────
 
 export const MARKETS: Market[] = ["BENL", "DKSE", "DE"];

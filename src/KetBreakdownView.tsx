@@ -4,14 +4,16 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type { DataBundle, WorkOrderEntry } from "./core/types";
-import { fetchWmsWorkorderCache, wmsWorkorderRowToEntry, filterRowsToWeekWindow, currentHfWeek } from "./lib/wmsCache";
+import { currentHfWeek } from "./lib/wmsCache";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overview/wmsWeeks";
 import { LiveBadge } from "./features/redzone-live/LiveBadge";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoComponent, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
-  calcBatch, classifyDeboxDepartment, EMPTY_GN_HINTS, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors, woEntriesToKetRows,
-  type GnHints,
+  calcBatch, classifyDeboxDepartment, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors,
 } from "./features/ket-plan/ketLogic";
+import { useKetRowsData } from "./features/ket-plan/useKetRowsData";
+import { useGnHints } from "./features/ket-plan/useGnHints";
+import { useShopfloorProgress } from "./features/ket-plan/useShopfloorProgress";
 import { buildPdf } from "./features/ket-plan/ketPdf";
 import { EmptyState, KetErrorBoundary, KetWoOverview, MissingDataScreen } from "./features/ket-plan/KetSharedUi";
 import { WoDetail } from "./features/ket-plan/KetWoDetail";
@@ -19,7 +21,6 @@ import { generateWoInstruction, generateWoInstructionsBatch } from "./features/k
 import { computeRunAssignments, shiftLabel } from "./features/ket-plan/ketRunLogic";
 import { KetEquipmentPanel } from "./features/ket-plan/KetEquipmentPanel";
 import { KetShopfloorDashboard } from "./features/ket-plan/KetShopfloorDashboard";
-import { wrBuildHintsFromDumps } from "./features/kitchen-mode/wrEquipmentHints";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS & PATTERNS
@@ -258,8 +259,6 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [woSortMode, setWoSortMode] = useState<WoSortMode>("date");
-  const [liveWmsRows, setLiveWmsRows] = useState<WorkOrderEntry[] | null>(null);
-  const [wmsDroppedWeeks, setWmsDroppedWeeks] = useState<string[]>([]);
   const [weekFilterEnabled, setWeekFilterEnabled] = useState(true);
   // Schicht-/Run-Anzeige — beide bewusst standardmäßig aus ("später zuschaltbar",
   // Marcel 2026-08-21): Schicht ist eine reine Uhrzeit-Anzeige (unverändert
@@ -280,24 +279,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [manualEquipment, setManualEquipment] = useState<Record<string, ManualEquipmentOverride>>({});
   // Equipment-Ausnahme je Komponente einer zusammengesetzten WO: row.key → componentName → Override.
   const [componentManualEquipment, setComponentManualEquipment] = useState<Record<string, Record<string, ManualEquipmentOverride>>>({});
-  // GN-Blech-Hints aus dem Kuechenbible-GSheet-Dump (PROTEIN-DEBOX/VEGGIE-DEBOX
-  // Bible-Tabs) — derselbe Dump, den auch der Kitchen-Mode-Rechner nutzt (siehe
-  // src/features/kitchen-mode/). Einmalig geladen; ohne Treffer bleibt für viele
-  // Zutaten trotzdem die fest codierte kg-Kapazitäts-Tabelle als Fallback aktiv
-  // (siehe ketLogic.resolveGnTrays), daher hier kein harter Fehlerzustand nötig.
-  const [gnHints, setGnHints] = useState<GnHints>(EMPTY_GN_HINTS);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/data/gsheet-dump-Bibles_K_Operations_Manager_Supervisors.json")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((bibles) => {
-        if (cancelled || !bibles) return;
-        const { trayHints, pieceWeightKg } = wrBuildHintsFromDumps(null, bibles);
-        setGnHints({ trayHints, pieceWeightKg });
-      })
-      .catch((error) => console.warn("[KetBreakdown] GN-Blech-Hints konnten nicht geladen werden:", error));
-    return () => { cancelled = true; };
-  }, []);
+  const gnHints = useGnHints();
   const instructionCacheRef = useRef<InstructionCache>(loadInstructionCache());
   const [woInstructions, setWoInstructions] = useState<Record<string, WoInstruction>>({});
   const printedWoCacheRef = useRef<PrintedWoCache>(loadPrintedWoCache());
@@ -314,62 +296,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [bulkDlStatus, setBulkDlStatus] = useState<string | null>(null);
 
   const [bulkDlError, setBulkDlError] = useState<string | null>(null);
-  // "Hat Zeilen" reicht nicht - der GSheet→Firestore-Plan kann 300+ Zeilen für
-  // längst vergangene Wochen halten, während die aktuelle Woche darin komplett
-  // fehlt (das GSheet "Fertigstellungszeitplan" wurde für sie noch nicht
-  // befüllt). Ohne diesen Check würde der Live-Snowflake-Fallback unten nie
-  // greifen, obwohl productionPlan für die aktuelle Woche leer ist.
-  const productionPlanHasLiveWeek = useMemo(() => {
-    const rows = data.productionPlan?.rows;
-    if (!rows?.length) return false;
-    const liveWeekNum = weekNumFromHfWeek(liveWeek);
-    if (liveWeekNum == null) return true; // can't tell - don't second-guess the trusted source
-    return rows.some((row) => weekPrefixFromWoNumber(row.workOrder) === liveWeekNum);
-  }, [data.productionPlan?.rows, liveWeek]);
 
-  const ketRows = useMemo<KetRow[]>(() => {
-    if (csvRows !== null) return csvRows;
-    const rows = data.productionPlan?.rows;
-    if (rows?.length && productionPlanHasLiveWeek) return woEntriesToKetRows(rows);
-    if (liveWmsRows?.length) return woEntriesToKetRows(liveWmsRows);
-    if (rows?.length) return woEntriesToKetRows(rows); // stale but still better than nothing
-    return [];
-  }, [csvRows, data.productionPlan?.rows, productionPlanHasLiveWeek, liveWmsRows]);
-
-  // Lowest-priority fallback: only reach for the live WMS/Snowflake cache when
-  // neither manual CSV nor the established GSheet→Firestore plan has rows for
-  // the CURRENT week, so this unverified source can never silently override a
-  // trusted one that's actually still current.
-  useEffect(() => {
-    if (csvRows !== null) return;
-    if (productionPlanHasLiveWeek) return;
-    let cancelled = false;
-    
-    fetchWmsWorkorderCache().then((res) => {
-      if (cancelled || !res || !res.rows.length) return;
-      const { kept, droppedWeeks } = filterRowsToWeekWindow(res.rows, liveWeek);
-      
-      // Map defensively: one malformed cache row must be skipped, not throw
-      const mapped = kept.reduce<WorkOrderEntry[]>((acc, row) => {
-        try {
-          acc.push(wmsWorkorderRowToEntry(row));
-        } catch (error) {
-          console.warn("[KetBreakdown] Skipping malformed WMS row:", error);
-        }
-        return acc;
-      }, []);
-      
-      if (cancelled) return;
-      setWmsDroppedWeeks(droppedWeeks);
-      if (mapped.length) setLiveWmsRows(mapped);
-    }).catch((error) => {
-      if (!cancelled) {
-        console.error("[KetBreakdown] Failed to fetch WMS workorder cache:", error);
-      }
-    });
-    
-    return () => { cancelled = true; };
-  }, [csvRows, productionPlanHasLiveWeek, liveWeek]);
+  const { ketRows, liveWmsRows, productionPlanHasLiveWeek, wmsDroppedWeeks } = useKetRowsData(data, selectedWeek, csvRows);
+  const { progress: shopfloorProgress, setDone: setShopfloorDone, syncError: shopfloorSyncError } = useShopfloorProgress(liveWeek);
 
   const autoOpenedRef = useRef(false);
   useEffect(() => {
@@ -1505,6 +1434,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               calcMap={calcMap}
               runAssignments={runAssignments}
               instructionCache={woInstructionMap}
+              progress={shopfloorProgress}
+              onToggleDone={setShopfloorDone}
+              syncError={shopfloorSyncError}
             />
           ) : mainViewMode === "list" ? (
             <KetWoOverview

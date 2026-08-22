@@ -9,6 +9,7 @@ import { RecipeDetail } from "../features/recipe-detail/RecipeDetailShell";
 import { CsvImportView } from "../CsvImportView";
 import { PlanningOasisView } from "../planning-oasis/PlanningOasisView";
 import { KetBreakdownView } from "../KetBreakdownView";
+import { ShopfloorKioskSurface } from "./ShopfloorKioskSurface";
 import { PetPlanView } from "../PetPlanView";
 import { WhatIfView } from "../WhatIfView";
 import { RundmailView } from "../RundmailView";
@@ -246,6 +247,10 @@ export function Router() {
         onLinkCopiedChange={setKitchenLinkCopied}
       />
     );
+  }
+
+  if (surface === "shopfloor") {
+    return <ShopfloorKioskSurface data={data} selectedWeek={selectedWeek} />;
   }
 
   return <FullApp />;
