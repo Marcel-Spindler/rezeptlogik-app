@@ -2,7 +2,7 @@
 // Datei-Upload-Bildschirm, die WO-Gesamtübersicht, Stat-/Status-Chips.
 import { useState, Component, type RefObject, type ReactNode } from "react";
 import { fmtDateHeader, fmtKg, fmtNum, statusColors } from "./ketLogic";
-import type { BatchCalc, KetRow } from "./ketTypes";
+import type { BatchCalc, KetRow, WoInstruction } from "./ketTypes";
 import type { RunInfo } from "./ketRunLogic";
 
 export function EmptyState() {
@@ -92,17 +92,15 @@ export function KetWoOverview({
   onSelect,
   printedWoNumbers,
   runAssignments,
+  instructionCache,
 }: {
   groups: [string, KetRow[]][];
   calcMap: Map<string, BatchCalc>;
   selectedKey: string | null;
   onSelect: (key: string) => void;
-  // WO-Nummer → ISO-Zeitstempel, wann zuletzt gedruckt/gespeichert (siehe
-  // KetBreakdownView.markAsPrinted) — optional, nur für die "✓"-Markierung.
   printedWoNumbers?: Record<string, string>;
-  // row.key → geschätzte Run-Zuteilung (siehe ketRunLogic.ts) — nur gesetzt,
-  // wenn der "Run"-Toggle in KetBreakdownView aktiv ist.
   runAssignments?: Map<string, RunInfo>;
+  instructionCache?: Map<string, WoInstruction>;
 }) {
   const totalRows = groups.reduce((s, [, rows]) => s + rows.length, 0);
 
@@ -132,6 +130,11 @@ export function KetWoOverview({
               const sSc = statusColors(row.stagingStatus);
               const done = row.woCookedPortions ?? 0;
               const pct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
+              const hasInstruction = instructionCache?.has(row.key) ?? false;
+              const methods = calc?.resolvedCookMethods ?? row.cookMethods;
+              const hasVeggieDebox = methods.includes("VEGGIE DEBOX");
+              const hasProteinDebox = methods.includes("PROTEIN DEBOX");
+              const gnTotal = calc?.gnTraySummary?.reduce((s, t) => s + t.trays, 0) ?? 0;
 
               return (
                 <button
@@ -144,12 +147,16 @@ export function KetWoOverview({
                   style={{ borderLeft: `4px solid ${isSelected ? "#1e3a5f" : "#cbd5e1"}` }}
                 >
                   <div className="px-4 py-3">
+                    {/* Row 1: WO number + recipe info + kg/batches */}
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-black text-[#1e3a5f]">WO {row.woNumber}</span>
                           {printedWoNumbers?.[row.woNumber] && (
                             <span className="text-[10px] font-black text-emerald-600" title={`Bereits gedruckt/gespeichert am ${new Date(printedWoNumbers[row.woNumber]).toLocaleString("de-DE")}`}>✓</span>
+                          )}
+                          {hasInstruction && (
+                            <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-700">Anweisung</span>
                           )}
                           {runAssignments?.get(row.key) && (
                             <span
@@ -158,7 +165,7 @@ export function KetWoOverview({
                                 ? `Geschätzt: ${Math.round(runAssignments.get(row.key)!.cumulativeSharePct * 100)}% des Wochenvolumens dieses Meals bis einschließlich diesem Tag`
                                 : "Nur ein Produktionstag diese Woche — kein echter Run-Split"}
                             >
-                              🔁 Run {runAssignments.get(row.key)!.run}
+                              Run {runAssignments.get(row.key)!.run}
                             </span>
                           )}
                           {row.recipeCode && (
@@ -191,6 +198,50 @@ export function KetWoOverview({
                       </div>
                     </div>
 
+                    {/* Row 2: Debox + Stations + GN + Components */}
+                    <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                      {hasVeggieDebox && (
+                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-green-100 text-green-700">Veggie Debox</span>
+                      )}
+                      {hasProteinDebox && (
+                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Protein Debox</span>
+                      )}
+                      {calc && calc.components.length > 1 && (
+                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
+                          {calc.components.length} Komp.
+                        </span>
+                      )}
+                      {methods.filter(m => m !== "VEGGIE DEBOX" && m !== "PROTEIN DEBOX" && m !== "SPICE PORTIONING" && m !== "BLAST CHILLER").map(m => (
+                        <span key={m} className="text-[8px] font-semibold px-1 py-0.5 rounded bg-slate-100 text-slate-500">
+                          {m.split(" ").map(w => w[0] + w.slice(1).toLowerCase()).join(" ")}
+                        </span>
+                      ))}
+                      {gnTotal > 0 && (
+                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">{gnTotal} Bleche</span>
+                      )}
+                      {calc?.scoopInfo?.methodType && (
+                        <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
+                          Scoop {calc.scoopInfo.methodColor ?? ""}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Row 3: Allergene */}
+                    {calc && calc.allergensContains.length > 0 && (
+                      <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                        <span className="text-[8px] font-black text-red-600">CONTAINS:</span>
+                        {calc.allergensContains.slice(0, 5).map(a => (
+                          <span key={a} className="text-[7px] font-bold px-1 py-0.5 rounded bg-red-50 text-red-600 border border-red-200">
+                            {a.split(" / ")[0]}
+                          </span>
+                        ))}
+                        {calc.allergensContains.length > 5 && (
+                          <span className="text-[7px] text-red-400">+{calc.allergensContains.length - 5}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Row 4: Portions progress + status */}
                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                       <span className="text-sm font-black text-slate-900 tabular-nums">{fmtNum(done)}</span>
                       <span className="text-[9px] text-slate-400">/ {fmtNum(row.targetPortions)} Port.</span>

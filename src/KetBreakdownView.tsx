@@ -13,11 +13,12 @@ import {
   type GnHints,
 } from "./features/ket-plan/ketLogic";
 import { buildPdf } from "./features/ket-plan/ketPdf";
-import { EmptyState, KetWoOverview, MissingDataScreen } from "./features/ket-plan/KetSharedUi";
+import { EmptyState, KetErrorBoundary, KetWoOverview, MissingDataScreen } from "./features/ket-plan/KetSharedUi";
 import { WoDetail } from "./features/ket-plan/KetWoDetail";
 import { generateWoInstruction, generateWoInstructionsBatch } from "./features/ket-plan/woInstructionBot";
 import { computeRunAssignments, shiftLabel } from "./features/ket-plan/ketRunLogic";
 import { KetEquipmentPanel } from "./features/ket-plan/KetEquipmentPanel";
+import { KetShopfloorDashboard } from "./features/ket-plan/KetShopfloorDashboard";
 import { wrBuildHintsFromDumps } from "./features/kitchen-mode/wrEquipmentHints";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -252,7 +253,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [dragOver, setDragOver] = useState(false);
   const [showEquip, setShowEquip] = useState(false);
   const [woSearch, setWoSearch] = useState("");
-  const [mainViewMode, setMainViewMode] = useState<"detail" | "list" | "equipment">("detail");
+  const [mainViewMode, setMainViewMode] = useState<"detail" | "list" | "equipment" | "shopfloor">("detail");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [woSortMode, setWoSortMode] = useState<WoSortMode>("date");
@@ -376,6 +377,8 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       fileInputRef.current?.click();
     }
   }, [ketRows.length]);
+
+  const woInstructionMap = useMemo(() => new Map(Object.entries(woInstructions)), [woInstructions]);
 
   const calcMap = useMemo(() => {
     const m = new Map<string, BatchCalc>();
@@ -1461,15 +1464,30 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             >
               Equipment
             </button>
+            <button
+              type="button"
+              onClick={() => setMainViewMode("shopfloor")}
+              className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "shopfloor" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
+            >
+              Shopfloor
+            </button>
           </div>
         </div>
 
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+          <KetErrorBoundary>
           {mainViewMode === "equipment" ? (
             <KetEquipmentPanel
               rows={ketRows}
               calcMap={calcMap}
               runAssignments={runAssignments}
+            />
+          ) : mainViewMode === "shopfloor" ? (
+            <KetShopfloorDashboard
+              rows={ketRows}
+              calcMap={calcMap}
+              runAssignments={runAssignments}
+              instructionCache={woInstructionMap}
             />
           ) : mainViewMode === "list" ? (
             <KetWoOverview
@@ -1479,6 +1497,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               onSelect={(key) => { setSelectedKey(key); setMainViewMode("detail"); }}
               printedWoNumbers={printedWoNumbers}
               runAssignments={showRuns ? runAssignments : undefined}
+              instructionCache={woInstructionMap}
             />
           ) : !selectedRow ? (
             <EmptyState />
@@ -1568,6 +1587,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               }}
             />
           )}
+          </KetErrorBoundary>
         </div>
       </main>
     </div>

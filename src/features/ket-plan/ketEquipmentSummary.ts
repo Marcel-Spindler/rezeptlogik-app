@@ -58,6 +58,7 @@ export const DEFAULT_STATION_COUNT: Record<string, number> = {
 export const SHIFT_HOURS = 8;
 const DEFAULT_OVEN_RACK_CAPACITY = 40;
 const DEFAULT_WANNE_KG_FALLBACK = 80;
+export const DEFAULT_TRAYS_PER_RACK = 12;
 
 const STATION_LABELS: Record<string, string> = {
   ...EQUIP_LABELS,
@@ -87,26 +88,29 @@ export interface GnTrayDemand {
   count: number;
 }
 
+export interface WannenSizeDemand {
+  size: string;
+  count: number;
+}
+
 export interface StationDemand {
   station: string;
   label: string;
   totalBatches: number;
   totalKg: number;
   estimatedMinutes: number;
-  // Parallelisiert: effektive Minuten ÷ stationCount
   effectiveMinutes: number;
   deviceCount: number;
   gnTrays: GnTrayDemand[];
   wannen: number;
+  wannenBySize: WannenSizeDemand[];
+  racksNeeded: number;
   ovenLoads: number | null;
   scoopsNeeded: ScoopEntry[];
   allergensPresent: string[];
   woNumbers: string[];
-  // Gantt: Frühester Startminute in der Schicht (kumuliert über vorherige Stationen)
   ganttStartMin: number;
   ganttEndMin: number;
-  // Personalbedarfsschätzung: wie viele MA diese Station gleichzeitig braucht
-  // (effectiveMinutes ÷ minutesPerStaffShift, aufgerundet)
   staffNeeded: number;
 }
 
@@ -130,9 +134,9 @@ export interface RunDemand {
   totalWos: number;
   totalGnTrays: number;
   totalWannen: number;
-  // Gantt: geschätzte Gesamtdauer der Schicht (kritischer Pfad)
+  totalWannenBySize: WannenSizeDemand[];
+  totalRacksNeeded: number;
   criticalPathMinutes: number;
-  // Personalbedarfsschätzung: Summe aller Stationen dieses Runs
   totalStaffNeeded: number;
 }
 
@@ -169,8 +173,8 @@ export interface FullResourceSummary {
   totalKgWeek: number;
   totalGnTraysWeek: number;
   totalWannenWeek: number;
+  totalRacksNeededWeek: number;
   criticalPathPeakMinutes: number;
-  // Personalbedarfsschätzung: Peak-Wert über alle Runs/Tage der Woche
   peakStaffNeeded: number;
 }
 
@@ -187,8 +191,8 @@ export interface ResourceDemandOptions {
   ovenRackCapacity?: number;
   stationCount?: Record<string, number>;
   firstRunPct?: number;
-  // Personalbedarfsschätzung: verfügbare Minuten pro MA pro Schicht (Default: SHIFT_HOURS * 60)
   minutesPerStaffShift?: number;
+  traysPerRack?: number;
 }
 
 // ── Interne Helfer ─────────────────────────────────────────────────────────
@@ -345,6 +349,7 @@ export function computeFullResourceDemand(
   const stationCount = opts?.stationCount ?? DEFAULT_STATION_COUNT;
   const firstRunPct = opts?.firstRunPct ?? 70;
   const staffShiftMin = opts?.minutesPerStaffShift ?? (SHIFT_HOURS * 60);
+  const traysPerRack = opts?.traysPerRack ?? DEFAULT_TRAYS_PER_RACK;
 
   // 1) Gruppierung: (date, shift, run)
   const groups = new Map<string, { date: string; shift: string; run: 1 | 2; rows: KetRow[] }>();
@@ -449,6 +454,15 @@ export function computeFullResourceDemand(
           for (const a of agg.allergens) globalSet.add(a);
         }
 
+        // Wannen-Größen-Aufschlüsselung (GN-Typ → Wannen dieses Typs)
+        const wannenBySize: WannenSizeDemand[] = gnTrays.map(t => ({
+          size: t.gnType,
+          count: t.count,
+        }));
+
+        // Rack-Bedarf: Gesamte GN-Bleche ÷ Bleche pro Rack
+        const racksNeeded = totalGnCount > 0 ? Math.ceil(totalGnCount / traysPerRack) : 0;
+
         return {
           station,
           label: getStationLabel(station),
@@ -459,6 +473,8 @@ export function computeFullResourceDemand(
           deviceCount: devices,
           gnTrays,
           wannen,
+          wannenBySize,
+          racksNeeded,
           ovenLoads,
           scoopsNeeded: [...agg.scoops.values()],
           allergensPresent: [...agg.allergens].sort(),
@@ -494,6 +510,18 @@ export function computeFullResourceDemand(
     const totalKg = stations.reduce((s, st) => s + st.totalKg, 0);
     const totalGnTrays = stations.reduce((s, st) => s + st.gnTrays.reduce((ss, t) => ss + t.count, 0), 0);
     const totalWannen = stations.reduce((s, st) => s + st.wannen, 0);
+    const totalRacksNeeded = totalGnTrays > 0 ? Math.ceil(totalGnTrays / traysPerRack) : 0;
+
+    // Wannen nach Größe aggregieren
+    const wannenSizeMap = new Map<string, number>();
+    for (const st of stations) {
+      for (const ws of st.wannenBySize) {
+        wannenSizeMap.set(ws.size, (wannenSizeMap.get(ws.size) ?? 0) + ws.count);
+      }
+    }
+    const totalWannenBySize: WannenSizeDemand[] = [...wannenSizeMap.entries()]
+      .map(([size, count]) => ({ size, count }))
+      .sort((a, b) => a.size.localeCompare(b.size));
 
     byRunDayShift.push({
       run,
@@ -507,6 +535,8 @@ export function computeFullResourceDemand(
       totalWos: groupRows.length,
       totalGnTrays,
       totalWannen,
+      totalWannenBySize,
+      totalRacksNeeded,
       criticalPathMinutes,
       totalStaffNeeded: stations.reduce((s, st) => s + st.staffNeeded, 0),
     });
@@ -569,6 +599,7 @@ export function computeFullResourceDemand(
   const totalKgWeek = byRunDayShift.reduce((s, rd) => s + rd.totalKg, 0);
   const totalGnTraysWeek = byRunDayShift.reduce((s, rd) => s + rd.totalGnTrays, 0);
   const totalWannenWeek = byRunDayShift.reduce((s, rd) => s + rd.totalWannen, 0);
+  const totalRacksNeededWeek = totalGnTraysWeek > 0 ? Math.ceil(totalGnTraysWeek / traysPerRack) : 0;
   const criticalPathPeakMinutes = byRunDayShift.reduce((max, rd) => Math.max(max, rd.criticalPathMinutes), 0);
 
   return {
@@ -581,6 +612,7 @@ export function computeFullResourceDemand(
     totalKgWeek: +totalKgWeek.toFixed(2),
     totalGnTraysWeek,
     totalWannenWeek,
+    totalRacksNeededWeek,
     criticalPathPeakMinutes,
     peakStaffNeeded: byRunDayShift.reduce((max, rd) => Math.max(max, rd.totalStaffNeeded), 0),
   };
@@ -963,4 +995,29 @@ export function computeWeekDelta(
     criticalPathDelta: current.criticalPathPeakMinutes - previous.criticalPathPeakMinutes,
     stations,
   };
+}
+
+// ── Allergen-Sortierung für Shopfloor ────────────────────────────────────────
+
+const ALLERGEN_WEIGHT: Record<string, number> = {
+  "Tree nuts / Schalenfrüchte": 5,
+  "Peanuts / Erdnüsse": 5,
+  "Sesame seeds / Sesamsamen": 4,
+  "Fish / Fisch": 4,
+  "Crustaceans / Krebstiere": 4,
+  "Eggs / Eier": 3,
+  "Milk (incl. lactose) / Milch (einschließlich Laktose)": 2,
+  "Soya / Soja": 2,
+  "Cereals containing gluten / Glutenhaltiges Getreide": 1,
+  "Celery / Sellerie": 1,
+  "Mustard / Senf": 1,
+};
+
+export function allergenSortScore(allergens: string[]): number {
+  if (allergens.length === 0) return 0;
+  let score = 0;
+  for (const a of allergens) {
+    score += ALLERGEN_WEIGHT[a] ?? 2;
+  }
+  return score;
 }
