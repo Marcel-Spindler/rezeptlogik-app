@@ -352,6 +352,7 @@ export function WoDetail({
   const [capDraft, setCapDraft] = useState("");
   const [manualEquipmentDraft, setManualEquipmentDraft] = useState("");
   const [manualCapacityDraft, setManualCapacityDraft] = useState("");
+  const [equipDetailOpen, setEquipDetailOpen] = useState(false);
   const [instructionBusy, setInstructionBusy] = useState(false);
   const [instructionError, setInstructionError] = useState<string | null>(null);
   const [allComponentsBusy, setAllComponentsBusy] = useState(false);
@@ -526,10 +527,19 @@ export function WoDetail({
         {/* Cook Methods + Per-Equipment Batche — bewusst klein: die Details stehen
             unten je Zubereitungskomponente, das hier ist nur der Kopf-Überblick. */}
         <div className="bg-[#0f2240] rounded-2xl px-4 py-3">
-          <div className="text-[7px] font-black uppercase tracking-[0.15em] text-blue-400 mb-1.5">
-            Cook Methods
-          </div>
-          <div className="flex flex-wrap gap-1.5 mb-2">
+          <button
+            type="button"
+            onClick={() => setEquipDetailOpen(!equipDetailOpen)}
+            className="w-full flex items-center justify-between"
+          >
+            <div className="text-[7px] font-black uppercase tracking-[0.15em] text-blue-400">
+              Cook Methods
+            </div>
+            <svg className={`w-3.5 h-3.5 text-blue-400 transition-transform ${equipDetailOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
             {orderCookingMethods(calc.resolvedCookMethods).length > 0 ? orderCookingMethods(calc.resolvedCookMethods).map(m => (
               <span key={m}
                 className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg ${
@@ -541,8 +551,18 @@ export function WoDetail({
             )) : <span className="text-blue-400/60 text-xs italic">Keine Cook Methods</span>}
           </div>
 
+          {/* Kompakte Zusammenfassung (immer sichtbar) */}
+          {!equipDetailOpen && calc.equipBatches.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2 text-[10px] text-blue-200">
+              {calc.equipBatches.map(eb => (
+                <span key={eb.equip} className="font-bold">{eb.label}: {eb.batches}× à {fmtKg(eb.perBatchKg)}</span>
+              ))}
+              <span className="text-blue-400">· {fmtKg(calc.totalKg)} ges.</span>
+            </div>
+          )}
+
           {/* Per-Equipment Batche mit editierbarer Kapazität */}
-          {calc.equipBatches.length > 0 && (
+          {equipDetailOpen && calc.equipBatches.length > 0 && (
             <div>
               <div className="text-[7px] font-black uppercase tracking-[0.12em] text-blue-400 mb-1.5">
                 Batche je Equipment — {fmtKg(calc.totalKg)} Gesamt{calc.components.length > 0 ? " (aus Komponenten)" : ""}
@@ -605,23 +625,24 @@ export function WoDetail({
               </div>
             </div>
           )}
-          {calc.gnTraySummary.length > 0 && (
+          {equipDetailOpen && calc.gnTraySummary.length > 0 && (
             <div className="mt-1.5 text-[10px] font-bold text-sky-300 tabular-nums">
               📦 {calc.gnTraySummary.map((s) => `${s.trays}× ${s.gnType}`).join(" · ")}
               {calc.components.length > 0 ? " (aus Komponenten)" : ""}
             </div>
           )}
-          {equip && calc.equipBatches.length === 0 && (
+          {equipDetailOpen && equip && calc.equipBatches.length === 0 && (
             <div className="mt-1 text-[10px] text-blue-300">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block mr-1.5"></span>
               <strong>{equip}</strong> — Kapazität in Equipment-Einstellungen (Sidebar) setzen
             </div>
           )}
-          {!calc.primaryEquip && (
+          {equipDetailOpen && !calc.primaryEquip && (
             <div className="mt-1 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[10px] font-semibold text-amber-100">
               Kein Equipment automatisch erkannt. Für eine belastbare Batch- und PDF-Berechnung bitte unten einmal Equipment und kg/Batch eintragen.
             </div>
           )}
+          {equipDetailOpen && (
           <div className="mt-3 border-t border-white/10 pt-3">
             <div className="text-[8px] font-black uppercase tracking-[0.12em] text-blue-400 mb-1">
               Equipment-Ausnahme
@@ -674,6 +695,7 @@ export function WoDetail({
               )}
             </div>
           </div>
+          )}
         </div>
 
         {/* UoM-Warnungen */}
