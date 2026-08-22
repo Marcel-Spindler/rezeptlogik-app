@@ -7,7 +7,7 @@ import { doc, setDoc } from "firebase/firestore";
 
 function detectWeekFromRows(rows: KetRow[]): string | null {
   for (const r of rows) {
-    const m = r.woNumber.match(/W(\d{2})/i) || r.dateNeeded.match(/W(\d{2})/i);
+    const m = r.woNumber.match(/(?<![A-Za-z])W(\d{2})(?!\d)/i) || r.dateNeeded.match(/(?<![A-Za-z])W(\d{2})(?!\d)/i);
     if (m) return `2026-W${m[1]}`;
   }
   return null;

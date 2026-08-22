@@ -1,6 +1,6 @@
 // Kleinere, wiederverwendete Bausteine für KET Plan / WO: leere Zustände,
 // Datei-Upload-Bildschirm, die WO-Gesamtübersicht, Stat-/Status-Chips.
-import { useState, type RefObject } from "react";
+import { useState, Component, type RefObject, type ReactNode } from "react";
 import { fmtDateHeader, fmtKg, fmtNum, statusColors } from "./ketLogic";
 import type { BatchCalc, KetRow } from "./ketTypes";
 import type { RunInfo } from "./ketRunLogic";
@@ -272,4 +272,57 @@ export function StatusChip({ label, value }: { label: string; value: string }) {
       {value || "—"}
     </div>
   );
+}
+
+// ── Error Boundary ──────────────────────────────────────────────────────────
+
+interface KetErrorBoundaryProps {
+  children: ReactNode;
+  fallbackTitle?: string;
+}
+
+interface KetErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class KetErrorBoundary extends Component<KetErrorBoundaryProps, KetErrorBoundaryState> {
+  constructor(props: KetErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): KetErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-full p-8">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 rounded-3xl bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-red-800 mb-2">
+              {this.props.fallbackTitle ?? "Fehler in der KET-Plan-Ansicht"}
+            </h3>
+            <p className="text-sm text-slate-600 mb-4">
+              {this.state.error?.message ?? "Ein unerwarteter Fehler ist aufgetreten."}
+            </p>
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: null })}
+              className="px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+            >
+              Erneut versuchen
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

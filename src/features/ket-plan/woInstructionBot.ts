@@ -195,8 +195,9 @@ export interface WoBatchResult {
 // überschreitet das schnell, deshalb wird hier in kleine, garantiert schnelle
 // Häppchen aufgeteilt statt alle Items in einem einzigen HTTP-Request zu senden.
 const BATCH_CHUNK_SIZE = 5;
-const FETCH_TIMEOUT_MS = 90_000; // 90s pro Request (statt unendlich)
+const FETCH_TIMEOUT_MS = 90_000;
 const MAX_CHUNK_RETRIES = 2;
+const PARALLEL_CHUNKS = 3; // max. gleichzeitige Chunk-Requests
 
 function fetchWithTimeout(url: string, opts: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
@@ -252,8 +253,17 @@ export async function generateWoInstructionsBatch(
   const generated: Record<string, WoInstruction> = {};
   const failed: Array<{ key: string; woNumber: string; error: string }> = [];
 
+  // Aufteilen in Chunks
+  const chunks: Array<{ key: string; row: KetRow; calc: BatchCalc; component?: WoComponent }>[] = [];
   for (let i = 0; i < items.length; i += BATCH_CHUNK_SIZE) {
-    const chunk = items.slice(i, i + BATCH_CHUNK_SIZE);
+    chunks.push(items.slice(i, i + BATCH_CHUNK_SIZE));
+  }
+
+  // Parallel mit Concurrency-Limit (PARALLEL_CHUNKS gleichzeitig)
+  let doneCount = 0;
+  let chunkIdx = 0;
+
+  async function processChunk(chunk: typeof chunks[0]): Promise<WoBatchResult> {
     let chunkResult: WoBatchResult | null = null;
     for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
       try {
@@ -261,17 +271,30 @@ export async function generateWoInstructionsBatch(
         break;
       } catch (error) {
         if (attempt < MAX_CHUNK_RETRIES) {
-          await new Promise(r => setTimeout(r, 1000 * (attempt + 1))); // backoff
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
           continue;
         }
         const message = error instanceof Error ? error.message : String(error);
         chunkResult = { generated: {}, failed: chunk.map((item) => ({ key: item.key, woNumber: item.row.woNumber, error: message })) };
       }
     }
-    Object.assign(generated, chunkResult!.generated);
-    failed.push(...chunkResult!.failed);
-    onChunkDone?.(chunkResult!, Math.min(i + chunk.length, items.length), items.length);
+    return chunkResult!;
   }
+
+  async function worker() {
+    while (true) {
+      const idx = chunkIdx++;
+      if (idx >= chunks.length) break;
+      const result = await processChunk(chunks[idx]);
+      Object.assign(generated, result.generated);
+      failed.push(...result.failed);
+      doneCount += chunks[idx].length;
+      onChunkDone?.(result, Math.min(doneCount, items.length), items.length);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(PARALLEL_CHUNKS, chunks.length) }, () => worker());
+  await Promise.all(workers);
 
   if (Object.keys(generated).length === 0 && failed.length > 0) {
     throw new Error(`Alle ${failed.length} WOs fehlgeschlagen. Erster Fehler: ${failed[0].error}`);

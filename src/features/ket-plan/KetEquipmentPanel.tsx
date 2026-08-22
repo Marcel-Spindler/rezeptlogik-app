@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { BatchCalc, KetRow } from "./ketTypes";
 import type { RunInfo } from "./ketRunLogic";
 import { parseDateShift } from "./ketLogic";
-import { computeFullResourceDemand, type RunDemand, type StationDemand } from "./ketEquipmentSummary";
+import { computeFullResourceDemand, type RunDemand, type StationDemand, SHIFT_HOURS } from "./ketEquipmentSummary";
 import { CHILLER_CFG, type ChillerKey } from "../blast-chiller/blastChillerLogic";
 
 // ── Helfer ─────────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ function fmtDate(dateStr: string): string {
 }
 
 function utilizationPct(station: StationDemand): number {
-  const shiftMin = 8 * 60;
+  const shiftMin = SHIFT_HOURS * 60;
   return Math.min(100, Math.round((station.effectiveMinutes / shiftMin) * 100));
 }
 
@@ -223,11 +223,14 @@ export function KetEquipmentPanel({
 
       for (const station of methods) {
         if (!map.has(station)) map.set(station, []);
-        map.get(station)!.push({
-          woNumber: row.woNumber,
-          subRecipeName: row.subRecipeName || row.recipeName,
-          kg: calc.totalKg,
-        });
+        const list = map.get(station)!;
+        if (!list.some(wo => wo.woNumber === row.woNumber)) {
+          list.push({
+            woNumber: row.woNumber,
+            subRecipeName: row.subRecipeName || row.recipeName,
+            kg: calc.totalKg,
+          });
+        }
       }
     }
     return map;

@@ -55,7 +55,7 @@ export const DEFAULT_STATION_COUNT: Record<string, number> = {
   GRILL: 1,
 };
 
-const SHIFT_HOURS = 8;
+export const SHIFT_HOURS = 8;
 const DEFAULT_OVEN_RACK_CAPACITY = 40;
 const DEFAULT_WANNE_KG_FALLBACK = 80;
 
@@ -105,6 +105,9 @@ export interface StationDemand {
   // Gantt: Frühester Startminute in der Schicht (kumuliert über vorherige Stationen)
   ganttStartMin: number;
   ganttEndMin: number;
+  // Personalbedarfsschätzung: wie viele MA diese Station gleichzeitig braucht
+  // (effectiveMinutes ÷ minutesPerStaffShift, aufgerundet)
+  staffNeeded: number;
 }
 
 export interface ChillerSlotDemand {
@@ -129,6 +132,8 @@ export interface RunDemand {
   totalWannen: number;
   // Gantt: geschätzte Gesamtdauer der Schicht (kritischer Pfad)
   criticalPathMinutes: number;
+  // Personalbedarfsschätzung: Summe aller Stationen dieses Runs
+  totalStaffNeeded: number;
 }
 
 export interface StationPeakInfo {
@@ -165,6 +170,8 @@ export interface FullResourceSummary {
   totalGnTraysWeek: number;
   totalWannenWeek: number;
   criticalPathPeakMinutes: number;
+  // Personalbedarfsschätzung: Peak-Wert über alle Runs/Tage der Woche
+  peakStaffNeeded: number;
 }
 
 // Compat-Typen (alte API)
@@ -179,6 +186,9 @@ export interface ResourceDemandOptions {
   minutesPerBatch?: Record<string, number>;
   ovenRackCapacity?: number;
   stationCount?: Record<string, number>;
+  firstRunPct?: number;
+  // Personalbedarfsschätzung: verfügbare Minuten pro MA pro Schicht (Default: SHIFT_HOURS * 60)
+  minutesPerStaffShift?: number;
 }
 
 // ── Interne Helfer ─────────────────────────────────────────────────────────
@@ -333,6 +343,8 @@ export function computeFullResourceDemand(
   const minutesPerBatch = opts?.minutesPerBatch ?? DEFAULT_MINUTES_PER_BATCH;
   const ovenRackCap = opts?.ovenRackCapacity ?? DEFAULT_OVEN_RACK_CAPACITY;
   const stationCount = opts?.stationCount ?? DEFAULT_STATION_COUNT;
+  const firstRunPct = opts?.firstRunPct ?? 70;
+  const staffShiftMin = opts?.minutesPerStaffShift ?? (SHIFT_HOURS * 60);
 
   // 1) Gruppierung: (date, shift, run)
   const groups = new Map<string, { date: string; shift: string; run: 1 | 2; rows: KetRow[] }>();
@@ -453,6 +465,7 @@ export function computeFullResourceDemand(
           woNumbers: [...agg.woNumbers].sort(),
           ganttStartMin: 0,
           ganttEndMin: 0,
+          staffNeeded: staffShiftMin > 0 ? Math.ceil(effectiveMin / staffShiftMin) : 0,
         };
       })
       .sort((a, b) => getStationOrder(a.station) - getStationOrder(b.station));
@@ -484,7 +497,7 @@ export function computeFullResourceDemand(
 
     byRunDayShift.push({
       run,
-      runSharePct: run === 1 ? 70 : 30,
+      runSharePct: run === 1 ? firstRunPct : (100 - firstRunPct),
       date,
       shift,
       shiftLabel: shiftLabel(shift) ?? `Schicht ${shift}`,
@@ -495,6 +508,7 @@ export function computeFullResourceDemand(
       totalGnTrays,
       totalWannen,
       criticalPathMinutes,
+      totalStaffNeeded: stations.reduce((s, st) => s + st.staffNeeded, 0),
     });
   }
 
@@ -568,6 +582,7 @@ export function computeFullResourceDemand(
     totalGnTraysWeek,
     totalWannenWeek,
     criticalPathPeakMinutes,
+    peakStaffNeeded: byRunDayShift.reduce((max, rd) => Math.max(max, rd.totalStaffNeeded), 0),
   };
 }
 
@@ -824,4 +839,128 @@ export function formatFullResourceAsHtml(summary: FullResourceSummary): string {
     ${scoopHtml}
     ${dayBlocks}
   </div>`;
+}
+
+// ── CSV-Export der Equipment-Summary ────────────────────────────────────────
+// Erzeugt eine RFC-4180-konforme CSV-Datei mit einer Zeile pro Station pro
+// Run/Tag — geeignet für weitere Analyse in Excel/Sheets oder als Anhang an
+// Rundmails.
+
+export function formatFullResourceAsCsv(summary: FullResourceSummary): string {
+  const header = [
+    "Run", "Datum", "Schicht", "Station", "Batches", "kg",
+    "Dauer (min)", "Effektiv (min)", "Geräte", "Wannen", "GN-Bleche",
+    "Rack-Ladungen", "MA-Bedarf", "Allergene", "WOs",
+  ].join(";");
+
+  const rows: string[] = [];
+  for (const rd of summary.byRunDayShift) {
+    for (const st of rd.stations) {
+      const gnTotal = st.gnTrays.reduce((s, t) => s + t.count, 0);
+      rows.push([
+        rd.run,
+        rd.date,
+        rd.shiftLabel,
+        st.label,
+        st.totalBatches,
+        st.totalKg.toFixed(1),
+        st.estimatedMinutes,
+        st.effectiveMinutes,
+        st.deviceCount,
+        st.wannen,
+        gnTotal,
+        st.ovenLoads ?? "",
+        st.staffNeeded,
+        st.allergensPresent.join(", "),
+        st.woNumbers.join(", "),
+      ].join(";"));
+    }
+  }
+  return [header, ...rows].join("\n");
+}
+
+// ── Wochen-Vergleich (Delta-Dashboard) ─────────────────────────────────────
+// Vergleicht zwei FullResourceSummary-Objekte (z.B. Vorwoche vs. aktuelle Woche)
+// und berechnet Deltas für die wichtigsten KPIs pro Station.
+
+export interface WeekDeltaStation {
+  station: string;
+  label: string;
+  batchesCurrent: number;
+  batchesPrevious: number;
+  batchesDelta: number;
+  kgCurrent: number;
+  kgPrevious: number;
+  kgDelta: number;
+  minutesCurrent: number;
+  minutesPrevious: number;
+  minutesDelta: number;
+  staffCurrent: number;
+  staffPrevious: number;
+  staffDelta: number;
+}
+
+export interface WeekDelta {
+  kgDelta: number;
+  gnTraysDelta: number;
+  wannenDelta: number;
+  staffDelta: number;
+  criticalPathDelta: number;
+  stations: WeekDeltaStation[];
+}
+
+export function computeWeekDelta(
+  current: FullResourceSummary,
+  previous: FullResourceSummary,
+): WeekDelta {
+  const stationMap = new Map<string, { cur: { batches: number; kg: number; min: number; staff: number }; prev: { batches: number; kg: number; min: number; staff: number } }>();
+
+  const aggregate = (summary: FullResourceSummary, side: "cur" | "prev") => {
+    for (const rd of summary.byRunDayShift) {
+      for (const st of rd.stations) {
+        if (!stationMap.has(st.station)) {
+          stationMap.set(st.station, {
+            cur: { batches: 0, kg: 0, min: 0, staff: 0 },
+            prev: { batches: 0, kg: 0, min: 0, staff: 0 },
+          });
+        }
+        const entry = stationMap.get(st.station)![side];
+        entry.batches += st.totalBatches;
+        entry.kg += st.totalKg;
+        entry.min += st.effectiveMinutes;
+        entry.staff = Math.max(entry.staff, st.staffNeeded);
+      }
+    }
+  };
+
+  aggregate(current, "cur");
+  aggregate(previous, "prev");
+
+  const stations: WeekDeltaStation[] = [...stationMap.entries()]
+    .map(([station, { cur, prev }]) => ({
+      station,
+      label: STATION_LABELS[station] ?? station,
+      batchesCurrent: cur.batches,
+      batchesPrevious: prev.batches,
+      batchesDelta: cur.batches - prev.batches,
+      kgCurrent: +cur.kg.toFixed(1),
+      kgPrevious: +prev.kg.toFixed(1),
+      kgDelta: +(cur.kg - prev.kg).toFixed(1),
+      minutesCurrent: cur.min,
+      minutesPrevious: prev.min,
+      minutesDelta: cur.min - prev.min,
+      staffCurrent: cur.staff,
+      staffPrevious: prev.staff,
+      staffDelta: cur.staff - prev.staff,
+    }))
+    .sort((a, b) => Math.abs(b.batchesDelta) - Math.abs(a.batchesDelta));
+
+  return {
+    kgDelta: +(current.totalKgWeek - previous.totalKgWeek).toFixed(1),
+    gnTraysDelta: current.totalGnTraysWeek - previous.totalGnTraysWeek,
+    wannenDelta: current.totalWannenWeek - previous.totalWannenWeek,
+    staffDelta: current.peakStaffNeeded - previous.peakStaffNeeded,
+    criticalPathDelta: current.criticalPathPeakMinutes - previous.criticalPathPeakMinutes,
+    stations,
+  };
 }
