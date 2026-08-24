@@ -30,13 +30,40 @@ async function saveKetPlanToFirestore(
   log: (msg: string) => void,
 ): Promise<void> {
   const { db } = getFirebase();
-  const docRef = doc(db, "apps/rezeptlogik/ketPlan", week);
-  await setDoc(docRef, {
-    week,
-    importedAt: new Date().toISOString(),
-    rows,
-  });
+  const now = new Date().toISOString();
+
+  // 1) KET-Plan speichern (wie bisher)
+  const ketRef = doc(db, "apps/rezeptlogik/ketPlan", week);
+  await setDoc(ketRef, { week, importedAt: now, rows });
   log(`✓ KET-Plan für ${week} gespeichert (${rows.length} Zeilen)`);
+
+  // 2) Auch als productionPlan speichern, damit Backfills/PostblastLive/etc.
+  //    die aktuelle Woche erkennen ohne separaten GSheet-Refresh.
+  const woRows = rows.map((r, i) => ({
+    run: i + 1,
+    kitchenDay: r.dateNeeded.replace(/ - \d+$/, ""),
+    workOrder: r.woNumber,
+    recipeId: r.recipeId || "",
+    recipeCode: r.recipeCode,
+    recipeName: r.recipeName,
+    subRecipe: r.subRecipeName,
+    plannedMeals: r.targetPortions,
+    targetPortions: r.targetPortions,
+    woCookedPortions: r.woCookedPortions ?? 0,
+    cookedPortionsExcess: r.cookedPortionsExcess ?? 0,
+    stagingKg: 0,
+    kitchenKg: 0,
+    postKg: 0,
+    yieldPct: 0,
+    cookMethods: r.cookMethods.join(", "),
+    stagingStatus: r.stagingStatus,
+    kitchenStatus: r.kitchenStatus,
+    unlockedEta: r.unlockedEta,
+    workOrderComment: r.workOrderComment,
+  }));
+  const ppRef = doc(db, "apps/rezeptlogik/productionPlan", week);
+  await setDoc(ppRef, { week, generatedAt: now, rows: woRows });
+  log(`✓ productionPlan für ${week} aktualisiert (${woRows.length} WO-Einträge)`);
 }
 
 export function KetPlanImport() {
