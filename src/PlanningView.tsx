@@ -657,7 +657,7 @@ export function PlanningView(
       });
     }
     return buckets;
-  }, [analysis.recipes, activeShifts, recipeLookup, portionMultiplier, data.processSpecs]);
+  }, [analysis.recipes, recipeLookup, portionMultiplier, data.processSpecs]);
 
   // @ts-expect-error unused
   const _stationsBySlot = useMemo(() => {

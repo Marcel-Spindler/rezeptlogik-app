@@ -40,6 +40,7 @@ import {
   type RackV2Block,
   type RackV2Layouts,
   type RackV2MarketId,
+  type RackV2PlanValidation,
 } from "./lib/rackV2";
 import type { UiLocale } from "./lib/i18n";
 import type { CookSchedule, ProcessSpec, Recipe, WeekRecipe } from "./core/types";
@@ -141,6 +142,9 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
 
   useEffect(() => {
     void autoLoadRackInputs(true);
+    // autoLoadRackInputs is redefined every render (closes over pool/week) —
+    // only re-fire when the week itself changes, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [week]);
 
   useEffect(() => {
@@ -252,7 +256,7 @@ export function RackV2View({ week, locale, weekRecipes, recipes, cookSchedules, 
   const validation = useMemo(() => validateV2Plan(assignments, layoutsByLine), [assignments, layoutsByLine]);
   const rackfileEntries = useMemo(() => assembleRackfileFromV2(assignments, layoutsByLine), [assignments, layoutsByLine]);
   const lineValidationById = useMemo(() => {
-    return Object.fromEntries(validation.perLine.map((line) => [line.lineId, line])) as Record<string, (typeof validation.perLine)[number]>;
+    return Object.fromEntries(validation.perLine.map((line) => [line.lineId, line])) as Record<string, RackV2PlanValidation["perLine"][number]>;
   }, [validation.perLine]);
   const lineErrorCountById = useMemo(() => {
     return Object.fromEntries(

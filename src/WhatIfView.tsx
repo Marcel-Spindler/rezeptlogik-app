@@ -58,7 +58,7 @@ export function WhatIfView({
       }
     }
     return uniqueRecipes.sort((a, b) => getBaseVolume(b) - getBaseVolume(a) || a.code.localeCompare(b.code, "de"));
-  }, [data.recipes, data.weekRecipes, week]);
+  }, [data.weekRecipes, week]);
   
   // @ts-expect-error unused
   type _MealChoice = {
@@ -98,6 +98,9 @@ export function WhatIfView({
     const m = new Map<string, number>();
     listAllOverrides().forEach(o => m.set(`${o.ingredientId}__${o.subRecipeId}`, o.value));
     return m;
+    // overrideTick isn't read in the body — it's a bump-to-recompute signal for
+    // listAllOverrides()'s localStorage read, which React can't track reactively.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overrideTick]);
 
   const instructionsMap = useMemo(
@@ -219,10 +222,9 @@ export function WhatIfView({
   const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
 
   // ── Multi-Meal Aggregation ─────────────────────────────────────────────
-  // @ts-expect-error prepared for multi-meal feature
-  const [multiMealMode, setMultiMealMode] = useState(false);
-  // @ts-expect-error prepared for multi-meal feature
-  const [selectedMealCodes, setSelectedMealCodes] = useState<Set<string>>(new Set());
+  // prepared for multi-meal feature
+  const [_multiMealMode, _setMultiMealMode] = useState(false);
+  const [_selectedMealCodes, _setSelectedMealCodes] = useState<Set<string>>(new Set());
 
   // ── Gewichtskontrolle ──────────────────────────────────────────────────
   const [weightControlTarget, setWeightControlTarget] = useState(0);

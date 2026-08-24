@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import type { DataBundle, DetailedSubRecipe } from "../../core/types";
+import type { DataBundle, DetailedSubRecipe, WeekRecipe } from "../../core/types";
 import { currentHfWeek } from "../../lib/wmsCache";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ export function AllergenPlatingView({ data }: { data: DataBundle }) {
     // Fallback: neueste vorhandene Woche
     const sorted = [...new Set(data.weekRecipes.map(wr => wr.hfWeek))].sort();
     const latest = sorted[sorted.length - 1];
-    if (!latest) return { weekShort: "W??", meals: [] as typeof data.weekRecipes };
+    if (!latest) return { weekShort: "W??", meals: [] as WeekRecipe[] };
     return { weekShort: latest.replace(/^\d{4}-/, ""), meals: data.weekRecipes.filter(wr => wr.hfWeek === latest) };
   }, [data.weekRecipes]);
 

@@ -415,7 +415,7 @@ function executeQuery(conn: snowflake.Connection, sqlText: string, binds: unknow
       sqlText,
       binds: binds as snowflake.Binds,
       complete(err, _stmt, rows) {
-        err ? reject(err) : resolve((rows ?? []) as Record<string, unknown>[]);
+        if (err) reject(err); else resolve((rows ?? []) as Record<string, unknown>[]);
       },
     });
   });
@@ -552,31 +552,6 @@ function mapWmsDeboxRow(row: Record<string, unknown>): WmsDeboxRow {
 
 function mapWmsPostblastRow(row: Record<string, unknown>): WmsPostblastRow {
   return mapWmsStagingRow(row);
-}
-
-function hfWeekPlusN(hfWeek: string, n: number): string {
-  const m = hfWeek.match(/^(20\d{2})-W(\d{2})$/);
-  if (!m) return hfWeek;
-  let year = Number(m[1]);
-  let week = Number(m[2]) + n;
-  while (week > 52) { week -= 52; year++; }
-  while (week < 1)  { week += 52; year--; }
-  return `${year}-W${String(week).padStart(2, "0")}`;
-}
-
-function hfWeekToWmsCode(hfWeek: string): string {
-  const m = hfWeek.match(/^(20\d{2})-W(\d{2})$/);
-  return m ? `${m[1]}${m[2]}` : "";
-}
-
-function currentWorkorderWeekWindow(): string[] {
-  const iso = isoWeekLabel(new Date());
-  const m = iso.match(/^(20\d{2})-W(\d{2})$/);
-  if (!m) return [];
-  const year = Number(m[1]);
-  const week = Number(m[2]) + 1; // hfWeek = ISO + 1
-  const hfWeek = `${year}-W${String(week).padStart(2, "0")}`;
-  return [-1, 0, 1, 2].map(n => hfWeekToWmsCode(hfWeekPlusN(hfWeek, n)));
 }
 
 function mapWmsWorkordersRow(row: Record<string, unknown>): WmsWorkordersRow {

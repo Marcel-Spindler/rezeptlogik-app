@@ -42,7 +42,7 @@ function useWoHistory(matched: WoMatchedStatus[], week: string) {
     const snap: WoSnapshot = { ts: new Date().toISOString(), actual: cur };
     setSnaps(prev => {
       const next = [...prev.slice(-199), snap];
-      try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* quota */ }
       return next;
     });
   }, [matched, key]);
@@ -641,7 +641,11 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
   // ── Handler ──
   function toggleMeal(code: string) {
-    setExpandedMeals(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
+    setExpandedMeals(prev => {
+      const n = new Set(prev);
+      if (n.has(code)) n.delete(code); else n.add(code);
+      return n;
+    });
   }
 
   function buildCtx(): ChatContext {

@@ -187,13 +187,6 @@ function currentHfWeek(): string {
   const week = Number(w) + 1;
   return week <= 52 ? `${year}-W${String(week).padStart(2, "0")}` : `${year + 1}-W01`;
 }
-function hfWeekPlusN(hfWeek: string, n: number): string {
-  const [, y, w] = hfWeek.match(/^(\d{4})-W(\d{2})$/) ?? [];
-  const week = Number(w) + n;
-  const year = Number(y);
-  if (week >= 1 && week <= 52) return `${year}-W${String(week).padStart(2, "0")}`;
-  return week > 52 ? `${year + 1}-W${String(week - 52).padStart(2, "0")}` : `${year - 1}-W${String(week + 52).padStart(2, "0")}`;
-}
 function hfWeekToWmsCode(hfWeek: string): string {
   const [, y, w] = hfWeek.match(/^(\d{4})-W(\d{2})$/) ?? [];
   return `${y}${w}`;
@@ -217,7 +210,7 @@ function executeQuery(conn: snowflake.Connection, sqlText: string, binds: unknow
   return new Promise((resolve, reject) => {
     conn.execute({
       sqlText, binds: binds as snowflake.Binds,
-      complete(err, _stmt, rows) { err ? reject(err) : resolve((rows ?? []) as Record<string, unknown>[]); },
+      complete(err, _stmt, rows) { if (err) reject(err); else resolve((rows ?? []) as Record<string, unknown>[]); },
     });
   });
 }
@@ -262,7 +255,7 @@ async function main() {
   // auf die neuesten Zeilen, statt den Push fehlschlagen zu lassen.
   const MAX_DOC_BYTES = 900_000; // Sicherheitsabstand zum 1_048_576-Byte-Limit
   function capToByteBudget<T>(rows: T[]): T[] {
-    let bytes = Buffer.byteLength(JSON.stringify(rows));
+    const bytes = Buffer.byteLength(JSON.stringify(rows));
     if (bytes <= MAX_DOC_BYTES) return rows;
     const avgBytesPerRow = bytes / rows.length;
     let capped = rows.slice(0, Math.max(1, Math.floor(MAX_DOC_BYTES / avgBytesPerRow)));
