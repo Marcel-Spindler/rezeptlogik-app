@@ -46,6 +46,7 @@ function resolveSurface(): AppSurface {
 /** URL-Parameter (?view=, ?week=) überschreiben einmalig beim Mount die localStorage-Werte. */
 function useUrlOverrides(
   kitchenMode: boolean,
+  surface: AppSurface,
   setView: (v: AppView) => void,
   setSelectedWeek: (w: string) => void,
   setSelectedRecipe: (code: string | null) => void,
@@ -69,6 +70,10 @@ function useUrlOverrides(
       setSelectedWeek(weekParam);
       setSelectedRecipe(null);
       setSearchText("");
+    } else if (surface === "shopfloor") {
+      // Kiosk-Laptops sollen IMMER die aktuelle Woche zeigen (via currentHfWeek()-
+      // Fallback in useKetRowsData), nicht einen veralteten localStorage-Wert.
+      setSelectedWeek("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kitchenMode]);
@@ -86,7 +91,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [searchText, setSearchText] = useState("");
   const [kitchenLinkCopied, setKitchenLinkCopied] = useState(false);
 
-  useUrlOverrides(kitchenMode, setView, setSelectedWeekRaw, setSelectedRecipe, setSearchText);
+  useUrlOverrides(kitchenMode, surface, setView, setSelectedWeekRaw, setSelectedRecipe, setSearchText);
 
   const { data, error } = useAppData(setSelectedWeekRaw);
   const selection = useRecipeSelection(data, selectedWeek, selectedRecipe, upliftPercent, searchText);
