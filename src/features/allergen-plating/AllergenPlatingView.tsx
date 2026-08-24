@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import type { DataBundle, DetailedSubRecipe } from "../../core/types";
+import { currentHfWeek } from "../../lib/wmsCache";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -32,18 +33,6 @@ const PALETTE = [
   "#E8D6F8","#D6F2EE","#FDECEA","#E8F0FE","#F8D6E8",
   "#D6F0F8","#F0F8D6","#F8ECD6","#E0E8FF","#FFD6F0",
   "#D6FFE8","#FFF0D6","#E8FFD6","#D6D6FF","#FFE8E8",
-];
-
-const W35 = [
-  "Cabbage in Cheese Sauce & Minced Beef","Salmon and Sweet Soy Dressing",
-  "Creamy Lemon Pepper Chicken","Salmon in creamy Gochugaru sauce",
-  "Rosemary-Tomato Chicken","Chicken in tomato cream sauce",
-  "Sun-Dried Tomato Penne","Vegetarian Biryani","Creamy Leek Pork tenderloin",
-  "Spicy Beef & Black Bean Chili - Version B","Souvlaki-style pork tenderloin",
-  "Pulled chicken with cheddar and bacon","Honey Mustard Pork Tenderloin",
-  "Bulgogi Pulled Beef Bowl","Indian style butter chicken",
-  "Cheddar & Red Pepper Chicken Thigh Pasta","Hot Honey Barramundi & Wild rice",
-  "Chive & Garlic Chicken","Beef & pepper casserole",
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -205,6 +194,19 @@ export function AllergenPlatingView({ data }: { data: DataBundle }) {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const recipeIndex = useMemo(() => buildRecipeIndex(data), [data]);
+
+  // Aktuelle Woche aus weekRecipes (dynamisch statt hart kodiert)
+  const currentWeekData = useMemo(() => {
+    const hfWeek = currentHfWeek();
+    const weekShort = hfWeek.replace(/^\d{4}-/, "");
+    const meals = data.weekRecipes.filter(wr => wr.hfWeek === hfWeek);
+    if (meals.length > 0) return { weekShort, meals };
+    // Fallback: neueste vorhandene Woche
+    const sorted = [...new Set(data.weekRecipes.map(wr => wr.hfWeek))].sort();
+    const latest = sorted[sorted.length - 1];
+    if (!latest) return { weekShort: "W??", meals: [] as typeof data.weekRecipes };
+    return { weekShort: latest.replace(/^\d{4}-/, ""), meals: data.weekRecipes.filter(wr => wr.hfWeek === latest) };
+  }, [data.weekRecipes]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -443,7 +445,7 @@ export function AllergenPlatingView({ data }: { data: DataBundle }) {
               style={{ width: "100%", border: "1px solid #d0d8e8", borderRadius: 7, padding: 9, fontSize: 12, fontFamily: "Arial, sans-serif", resize: "vertical", color: "#333", outline: "none", boxSizing: "border-box" }}
             />
             <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <button style={s.btnSm("#f0f2f5")} onClick={() => { setRecipeText(W35.join("\n")); setWeekLabel("W35"); }}>W35 Standard laden</button>
+              <button style={s.btnSm("#f0f2f5")} onClick={() => { setRecipeText(currentWeekData.meals.map(m => m.recipeName).join("\n")); setWeekLabel(currentWeekData.weekShort); }}>{currentWeekData.weekShort} laden</button>
               <button style={s.btnSm("#f0f2f5")} onClick={() => setRecipeText("")}>✕ Leeren</button>
               <span style={{ fontSize: 11, color: "#888", marginLeft: "auto" }}>{getRecipes().length} Rezepte</span>
             </div>
@@ -546,16 +548,9 @@ export function AllergenPlatingView({ data }: { data: DataBundle }) {
                                 <span style={{ fontSize: 10, color: "#1F3864", transition: "transform .15s", transform: isExpanded ? "rotate(90deg)" : "none", display: "inline-block", flexShrink: 0 }}>▶</span>
                               )}
                               <div>
-                                <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
-                                  {r.recipeCode && (
-                                    <span style={{ fontSize: 9.5, fontWeight: 800, color: "#fff", background: "#1F3864", borderRadius: 4, padding: "1px 6px", flexShrink: 0, letterSpacing: .3 }}>
-                                      {r.recipeCode}
-                                    </span>
-                                  )}
-                                  <span style={{ fontSize: 12, fontWeight: 800, color: r.found ? "#1F3864" : "#999", fontStyle: r.found ? "normal" : "italic" }}>
-                                    {r.name}
-                                  </span>
-                                </div>
+                                <span style={{ fontSize: 12, fontWeight: 800, color: r.found ? "#1F3864" : "#999", fontStyle: r.found ? "normal" : "italic" }}>
+                                  {r.recipeCode ? `${r.recipeCode} - ${r.name}` : r.name}
+                                </span>
                                 {r.matchedTo && r.matchedTo !== r.name && (
                                   <div style={{ fontSize: 9.5, color: "#888", marginTop: 1 }}>→ {r.matchedTo}</div>
                                 )}
