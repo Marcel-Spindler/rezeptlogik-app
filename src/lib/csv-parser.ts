@@ -71,7 +71,7 @@ export function parseRecipesCsv(text: string): Record<string, Recipe> {
         recipeNameLocal: fullName,
         recipeYield: num(row["Recipe Yield"]) || undefined,
         recipeYieldUom: row["Recipe Yield UOM"] || undefined,
-        allergens: row["Allergen Contains"] || undefined,
+        allergens: (row["Allergen Contains"] && row["Allergen Contains"].toLowerCase() !== "null") ? row["Allergen Contains"] : undefined,
         primaryPackagingSku: row["Primary Packaging Sku Code"] || undefined,
         compartmentName: row["Compartment Name"] || undefined,
         secondaryPackagingSkus: row["Secondary Packaging Sku Codes"] || undefined,

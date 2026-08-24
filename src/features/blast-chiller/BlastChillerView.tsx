@@ -187,10 +187,12 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
 
   function exportCSV() {
     const esc = (v: string) => `"${(v || "").replace(/"/g, '""')}"`;
-    const lines = [`${esc("Blast Chiller")},${esc("(WO's)")},${esc("Sub-Rezept / Komponente")},${esc("Allergene")}`];
+    const hdr = `${esc("Blast Chiller")},${esc("(WO's)")},${esc("Sub-Rezept / Komponente")},${esc("Allergene")}`;
+    const lines = [hdr];
     CHILLER_KEYS.forEach(k => {
       const it = byChiller[k]; if (!it?.length) return;
       const cfg = CHILLER_CFG[k];
+      lines.push(hdr);
       it.forEach(d => lines.push([esc(`${cfg.label} (${cfg.sub})`), esc(d.wo), esc(d.name), esc(d.allergen)].join(",")));
     });
     const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
@@ -202,10 +204,12 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
   }
 
   function exportGSheet() {
-    const lines = ["Blast Chiller\t(WO's)\tSub-Rezept / Komponente\tAllergene"];
+    const hdr = "Blast Chiller\t(WO's)\tSub-Rezept / Komponente\tAllergene";
+    const lines = [hdr];
     CHILLER_KEYS.forEach(k => {
       const it = byChiller[k]; if (!it?.length) return;
       const cfg = CHILLER_CFG[k];
+      lines.push(hdr);
       it.forEach(d => lines.push([`${cfg.label} (${cfg.sub})`, d.wo, d.name, d.allergen].join("\t")));
     });
     const copy = (text: string) => {

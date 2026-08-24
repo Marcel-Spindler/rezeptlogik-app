@@ -98,7 +98,7 @@ export function computeWoAllergen(
   if (recipe) {
     for (const market of ["DE", "BENL", "DKSE"] as const) {
       const a = recipe.markets[market]?.allergens;
-      if (a) return a;
+      if (a && a.toLowerCase() !== "null") return a;
     }
   }
 
