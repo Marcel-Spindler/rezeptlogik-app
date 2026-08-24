@@ -888,7 +888,10 @@ export function calcBatch(
 
   const allergenSet = new Set<string>();
   if (matchedSub) collectAllergens(matchedSub, allergenSet);
-  if (allergenSet.size === 0 && recipe) {
+  if (!matchedSub && allergenSet.size === 0 && recipe) {
+    // Rezept-Level-Fallback NUR wenn kein Struktur-Match gefunden wurde.
+    // Bei gefundenem matchedSub vertrauen wir den Ingredient-Daten — 0 Allergene
+    // heißt dort "bestätigt allergenfrei", nicht "Datenlücke".
     for (const mkt of ["DE", "BENL", "DKSE"] as const) {
       const raw = recipe.markets[mkt]?.allergens;
       if (raw) for (const a of raw.split(/[,;/]/)) { const t = a.trim(); if (t) allergenSet.add(t); }

@@ -85,11 +85,9 @@ export function computeWoAllergen(
         const acc = new Set<string>();
         collectIngredientAllergens(found, acc);
         if (acc.size > 0) return [...acc].join(", ");
-        // Sub-Rezept gefunden, aber keine Ingredient-Allergene dort getaggt — das ist
-        // eine Datenlücke, kein verlässliches "allergenfrei". NICHT hart "KEINE"
-        // zurückgeben (Sicherheitsrisiko für die Chiller-Trennung), sondern wie die
-        // CONTAINS-Anzeige in ketLogic.ts auf die Rezept-Ebene zurückfallen.
-        break;
+        // Sub-Rezept gefunden, keine Ingredient-Allergene getaggt — bei vorhandener
+        // Struktur vertrauen wir den Daten: das Sub-Rezept ist allergenfrei.
+        return "KEINE";
       }
     }
   }
