@@ -39,13 +39,18 @@ export function useAppData(onWeekResolved: (week: string) => void): AppDataState
       }
     };
 
+    const reloadHandler = () => { void loadLatest(); };
+
     (async () => {
       try {
         await refreshRampUpDataOnStart();
         void refreshOperationalData();
         await loadLatest();
         pollTimer = window.setInterval(() => { void refreshRampUpDataOnStart(); }, RAMP_UP_POLL_MS);
-        unsubscribe = subscribeRampUpHashChanges(() => { void loadLatest(); });
+        unsubscribe = subscribeRampUpHashChanges(reloadHandler);
+        window.addEventListener("rezeptlogik:ket-plan-saved", reloadHandler);
+        window.addEventListener("rezeptlogik:plating-plan-saved", reloadHandler);
+        window.addEventListener("rezeptlogik:csv-import-saved", reloadHandler);
       } catch (e: unknown) {
         if (!disposed) setError(e instanceof Error ? e.message : String(e));
       }
@@ -55,6 +60,9 @@ export function useAppData(onWeekResolved: (week: string) => void): AppDataState
       disposed = true;
       if (pollTimer !== null) window.clearInterval(pollTimer);
       unsubscribe();
+      window.removeEventListener("rezeptlogik:ket-plan-saved", reloadHandler);
+      window.removeEventListener("rezeptlogik:plating-plan-saved", reloadHandler);
+      window.removeEventListener("rezeptlogik:csv-import-saved", reloadHandler);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

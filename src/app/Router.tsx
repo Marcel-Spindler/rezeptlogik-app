@@ -2,7 +2,7 @@
 // Die 8 Fach-Views hängen unverändert dahinter — nur die Chrome drumherum ist neu.
 import { useAppState, type AppView } from "./AppContext";
 import { Shell, LoadingCard, ErrorCard } from "./Shell";
-import { NavTabs } from "./NavTabs";
+import { NavTabs, GroupSubTabs } from "./NavTabs";
 import { KitchenSurface } from "./KitchenSurface";
 import { AppFooter } from "./AppFooter";
 import { RecipeDetail } from "../features/recipe-detail/RecipeDetailShell";
@@ -148,6 +148,7 @@ function FullApp() {
             <NavTabs view={view} onChange={setView} />
           </div>
           <main className="flex-1 min-w-0">
+            <GroupSubTabs view={view} onChange={setView} />
             <MainPane view={view} />
           </main>
         </div>
@@ -192,6 +193,7 @@ function FullApp() {
         </aside>
 
         <main className="col-span-12 min-w-0 md:col-span-8 lg:col-span-9">
+          <GroupSubTabs view={view} onChange={setView} />
           <MainPane view={view} />
         </main>
       </div>

@@ -6,6 +6,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppState } from "../../app/AppContext";
 import { usePostblastMonitor } from "../gsheet-monitor/useGSheetMonitor";
+import { useKetRowsData } from "../ket-plan/useKetRowsData";
 import type { KetRow } from "../ket-plan/ketTypes";
 import type { PetRow } from "../pet-plan/petTypes";
 import type { RecipeWeightLookup } from "../gsheet-monitor/parsers/parseExportRecipes";
@@ -17,6 +18,13 @@ import { addDoc, collection, getFirebase } from "../../core/firebase";
 // Gleiche Storage-Keys wie die Upload-Stellen selbst (PostblastLiveView /
 // KetBreakdownView / PetPlanView) — bewusst identisch, damit ein dort einmal
 // hochgeladener Plan hier automatisch mitgilt, ohne erneuten Upload.
+// KET zusätzlich über useKetRowsData (dieselbe Quelle/Priorität wie KET Plan /
+// WO: manuelle CSV > GSheet→Firestore-Produktionsplan > Live-WMS/Snowflake-
+// Fallback) — dadurch braucht WO-Abgleich für die KET-Spalte KEINEN eigenen
+// Upload mehr, solange der Produktionsplan die aktuelle Woche kennt oder der
+// Live-WMS-Cache greift. PET hat keine solche Alternativquelle im DataBundle
+// (KitchenOS-Export existiert nur als manuelle CSV) — dort bleibt der Upload
+// in PetPlanView nötig, zählt aber genau wie bisher automatisch hier mit.
 const KET_CSV_STORAGE_KEY = "ket-csv-rows-v1";
 const RECIPE_WEIGHTS_STORAGE_KEY = "pb_recipe_weights_v1";
 export const PET_CSV_STORAGE_KEY = "pet-csv-rows-v1";
@@ -59,10 +67,14 @@ export function useWoReconciliation(): WoReconciliationState | null {
 }
 
 export function WoReconciliationProvider({ children }: { children: ReactNode }) {
-  const { data, surface } = useAppState();
+  const { data, surface, selectedWeek } = useAppState();
   const postblast = usePostblastMonitor();
 
-  const ketRows = useLocalStorageSource<KetRow[]>(KET_CSV_STORAGE_KEY, raw => JSON.parse(raw));
+  // Manuelle KET-CSV (falls in KetBreakdownView/PET-Ansicht hochgeladen) hat
+  // weiterhin Vorrang; ansonsten greift dieselbe Fallback-Kette wie "KET Plan /
+  // WO" (Produktionsplan → Live-WMS), damit hier kein eigener Upload nötig ist.
+  const csvKetRows = useLocalStorageSource<KetRow[]>(KET_CSV_STORAGE_KEY, raw => JSON.parse(raw));
+  const { ketRows } = useKetRowsData(data, selectedWeek, csvKetRows);
   const weights = useLocalStorageSource<RecipeWeightLookup>(RECIPE_WEIGHTS_STORAGE_KEY, raw => {
     const parsed = JSON.parse(raw) as { entries: [string, number][]; recipeCount: number; rowCount: number };
     return { gramsPerPortion: new Map(parsed.entries), recipeCount: parsed.recipeCount, rowCount: parsed.rowCount };
@@ -87,7 +99,7 @@ export function WoReconciliationProvider({ children }: { children: ReactNode }) 
   const sourcesAvailable = useMemo<ReconcileSource[]>(() => {
     const s: ReconcileSource[] = [];
     if (data?.productionPlan) s.push("app");
-    if (ketRows) s.push("ket");
+    if (ketRows.length > 0) s.push("ket");
     if (petRows) s.push("pet");
     if (wmsWorkorders.length > 0) s.push("wms");
     if (postblast.data) s.push("postblast");

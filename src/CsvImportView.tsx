@@ -4,6 +4,7 @@ import { formatDateTime } from "./lib/i18n";
 import { parseRecipesCsv, parseDetailedCsv, mergeGrossIntoRecipes } from "./lib/csv-parser";
 import { pushToFirestore, readFileText } from "./features/csv-import/csvImportFirestore";
 import { parsePlatingPlanCsv } from "./features/plating-import/parsePlatingPlan";
+import { isPetPlanCsv, parsePetPlanCsv } from "./features/plating-import/parsePetPlan";
 import { savePlatingPlanToFirestore } from "./features/plating-import/platingPlanFirestore";
 import { KetPlanImport } from "./features/ket-plan/KetPlanImport";
 
@@ -61,6 +62,8 @@ export function CsvImportView({ data }: { data: DataBundle }) {
 
       log("✓ Import abgeschlossen");
       setSuccess(true);
+      window.dispatchEvent(new CustomEvent("rezeptlogik:csv-import-saved"));
+
     } catch (err) {
       log(`✗ Fehler: ${err instanceof Error ? err.message : String(err)}`);
       setSuccess(false);
@@ -149,7 +152,9 @@ export function CsvImportView({ data }: { data: DataBundle }) {
     if (!file) return;
     try {
       const text = await readFileText(file);
-      const parsed = parsePlatingPlanCsv(text);
+      const parsed = isPetPlanCsv(text)
+        ? parsePetPlanCsv(text, file.name)
+        : parsePlatingPlanCsv(text);
       setPlatingParsed(parsed);
     } catch (err) {
       setPlatingParseError(err instanceof Error ? err.message : String(err));
@@ -317,7 +322,8 @@ export function CsvImportView({ data }: { data: DataBundle }) {
       <div className="card p-5">
         <h2 className="text-base font-semibold text-slate-800 mb-0.5">Plating-Plan importieren</h2>
         <p className="text-sm text-slate-500 mb-4">
-          CSV-Export aus <strong>F_VE Production Plan – W{"{XX}"} – Plating Plan [WIP].csv</strong> hochladen.
+          CSV-Export aus <strong>F_VE Production Plan – Plating Plan [WIP].csv</strong> oder{" "}
+          <strong>PET-Verden-2026-W{"{XX}"}.csv</strong> hochladen.
           Wird in Firestore gespeichert und steht im Manufacturing Planning Calendar als Plating-Deadline zur Verfügung.
         </p>
 
@@ -435,8 +441,9 @@ export function CsvImportView({ data }: { data: DataBundle }) {
         </summary>
         <p className="text-sm text-slate-500 mt-2 mb-3">
           Liest alle CSVs, XLSX und Google-Sheets-Quellen aus{" "}
-          <code className="bg-slate-100 px-1 rounded">C:\Rezeptlogik</code> und schreibt
-          lokal in <code className="bg-slate-100 px-1 rounded">public/data/data.json</code>.
+          <code className="bg-slate-100 px-1 rounded">C:\Rezeptlogik</code>, schreibt
+          lokal in <code className="bg-slate-100 px-1 rounded">public/data/data.json</code>{" "}
+          und pusht anschließend automatisch nach Firestore (webapp-übergreifend).
           Funktioniert nur wenn der Vite Dev-Server läuft.
         </p>
         <div className="flex items-center gap-3">
@@ -450,7 +457,7 @@ export function CsvImportView({ data }: { data: DataBundle }) {
                 : "bg-slate-700 text-white ring-slate-700 hover:bg-slate-800"
             }`}
           >
-            {devRunning ? "Läuft…" : "npm run import:local"}
+            {devRunning ? "Läuft…" : "Import + Push → Firestore"}
           </button>
           {devExitCode === 0 && (
             <button

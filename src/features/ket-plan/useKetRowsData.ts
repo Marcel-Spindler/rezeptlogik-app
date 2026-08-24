@@ -21,7 +21,7 @@ export interface KetRowsDataResult {
 }
 
 export function useKetRowsData(
-  data: DataBundle,
+  data: DataBundle | null,
   selectedWeek: string | undefined,
   csvRows: KetRow[] | null,
 ): KetRowsDataResult {
@@ -34,12 +34,12 @@ export function useKetRowsData(
   // fehlt. Ohne diesen Check würde der Live-Snowflake-Fallback unten nie
   // greifen, obwohl productionPlan für die aktuelle Woche leer ist.
   const productionPlanHasLiveWeek = useMemo(() => {
-    const rows = data.productionPlan?.rows;
+    const rows = data?.productionPlan?.rows;
     if (!rows?.length) return false;
     const liveWeekNum = weekNumFromHfWeek(liveWeek);
     if (liveWeekNum == null) return true; // can't tell - don't second-guess the trusted source
     return rows.some((row) => weekPrefixFromWoNumber(row.workOrder) === liveWeekNum);
-  }, [data.productionPlan?.rows, liveWeek]);
+  }, [data?.productionPlan?.rows, liveWeek]);
 
   // Lowest-priority fallback: only reach for the live WMS/Snowflake cache when
   // neither manual CSV nor the established GSheet→Firestore plan has rows for
@@ -78,12 +78,12 @@ export function useKetRowsData(
 
   const ketRows = useMemo<KetRow[]>(() => {
     if (csvRows !== null) return csvRows;
-    const rows = data.productionPlan?.rows;
+    const rows = data?.productionPlan?.rows;
     if (rows?.length && productionPlanHasLiveWeek) return woEntriesToKetRows(rows);
     if (liveWmsRows?.length) return woEntriesToKetRows(liveWmsRows);
     if (rows?.length) return woEntriesToKetRows(rows); // stale but still better than nothing
     return [];
-  }, [csvRows, data.productionPlan?.rows, productionPlanHasLiveWeek, liveWmsRows]);
+  }, [csvRows, data?.productionPlan?.rows, productionPlanHasLiveWeek, liveWmsRows]);
 
   return { ketRows, liveWeek, liveWmsRows, productionPlanHasLiveWeek, wmsDroppedWeeks };
 }

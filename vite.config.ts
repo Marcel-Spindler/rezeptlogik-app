@@ -94,6 +94,53 @@ function importLocalPlugin(): Plugin {
         child.stdout?.on("data", (d: Buffer) => res.write(stripAnsi(d.toString())));
         child.stderr?.on("data", (d: Buffer) => res.write(stripAnsi(d.toString())));
         child.on("close", (code: number | null) => {
+          if (code === 0) {
+            res.write("\n── Pushing to Firestore…\n");
+            const push = spawn("npm", ["run", "push:firestore"], {
+              cwd: process.cwd(),
+              shell: true,
+              env: { ...process.env, FORCE_COLOR: "0" },
+              windowsHide: true,
+            });
+            push.stdout?.on("data", (d: Buffer) => res.write(stripAnsi(d.toString())));
+            push.stderr?.on("data", (d: Buffer) => res.write(stripAnsi(d.toString())));
+            push.on("close", (pushCode: number | null) => {
+              res.write(`\n__DONE:${pushCode ?? 1}__`);
+              res.end();
+            });
+            push.on("error", (err: Error) => {
+              res.write(`\nFehler push:firestore: ${err.message}\n__DONE:1__`);
+              res.end();
+            });
+          } else {
+            res.write(`\n__DONE:${code ?? 1}__`);
+            res.end();
+          }
+        });
+        child.on("error", (err: Error) => {
+          res.write(`\nFehler beim Starten: ${err.message}\n__DONE:1__`);
+          res.end();
+        });
+      });
+      server.middlewares.use("/api/push-firestore", (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== "POST") { res.statusCode = 405; res.end(); return; }
+
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Transfer-Encoding", "chunked");
+        res.setHeader("Cache-Control", "no-store");
+
+        const stripAnsi = (s: string) => stripVTControlCharacters(s);
+
+        const child = spawn("npm", ["run", "push:firestore"], {
+          cwd: process.cwd(),
+          shell: true,
+          env: { ...process.env, FORCE_COLOR: "0" },
+          windowsHide: true,
+        });
+
+        child.stdout?.on("data", (d: Buffer) => res.write(stripAnsi(d.toString())));
+        child.stderr?.on("data", (d: Buffer) => res.write(stripAnsi(d.toString())));
+        child.on("close", (code: number | null) => {
           res.write(`\n__DONE:${code ?? 1}__`);
           res.end();
         });

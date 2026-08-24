@@ -6,8 +6,10 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
 // Baseline "does the app still boot" check for the rebuilt src/app/ shell
 // (AppContext, Router, Shell, NavTabs). Every rewrite phase should keep this green.
 
-test("all 13 nav tabs render via deep link and highlight themselves in the sidebar", async ({ page }) => {
-  const views: Array<[string, string]> = [
+test("all nav groups render via deep link and highlight themselves in the sidebar", async ({ page }) => {
+  // navLabel = the NavTabs entry that should be highlighted. subLabel = the
+  // GroupSubTabs entry (only present for views bundled into "Bots"/"Monitoring").
+  const views: Array<[string, string, string?]> = [
     ["recipe", "Rezept"],
     ["catalog", "Meal Katalog"],
     ["planning", "Planning OASE"],
@@ -17,22 +19,26 @@ test("all 13 nav tabs render via deep link and highlight themselves in the sideb
     ["whatif", "What-If Rechner"],
     ["rundmail", "Rundmail"],
     ["import", "CSV Import"],
-    ["blast-chiller", "Blast Chiller Bot"],
-    ["allergen-plating", "Allergen Plating Bot"],
-    ["postblast-live", "Postblast Live"],
+    ["blast-chiller", "Bots", "Blast Chiller"],
+    ["allergen-plating", "Bots", "Allergen Plating"],
+    ["postblast-live", "Monitoring", "Postblast Live"],
+    ["backfills", "Monitoring", "Backfills"],
     // Redzone Live is dev-only (needs the local WMS/Snowflake server) — valid to test
     // here since these specs always run against a local dev server.
     ["redzone-live", "Redzone Live"],
   ];
 
-  for (const [view, label] of views) {
+  for (const [view, navLabel, subLabel] of views) {
     await page.goto(`${BASE_URL}?view=${view}`);
-    // "aside nav" for the standard shell, but the two bot views (blast-chiller,
-    // allergen-plating) render NavTabs full-width without the aside wrapper.
+    // "aside nav" for the standard shell, but the bundled "Bots" views
+    // (blast-chiller, allergen-plating) render NavTabs full-width without the aside wrapper.
     const nav = page.locator("nav").first();
     await expect(nav).toBeVisible({ timeout: 30000 });
     // active tab is styled with bg-verden-600 — assert via the shared class rather than color
-    await expect(nav.getByRole("button", { name: label, exact: true })).toHaveClass(/bg-verden-600/);
+    await expect(nav.getByRole("button", { name: navLabel, exact: true })).toHaveClass(/bg-verden-600/);
+    if (subLabel) {
+      await expect(page.locator("main").first().getByRole("button", { name: subLabel, exact: true })).toHaveClass(/bg-verden-600/);
+    }
     await expect(page.locator("main").first()).toBeVisible();
   }
 });
