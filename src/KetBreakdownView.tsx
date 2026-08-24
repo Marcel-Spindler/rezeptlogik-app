@@ -92,7 +92,9 @@ function sanitizeFilename(name: string): string {
  * Öffnen genauso identifizieren lässt wie die WO selbst.
  */
 function woFilename(row: KetRow): string {
+  const kw = weekPrefixFromWoNumber(row.woNumber);
   const parts = [`WO_${row.woNumber}`];
+  if (kw != null) parts.push(`KW${String(kw).padStart(2, "0")}`);
   if (row.recipeCode) parts.push(row.recipeCode);
   parts.push(row.subRecipeName || row.recipeName);
   return parts.join("_");

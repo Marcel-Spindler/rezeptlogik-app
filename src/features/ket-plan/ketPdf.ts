@@ -140,7 +140,7 @@ function buildComponentsHtml(row: KetRow, calc: BatchCalc, woInstructions: Recor
       ? `<div style="margin:5px 10px 0;font-size:9px;font-weight:800;color:#0369a1;">📦 ${component.gnTraySummary.map(s => `${s.trays}× ${escHtml(s.gnType)}`).join(" · ")}</div>`
       : "";
     const componentScoopHtml = component.scoopInfo
-      ? `<div style="margin:5px 10px 0;font-size:9px;font-weight:800;color:#7c3aed;">🥄 ${scoopBadgeHtml(component.scoopInfo)}</div>`
+      ? `<div style="margin:5px 10px 0;padding:4px 8px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:5px;font-size:10px;font-weight:800;color:#7c3aed;">🥄 ${scoopBadgeHtml(component.scoopInfo)}</div>`
       : "";
 
     return `
@@ -337,15 +337,11 @@ export function buildPdf(
       <div class="slabel">Pro Batch</div>
       <div class="sval">${calc.perBatchKg > 0 ? fmtKg(calc.perBatchKg) : "—"}</div>
     </div>
-    ${calc.scoopInfo ? `
-    <div class="stat stat-scoop">
-      <div class="slabel">Scoop</div>
-      <div class="sval">${scoopBadgeHtml(calc.scoopInfo)}</div>
-    </div>` : ""}
   </div>
 
   ${equipBatchHtml}
   ${gnTrayHtml}
+  ${calc.scoopInfo ? `<div style="margin:3px 0;padding:4px 8px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:5px;display:flex;align-items:center;gap:4px;font-size:10px;font-weight:800;color:#7c3aed;">🥄 ${scoopBadgeHtml(calc.scoopInfo)}</div>` : ""}
   ${factorBadgeHtml}
   ${allergenHtml}
   ${chillerHtml}
@@ -369,6 +365,7 @@ export function buildPdf(
 
   <div class="card-back">
   <div class="back-id">WO ${row.woNumber} · ${escHtml(row.recipeCode)} · ${escHtml(row.subRecipeName || row.recipeName)}</div>
+  ${calc.scoopInfo ? `<div style="margin:2px 0 4px;padding:3px 8px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:4px;font-size:9px;font-weight:800;color:#7c3aed;">🥄 ${scoopBadgeHtml(calc.scoopInfo)}</div>` : ""}
   ${ingRows ? `
   <table class="ings">
     <thead><tr><th>Zutat</th><th class="num hi">Pro Batch</th><th class="num">Total</th></tr></thead>
@@ -416,7 +413,7 @@ body{font-family:Arial,sans-serif;font-size:9px;color:#111;background:#fff}
 .stat-green .sval{color:#15803d}
 .stat-red .sval{color:#b91c1c}
 .sval.big{font-size:11px}
-.stat-scoop .sval{font-size:8px;line-height:1.2}
+
 .components-section{margin-bottom:4px}
 .components-title{font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin:4px 0 3px;padding-top:4px;border-top:1px solid #e2e8f0}
 .component-block{border:1px solid #dbe3ee;border-radius:6px;margin-bottom:4px;overflow:hidden;page-break-inside:avoid;break-inside:avoid-page}
@@ -466,7 +463,7 @@ body{font-family:Arial,sans-serif;font-size:9px;color:#111;background:#fff}
   .stats{gap:2px;margin-bottom:3px}
   .sval{font-size:8px}.sval.big{font-size:10px}
   .stat{padding:1px 3px}.slabel{font-size:5px}
-  .stat-scoop .sval{font-size:7px}
+
   .methods{padding:3px 6px;font-size:8px}
   .component-name{font-size:9px}
   /* Sub-Meals dürfen nie durch einen Seitenumbruch getrennt werden,

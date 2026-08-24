@@ -201,7 +201,7 @@ export function KetShopfloorDashboard({
           </div>
         ) : (
           <div className="space-y-2">
-            {deptWos.map(({ row, calc, allergenScore }) => {
+            {deptWos.map(({ row, calc, allergenScore }, idx) => {
               const hasInstruction = instructionCache?.has(row.key) ?? false;
               const methods = calc.resolvedCookMethods.filter(m => m !== "VEGGIE DEBOX" && m !== "PROTEIN DEBOX" && m !== "SPICE PORTIONING" && m !== "BLAST CHILLER");
               const gnTotal = calc.gnTraySummary.reduce((s, t) => s + t.trays, 0);
@@ -215,6 +215,12 @@ export function KetShopfloorDashboard({
                   }`}
                   style={{ borderLeft: `4px solid ${isDone ? "#94A3B8" : allergenScore === 0 ? "#10B981" : allergenScore >= 8 ? "#EF4444" : "#F59E0B"}` }}
                 >
+                  {/* Reihenfolge-Nummer */}
+                  <div className={`shrink-0 w-12 flex items-center justify-center font-black text-2xl ${
+                    isDone ? "text-slate-300" : allergenScore === 0 ? "text-emerald-600" : allergenScore >= 8 ? "text-red-600" : "text-amber-600"
+                  }`}>
+                    {idx + 1}
+                  </div>
                   <div className="px-4 py-3 flex-1 min-w-0">
                     {/* Header */}
                     <div className="flex items-start justify-between gap-3">

@@ -45,9 +45,9 @@ export const DEFAULT_MINUTES_PER_BATCH: Record<string, number> = {
 
 // Standardmäßige Geräte-Anzahl je Station (1 = ein Gerät, 2 = parallel nutzbar etc.)
 export const DEFAULT_STATION_COUNT: Record<string, number> = {
-  BRAISER: 3,
-  OVEN: 2,
-  "PLANETARY MIXER": 1,
+  BRAISER: 6,
+  OVEN: 6,
+  "PLANETARY MIXER": 2,
   "HORIZONTAL MIXER": 1,
   "PATTY MAKER": 1,
   "HOT SHREDDER": 1,
