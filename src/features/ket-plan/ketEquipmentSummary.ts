@@ -88,11 +88,6 @@ export interface GnTrayDemand {
   count: number;
 }
 
-export interface WannenSizeDemand {
-  size: string;
-  count: number;
-}
-
 export interface StationDemand {
   station: string;
   label: string;
@@ -103,7 +98,6 @@ export interface StationDemand {
   deviceCount: number;
   gnTrays: GnTrayDemand[];
   wannen: number;
-  wannenBySize: WannenSizeDemand[];
   racksNeeded: number;
   ovenLoads: number | null;
   scoopsNeeded: ScoopEntry[];
@@ -134,7 +128,6 @@ export interface RunDemand {
   totalWos: number;
   totalGnTrays: number;
   totalWannen: number;
-  totalWannenBySize: WannenSizeDemand[];
   totalRacksNeeded: number;
   criticalPathMinutes: number;
   totalStaffNeeded: number;
@@ -454,12 +447,6 @@ export function computeFullResourceDemand(
           for (const a of agg.allergens) globalSet.add(a);
         }
 
-        // Wannen-Größen-Aufschlüsselung (GN-Typ → Wannen dieses Typs)
-        const wannenBySize: WannenSizeDemand[] = gnTrays.map(t => ({
-          size: t.gnType,
-          count: t.count,
-        }));
-
         // Rack-Bedarf: Gesamte GN-Bleche ÷ Bleche pro Rack
         const racksNeeded = totalGnCount > 0 ? Math.ceil(totalGnCount / traysPerRack) : 0;
 
@@ -473,7 +460,6 @@ export function computeFullResourceDemand(
           deviceCount: devices,
           gnTrays,
           wannen,
-          wannenBySize,
           racksNeeded,
           ovenLoads,
           scoopsNeeded: [...agg.scoops.values()],
@@ -512,17 +498,6 @@ export function computeFullResourceDemand(
     const totalWannen = stations.reduce((s, st) => s + st.wannen, 0);
     const totalRacksNeeded = totalGnTrays > 0 ? Math.ceil(totalGnTrays / traysPerRack) : 0;
 
-    // Wannen nach Größe aggregieren
-    const wannenSizeMap = new Map<string, number>();
-    for (const st of stations) {
-      for (const ws of st.wannenBySize) {
-        wannenSizeMap.set(ws.size, (wannenSizeMap.get(ws.size) ?? 0) + ws.count);
-      }
-    }
-    const totalWannenBySize: WannenSizeDemand[] = [...wannenSizeMap.entries()]
-      .map(([size, count]) => ({ size, count }))
-      .sort((a, b) => a.size.localeCompare(b.size));
-
     byRunDayShift.push({
       run,
       runSharePct: run === 1 ? firstRunPct : (100 - firstRunPct),
@@ -535,7 +510,6 @@ export function computeFullResourceDemand(
       totalWos: groupRows.length,
       totalGnTrays,
       totalWannen,
-      totalWannenBySize,
       totalRacksNeeded,
       criticalPathMinutes,
       totalStaffNeeded: stations.reduce((s, st) => s + st.staffNeeded, 0),
@@ -999,16 +973,35 @@ export function computeWeekDelta(
 
 // ── Allergen-Sortierung für Shopfloor ────────────────────────────────────────
 
+// Deckt alle biAllergen()-Ausgaben aus factorRules.ts ab (ALLERGEN_BILINGUAL) —
+// spezifische Nuss-/Getreide-/Meeresfrüchte-Sorten teilen sich das Gewicht
+// ihrer Oberkategorie, sonst fallen sie unbemerkt auf den 2er-Default zurück.
 const ALLERGEN_WEIGHT: Record<string, number> = {
   "Tree nuts / Schalenfrüchte": 5,
   "Peanuts / Erdnüsse": 5,
+  "Almonds / Mandeln": 5,
+  "Walnuts / Walnüsse": 5,
+  "Cashew nuts / Kaschunüsse": 5,
+  "Pistachios / Pistazien": 5,
+  "Hazelnuts / Haselnüsse": 5,
+  "Brazil nuts / Paranüsse": 5,
+  "Pecans / Pekannüsse": 5,
+  "Macadamia nuts / Macadamianüsse": 5,
   "Sesame seeds / Sesamsamen": 4,
   "Fish / Fisch": 4,
   "Crustaceans / Krebstiere": 4,
+  "Molluscs / Weichtiere": 4,
   "Eggs / Eier": 3,
   "Milk (incl. lactose) / Milch (einschließlich Laktose)": 2,
   "Soya / Soja": 2,
+  "Lupin / Lupinen": 2,
+  "Sulphur dioxide & sulphites / Schwefeldioxide und Sulfite": 2,
   "Cereals containing gluten / Glutenhaltiges Getreide": 1,
+  "Wheat / Weizen": 1,
+  "Barley / Gerste": 1,
+  "Oats / Hafer": 1,
+  "Rye / Roggen": 1,
+  "Spelt / Dinkel": 1,
   "Celery / Sellerie": 1,
   "Mustard / Senf": 1,
 };

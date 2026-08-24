@@ -1,5 +1,5 @@
 // Postblast Live Matching — verknüpft GSheet-Wiegungen mit geplanten Work Orders.
-import type { PostblastData, PostblastEntry, RtiData, RtiSubRecipeEntry } from "./gsheetTypes";
+import type { PostblastData, PostblastEntry, PreblastData, RtiData, RtiSubRecipeEntry } from "./gsheetTypes";
 import type { ProductionPlan } from "../../core/types";
 
 export interface WoMatchedStatus {
@@ -9,6 +9,8 @@ export interface WoMatchedStatus {
   recipeName: string;
   plannedMeals: number;
   plannedKg: number;
+  // Post-Blast-Summe — das entscheidende Ist-Gewicht NACH dem Blast Chiller,
+  // treibt progressPct/isComplete/isCritical/Backfill (siehe Kommentar unten).
   actualKg: number;
   progressPct: number;
   deltaKg: number;
@@ -26,6 +28,28 @@ export interface WoMatchedStatus {
   // das sichtbar ("≈ GESCHÄTZT"), damit niemand eine Schätzung mit einem
   // echten Soll verwechselt.
   isEstimated: boolean;
+  // Pre-Blast-Summe — die Wiegung VOR dem Blast Chiller, bevor die Charge dort
+  // an Menge verliert. Zählt NICHT zu progressPct/isComplete (das würde einen
+  // Kühlverlust verschweigen), dient nur als früher Zwischenstatus und als
+  // Referenz für shrinkKg.
+  preBlastKg: number;
+  // Kühlverlust = preBlastKg - actualKg. Nur berechnet, wenn für dieselbe WO
+  // BEIDE Stufen vorliegen — sonst 0, damit kein Schwund aus unvollständigen
+  // Daten erfunden wird (z.B. wenn nur Pre-Blast schon da ist).
+  shrinkKg: number;
+  shrinkPct: number;
+  // true = schon pre-blast gewogen (Kitchen fertig, Charge im/nach dem
+  // Blast Chiller), aber die entscheidende Post-Blast-Wiegung steht noch aus.
+  // Verhindert, dass eine WO fälschlich als "kritisch/nichts passiert" gilt,
+  // obwohl tatsächlich schon produziert wurde.
+  awaitingPostBlast: boolean;
+  // true = die Pre-Blast-Summe hat schon (annähernd) das Soll erreicht — es
+  // ist unwahrscheinlich, dass noch ein weiterer Batch/Rack dieser WO durch
+  // die Küche läuft. Gate für Warnungen/Früherkennung (siehe productionAgent):
+  // solange das false ist, könnte "fehlende Post-Blast-Wiegung" schlicht
+  // bedeuten, dass der nächste Batch noch kocht — kein Grund zur Sorge.
+  preBlastLikelyDone: boolean;
+  lastPreBlastWeighing: string | null;
   run: number;
   weighings: PostblastEntry[];
   lastWeighing: string | null;
@@ -77,6 +101,9 @@ function buildRtiIndex(rtiData: RtiData | null | undefined) {
 
 export function matchPostblastToWorkOrders(
   postblast: PostblastData | null,
+  // Pre-Blast-Wiegungen — optional: fehlt der Feed (noch nicht geladen), läuft
+  // alles wie zuvor, nur ohne preBlastKg/shrink/awaitingPostBlast-Zusatzinfo.
+  preblast: PreblastData | null | undefined,
   productionPlan: ProductionPlan | undefined,
   rtiData?: RtiData | null,
   // WOs, die nur über die ET-Master-Liste/den Live-WMS-Cache bekannt sind,
@@ -98,12 +125,28 @@ export function matchPostblastToWorkOrders(
     const hasPlan = !unplannedWorkOrders?.has(woNum);
     const isEstimated = hasPlan && (estimatedWorkOrders?.has(woNum) ?? false);
     const weighings = postblast.byWorkOrder.get(woNum) ?? [];
-    const actualKg = weighings.reduce((s, e) => s + e.rawWeightKg, 0);
+    const actualKg = weighings.reduce((s, e) => s + e.weightKg, 0);
+    const preWeighings = preblast?.byWorkOrder.get(woNum) ?? [];
+    const preBlastKg = preWeighings.reduce((s, e) => s + e.weightKg, 0);
+    const shrinkKg = preBlastKg > 0 && actualKg > 0 ? Math.max(0, preBlastKg - actualKg) : 0;
+    const shrinkPct = shrinkKg > 0 ? (shrinkKg / preBlastKg) * 100 : 0;
+    const awaitingPostBlast = hasPlan && preBlastKg > 0 && actualKg === 0;
     const plannedKg = wo.postKg || wo.kitchenKg || wo.stagingKg || 0;
+    // Eine WO kann über mehrere Batches/Racks laufen (mehrere Pre-Blast-
+    // Wiegungen für dieselbe WO-Nummer) — ein einzelner fertiger Rack heißt
+    // NICHT, dass die ganze WO durch die Küche ist, es könnte noch ein
+    // weiterer Batch unterwegs sein. Erst wenn die Pre-Blast-Summe schon nah
+    // ans Soll heranreicht, ist es wahrscheinlich, dass kein weiterer Batch
+    // mehr kommt — nur dann darf "Post-Blast-Wiegung fehlt" als Warnsignal
+    // gelten (siehe analyzeAwaitingPostBlast/analyzeShrinkProjection).
+    const preBlastLikelyDone = hasPlan && plannedKg > 0 && preBlastKg >= plannedKg * 0.9;
     const progressPct = plannedKg > 0 ? (actualKg / plannedKg) * 100 : (actualKg > 0 && hasPlan ? 100 : 0);
     const deltaKg = actualKg - plannedKg;
     const isComplete = hasPlan && progressPct >= 95;
-    const isCritical = hasPlan && plannedKg > 0 && progressPct < 30 && actualKg === 0;
+    // awaitingPostBlast ausgenommen: da wurde nachweislich schon produziert
+    // (Pre-Blast-Gewicht da), das ist kein "nichts passiert"-Kritisch-Fall,
+    // sondern wartet nur noch auf die zweite Wiegung.
+    const isCritical = hasPlan && plannedKg > 0 && progressPct < 30 && actualKg === 0 && !awaitingPostBlast;
 
     matched.push({
       workOrder: woNum,
@@ -119,6 +162,12 @@ export function matchPostblastToWorkOrders(
       isCritical,
       hasPlan,
       isEstimated,
+      preBlastKg,
+      shrinkKg,
+      shrinkPct,
+      awaitingPostBlast,
+      preBlastLikelyDone,
+      lastPreBlastWeighing: preWeighings.length > 0 ? preWeighings[preWeighings.length - 1].timestamp || null : null,
       run: wo.run ?? 1,
       weighings,
       lastWeighing: weighings.length > 0 ? weighings[weighings.length - 1].timestamp : null,

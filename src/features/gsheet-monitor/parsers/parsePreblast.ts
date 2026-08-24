@@ -1,13 +1,9 @@
-// GSheet Monitor – Post-Blast-Wiegungs-Parser.
-// Parst das Post-Blast-Tab — die entscheidende zweite Wiegung NACH dem Blast
-// Chiller. Das ist das Ist-Gewicht, das über Fertig/Kritisch/Backfill
-// entscheidet (siehe postblastMatch.ts): der Blast Chiller kostet Menge
-// (Schwund), Post-Blast deckt auf, wie viel davon übrig bleibt.
-//
-// Siehe PostblastEntry in gsheetTypes.ts für die Datenqualitäts-Einschränkungen
-// der Quelle (Rezept Name/SKU/Timestamp-Spalte immer leer, Datum bei über der
-// Hälfte der Zeilen leer).
-import type { PostblastData, PostblastEntry } from "../gsheetTypes";
+// GSheet Monitor – Pre-Blast-Wiegungs-Parser.
+// Parst das Pre-Blast-Tab — die Wiegung direkt nach dem Kochen, BEVOR die
+// Charge durch den Blast Chiller läuft und dabei an Menge verliert (Schwund).
+// Dient in postblastMatch.ts als früher Zwischenstatus ("schon gekocht, noch
+// im Chiller") und als Referenzwert für den Schwund gegenüber Post-Blast.
+import type { PreblastData, PreblastEntry } from "../gsheetTypes";
 
 function num(s: string): number {
   if (!s) return 0;
@@ -30,22 +26,23 @@ function extractDate(timestamp: string): string {
   return "";
 }
 
-export function parsePostblast(rows: string[][]): PostblastData {
-  const entries: PostblastEntry[] = [];
-  // Datum vorwärts auffüllen, wenn die Zeile selbst keins trägt — nur das
-  // DATUM (für "heute"-Filter), nie eine erfundene Uhrzeit.
+export function parsePreblast(rows: string[][]): PreblastData {
+  const entries: PreblastEntry[] = [];
   let lastKnownDate = "";
 
-  // Header ist Zeile 0 — Spalten: Datum, WO, Post Blast weight (kg), SKU code,
-  // Rezept Name, Subrezept Name, Timestamp.
+  // Header ist Zeile 0 — Spalten: Datum, WO Number, Pre Blast weight (kg),
+  // SKU code, Sub Recipe Name, Anzahl pro Rack -> Bei Proteins, Blast chiller.
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     const workOrder = (row[1] ?? "").trim();
-    const subRecipeName = (row[5] ?? "").trim();
+    const subRecipeName = (row[4] ?? "").trim();
     if (!workOrder && !subRecipeName) continue;
 
     const rawTimestamp = (row[0] ?? "").trim();
     if (rawTimestamp) lastKnownDate = extractDate(rawTimestamp);
+
+    const piecesRaw = (row[5] ?? "").trim();
+    const pieces = piecesRaw ? num(piecesRaw) : 0;
 
     entries.push({
       timestamp: rawTimestamp,
@@ -53,11 +50,12 @@ export function parsePostblast(rows: string[][]): PostblastData {
       workOrder,
       subRecipeName,
       weightKg: num(row[2] ?? ""),
+      piecesPerRack: pieces > 0 ? pieces : null,
     });
   }
 
-  const byWorkOrder = new Map<string, PostblastEntry[]>();
-  const bySubRecipe = new Map<string, PostblastEntry[]>();
+  const byWorkOrder = new Map<string, PreblastEntry[]>();
+  const bySubRecipe = new Map<string, PreblastEntry[]>();
 
   for (const e of entries) {
     if (e.workOrder) {

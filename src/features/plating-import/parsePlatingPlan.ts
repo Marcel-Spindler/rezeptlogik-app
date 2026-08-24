@@ -96,7 +96,7 @@ export function parsePlatingPlanCsv(text: string): PlatingPlanData {
             equipDay = prevInfo.dayName;
           }
         }
-        platingDays.push({ day: dayName, dateStr, qty: Math.round(qty), equipment, equipDay });
+        platingDays.push({ day: dayName, dateStr, qty: Math.round(qty), ...(equipment ? { equipment, equipDay } : {}) });
       }
     }
 

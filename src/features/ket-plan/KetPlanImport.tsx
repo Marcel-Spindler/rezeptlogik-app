@@ -5,9 +5,20 @@ import { readFileText } from "../csv-import/csvImportFirestore";
 import { getFirebase } from "../../core/firebase";
 import { doc, setDoc } from "firebase/firestore";
 
-function detectWeekFromRows(rows: KetRow[]): string | null {
+function detectWeekFromRows(rows: KetRow[], fileName?: string): string | null {
+  // 1) Try "W<nn>" in WO number or date field
   for (const r of rows) {
     const m = r.woNumber.match(/(?<![A-Za-z])W(\d{2})(?!\d)/i) || r.dateNeeded.match(/(?<![A-Za-z])W(\d{2})(?!\d)/i);
+    if (m) return `2026-W${m[1]}`;
+  }
+  // 2) Try WO number prefix pattern "NN-xxx" (e.g. "36-68" → week 36)
+  for (const r of rows) {
+    const m = r.woNumber.match(/^(\d{1,2})-/);
+    if (m) return `2026-W${m[1].padStart(2, "0")}`;
+  }
+  // 3) Fallback: extract from file name (e.g. "KET-Verden-2026-W36.csv")
+  if (fileName) {
+    const m = fileName.match(/W(\d{2})/i);
     if (m) return `2026-W${m[1]}`;
   }
   return null;
@@ -54,7 +65,7 @@ export function KetPlanImport() {
     try {
       const text = await readFileText(f);
       const result = parseKetCsv(text);
-      const week = detectWeekFromRows(result.rows);
+      const week = detectWeekFromRows(result.rows, f.name);
       if (!week) throw new Error("Konnte Woche nicht aus WO-Nummern oder Datum erkennen");
       if (result.rows.length === 0) throw new Error("Keine gültigen Zeilen in der CSV gefunden");
       setParsed({ rows: result.rows, week, warnings: result.warnings });
@@ -92,7 +103,7 @@ export function KetPlanImport() {
         KET-Plan-Import
       </h3>
       <p className="text-sm text-slate-500 mb-3">
-        KET-CSV hochladen (z.B. <code className="bg-slate-100 px-1 rounded">KET-Verden-2026-W35.csv</code>)
+        KET-CSV hochladen (z.B. <code className="bg-slate-100 px-1 rounded">KET-Verden-2026-W36.csv</code>)
         → wird geparst und in Firestore gespeichert.
       </p>
 

@@ -5,6 +5,17 @@ import { classifyDeboxDepartment, fmtDateHeader, fmtKg, fmtNum, statusColors } f
 import type { BatchCalc, KetRow, WoInstruction } from "./ketTypes";
 import type { RunInfo } from "./ketRunLogic";
 
+// Cook-Method-Label fürs Chip-UI, z.B. "BRAISER PAN" → "Braiser Pan". Leere
+// Segmente (Mehrfach-Leerzeichen in der Quelle) werden übersprungen statt
+// als "undefined" gerendert.
+export function titleCaseCookMethod(method: string): string {
+  return method
+    .split(" ")
+    .filter(Boolean)
+    .map(w => w[0] + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
 export function EmptyState() {
   return (
     <div className="flex items-center justify-center h-full">
@@ -306,7 +317,7 @@ export function KetWoOverview({
                       )}
                       {methods.filter(m => m !== "VEGGIE DEBOX" && m !== "PROTEIN DEBOX" && m !== "SPICE PORTIONING" && m !== "BLAST CHILLER").map(m => (
                         <span key={m} className="text-[8px] font-semibold px-1 py-0.5 rounded bg-slate-100 text-slate-500">
-                          {m.split(" ").map(w => w[0] + w.slice(1).toLowerCase()).join(" ")}
+                          {titleCaseCookMethod(m)}
                         </span>
                       ))}
                       {gnTotal > 0 && (

@@ -8,6 +8,7 @@ import { classifyDeboxDepartment, fmtKg, parseDateShift } from "./ketLogic";
 import { allergenSortScore, computeFullResourceDemand } from "./ketEquipmentSummary";
 import type { ShopfloorProgress } from "./useShopfloorProgress";
 import { buildShopfloorShareUrl } from "../../lib/helpers";
+import { titleCaseCookMethod } from "./KetSharedUi";
 
 type Department = "veggie" | "protein";
 
@@ -242,7 +243,7 @@ export function KetShopfloorDashboard({
                     <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                       {methods.map(m => (
                         <span key={m} className="text-[8px] font-semibold px-1 py-0.5 rounded bg-slate-100 text-slate-500">
-                          {m.split(" ").map(w => w[0] + w.slice(1).toLowerCase()).join(" ")}
+                          {titleCaseCookMethod(m)}
                         </span>
                       ))}
                       {gnTotal > 0 && (

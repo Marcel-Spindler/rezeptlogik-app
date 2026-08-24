@@ -102,7 +102,7 @@ function analyzeWeightAnomalies(postblast: PostblastData, productionPlan: Produc
   // Pro Sub-Recipe: durchschnittliches Gewicht vs. letzter Eintrag
   for (const [subName, entries] of postblast.bySubRecipe) {
     if (entries.length < 2) continue;
-    const weights = entries.map(e => e.rawWeightKg).filter(w => w > 0);
+    const weights = entries.map(e => e.weightKg).filter(w => w > 0);
     if (weights.length < 2) continue;
 
     const avg = weights.reduce((s, w) => s + w, 0) / weights.length;
@@ -170,6 +170,93 @@ function analyzeMealProgress(meals: MealProgress[]): ProductionAlert[] {
   return alerts;
 }
 
+// Charge wurde pre-blast gewogen (Kitchen fertig), aber seit langem nicht
+// mehr post-blast — häufigster Grund: die zweite Wiegung wurde schlicht
+// vergessen. Nutzt den Pre-Blast-Zeitstempel, weil der deutlich zuverlässiger
+// befüllt ist als der der Post-Blast-Quelle (siehe gsheetTypes.ts).
+function analyzeAwaitingPostBlast(meals: MealProgress[]): ProductionAlert[] {
+  const alerts: ProductionAlert[] = [];
+  const now = Date.now();
+  for (const meal of meals) {
+    for (const wo of meal.workOrders) {
+      // preBlastLikelyDone: sonst könnte hier einfach der nächste Batch/Rack
+      // noch kochen — kein Grund, "fehlt" zu melden.
+      if (!wo.awaitingPostBlast || !wo.preBlastLikelyDone || !wo.lastPreBlastWeighing) continue;
+      const ts = new Date(wo.lastPreBlastWeighing).getTime();
+      if (isNaN(ts)) continue;
+      const minutesSince = (now - ts) / 60000;
+      if (minutesSince <= 90) continue;
+      alerts.push({
+        id: generateId(),
+        severity: "warning",
+        category: "gap",
+        title: `Post-Blast-Wiegung fehlt: ${wo.subRecipe}`,
+        message: `WO ${wo.workOrder} wurde vor ${Math.round(minutesSince)} Min pre-blast gewogen (${wo.preBlastKg.toFixed(1)} kg), aber noch nicht post-blast.`,
+        workOrder: wo.workOrder,
+        subRecipe: wo.subRecipe,
+        recipeCode: meal.recipeCode,
+        timestamp: Date.now(),
+        actionable: true,
+        suggestedAction: "Post-Blast-Wiegung nachholen — sonst wird der Backfill-Bedarf falsch berechnet",
+      });
+    }
+  }
+  return alerts;
+}
+
+// Früh-Warnung, BEVOR die Post-Blast-Wiegung überhaupt vorliegt: nutzt den
+// durchschnittlichen Schwund (Pre→Post-Blast), den dasselbe Sub-Rezept diese
+// Woche bei bereits abgeschlossenen WOs hatte, um für eine WO, die gerade erst
+// pre-blast gewogen wurde, das voraussichtliche Post-Blast-Ergebnis zu
+// schätzen. Reine Prognose auf Basis von Erfahrungswerten — löst NIE einen
+// echten Backfill aus (das bleibt allein der bestätigten Post-Blast-Zahl
+// vorbehalten, siehe postblastMatch.ts), warnt aber schon vorher, wenn sich
+// eine Unterdeckung abzeichnet.
+function analyzeShrinkProjection(meals: MealProgress[]): ProductionAlert[] {
+  const alerts: ProductionAlert[] = [];
+
+  const shrinkPctBySubRecipe = new Map<string, number[]>();
+  for (const meal of meals) {
+    for (const wo of meal.workOrders) {
+      if (wo.shrinkKg <= 0) continue;
+      if (!shrinkPctBySubRecipe.has(wo.subRecipe)) shrinkPctBySubRecipe.set(wo.subRecipe, []);
+      shrinkPctBySubRecipe.get(wo.subRecipe)!.push(wo.shrinkPct);
+    }
+  }
+  const avgShrinkPct = new Map<string, number>();
+  for (const [sub, pcts] of shrinkPctBySubRecipe) avgShrinkPct.set(sub, pcts.reduce((s, p) => s + p, 0) / pcts.length);
+
+  for (const meal of meals) {
+    for (const wo of meal.workOrders) {
+      // preBlastLikelyDone: erst wenn wahrscheinlich kein weiterer Batch mehr
+      // unterwegs ist, ergibt eine Schwund-Projektion auf den Gesamt-Plan
+      // überhaupt Sinn — sonst sieht jede halbfertige WO "knapp" aus.
+      if (!wo.awaitingPostBlast || !wo.preBlastLikelyDone || wo.plannedKg <= 0) continue;
+      const avgPct = avgShrinkPct.get(wo.subRecipe);
+      if (avgPct == null) continue; // kein Referenzwert für dieses Sub-Rezept diese Woche
+
+      const projectedKg = wo.preBlastKg * (1 - avgPct / 100);
+      const projectedPct = (projectedKg / wo.plannedKg) * 100;
+      if (projectedPct >= 90) continue; // voraussichtlich nah genug am Plan
+
+      alerts.push({
+        id: generateId(),
+        severity: "info",
+        category: "recommendation",
+        title: `Voraussichtlich knapp: ${wo.subRecipe}`,
+        message: `WO ${wo.workOrder}: ${wo.preBlastKg.toFixed(1)} kg pre-blast — bei Ø ${avgPct.toFixed(0)}% Schwund dieser Woche werden nach Post-Blast nur ~${projectedKg.toFixed(1)} kg erwartet (Soll ${wo.plannedKg.toFixed(1)} kg). Noch keine bestätigte Zahl.`,
+        workOrder: wo.workOrder,
+        subRecipe: wo.subRecipe,
+        recipeCode: meal.recipeCode,
+        timestamp: Date.now(),
+        actionable: false,
+      });
+    }
+  }
+
+  return alerts;
+}
+
 function shortName(name: string, words = 3): string {
   return name.split(/[\s\-]+/).slice(0, words).join(" ");
 }
@@ -210,12 +297,17 @@ function computeShiftSummary(postblast: PostblastData, meals: MealProgress[], sh
   const allEntries = postblast.entries;
   if (allEntries.length === 0) return null;
 
-  // Nur heutige Einträge für korrekte Schichtbilanz
+  // Echte tägliche Rücksetzung: "Gewogen heute"/Tempo/Prognose dürfen NIE auf
+  // Wiegungen von früheren Tagen zurückfallen — sonst zeigt die Kachel bei
+  // fehlendem heutigen Datum (siehe Datenqualitäts-Hinweis bei PostblastEntry)
+  // versehentlich eine kumulierte Menge über Tage/Wochen statt der Schicht.
+  // Gibt es noch keine heutigen Einträge, ist die Schichtbilanz schlicht noch
+  // nicht verfügbar (null) statt eine falsche Zahl zu erfinden.
   const today = new Date().toISOString().slice(0, 10);
-  const todayEntries = allEntries.filter(e => e.date === today);
-  const entries = todayEntries.length > 0 ? todayEntries : allEntries;
+  const entries = allEntries.filter(e => e.date === today);
+  if (entries.length === 0) return null;
 
-  const totalWeighed = entries.reduce((s, e) => s + e.rawWeightKg, 0);
+  const totalWeighed = entries.reduce((s, e) => s + e.weightKg, 0);
   const timestamps = entries.map(e => new Date(e.timestamp).getTime()).filter(t => !isNaN(t));
   if (timestamps.length < 2) return null;
 
@@ -262,6 +354,8 @@ export function analyzeProduction(
     ...analyzeWeighingPace(postblast),
     ...analyzeWeightAnomalies(postblast, productionPlan),
     ...analyzeMealProgress(meals),
+    ...analyzeAwaitingPostBlast(meals),
+    ...analyzeShrinkProjection(meals),
   ];
 
   // Deduplizieren (gleiche Kategorie + WO nicht mehrfach)

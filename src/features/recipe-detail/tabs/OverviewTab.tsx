@@ -348,7 +348,7 @@ function WoReconciliationCard({ wr }: { wr: WeekRecipe }) {
 
   const woSet = useMemo(() => new Set(rows.map(r => r.workOrder)), [rows]);
   const weighings = useMemo(() => {
-    const list: { workOrder: string; timestamp: string; subSubRecipe: string; subRecipeName: string; rawWeightKg: number }[] = [];
+    const list: { workOrder: string; timestamp: string; subRecipeName: string; weightKg: number }[] = [];
     for (const wo of woSet) {
       for (const w of postblast.data?.byWorkOrder.get(wo) ?? []) list.push(w);
     }
@@ -439,8 +439,8 @@ function WoReconciliationCard({ wr }: { wr: WeekRecipe }) {
               <div key={i} className="flex items-center gap-2 text-[11px] font-mono text-slate-500">
                 <span className="w-12 shrink-0">{fmtClock(w.timestamp)}</span>
                 <span className="w-14 shrink-0 text-slate-400">{w.workOrder}</span>
-                <span className="flex-1 truncate text-slate-600">{w.subSubRecipe || w.subRecipeName}</span>
-                <span className="w-16 text-right font-semibold text-slate-700">{w.rawWeightKg.toLocaleString("de-DE", { maximumFractionDigits: 2 })} kg</span>
+                <span className="flex-1 truncate text-slate-600">{w.subRecipeName}</span>
+                <span className="w-16 text-right font-semibold text-slate-700">{w.weightKg.toLocaleString("de-DE", { maximumFractionDigits: 2 })} kg</span>
               </div>
             ))}
           </div>

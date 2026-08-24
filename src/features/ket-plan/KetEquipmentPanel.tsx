@@ -244,14 +244,6 @@ export function KetEquipmentPanel({
     const racks = dayDemands.reduce((s, rd) => s + rd.totalRacksNeeded, 0);
     const wos = dayDemands.reduce((s, rd) => s + rd.totalWos, 0);
     const chillerSlots = dayDemands.flatMap(rd => rd.chillerSlots);
-    // Wannen nach Größe
-    const wannenSizeMap = new Map<string, number>();
-    for (const rd of dayDemands) {
-      for (const ws of rd.totalWannenBySize) {
-        wannenSizeMap.set(ws.size, (wannenSizeMap.get(ws.size) ?? 0) + ws.count);
-      }
-    }
-    const wannenBySize = [...wannenSizeMap.entries()].map(([size, count]) => ({ size, count })).sort((a, b) => a.size.localeCompare(b.size));
     // Merge chiller slots across runs
     const chillerMap = new Map<string, RunDemand["chillerSlots"][0]>();
     for (const c of chillerSlots) {
@@ -263,7 +255,7 @@ export function KetEquipmentPanel({
         chillerMap.set(c.key, { ...c, woNumbers: [...c.woNumbers] });
       }
     }
-    return { kg, bleche, wannen, wannenBySize, racks, wos, chillerSlots: [...chillerMap.values()] };
+    return { kg, bleche, wannen, racks, wos, chillerSlots: [...chillerMap.values()] };
   }, [dayDemands]);
 
   // Alle Stationen des Tages (merged über Runs wenn "alle")
@@ -358,11 +350,6 @@ export function KetEquipmentPanel({
             <span className="text-slate-500">{dayTotals.bleche} Bleche</span>
             <span className="text-slate-400">·</span>
             <span className="text-slate-500">{dayTotals.wannen} Wannen</span>
-            {dayTotals.wannenBySize.length > 0 && (
-              <span className="text-[9px] text-slate-400">
-                ({dayTotals.wannenBySize.map(w => `${w.count}× ${w.size}`).join(", ")})
-              </span>
-            )}
             <span className="text-slate-400">·</span>
             <span className="font-bold text-indigo-600">{dayTotals.racks} Racks</span>
             <div className="ml-auto">

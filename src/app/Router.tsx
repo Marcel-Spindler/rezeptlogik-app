@@ -23,6 +23,8 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BlastChillerView } from "../features/blast-chiller/BlastChillerView";
 import { AllergenPlatingView } from "../features/allergen-plating/AllergenPlatingView";
 import { PostblastLiveView } from "../features/gsheet-monitor/PostblastLiveView";
+import { BackfillsView } from "../features/backfills/BackfillsView";
+import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
 import { RedzoneLiveView } from "../features/redzone-live/RedzoneLiveView";
 import { resolveRecipeByCode } from "../lib/helpers";
 
@@ -109,6 +111,9 @@ function MainPane({ view }: { view: AppView }) {
     case "postblast-live":
       return <PostblastLiveView data={data} />;
 
+    case "backfills":
+      return <BackfillsView />;
+
     case "redzone-live":
       if (!import.meta.env.DEV) {
         return (
@@ -154,6 +159,7 @@ function FullApp() {
     <Shell>
       <DataHealthBanner data={data} />
       <CapacityWarningBanner data={data} week={selectedWeek} upliftPercent={upliftPercent} />
+      <BackfillAlertBanner onOpen={() => setView("backfills")} />
       <div className="grid grid-cols-12 gap-4">
         <aside className="col-span-12 md:col-span-4 lg:col-span-3 space-y-3">
           <NavTabs view={view} onChange={setView} />

@@ -86,7 +86,7 @@ export function reconcileWorkOrders(
 
     const appKg = app ? (app.postKg || app.kitchenKg || app.stagingKg || null) : null;
     const ketKg = ket ? estimateKetKg(weights, ket.recipeCode, ket.subRecipeName, ket.targetPortions) : null;
-    const actualKg = weighings.length > 0 ? weighings.reduce((s, w) => s + w.rawWeightKg, 0) : null;
+    const actualKg = weighings.length > 0 ? weighings.reduce((s, w) => s + w.weightKg, 0) : null;
 
     // Bestes verfügbares Soll (App bevorzugt, sonst KET-Schätzung) für den
     // Ist/Soll-Fortschritt — gleicher Fallback wie postblastMatch.ts.

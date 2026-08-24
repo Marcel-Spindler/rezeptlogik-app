@@ -28,19 +28,48 @@ export interface GSheetChange {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// POSTBLAST-WIEGUNGEN (Haupt-Daten-Tab)
+// PRE-BLAST- & POST-BLAST-WIEGUNGEN — zwei getrennte Tabs im selben Sheet.
+// Eine Charge wird ZWEIMAL gewogen: einmal direkt nach dem Kochen (Pre-Blast),
+// dann noch mal nach dem Blast Chiller (Post-Blast) — dazwischen verliert sie
+// an Menge (Schwund/Kühlverlust). Post-Blast ist deshalb das entscheidende
+// Ist-Gewicht für Fertig/Kritisch/Backfill (siehe postblastMatch.ts); Pre-Blast
+// ist ein früherer Zwischenstatus ("schon gekocht, noch im Chiller") plus die
+// Referenz, um den Schwund überhaupt sichtbar zu machen.
 // ════════════════════════════════════════════════════════════════════════════
 
+export interface PreblastEntry {
+  timestamp: string;
+  date: string;
+  workOrder: string;
+  subRecipeName: string;
+  weightKg: number;
+  // "Anzahl pro Rack -> Bei Proteins" — nur bei Protein-Chargen befüllt,
+  // sonst null. Aktuell nicht weiter ausgewertet, nur durchgereicht.
+  piecesPerRack: number | null;
+}
+
+export interface PreblastData {
+  entries: PreblastEntry[];
+  byWorkOrder: Map<string, PreblastEntry[]>;
+  bySubRecipe: Map<string, PreblastEntry[]>;
+  totalWeightKg: number;
+  lastEntry: PreblastEntry | null;
+  lastUpdated: number;
+}
+
+// Datenqualität der Post-Blast-Quelle (Stand 2026-08-23): "Rezept Name"/
+// "SKU code"/die eigene "Timestamp"-Spalte im Sheet sind in der Praxis IMMER
+// leer, das Datum in der ersten Spalte fehlt bei über der Hälfte der Zeilen.
+// Der Parser füllt nur das DATUM aus der letzten bekannten Zeile vorwärts auf
+// (für "heute"-Filter) — erfindet aber nie eine genaue Uhrzeit, wo keine im
+// Sheet steht. Tempo-Analysen mit echter Uhrzeit haben dadurch entsprechend
+// weniger Datenpunkte als bei Pre-Blast.
 export interface PostblastEntry {
   timestamp: string;
   date: string;
   workOrder: string;
-  skuCode: string;
   subRecipeName: string;
-  rawWeightKg: number;
-  subSubRecipe: string;
-  postBlastKg: number;
-  targetKg: number;
+  weightKg: number;
 }
 
 export interface PostblastData {
@@ -111,5 +140,56 @@ export interface EtEntry {
 export interface EtData {
   entries: EtEntry[];
   byWorkOrder: Map<string, EtEntry>;
+  lastUpdated: number;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// LINEPLAITING — eigenes Wochen-Sheet (andere Datei als Postblast/RTI/ET),
+// gid ändert sich jede KW (neuer Tab, gleiche Datei — siehe useLinePlaitingGid
+// in useGSheetMonitor.ts). Zeitslot-Raster Mo-Sa: Di-Do reguläres Plating mit
+// Fehlmenge+Grund, Fr wird daraus der Mindest-Nachproduktionsbedarf ("Min
+// Needs") berechnet, Sa laufen die Backfill-Chargen und ihr Ergebnis wird
+// festgehalten. Siehe parseLinePlaiting.ts für die Block-Erkennung.
+// ════════════════════════════════════════════════════════════════════════════
+
+// "shortage" = Di-Do regulaeres Plating (Fehlmenge wird sichtbar), "min-needs"
+// = Fr (Mensch berechnet daraus den Nachproduktionsbedarf), "result" = Sa
+// (die Backfill-Charge laeuft, Ergebnis wird festgehalten).
+export type LinePlaitingPhase = "shortage" | "min-needs" | "result";
+
+export interface LinePlaitingRow {
+  day: string;               // "Tuesday" ... "Saturday" (Montag wird nicht erfasst, keine Plating-Daten)
+  time: string;               // "06:00 - 06:30"
+  phase: LinePlaitingPhase;
+  recipeCode: string;         // "FV0713A"
+  meal: string;
+  plannedPortions: number;
+  actualPortions: number;
+  deltaPortions: number;      // actual - planned, negativ = Fehlmenge
+  comment: string;
+  // true = Spalte "Backfills" enthaelt woertlich "yes" (Di-Do-Flag: als
+  // Backfill gemeldet). false bei "Min Needs"/Ergebnis-Zeilen (Fr/Sa) sowie
+  // wenn schlicht keine Meldung vorliegt.
+  backfillConfirmed: boolean;
+  // Zahl aus "Min: 1.400" (Fr) oder einer nackten Zahl in der Backfills-Spalte
+  // (Sa) -- null wenn nicht vorhanden/nicht parsbar.
+  minNeededPortions: number | null;
+  shortageReason: string;     // Freitext-Grund, oft mit WO-Nummern/Handrechnung
+  shortagePct: number | null; // -delta/planned*100, negativ = Ueberschuss
+}
+
+export interface LinePlaitingDayTotal {
+  day: string;
+  phase: LinePlaitingPhase;
+  plannedPortions: number;
+  actualPortions: number;
+  deltaPortions: number;
+  shortagePct: number | null;
+}
+
+export interface LinePlaitingData {
+  rows: LinePlaitingRow[];
+  byRecipeCode: Map<string, LinePlaitingRow[]>;
+  dayTotals: LinePlaitingDayTotal[];
   lastUpdated: number;
 }

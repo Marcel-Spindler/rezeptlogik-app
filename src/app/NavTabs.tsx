@@ -1,5 +1,6 @@
 import type { AppView } from "./AppContext";
 import { LiveCount } from "../features/redzone-live/LiveBadge";
+import { BackfillNavBadge } from "../features/backfills/BackfillAlertBanner";
 
 const NAV_TABS: ReadonlyArray<{ view: AppView; label: string; localOnly?: boolean }> = [
   { view: "recipe", label: "Rezept" },
@@ -14,6 +15,7 @@ const NAV_TABS: ReadonlyArray<{ view: AppView; label: string; localOnly?: boolea
   { view: "blast-chiller", label: "Blast Chiller Bot" },
   { view: "allergen-plating", label: "Allergen Plating Bot" },
   { view: "postblast-live", label: "Postblast Live" },
+  { view: "backfills", label: "Backfills" },
   // Redzone Live braucht den lokalen WMS-Server (Browser-SSO-Auth zu Snowflake) —
   // die deployte Cloud Function hat aktuell keinen gültigen Snowflake-Key und
   // keinen Cache-Fallback, deshalb online ausgeblendet, lokal aber sichtbar.
@@ -37,6 +39,7 @@ export function NavTabs({ view, onChange }: { view: AppView; onChange: (v: AppVi
         >
           {label}
           {v === "redzone-live" && <LiveCount />}
+          {v === "backfills" && <BackfillNavBadge />}
         </button>
       ))}
     </nav>

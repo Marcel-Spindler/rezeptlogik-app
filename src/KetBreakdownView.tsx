@@ -298,7 +298,10 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [bulkDlError, setBulkDlError] = useState<string | null>(null);
 
   const { ketRows, liveWmsRows, productionPlanHasLiveWeek, wmsDroppedWeeks } = useKetRowsData(data, selectedWeek, csvRows);
-  const { progress: shopfloorProgress, setDone: setShopfloorDone, syncError: shopfloorSyncError } = useShopfloorProgress(liveWeek);
+  // Nur abonnieren, solange der Shopfloor-Tab offen ist — sonst haelt jede
+  // offene KetBreakdownView (auch Buero-Tabs, die den Tab nie oeffnen) einen
+  // Firestore-Listener dauerhaft am Leben.
+  const { progress: shopfloorProgress, setDone: setShopfloorDone, syncError: shopfloorSyncError } = useShopfloorProgress(mainViewMode === "shopfloor" ? liveWeek : null);
 
   const autoOpenedRef = useRef(false);
   useEffect(() => {
@@ -591,7 +594,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     }
   }, [calcMap, caps, source, woInstructions, markAsPrinted]);
 
-  const downloadPdf = useCallback(async (rows: KetRow[], suggestedName: string) => {
+  const downloadPdf = useCallback(async (rows: KetRow[], suggestedName: string): Promise<boolean> => {
     let url: string | null = null;
     try {
       const title = suggestedName;
@@ -618,9 +621,11 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       a.click();
       document.body.removeChild(a);
       markAsPrinted(rows);
+      return true;
     } catch (error) {
       console.error("[KetBreakdown] Download PDF failed:", error);
       setBulkDlError(error instanceof Error ? error.message : String(error));
+      return false;
     } finally {
       if (url) URL.revokeObjectURL(url);
     }
@@ -639,12 +644,8 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       setBulkDlStatus(`${i + 1} von ${rows.length} gespeichert …`);
-      try {
-        await downloadPdf([row], woFilename(row));
-      } catch (error) {
-        console.error(`[KetBreakdown] Download failed for WO ${row.woNumber}:`, error);
-        failed.push(row.woNumber);
-      }
+      const ok = await downloadPdf([row], woFilename(row));
+      if (!ok) failed.push(row.woNumber);
     }
     setBulkDlStatus(null);
     setBulkDlError(failed.length > 0 ? `${failed.length} von ${rows.length} fehlgeschlagen: WO ${failed.join(", ")}` : null);

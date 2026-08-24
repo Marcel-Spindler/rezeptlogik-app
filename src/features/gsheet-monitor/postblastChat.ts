@@ -40,6 +40,8 @@ export function respondToChat(input: string, ctx: ChatContext): string {
       "'engpass' — Produktions-Bottleneck",
       "'empfehlung' — KI-Handlungsempfehlungen",
       "'gewogen' — heutige Wiegungs-Bilanz",
+      "'schwund' — Kühlverlust Pre- vs. Post-Blast",
+      "'chiller' — WOs die noch auf Post-Blast warten",
       "'WO 35-209' — spezifische Work Order",
       "'meal FV0516A' — spezifisches Meal",
     ].join("\n");
@@ -52,13 +54,13 @@ export function respondToChat(input: string, ctx: ChatContext): string {
     const totalMissing = ctx.backfill.reduce((s, b) => s + b.missingKg, 0);
     const health = ctx.intelligence.shiftSummary?.overallHealth ?? "unknown";
     const healthLabel = health === "good" ? "ON TRACK ✓" : health === "warning" ? "ACHTUNG ⚠" : health === "critical" ? "KRITISCH ●" : "Unbekannt";
-    const kg = ctx.todayEntries.reduce((s, e) => s + e.rawWeightKg, 0);
+    const kg = ctx.todayEntries.reduce((s, e) => s + e.weightKg, 0);
     return `Schicht-Status: ${healthLabel} | ${done}/${ctx.matched.length} WOs fertig | ${critical} kritisch | Heute: ${kg.toFixed(1)} kg | Fehlmenge: ${totalMissing.toFixed(0)} kg`;
   }
 
   // Heutige Wiegungen / Gewicht
   if (q.includes("gewogen") || q.includes("gewicht") || q.includes("wie viel") || q.includes("wieviel") || q.includes("kg heute")) {
-    const kg = ctx.todayEntries.reduce((s, e) => s + e.rawWeightKg, 0);
+    const kg = ctx.todayEntries.reduce((s, e) => s + e.weightKg, 0);
     const count = ctx.todayEntries.length;
     if (count === 0) return "Heute noch keine Wiegungen erfasst.";
     const avg = kg / count;
@@ -207,18 +209,47 @@ export function respondToChat(input: string, ctx: ChatContext): string {
     return `Top-Engpass: Meal ${top.recipeCode} "${top.recipeName}" (${top.progressPct.toFixed(0)}%) — offen: ${top.criticalWOs.slice(0, 2).map(w => `"${w.subRecipe}"`).join(", ")}`;
   }
 
-  // WO-Lookup: "WO 123456", "wo123456", "work order 123456"
-  const woMatch = /(?:wo|work.?order)\s*[#-]?(\d{4,})/i.exec(q);
+  // WO-Lookup: "WO 35-209", "wo35-209", "work order 209" — echte WO-Nummern
+  // tragen immer "<KW>-<laufende Nummer>" (siehe weekPrefixFromWoNumber), der
+  // Bindestrich muss also Teil der erfassten Ziffernfolge sein dürfen, sonst
+  // matcht das eigene Hilfetext-Beispiel "WO 35-209" nie.
+  const woMatch = /(?:wo|work.?order)\s*[#:]?\s*([\d-]{2,})/i.exec(q);
   if (woMatch) {
-    const woNum = woMatch[1];
+    const woNum = woMatch[1].replace(/-+$/, "");
     const wo = ctx.matched.find(m => m.workOrder.includes(woNum));
     if (!wo) return `WO ${woNum} nicht im Produktionsplan gefunden. Tippe 'fertig' oder 'kritisch' für eine Übersicht.`;
     const status = wo.isComplete
       ? "✓ Fertig (≥95%)"
-      : wo.isCritical
-        ? "⚠ Kritisch — noch 0 kg"
-        : `${wo.progressPct.toFixed(0)}% (${wo.actualKg.toFixed(1)} von ${wo.plannedKg.toFixed(1)} kg)`;
-    return `WO ${wo.workOrder}: "${wo.subRecipe}" — ${status} | Meal: ${wo.recipeCode} ${wo.recipeName}`;
+      : wo.awaitingPostBlast
+        ? "⏳ Im Blast Chiller — Post-Blast-Wiegung steht noch aus"
+        : wo.isCritical
+          ? "⚠ Kritisch — noch 0 kg"
+          : `${wo.progressPct.toFixed(0)}% (${wo.actualKg.toFixed(1)} von ${wo.plannedKg.toFixed(1)} kg)`;
+    const preStr = wo.preBlastKg > 0 ? ` | Pre-Blast: ${wo.preBlastKg.toFixed(1)} kg` : "";
+    const shrinkStr = wo.shrinkKg > 0 ? ` | Schwund: −${wo.shrinkKg.toFixed(1)} kg (${wo.shrinkPct.toFixed(0)}%)` : "";
+    return `WO ${wo.workOrder}: "${wo.subRecipe}" — ${status}${preStr}${shrinkStr} | Meal: ${wo.recipeCode} ${wo.recipeName}`;
+  }
+
+  // Schwund / Kühlverlust durch den Blast Chiller
+  if (q.includes("schwund") || q.includes("verlust") || q.includes("kühlverlust")) {
+    const withShrink = ctx.matched.filter(m => m.shrinkKg > 0);
+    if (withShrink.length === 0) return "Noch kein Schwund messbar — dafür müssen für dieselbe WO Pre- und Post-Blast-Gewicht vorliegen.";
+    const totalShrink = withShrink.reduce((s, m) => s + m.shrinkKg, 0);
+    const totalPre = withShrink.reduce((s, m) => s + m.preBlastKg, 0);
+    const avgPct = totalPre > 0 ? (totalShrink / totalPre) * 100 : 0;
+    const worst = [...withShrink].sort((a, b) => b.shrinkPct - a.shrinkPct).slice(0, 3);
+    const lines = [`Schwund durch Blast Chiller: −${totalShrink.toFixed(1)} kg über ${withShrink.length} WOs (Ø ${avgPct.toFixed(1)}%)`];
+    worst.forEach(w => lines.push(`${w.workOrder} "${w.subRecipe}": −${w.shrinkKg.toFixed(1)} kg (${w.shrinkPct.toFixed(0)}%)`));
+    return lines.join("\n");
+  }
+
+  // Im Blast Chiller — WOs mit Pre-Blast-Wiegung, aber noch ohne Post-Blast
+  if (q.includes("chiller") || q.includes("wartet") || q.includes("noch nicht post")) {
+    const waiting = ctx.matched.filter(m => m.awaitingPostBlast);
+    if (waiting.length === 0) return "Keine WO wartet aktuell auf die Post-Blast-Wiegung.";
+    const lines = [`${waiting.length} WO${waiting.length > 1 ? "s" : ""} im Blast Chiller, noch nicht post-blast gewogen:`];
+    waiting.slice(0, 6).forEach(w => lines.push(`${w.workOrder} "${w.subRecipe}" — ${w.preBlastKg.toFixed(1)} kg pre-blast`));
+    return lines.join("\n");
   }
 
   // Meal-Lookup: "meal XY-001", "rezept abc", "code R12"

@@ -37,8 +37,8 @@ function petRow(overrides: Partial<PetRow>): PetRow {
 
 function postblastEntry(overrides: Partial<PostblastEntry>): PostblastEntry {
   return {
-    timestamp: "2026-08-20T10:00:00Z", date: "2026-08-20", workOrder: "35-1", skuCode: "FV0001A",
-    subRecipeName: "Test Sub", rawWeightKg: 100, subSubRecipe: "", postBlastKg: 100, targetKg: 100,
+    timestamp: "2026-08-20T10:00:00Z", date: "2026-08-20", workOrder: "35-1",
+    subRecipeName: "Test Sub", weightKg: 100,
     ...overrides,
   };
 }
@@ -49,7 +49,7 @@ function postblastData(entries: PostblastEntry[]): PostblastData {
     if (!byWorkOrder.has(e.workOrder)) byWorkOrder.set(e.workOrder, []);
     byWorkOrder.get(e.workOrder)!.push(e);
   }
-  return { entries, byWorkOrder, bySubRecipe: new Map(), totalWeightKg: entries.reduce((s, e) => s + e.rawWeightKg, 0), lastEntry: entries[entries.length - 1] ?? null, lastUpdated: Date.now() };
+  return { entries, byWorkOrder, bySubRecipe: new Map(), totalWeightKg: entries.reduce((s, e) => s + e.weightKg, 0), lastEntry: entries[entries.length - 1] ?? null, lastUpdated: Date.now() };
 }
 
 function weightsFor(recipeCode: string, subRecipe: string, gramsPerPortion: number): RecipeWeightLookup {
@@ -114,7 +114,7 @@ describe("reconcileWorkOrders", () => {
 
   it("joins actual weighed kg from Postblast for the same WO", () => {
     const plan: ProductionPlan = { week: "2026-W35", generatedAt: "", rows: [woEntry({ postKg: 100 })] };
-    const pb = postblastData([postblastEntry({ rawWeightKg: 40 }), postblastEntry({ rawWeightKg: 35 })]);
+    const pb = postblastData([postblastEntry({ weightKg: 40 }), postblastEntry({ weightKg: 35 })]);
     const rows = reconcileWorkOrders(plan, null, null, pb, null);
     expect(rows[0].actualKg).toBe(75);
     expect(rows[0].weighingCount).toBe(2);

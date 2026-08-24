@@ -1,7 +1,8 @@
 // Postblast Live View — Echtzeit-Dashboard: GSheet-Wiegungen vs. geplante Work Orders.
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import type { DataBundle, WorkOrderEntry } from "../../core/types";
-import { useEtMonitor, usePostblastMonitor, useRtiMonitor } from "./useGSheetMonitor";
+import type { PostblastData } from "./gsheetTypes";
+import { useEtMonitor, usePostblastMonitor, usePreblastMonitor, useRtiMonitor } from "./useGSheetMonitor";
 import { matchPostblastToWorkOrders, type BackfillNeed, type WoMatchedStatus } from "./postblastMatch";
 import { findEquipmentForSubRecipe } from "./backfillGenerator";
 import { analyzeProduction, type AlertSeverity } from "./productionAgent";
@@ -13,6 +14,7 @@ import { fetchWmsWorkorderCache, filterRowsToWeekWindow, wmsWorkorderRowToEntry 
 import { parseKetCsv } from "../ket-plan/ketLogic";
 import type { KetRow } from "../ket-plan/ketTypes";
 import { parseExportRecipesCsv, recipeWeightKey, type RecipeWeightLookup } from "./parsers/parseExportRecipes";
+import { useBackfillsOptional } from "../backfills/BackfillsContext";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +57,15 @@ function useWoHistory(matched: WoMatchedStatus[], week: string) {
     return map;
   }, [snaps]);
 
-  const shiftStartActual = useMemo(() => snaps[0]?.actual ?? {}, [snaps]);
+  // Tägliche Rücksetzung: "seit Schichtstart" meint den heutigen Schichtstart,
+  // nicht den ersten Snapshot der ganzen Woche (der Verlauf selbst bleibt
+  // wochenweise erhalten, siehe firstSeen oben, das ist bewusst nicht
+  // tagesgebunden). Ohne diesen Filter würde "+X kg seit Schichtstart" ab
+  // Dienstag die kumulierte Menge seit Montag zeigen statt seit heute früh.
+  const shiftStartActual = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return snaps.find(s => s.ts.slice(0, 10) === todayStr)?.actual ?? {};
+  }, [snaps]);
 
   const clear = () => { localStorage.removeItem(key); setSnaps([]); };
 
@@ -107,6 +117,15 @@ function StatusBadge({ wo }: { wo: WoMatchedStatus }) {
   const estSuffix = wo.isEstimated ? " ≈" : "";
   if (wo.isComplete)
     return <span title={`Fertig${estTitle}`} className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200 font-bold">✓ FERTIG{estSuffix}</span>;
+  if (wo.awaitingPostBlast)
+    return (
+      <span
+        title={`Schon pre-blast gewogen (${wo.preBlastKg.toFixed(1)} kg) — Post-Blast-Wiegung steht noch aus${estTitle}`}
+        className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200 font-bold"
+      >
+        ⏳ IM CHILLER{estSuffix}
+      </span>
+    );
   if (wo.isCritical)
     return <span title={`Kritisch${estTitle}`} className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 ring-1 ring-red-200 font-bold">⚠ KRITISCH{estSuffix}</span>;
   return <span title={`Läuft${estTitle}`} className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 ring-1 ring-sky-200 font-bold">LÄUFT{estSuffix}</span>;
@@ -118,10 +137,11 @@ function WoDots({ wos }: { wos: WoMatchedStatus[] }) {
       {wos.map(wo => (
         <div
           key={wo.workOrder}
-          title={!wo.hasPlan ? `${wo.workOrder}: ${wo.subRecipe} (ohne Plan-Soll)` : `${wo.workOrder}: ${wo.subRecipe} (${Math.round(wo.progressPct)}%)`}
+          title={!wo.hasPlan ? `${wo.workOrder}: ${wo.subRecipe} (ohne Plan-Soll)` : wo.awaitingPostBlast ? `${wo.workOrder}: ${wo.subRecipe} (im Blast Chiller, ${wo.preBlastKg.toFixed(1)} kg pre-blast)` : `${wo.workOrder}: ${wo.subRecipe} (${Math.round(wo.progressPct)}%)`}
           className={`w-3 h-3 rounded-full border-2 border-white shadow-sm ${
             !wo.hasPlan ? "bg-white ring-1 ring-slate-300" :
             wo.isComplete ? "bg-emerald-400" :
+            wo.awaitingPostBlast ? "bg-cyan-400 animate-pulse" :
             wo.isCritical ? "bg-red-500 animate-pulse" :
             wo.progressPct >= 60 ? "bg-sky-400" :
             wo.progressPct >= 20 ? "bg-amber-400" : "bg-slate-300"
@@ -152,8 +172,14 @@ export function estimatePlannedKg(
 
 export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const monitor = usePostblastMonitor();
+  const preblastMonitor = usePreblastMonitor();
   const rtiMonitor = useRtiMonitor();
   const etMonitor = useEtMonitor();
+  // Cross-Source-Frühwarnungen (Küche vs. Plating/LinePlaiting) — kommen aus
+  // dem app-weiten BackfillsProvider, damit hier keine zweite, abweichende
+  // Berechnung entsteht. Optional, weil diese Ansicht theoretisch auch ohne
+  // den Provider funktionieren muss (z.B. in Tests).
+  const backfillAlerts = useBackfillsOptional()?.alerts ?? [];
 
   // Live-WMS-Cache (wmsCache/workorders, siehe scripts/sync-wms-cache.ts) — der
   // gleiche Fallback, den KetBreakdownView schon nutzt, wenn der Firestore-Plan
@@ -451,6 +477,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   // z.B. Nachzügler vom Vortag/Vorwoche im selben Sheet-Tab. Diese tauchen in
   // dieser Ansicht bewusst nicht als Fortschritt auf; wir zeigen aber, dass es
   // sie gibt, damit nichts "unsichtbar verschwindet".
+  // Zählt Wiegungen aus ANDEREN KWs in Post- UND Pre-Blast — die Sheets kumulieren alle
+  // Wochen, diese Zahl zeigt wie viele Einträge aus dem Live Feed herausgefiltert wurden.
   const offWeekWeighingCount = useMemo(() => {
     if (selectedWeekNum == null) return 0;
     let n = 0;
@@ -458,8 +486,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
       const wn = weekPrefixFromWoNumber(e.workOrder);
       if (wn != null && wn !== selectedWeekNum) n++;
     }
+    for (const e of preblastMonitor.data?.entries ?? []) {
+      const wn = weekPrefixFromWoNumber(e.workOrder);
+      if (wn != null && wn !== selectedWeekNum) n++;
+    }
     return n;
-  }, [monitor.data, selectedWeekNum]);
+  }, [monitor.data, preblastMonitor.data, selectedWeekNum]);
 
   const rtiWeekMismatch = rtiWeekNum != null && selectedWeekNum != null && rtiWeekNum !== selectedWeekNum;
 
@@ -470,6 +502,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const [chatOpen, setChatOpen] = useState(false);
   const [liveFeedSearch, setLiveFeedSearch] = useState("");
   const [liveFeedToday, setLiveFeedToday] = useState(true);
+  const [liveFeedStage, setLiveFeedStage] = useState<"post" | "pre">("post");
   const [backfillFilter, setBackfillFilter] = useState<"all" | "critical" | "behind">("all");
   const [mealFilter, setMealFilter] = useState<"all" | "critical" | "running" | "done">("all");
   const [shiftEndHours, setShiftEndHours] = useState(8);
@@ -481,26 +514,60 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
   // ── Daten ──
   const { matched, meals, backfill } = useMemo(
-    () => matchPostblastToWorkOrders(monitor.data, filteredProductionPlan, rtiMonitor.data, unplannedWorkOrders, estimatedWorkOrders),
-    [monitor.data, filteredProductionPlan, rtiMonitor.data, unplannedWorkOrders, estimatedWorkOrders]
+    () => matchPostblastToWorkOrders(monitor.data, preblastMonitor.data, filteredProductionPlan, rtiMonitor.data, unplannedWorkOrders, estimatedWorkOrders),
+    [monitor.data, preblastMonitor.data, filteredProductionPlan, rtiMonitor.data, unplannedWorkOrders, estimatedWorkOrders]
   );
+  // Wöchentliche Rücksetzung: die Rohdaten aus dem Sheet wachsen über ALLE
+  // Kalenderwochen hinweg unbegrenzt weiter — für Tempo/Anomalie/Schicht-
+  // Kennzahlen (KI-Agent) nur die Wiegungen der aktuell gewählten Woche
+  // zählen, sonst würden liegen gebliebene Wiegungen aus einer anderen KW die
+  // "Gewogen heute"-Bilanz verfälschen. Die WO-Zuordnung in matched/meals
+  // braucht das nicht extra (die schaut ohnehin nur exakte WO-Nummern der
+  // gewählten Woche nach), nur der Intelligence-Agent arbeitet direkt auf den
+  // rohen Einträgen.
+  const weekScopedPostblast = useMemo((): PostblastData | null => {
+    if (!monitor.data || selectedWeekNum == null) return monitor.data;
+    const entries = monitor.data.entries.filter(e => weekPrefixFromWoNumber(e.workOrder) === selectedWeekNum);
+    if (entries.length === monitor.data.entries.length) return monitor.data;
+    const byWorkOrder = new Map<string, typeof entries>();
+    const bySubRecipe = new Map<string, typeof entries>();
+    for (const e of entries) {
+      if (e.workOrder) { if (!byWorkOrder.has(e.workOrder)) byWorkOrder.set(e.workOrder, []); byWorkOrder.get(e.workOrder)!.push(e); }
+      if (e.subRecipeName) { if (!bySubRecipe.has(e.subRecipeName)) bySubRecipe.set(e.subRecipeName, []); bySubRecipe.get(e.subRecipeName)!.push(e); }
+    }
+    return {
+      entries, byWorkOrder, bySubRecipe,
+      totalWeightKg: entries.reduce((s, e) => s + e.weightKg, 0),
+      lastEntry: entries.length > 0 ? entries[entries.length - 1] : null,
+      lastUpdated: monitor.data.lastUpdated,
+    };
+  }, [monitor.data, selectedWeekNum]);
   const intelligence = useMemo(
-    () => analyzeProduction(monitor.data, meals, backfill, filteredProductionPlan, shiftEndHours),
-    [monitor.data, meals, backfill, filteredProductionPlan, shiftEndHours]
+    () => analyzeProduction(weekScopedPostblast, meals, backfill, filteredProductionPlan, shiftEndHours),
+    [weekScopedPostblast, meals, backfill, filteredProductionPlan, shiftEndHours]
   );
   const todayEntries = useMemo(
-    () => (monitor.data?.entries ?? []).filter(e => e.date === todayStr),
-    [monitor.data, todayStr]
+    () => (weekScopedPostblast?.entries ?? []).filter(e => e.date === todayStr),
+    [weekScopedPostblast, todayStr]
+  );
+  const todayPreCount = useMemo(
+    () => (preblastMonitor.data?.entries ?? []).filter(e => e.date === todayStr).length,
+    [preblastMonitor.data, todayStr]
   );
   const liveEntries = useMemo(() => {
-    const all = monitor.data?.entries ?? [];
-    let list = liveFeedToday ? all.filter(e => e.date === todayStr) : [...all];
+    const all = (liveFeedStage === "post" ? monitor.data?.entries : preblastMonitor.data?.entries) ?? [];
+    // KW-Filter zuerst — die Sheets kumulieren alle Wochen, nur die ausgewählte KW zeigen.
+    // WO-Prefix ist der einzige zuverlässige KW-Indikator (Datum-Spalte in den Sheets meist leer).
+    let list = selectedWeekNum != null
+      ? all.filter(e => weekPrefixFromWoNumber(e.workOrder) === selectedWeekNum)
+      : [...all];
+    if (liveFeedToday) list = list.filter(e => e.date === todayStr);
     if (liveFeedSearch.trim()) {
       const s = liveFeedSearch.toLowerCase();
       list = list.filter(e => e.workOrder.toLowerCase().includes(s) || e.subRecipeName.toLowerCase().includes(s));
     }
     return [...list].reverse().slice(0, 60);
-  }, [monitor.data, liveFeedToday, liveFeedSearch, todayStr]);
+  }, [monitor.data, preblastMonitor.data, liveFeedStage, liveFeedToday, liveFeedSearch, todayStr, selectedWeekNum]);
 
   const filteredBackfill = useMemo(() => {
     if (backfillFilter === "critical") return backfill.filter(b => b.priority === "critical");
@@ -555,6 +622,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const shiftDeltaKg = totalActual - Object.values(shiftStartActual).reduce((s, v) => s + v, 0);
   const unplannedCount = matched.filter(m => !m.hasPlan).length;
   const estimatedCount = matched.filter(m => m.isEstimated).length;
+  // Kühlverlust durch den Blast Chiller — nur über WOs, für die beide Stufen
+  // vorliegen (siehe shrinkKg in postblastMatch.ts), gewichtet über Pre-Blast
+  // als Basis für eine ehrliche Durchschnitts-Prozentzahl.
+  const shrinkTotalKg = matched.reduce((s, m) => s + m.shrinkKg, 0);
+  const shrinkBaseKg = matched.reduce((s, m) => s + (m.shrinkKg > 0 ? m.preBlastKg : 0), 0);
+  const shrinkAvgPct = shrinkBaseKg > 0 ? (shrinkTotalKg / shrinkBaseKg) * 100 : 0;
 
   const lastUpdate = monitor.lastUpdate
     ? new Date(monitor.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
@@ -641,6 +714,14 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                 }`}
               >
                 {liveWmsRows ? "● WMS abgeglichen" : "○ WMS wartet"}
+              </span>
+              <span
+                title={preblastMonitor.data ? "Pre-Blast-Sheet verbunden — zeigt Chargen, die schon gekocht sind, aber noch nicht post-blast gewogen wurden" : "Pre-Blast-Sheet noch nicht geladen"}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ring-1 ${
+                  preblastMonitor.data ? "bg-emerald-400/20 text-emerald-200 ring-emerald-400/40" : "bg-white/10 text-teal-200/60 ring-white/20"
+                }`}
+              >
+                {preblastMonitor.data ? "● Pre-Blast abgeglichen" : "○ Pre-Blast wartet"}
               </span>
               {rtiWeekMismatch && (
                 <button
@@ -730,12 +811,13 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         </div>
 
         {/* Stat-Tiles */}
-        <div className="mt-4 grid grid-cols-4 md:grid-cols-8 gap-2">
+        <div className="mt-4 grid grid-cols-4 md:grid-cols-9 gap-2">
           {([
             { label: "Meals", value: meals.length, sub: "gesamt", color: "text-white", bg: "bg-white/15", onClick: undefined as (() => void) | undefined },
             { label: "WOs", value: matched.length, sub: "gesamt", color: "text-white", bg: "bg-white/15", onClick: undefined as (() => void) | undefined },
             { label: "WO Fertig", value: matched.filter(m => m.isComplete).length, sub: `von ${matched.length}`, color: "text-emerald-300", bg: "bg-emerald-500/20", onClick: (() => setMealFilter("done")) as (() => void) | undefined },
             { label: "Kritisch", value: backfill.filter(b => b.priority === "critical").length, sub: "WOs", color: "text-red-300", bg: "bg-red-500/20", onClick: (() => setMealFilter("critical")) as (() => void) | undefined },
+            { label: "Im Chiller", value: matched.filter(m => m.awaitingPostBlast).length, sub: "wartet auf Post-Blast", color: "text-cyan-300", bg: "bg-cyan-500/20", onClick: undefined as (() => void) | undefined },
             { label: "Meals kritisch", value: mealCritical, sub: "Meals", color: "text-orange-300", bg: "bg-orange-500/20", onClick: (() => setMealFilter("critical")) as (() => void) | undefined },
             { label: "Meals fertig", value: mealDone, sub: `von ${meals.length}`, color: "text-emerald-300", bg: "bg-emerald-500/20", onClick: (() => setMealFilter("done")) as (() => void) | undefined },
             { label: "≈ Geschätzt", value: estimatedCount, sub: "Soll aus Portionen", color: "text-amber-300", bg: "bg-amber-500/20", onClick: undefined as (() => void) | undefined },
@@ -847,11 +929,16 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         <div className="p-5">
           {/* Schicht-Tiles */}
           {intelligence.shiftSummary ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
               <div className="bg-slate-50 rounded-xl p-3 ring-1 ring-slate-200">
                 <div className="text-[10px] text-slate-500 uppercase font-bold">Gewogen heute</div>
                 <div className="text-xl font-bold font-mono mt-0.5">{fmt(intelligence.shiftSummary.totalWeighed, 1)} kg</div>
                 <div className="text-[10px] text-slate-400">{intelligence.shiftSummary.totalEntries} Wiegungen</div>
+              </div>
+              <div className="bg-cyan-50 rounded-xl p-3 ring-1 ring-cyan-200" title="Kühlverlust zwischen Pre- und Post-Blast, nur über WOs mit beiden Wiegungen">
+                <div className="text-[10px] text-cyan-600 uppercase font-bold">Schwund</div>
+                <div className="text-xl font-bold font-mono mt-0.5 text-cyan-700">{fmt(shrinkTotalKg, 1)} kg</div>
+                <div className="text-[10px] text-cyan-500">Ø {fmt(shrinkAvgPct, 1)}% Blast Chiller</div>
               </div>
               <div className="bg-slate-50 rounded-xl p-3 ring-1 ring-slate-200">
                 <div className="text-[10px] text-slate-500 uppercase font-bold">Tempo</div>
@@ -898,6 +985,28 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                     {alert.suggestedAction && (
                       <div className="mt-1.5 text-purple-700 font-medium">→ {alert.suggestedAction}</div>
                     )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Cross-Source-Frühwarnungen aus der Backfills-Funktion (RTI + LinePlaiting
+              gegen die Küchen-Gewichte hier) — dieselbe Berechnung wie in der
+              Backfills-Ansicht, hier nur zusätzlich sichtbar gemacht. */}
+          {backfillAlerts.length > 0 && (
+            <div className="space-y-2 mb-4">
+              <div className="text-[10px] uppercase font-bold text-violet-600 tracking-wide">Cross-Source (Küche ↔ Plating) — siehe auch "Backfills"</div>
+              {backfillAlerts.slice(0, 4).map(alert => (
+                <div key={alert.id} className={`flex items-start gap-3 px-4 py-3 rounded-xl text-xs ${
+                  alert.severity === "critical" ? "bg-red-50 ring-1 ring-red-200" :
+                  alert.severity === "warning" ? "bg-amber-50 ring-1 ring-amber-200" :
+                  "bg-white ring-1 ring-slate-200"
+                }`}>
+                  <span className={`text-base leading-none ${alert.severity === "critical" ? "text-red-600" : alert.severity === "warning" ? "text-amber-500" : "text-sky-500"}`}>●</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-slate-800">{alert.title}</div>
+                    <div className="text-slate-600 mt-0.5">{alert.message}</div>
                   </div>
                 </div>
               ))}
@@ -1047,6 +1156,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               const mealBackfillPortions = mealBackfillNeeds.reduce((s, b) => s + b.estimatedPortions, 0);
               const isDone = meal.completedWOs === meal.totalWOs;
               const isCritical = meal.criticalWOs.length > 0;
+              const awaitingWOs = meal.workOrders.filter(wo => wo.awaitingPostBlast);
+              const awaitingKg = awaitingWOs.reduce((s, wo) => s + wo.preBlastKg, 0);
 
               // Runs gruppieren
               const byRun = new Map<number, WoMatchedStatus[]>();
@@ -1107,6 +1218,14 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                 {runEntries.length} Runs
                               </span>
                             )}
+                            {awaitingWOs.length > 0 && (
+                              <span
+                                title={`${awaitingWOs.length} WO(s) schon pre-blast gewogen, Post-Blast-Wiegung steht noch aus`}
+                                className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200 font-bold shrink-0"
+                              >
+                                ⏳ {awaitingWOs.length} im Chiller · {fmt(awaitingKg, 1)} kg
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-slate-500 ml-5 mt-0.5">
                             <span>{meal.completedWOs}/{meal.totalWOs} WOs fertig</span>
@@ -1152,7 +1271,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                   <th className="px-3 py-2 text-left">WO</th>
                                   <th className="px-3 py-2 text-left">Sub-Rezept</th>
                                   <th className="px-3 py-2 text-right">Geplant</th>
-                                  <th className="px-3 py-2 text-right">Ist</th>
+                                  <th className="px-3 py-2 text-right">Preblast</th>
+                                  <th className="px-3 py-2 text-right">Postblast</th>
                                   <th className="px-3 py-2 text-right">%</th>
                                   <th className="px-3 py-2 text-right">Chargen</th>
                                   <th className="px-3 py-2 text-center">Status</th>
@@ -1172,7 +1292,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                   if (hasRuns) {
                                     rows.push(
                                       <tr key={`sep-${runNum}`} className="bg-gradient-to-r from-indigo-50 to-slate-50">
-                                        <td colSpan={9} className="px-3 py-2">
+                                        <td colSpan={10} className="px-3 py-2">
                                           <div className="flex items-center gap-3">
                                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${
                                               runAllDone ? "bg-emerald-500" : runHasCritical ? "bg-red-500" : "bg-indigo-500"
@@ -1234,7 +1354,19 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                           )}
                                           {fmt(wo.plannedKg, 1)} kg
                                         </td>
-                                        <td className="px-3 py-2 text-right font-mono font-bold">{fmt(wo.actualKg, 1)} kg</td>
+                                        <td className="px-3 py-2 text-right font-mono text-slate-500">
+                                          {wo.preBlastKg > 0
+                                            ? <span className="font-bold text-cyan-700">{fmt(wo.preBlastKg, 1)} kg</span>
+                                            : <span className="text-slate-300">—</span>}
+                                        </td>
+                                        <td className="px-3 py-2 text-right">
+                                          <div className="font-mono font-bold">{fmt(wo.actualKg, 1)} kg</div>
+                                          {wo.shrinkKg > 0 && (
+                                            <div className="text-[9px] text-slate-400 font-mono whitespace-nowrap">
+                                              Schwund {fmt(wo.shrinkPct, 0)}%
+                                            </div>
+                                          )}
+                                        </td>
                                         <td className="px-3 py-2 text-right">
                                           <div className="flex items-center justify-end gap-1.5">
                                             <div className="w-10">
@@ -1473,18 +1605,34 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
       )}
 
       {/* ══ LIVE FEED ═══════════════════════════════════════════════════════ */}
-      {monitor.data && monitor.data.entries.length > 0 && (
+      {((monitor.data?.entries.length ?? 0) > 0 || (preblastMonitor.data?.entries.length ?? 0) > 0) && (
         <div className="card p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
             <div>
               <h3 className="text-lg font-bold text-slate-800">
                 Letzte Wiegungen
-                {liveFeedToday && todayEntries.length > 0 && (
-                  <span className="ml-2 text-sm font-normal text-slate-500">({todayEntries.length} heute)</span>
+                {liveFeedToday && (liveFeedStage === "post" ? todayEntries.length : todayPreCount) > 0 && (
+                  <span className="ml-2 text-sm font-normal text-slate-500">({liveFeedStage === "post" ? todayEntries.length : todayPreCount} heute)</span>
                 )}
               </h3>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex rounded-full ring-1 ring-slate-200 overflow-hidden">
+                <button
+                  onClick={() => setLiveFeedStage("post")}
+                  title="Ist-Gewicht nach dem Blast Chiller — das entscheidende Gewicht"
+                  className={`text-xs px-3 py-1.5 font-medium transition ${liveFeedStage === "post" ? "bg-teal-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                >
+                  Post-Blast
+                </button>
+                <button
+                  onClick={() => setLiveFeedStage("pre")}
+                  title="Gewicht vor dem Blast Chiller — früher Zwischenstatus"
+                  className={`text-xs px-3 py-1.5 font-medium transition ${liveFeedStage === "pre" ? "bg-cyan-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                >
+                  Pre-Blast
+                </button>
+              </div>
               <button
                 onClick={() => setLiveFeedToday(t => !t)}
                 className={`text-xs px-3 py-1.5 rounded-full font-medium transition shadow-sm ${
@@ -1529,7 +1677,6 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                       <th className="px-3 py-2 text-left">WO</th>
                       <th className="px-3 py-2 text-left">Sub-Rezept</th>
                       <th className="px-3 py-2 text-right">Gewicht</th>
-                      <th className="px-3 py-2 text-left">Sub-Sub</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
@@ -1537,12 +1684,11 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                       <tr key={idx} className={`transition-colors ${idx === 0 ? "bg-emerald-50" : "hover:bg-slate-50"}`}>
                         <td className="px-3 py-2 font-mono text-slate-500">
                           {idx === 0 && <span className="mr-1 text-emerald-500 animate-pulse">●</span>}
-                          {e.timestamp}
+                          {e.timestamp || "—"}
                         </td>
                         <td className="px-3 py-2 font-mono font-bold">{e.workOrder}</td>
                         <td className="px-3 py-2 font-medium">{e.subRecipeName}</td>
-                        <td className="px-3 py-2 text-right font-mono font-bold text-indigo-700">{fmt(e.rawWeightKg, 2)} kg</td>
-                        <td className="px-3 py-2 text-slate-400">{e.subSubRecipe || "—"}</td>
+                        <td className={`px-3 py-2 text-right font-mono font-bold ${liveFeedStage === "post" ? "text-indigo-700" : "text-cyan-700"}`}>{fmt(e.weightKg, 2)} kg</td>
                       </tr>
                     ))}
                   </tbody>

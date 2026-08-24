@@ -3,7 +3,7 @@
 // Meal-Trace) dieselbe Retry-/Fehlerlogik nutzen können, statt sie zu duplizieren.
 import type {
   AllData, BasePayload, InboundPayload, SleevingPayload,
-  StoredPayload, WoDetailPayload, WorkordersPayload,
+  StoredPayload, StoredRow, WoDetailPayload, WorkordersPayload,
 } from "./wmsTypes";
 
 export interface WmsStationsResult {
@@ -76,4 +76,18 @@ export async function fetchAllWmsStations(
   };
 
   return attempt(0);
+}
+
+// Schlanker Einzel-Fetch nur für Plating Holding (PLH-Locations, aktueller
+// Bestand — die SQL hat bewusst keinen Wochen-Filter). Für Verbraucher, die
+// nur den Holding-Puffer brauchen (z.B. Backfills), ohne den kompletten
+// 8-Stationen-Funnel aus fetchAllWmsStations mitzuziehen.
+export async function fetchPlatingHoldingRows(whId = "VF", limit = 25000): Promise<StoredRow[]> {
+  const p = new URLSearchParams({ whId, limit: String(limit), ts: String(Date.now()) });
+  const res = await fetch(`/api/wms-plating-holding?${p}`, { cache: "no-store" });
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("json")) throw new Error(`WMS Plating Holding nicht erreichbar (HTTP ${res.status})`);
+  const payload = await res.json() as StoredPayload;
+  if (!payload.ok) throw new Error(payload.error ?? "Unbekannter Fehler");
+  return payload.rows;
 }

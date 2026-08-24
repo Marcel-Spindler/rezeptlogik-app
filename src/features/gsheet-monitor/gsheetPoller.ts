@@ -9,27 +9,46 @@ export async function fetchSheetCsv(config: GSheetConfig, signal?: AbortSignal):
   return resp.text();
 }
 
+// Echter Single-Pass-CSV-Parser: muss über den GESAMTEN Text laufen, nicht
+// zeilenweise nach einem vorherigen split("\n") — sonst reißt ein Zeilenumbruch
+// INNERHALB eines Anführungszeichen-Felds (z.B. ein mehrzeiliger Kommentar in
+// LinePlaiting/RTI) die logische Zeile mittendrin auseinander und verschiebt
+// danach alle Spalten. War vorher zeilenbasiert und hat genau das falsch
+// gemacht — betraf potenziell jeden Sheet-Export mit einem solchen Feld.
 export function parseCsvRows(csv: string): string[][] {
-  const lines = csv.split("\n").filter(l => l.trim().length > 0);
-  return lines.map(line => {
-    const row: string[] = [];
-    let current = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  const pushCell = () => { row.push(current.trim()); current = ""; };
+  const pushRow = () => {
+    pushCell();
+    if (row.some(c => c.length > 0)) rows.push(row);
+    row = [];
+  };
+
+  for (let i = 0; i < csv.length; i++) {
+    const ch = csv[i];
+    if (inQuotes) {
       if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-        else inQuotes = !inQuotes;
-      } else if (ch === "," && !inQuotes) {
-        row.push(current.trim());
-        current = "";
+        if (csv[i + 1] === '"') { current += '"'; i++; }
+        else inQuotes = false;
       } else {
         current += ch;
       }
+      continue;
     }
-    row.push(current.trim());
-    return row;
-  });
+    if (ch === '"') inQuotes = true;
+    else if (ch === ",") pushCell();
+    else if (ch === "\r") { /* wird über \n behandelt */ }
+    else if (ch === "\n") pushRow();
+    else current += ch;
+  }
+  // Letzte Zeile, falls die Datei nicht mit Zeilenumbruch endet.
+  if (current.length > 0 || row.length > 0) pushRow();
+
+  return rows;
 }
 
 export async function hashString(content: string): Promise<string> {
