@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { DataBundle, ShelfLifeInfo, WeekRecipe } from "./core/types";
-import { getFirebase, doc, setDoc, onSnapshot } from "./core/firebase";
+import { getFirebase, doc, setDoc } from "./core/firebase";
 import { STATIONS } from "./core/types";
 import { DEFAULT_SHIFT_MIN, fmtMin, getStationCapacityView, loadStationDeviceCounts, loadStationPools } from "./lib/equipment";
 import {
@@ -17,18 +17,14 @@ import {
   removeAssignment,
   savePlannerStorage,
   setActiveScenario,
-  suggestAssignments,
   type PlannerDay,
   type PlannerShift,
   type PlannerScenario,
-  type LinePlatingSummary,
-  type LinePlatingEntry,
   type SpecialDeliveryOrder,
 } from "./lib/planner";
 import { tl, type UiLocale } from "./lib/i18n";
 import { usePlanningOasisData } from "./lib/planningOasisData";
 import { exportAsTSV, exportAsExcel, exportAsPDF } from "./lib/planExport";
-import type { RunSplitPlan } from "./lib/runPlanning";
 import { calculateRunSplit } from "./lib/runPlanning";
 import { recordRampUpSnapshot, type RampUpSnapshot, type RampUpChangeEvent } from "./lib/rampUpHistory";
 import {
@@ -51,21 +47,14 @@ import {
 import {
   type ManufacturingDaySummary,
   MANUFACTURING_DAYS,
-  REGULAR_SUB_DAYS,
   slotValue,
   parseSlot,
-  pickLowestLoadSlotWithFallback,
-  pickLowestRegularSubSlotWithFallback,
-  pickLowestLoadSlotForDayWithFallback,
   topConflictLabel,
   topPoolConflictLabel,
   extraDevicesLabel,
-  serializeBatchesForNote,
-  normalizeBatches,
   runSubBatchesForAssignment,
   isSundayPrepSub,
   subLeadDaysBeforeNeed,
-  preferredSubProductionDay,
   parseBoardNote,
   buildBoardNote,
   extractSplitSpecFromNotes,
@@ -81,18 +70,6 @@ import {
   getSubRecipeInfo,
   type InfoHints,
 } from "./features/planning-oasis/cockpit/recipeInfoHints";
-import {
-  type PlanningRulesConfig,
-  loadPlanningRules,
-  savePlanningRules,
-  resolveMarketFulfillmentBatches,
-  isFishRecipe,
-} from "./features/planning-oasis/cockpit/planningRules";
-import {
-  buildPlanningContext,
-  type ProposedAssignmentChange,
-} from "./features/planning-oasis/cockpit/planningAI";
-import { PlanningAIPanel } from "./features/planning-oasis/cockpit/PlanningAIPanel";
 import { RampUpSparkline, RampUpDeltaBadge, PlannerStat, ToggleChip } from "./features/planning-oasis/cockpit/CockpitMiniWidgets";
 import { BoardEditorModal, type WeekBoardEditorState, type WeekBoardEditorDraft } from "./features/planning-oasis/cockpit/modals/BoardEditorModal";
 import { DayDetailModal } from "./features/planning-oasis/cockpit/modals/DayDetailModal";
@@ -126,8 +103,6 @@ export function PlanningView(
   const [stationDeviceCounts] = useState(() => loadStationDeviceCounts());
   const [stationPools] = useState(() => loadStationPools());
   const [uiSettings, setUiSettings] = useState<PlannerUiSettings>(() => loadPlannerUiSettings());
-  const [planningRules, setPlanningRules] = useState<PlanningRulesConfig>(() => loadPlanningRules());
-  const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [draggingCode, setDraggingCode] = useState<string | null>(null);
   const [_draggingSubId, setDraggingSubId] = useState<string | null>(null);
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
@@ -151,7 +126,6 @@ export function PlanningView(
     reason: "Planned",
     splitSpec: "",
     notes: "",
-    createSubRecipeWOs: false,
   });
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   // Bewusst NICHT breiten-basiert automatisch aktiviert: der Vollansicht-Overlay
@@ -176,20 +150,7 @@ export function PlanningView(
   const [platingPlan, setPlatingPlan] = useState<import("./core/types").PlatingPlanData | null>(null);
 
   /** Raw schedule aus dem Linienplan (Firestore), keyed als "{PlanDay}|{slotKey}|{lineIdx}" */
-  const [linePlanSchedule, setLinePlanSchedule] = useState<Record<string, { code: string; speedPerMin: number } | null>>({});
-  const [linePlanCapacityByLane, setLinePlanCapacityByLane] = useState<Record<string, number>>({});
-  const [linePlanRunSplitByRecipe, setLinePlanRunSplitByRecipe] = useState<Record<string, RunSplitPlan>>({});
   const lastPublishedManufacturingSignatureRef = useRef<string>("");
-  const lastManufacturingReconcileRequestRef = useRef<string>("");
-  // "Latest ref" für handleAutoPlanWeekBoard: der Reconcile-Listener-Effect
-  // unten abonniert absichtlich nur bei week/activeShifts.length-Wechsel neu
-  // (nicht bei jedem Render, sonst würde der Firestore-onSnapshot-Listener
-  // ständig ab-/wieder angemeldet). Damit ein extern (Cross-Tab/Firestore)
-  // ausgelöster Reconcile-Request trotzdem immer mit aktuellen data/
-  // portionMultiplier/activeShifts-Werten rechnet statt mit dem Stand vom
-  // letzten Resubscribe, wird hier bei jedem Render die neueste Funktion
-  // nachgezogen, statt sie in die Dependency-Liste aufzunehmen.
-  const handleAutoPlanWeekBoardRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     setSpecialDeliveries(loadSpecialDeliveries(week));
@@ -221,10 +182,6 @@ export function PlanningView(
     if (typeof window === "undefined") return;
     window.localStorage.setItem(PLANNER_UI_SETTINGS_STORAGE_KEY, JSON.stringify(uiSettings));
   }, [uiSettings]);
-
-  useEffect(() => {
-    savePlanningRules(planningRules);
-  }, [planningRules]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -263,57 +220,6 @@ export function PlanningView(
     return () => { active = false; };
   }, []);
 
-  // Linienplan aus Firestore laden – selbe Datenquelle wie LinePlanningView
-  useEffect(() => {
-    let unsub: (() => void) | undefined;
-    void (async () => {
-      try {        const { db } = getFirebase();
-        // Wochenformat "2026-W19" → weekStr "19"
-        const weekStr = week.includes("-W") ? week.split("-W")[1] : week;
-        unsub = onSnapshot(
-          doc(db, "apps/rezeptlogik/lineplanning", `de_W${weekStr}`),
-          (snap) => {
-            if (snap.exists()) {
-              const data = snap.data() as {
-                schedule?: Record<string, { code: string; speedPerMin: number } | null>;
-                cockpitPlan?: Record<string, Array<{ slot: string; line: number; code: string }>>;
-                lineCapacityByLane?: Record<string, number>;
-                runSplitByRecipe?: Record<string, RunSplitPlan>;
-              };
-
-              const fromSchedule = data.schedule ?? {};
-              const hasSchedule = Object.keys(fromSchedule).length > 0;
-              const fromCockpit: Record<string, { code: string; speedPerMin: number } | null> = {};
-              if (!hasSchedule && data.cockpitPlan) {
-                for (const [day, rows] of Object.entries(data.cockpitPlan)) {
-                  for (const row of rows ?? []) {
-                    const lineIdx = Math.max(0, Number(row.line ?? 1) - 1);
-                    const slot = String(row.slot ?? "").trim();
-                    const code = String(row.code ?? "").trim();
-                    if (!day || !slot || !code) continue;
-                    fromCockpit[`${day}|${slot}|${lineIdx}`] = { code, speedPerMin: 10 };
-                  }
-                }
-              }
-
-              setLinePlanSchedule(hasSchedule ? fromSchedule : fromCockpit);
-              setLinePlanCapacityByLane(data.lineCapacityByLane ?? {});
-              setLinePlanRunSplitByRecipe(data.runSplitByRecipe ?? {});
-            } else {
-              setLinePlanSchedule({});
-              setLinePlanCapacityByLane({});
-              setLinePlanRunSplitByRecipe({});
-            }
-          },
-          () => { /* Fehler ignorieren – Linienplan ist optional */ }
-        );
-      } catch {
-        // Firestore nicht verfügbar – Linienplan-Integration deaktiviert
-      }
-    })();
-    return () => unsub?.();
-  }, [week]);
-
   // Plating-Plan aus Firestore laden (apps/rezeptlogik/platingPlan/{week})
   useEffect(() => {
     let disposed = false;
@@ -348,21 +254,6 @@ export function PlanningView(
     "Wednesday": "Mi", "Thursday": "Do", "Friday": "Fr", "Saturday": "Sa",
   };
 
-  // Frühester Plating-Tag pro Rezept (aus importiertem Plating-Plan)
-  const platingDayByRecipe = useMemo((): Record<string, PlannerDay> => {
-    if (!platingPlan) return {};
-    const result: Record<string, PlannerDay> = {};
-    for (const r of platingPlan.recipes) {
-      const days = r.platingDays
-        .map(pd => PLAT_DAY_TO_PLANNER[pd.day])
-        .filter((d): d is PlannerDay => !!d);
-      const earliest = [...days].sort((a, b) => PLANNER_DAYS.indexOf(a) - PLANNER_DAYS.indexOf(b))[0];
-      if (earliest) result[r.recipeCode] = earliest;
-    }
-    return result;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [platingPlan]);
-
   // Plating-Gesamtmenge pro Tag (für Column-Header-Badge)
   const platingQtyByDay = useMemo((): Partial<Record<PlannerDay, number>> => {
     if (!platingPlan) return {};
@@ -376,101 +267,6 @@ export function PlanningView(
     return result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platingPlan]);
-
-  // Auto-Fill: wenn ein neuer Plating-Plan importiert wurde, Calendar automatisch befüllen
-  const needsAutoFillRef = useRef(false);
-  useEffect(() => {
-    const handler = (e: Event) => {
-      if ((e as CustomEvent<{ week: string }>).detail?.week === week) needsAutoFillRef.current = true;
-    };
-    window.addEventListener("rezeptlogik:plating-plan-saved", handler);
-    return () => window.removeEventListener("rezeptlogik:plating-plan-saved", handler);
-  }, [week]);
-  useEffect(() => {
-    if (!platingPlan || !needsAutoFillRef.current) return;
-    needsAutoFillRef.current = false;
-    setTimeout(() => handleAutoPlanWeekBoardRef.current(), 80);
-  }, [platingPlan]);
-
-  /**
-   * Berechnet pro Rezept und Tag, welche Kapazität die Plating-Linien haben.
-   * Schichten-Durations entsprechen den SLOTS aus LinePlanningView.
-   * Muss VOR suggestions berechnet werden, da suggestAssignments den platDay
-   * aus dem Linienplan als Anker für die rückwärtige Küchenplanung nutzt.
-   */
-  const linePlatingSummary = useMemo((): LinePlatingSummary => {
-    const SLOT_DURATIONS: Record<string, number> = {
-      "06:00-07:00": 60, "07:00-08:00": 60, "08:00-08:30": 30,
-      "09:00-10:00": 60, "10:00-11:00": 60, "11:30-12:00": 30,
-      "12:00-13:00": 60, "13:00-14:00": 60, "14:00-15:00": 60,
-    };
-    // Linienplan-Tagesbezeichnungen → PlannerDay
-    const DAY_MAP: Record<string, PlannerDay> = {
-      "Freitag": "Fr", "Samstag": "Sa", "Sonntag": "So",
-      "Montag": "Mo", "Dienstag": "Di", "Mittwoch": "Mi", "Donnerstag": "Do",
-    };
-    const byRecipe: Record<string, LinePlatingEntry[]> = {};
-    for (const [key, recipe] of Object.entries(linePlanSchedule)) {
-      if (!recipe) continue;
-      // Format: "{PlanDay}|{slotKey}|{lineIdx}"
-      const parts = key.split("|");
-      if (parts.length !== 3) continue;
-      const [dayDE, slotKey, lineIdx] = parts;
-      const platDay = DAY_MAP[dayDE ?? ""];
-      if (!platDay) continue;
-      const duration = SLOT_DURATIONS[slotKey ?? ""] ?? 60;
-      const laneCapacity = linePlanCapacityByLane[lineIdx ?? ""];
-      const portions = laneCapacity != null
-        ? Math.round((Math.max(0, laneCapacity) / 60) * duration)
-        : (recipe.speedPerMin ?? 10) * duration;
-      const entries = (byRecipe[recipe.code] ??= []);
-      const existing = entries.find(e => e.platDay === platDay);
-      if (existing) {
-        existing.capacityPortions += portions;
-        existing.slotCount += 1;
-      } else {
-        entries.push({ platDay, capacityPortions: portions, slotCount: 1 });
-      }
-    }
-
-    // Plating-Plan als Fallback: Rezepte die noch keinen Linienplan-Eintrag haben
-    // bekommen ihre Plating-Tage aus dem importierten Plating-Plan (CSV-Upload).
-    if (platingPlan) {
-      const PLAT_DAY_MAP: Record<string, PlannerDay> = {
-        "Sunday": "So", "Monday": "Mo", "Tuesday": "Di",
-        "Wednesday": "Mi", "Thursday": "Do", "Friday": "Fr", "Saturday": "Sa",
-      };
-      for (const recipe of platingPlan.recipes) {
-        if (byRecipe[recipe.recipeCode]) continue; // Linienplan hat Vorrang
-        const entries: LinePlatingEntry[] = [];
-        for (const pd of recipe.platingDays) {
-          const platDay = PLAT_DAY_MAP[pd.day];
-          if (!platDay) continue;
-          const existing = entries.find(e => e.platDay === platDay);
-          if (existing) {
-            existing.capacityPortions += pd.qty;
-            existing.slotCount += 1;
-          } else {
-            entries.push({ platDay, capacityPortions: pd.qty, slotCount: 1 });
-          }
-        }
-        if (entries.length > 0) byRecipe[recipe.recipeCode] = entries;
-      }
-    }
-
-    return { byRecipe };
-  }, [linePlanSchedule, linePlanCapacityByLane, platingPlan]);
-
-  const suggestions = useMemo(() => {
-    if (!uiSettings.showAutoSuggestions) return {};
-    return suggestAssignments(data, week, scenario, activeShifts, {
-      portionMultiplier,
-      shiftCapacityMin: DEFAULT_SHIFT_MIN,
-      stationDeviceCounts,
-      stationPools,
-      lineSummary: linePlatingSummary,
-    });
-  }, [data, week, scenario, activeShifts, portionMultiplier, stationDeviceCounts, stationPools, uiSettings.showAutoSuggestions, linePlatingSummary]);
 
   // @ts-expect-error unused
   const _weekIntel = planningOasis?.weeks[week] ?? null;
@@ -682,7 +478,6 @@ export function PlanningView(
   const visibleStationConflicts = uiSettings.showStationConflicts ? analysis.conflicts : [];
   const visiblePoolConflicts = uiSettings.showPoolConflicts ? analysis.poolConflicts : [];
   const visibleConflictCount = visibleStationConflicts.length + visiblePoolConflicts.length;
-  const suggestionCount = Object.keys(suggestions).length;
   const activeShiftSummary = activeShifts.join(" / ");
   const manufacturingDaySummaries = useMemo((): ManufacturingDaySummary[] => {
     const rows = MANUFACTURING_DAYS.map((column) => ({
@@ -780,13 +575,6 @@ export function PlanningView(
     setNewScenarioName("");
   }
 
-  function applySuggestion(recipeCode: string) {
-    const suggestion = suggestions[recipeCode];
-    const recipe = recipeLookup[recipeCode];
-    if (!suggestion || !recipe) return;
-    setStorage(prev => assignRecipe(prev, week, scenario.id, recipe, { day: suggestion.day, shift: suggestion.shift }));
-  }
-
   function handleDragStart(event: React.DragEvent, recipeCode: string, subRecipeId?: string) {
     const payload = subRecipeId ? `${recipeCode}::${subRecipeId}` : recipeCode;
     event.dataTransfer.setData("text/recipe-code", payload);
@@ -854,360 +642,6 @@ export function PlanningView(
     setStorage(prev => removeAssignment(prev, week, scenario.id, parsed.recipe.code, parsed.subRecipeId));
   }
 
-  function handleAutoPlanWeekBoard() {
-    setStorage((prev) => {
-      const planningShifts = activeShifts.length > 0 ? activeShifts : PLANNER_SHIFTS;
-      const isShiftActive = (shift: PlannerShift | undefined): boolean => {
-        return !!shift && planningShifts.includes(shift);
-      };
-      const isPlannerDay = (day: unknown): day is PlannerDay => {
-        return typeof day === "string" && (PLANNER_DAYS as readonly string[]).includes(day);
-      };
-      const safePlannerDay = (day: unknown, fallback: PlannerDay = "Fr"): PlannerDay => {
-        return isPlannerDay(day) ? day : fallback;
-      };
-      const weekState = getWeekState(prev, week);
-      const currentScenario = getActiveScenario(prev, week);
-      const analysisNow = analyzePlan(data, week, currentScenario, {
-        portionMultiplier,
-        shiftCapacityMin: DEFAULT_SHIFT_MIN,
-        stationDeviceCounts,
-        stationPools
-      });
-
-      const nextAssignments = { ...currentScenario.assignments };
-      const autoTouchedKeys = new Set<string>();
-      const slotLoads = new Map<string, number>();
-      const slotOrders = new Map<string, number>();
-
-      const registerOrder = (day: PlannerDay, shift: PlannerShift, order?: number) => {
-        const key = slotValue(day, shift);
-        const current = slotOrders.get(key) ?? 0;
-        if (typeof order === "number" && Number.isFinite(order)) {
-          slotOrders.set(key, Math.max(current, Math.round(order)));
-          return;
-        }
-        slotOrders.set(key, current + 1);
-      };
-
-      const nextOrder = (day: PlannerDay, shift: PlannerShift) => {
-        const key = slotValue(day, shift);
-        const value = (slotOrders.get(key) ?? 0) + 1;
-        slotOrders.set(key, value);
-        return value;
-      };
-
-      const addLoad = (day: PlannerDay, shift: PlannerShift) => {
-        const key = slotValue(day, shift);
-        slotLoads.set(key, (slotLoads.get(key) ?? 0) + 1);
-      };
-
-      const rebuildSlotState = (assignments: Record<string, typeof nextAssignments[string]>) => {
-        slotLoads.clear();
-        slotOrders.clear();
-        for (const row of Object.values(assignments)) {
-          if (!row || !isShiftActive(row.shift)) continue;
-          addLoad(row.day, row.shift);
-          registerOrder(row.day, row.shift, row.order);
-        }
-      };
-
-      rebuildSlotState(nextAssignments);
-
-      const recipesByLoad = [...analysisNow.recipes]
-        .sort((a, b) => b.totalActiveMin - a.totalActiveMin || a.recipeCode.localeCompare(b.recipeCode));
-
-      for (const recipeSummary of recipesByLoad) {
-        const weekRecipe = recipeLookup[recipeSummary.recipeCode]
-          ?? data.weekRecipes.find((row) => row.hfWeek === week && row.code === recipeSummary.recipeCode)
-          ?? ({ code: recipeSummary.recipeCode } as WeekRecipe);
-        const mainKey = assignmentKey(recipeSummary.recipeCode);
-        const existingMain = nextAssignments[mainKey] ?? recipeSummary.assigned;
-        const keepExistingMain = !!existingMain && existingMain.day !== "Sa" && isShiftActive(existingMain.shift);
-        const mainTarget = Math.max(0, Math.round((weekRecipe.totalVerdenVolume ?? 0) * portionMultiplier));
-        const rawBatches = resolveMarketFulfillmentBatches(weekRecipe, portionMultiplier, planningRules);
-        // Plating-Plan-Override: wenn CSV importiert, hat dieser Vorrang vor markt-basierten Batches
-        const overridePlatingDay = platingDayByRecipe[recipeSummary.recipeCode];
-        const batches = overridePlatingDay
-          ? [{ day: overridePlatingDay, portions: mainTarget }]
-          : rawBatches.length === 0
-            ? [{ day: "Fr" as PlannerDay, portions: mainTarget }]
-            : mainTarget <= planningRules.singleRunMaxPortions && rawBatches.length > 1
-              ? [{ day: rawBatches[0]!.day, portions: mainTarget }]
-              : normalizeBatches(rawBatches, mainTarget);
-        const platingDay = safePlannerDay(batches[0]?.day ?? existingMain?.day ?? "Fr");
-
-        if (!keepExistingMain) {
-          const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, platingDay, planningShifts)
-            ?? pickLowestLoadSlotWithFallback(slotLoads, planningShifts);
-          if (slot) {
-            nextAssignments[mainKey] = {
-              recipeCode: recipeSummary.recipeCode,
-              day: slot.day,
-              shift: slot.shift,
-              order: nextOrder(slot.day, slot.shift),
-              targetPortions: mainTarget,
-              note: buildBoardNote("Auto/MainFirst", `split=${serializeBatchesForNote(batches)}`)
-            };
-            autoTouchedKeys.add(mainKey);
-            addLoad(slot.day, slot.shift);
-          }
-        } else if (existingMain) {
-          nextAssignments[mainKey] = {
-            ...existingMain,
-            targetPortions: mainTarget,
-            note: buildBoardNote("Auto/MainFirst", `split=${serializeBatchesForNote(batches)}`)
-          };
-          autoTouchedKeys.add(mainKey);
-        }
-      }
-
-      rebuildSlotState(nextAssignments);
-      const refreshedAnalysis2 = analyzePlan(data, week, {
-        ...currentScenario,
-        assignments: nextAssignments
-      }, {
-        portionMultiplier,
-        shiftCapacityMin: DEFAULT_SHIFT_MIN,
-        stationDeviceCounts,
-        stationPools
-      });
-
-      for (const recipeSummary of refreshedAnalysis2.recipes) {
-        const mainAssigned = nextAssignments[assignmentKey(recipeSummary.recipeCode)];
-        if (!mainAssigned) continue;
-        const mainTarget = Math.max(0, Math.round(mainAssigned.targetPortions ?? 0));
-        const isFish = isFishRecipe(recipeSummary.recipeCode, planningRules);
-        const batchNotes = parseBoardNote(mainAssigned.note);
-        const batches = parseSplitSpecToBatches(
-          extractSplitSpecFromNotes(batchNotes.notes),
-          safePlannerDay(mainAssigned.day),
-          mainTarget,
-        );
-        const needDay = safePlannerDay(
-          isFish
-            ? (batches[batches.length - 1]?.day ?? mainAssigned.day)
-            : (batches[0]?.day ?? mainAssigned.day),
-        );
-
-        const subsToAssign = recipeSummary.subRecipes
-          .filter((sub) => !sub.assigned || sub.assigned.day === "Sa" || !isShiftActive(sub.assigned.shift))
-          .sort((a, b) => b.activeMin - a.activeMin);
-
-        for (const sub of subsToAssign) {
-          const spec = data.processSpecs?.[sub.subRecipeId];
-          const leadDays = subLeadDaysBeforeNeed(sub.category, spec);
-          const preferredSubDay = preferredSubProductionDay(sub.category, spec, needDay, leadDays);
-          const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, preferredSubDay, planningShifts)
-            ?? pickLowestRegularSubSlotWithFallback(slotLoads, planningShifts)
-            ?? pickLowestLoadSlotWithFallback(slotLoads, planningShifts);
-          if (!slot) continue;
-          const subKey = assignmentKey(recipeSummary.recipeCode, sub.subRecipeId);
-          nextAssignments[subKey] = {
-            recipeCode: recipeSummary.recipeCode,
-            subRecipeId: sub.subRecipeId,
-            subRecipeName: sub.subRecipeName,
-            day: slot.day,
-            shift: slot.shift,
-            order: nextOrder(slot.day, slot.shift),
-            targetPortions: mainTarget,
-            note: buildBoardNote("Auto/SubFromMain", `main=${mainTarget}||split=${serializeBatchesForNote(batches)}`)
-          };
-          autoTouchedKeys.add(subKey);
-          addLoad(slot.day, slot.shift);
-        }
-      }
-
-      // Sicherheitsnetz: wirklich jedes Rezept muss nach Auto-Plan ein Main-Assignment haben.
-      for (const recipeSummary of recipesByLoad) {
-        const weekRecipe = recipeLookup[recipeSummary.recipeCode]
-          ?? data.weekRecipes.find((row) => row.hfWeek === week && row.code === recipeSummary.recipeCode)
-          ?? ({ code: recipeSummary.recipeCode } as WeekRecipe);
-        const mainKey = assignmentKey(recipeSummary.recipeCode);
-        const currentMain = nextAssignments[mainKey];
-        const hasValidMain = !!currentMain
-          && isPlannerDay(currentMain.day)
-          && isShiftActive(currentMain.shift);
-        if (hasValidMain) continue;
-
-        const fallbackTarget = Math.max(0, Math.round((weekRecipe.totalVerdenVolume ?? 0) * portionMultiplier));
-        const rawFallbackBatches = resolveMarketFulfillmentBatches(weekRecipe, portionMultiplier, planningRules);
-        const fallbackBatches = rawFallbackBatches.length > 0
-          ? normalizeBatches(rawFallbackBatches, fallbackTarget)
-          : [{ day: "Fr" as PlannerDay, portions: fallbackTarget }];
-        const fallbackDay = safePlannerDay(fallbackBatches[0]?.day ?? currentMain?.day ?? "Fr");
-        const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, fallbackDay, planningShifts)
-          ?? pickLowestLoadSlotWithFallback(slotLoads, planningShifts);
-        if (!slot) continue;
-
-        nextAssignments[mainKey] = {
-          recipeCode: recipeSummary.recipeCode,
-          day: slot.day,
-          shift: slot.shift,
-          order: nextOrder(slot.day, slot.shift),
-          targetPortions: fallbackTarget,
-          note: buildBoardNote("Auto/MainSafetyNet", `split=${serializeBatchesForNote(fallbackBatches)}`)
-        };
-        autoTouchedKeys.add(mainKey);
-        addLoad(slot.day, slot.shift);
-      }
-
-      // Mo/Di sind echte Produktionstage: nach der Lead-Time-Planung verteilen wir
-      // automatisch gesetzte Submeal-Arbeit aus den vollen Folgetagen zurück.
-      const loadByAssignmentKey = new Map<string, number>();
-      const categoryByAssignmentKey = new Map<string, string>();
-      for (const recipeSummary of refreshedAnalysis2.recipes) {
-        loadByAssignmentKey.set(assignmentKey(recipeSummary.recipeCode), recipeSummary.activeMin);
-        for (const sub of recipeSummary.subRecipes) {
-          loadByAssignmentKey.set(assignmentKey(recipeSummary.recipeCode, sub.subRecipeId), sub.activeMin);
-          categoryByAssignmentKey.set(assignmentKey(recipeSummary.recipeCode, sub.subRecipeId), sub.category);
-        }
-      }
-
-      const assignmentCountForDay = (day: PlannerDay): number => {
-        return Object.values(nextAssignments)
-          .filter((row) => row.day === day && isShiftActive(row.shift))
-          .length;
-      };
-
-      const dayBalanceTargets: readonly PlannerDay[] = ["Mo", "Di"];
-      for (const targetDay of dayBalanceTargets) {
-        if (assignmentCountForDay(targetDay) > 0) continue;
-        const candidate = [...autoTouchedKeys]
-          .map((key) => ({ key, row: nextAssignments[key], activeMin: loadByAssignmentKey.get(key) ?? 0 }))
-          .filter((item) => {
-            if (!item.row || item.row.day === targetDay || !isShiftActive(item.row.shift)) return false;
-            if (!item.row.subRecipeId) return false;
-            if (!REGULAR_SUB_DAYS.includes(item.row.day)) return false;
-            if (assignmentCountForDay(item.row.day) <= 1) return false;
-            return !isSundayPrepSub(categoryByAssignmentKey.get(item.key) ?? "", data.processSpecs?.[item.row.subRecipeId]);
-          })
-          .sort((a, b) => {
-            const sourceLoadDelta = assignmentCountForDay(b.row.day) - assignmentCountForDay(a.row.day);
-            return sourceLoadDelta || b.activeMin - a.activeMin || a.key.localeCompare(b.key);
-          })[0];
-
-        const slot = pickLowestLoadSlotForDayWithFallback(slotLoads, targetDay, planningShifts);
-        if (!candidate || !slot) continue;
-        const parsedNote = parseBoardNote(candidate.row.note);
-        nextAssignments[candidate.key] = {
-          ...candidate.row,
-          day: targetDay,
-          shift: slot.shift,
-          order: nextOrder(targetDay, slot.shift),
-          note: buildBoardNote(`Auto/${targetDay}Balance`, parsedNote.notes)
-        };
-        addLoad(targetDay, slot.shift);
-      }
-
-      return {
-        ...prev,
-        weeks: {
-          ...prev.weeks,
-          [week]: {
-            ...weekState,
-            scenarios: weekState.scenarios.map((s) =>
-              s.id === currentScenario.id ? { ...s, assignments: nextAssignments } : s
-            )
-          }
-        }
-      };
-    });
-  }
-  handleAutoPlanWeekBoardRef.current = handleAutoPlanWeekBoard;
-
-  function handleApplyAIChanges(changes: ProposedAssignmentChange[]) {
-    setStorage(prev => {
-      const weekSt = getWeekState(prev, week);
-      const currentScenario = getActiveScenario(prev, week);
-      const nextAssignments = { ...currentScenario.assignments };
-      for (const change of changes) {
-        const key = assignmentKey(change.recipeCode, change.subRecipeId);
-        const existing = nextAssignments[key];
-        nextAssignments[key] = {
-          recipeCode: change.recipeCode,
-          subRecipeId: change.subRecipeId,
-          subRecipeName: existing?.subRecipeName ?? change.subRecipeId,
-          day: change.day,
-          shift: change.shift,
-          order: existing?.order ?? Object.keys(nextAssignments).length + 1,
-          targetPortions: change.targetPortions ?? existing?.targetPortions ?? 0,
-          note: buildBoardNote(
-            "KI-Assistent",
-            change.splitSpec
-              ? `${change.reason} split=${change.splitSpec}`.trim()
-              : (change.reason ?? ""),
-          ),
-        };
-      }
-      const updatedScenario = { ...currentScenario, assignments: nextAssignments };
-      return {
-        ...prev,
-        weeks: {
-          ...prev.weeks,
-          [week]: {
-            ...weekSt,
-            scenarios: weekSt.scenarios.map(s => s.id === currentScenario.id ? updatedScenario : s),
-          },
-        },
-      };
-    });
-  }
-
-  const aiPlanContext = useMemo(() => buildPlanningContext(
-    week, data, planningRules, portionMultiplier, analysis.recipes,
-  ), [week, data, planningRules, portionMultiplier, analysis.recipes]);
-
-  const aiRecipeLookup = useMemo(() =>
-    Object.fromEntries(analysis.recipes.map(r => [r.recipeCode, r.recipeName])),
-  [analysis.recipes]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const weekStr = week.includes("-W") ? week.split("-W")[1] : week;
-
-    const handlePayload = (payload: unknown) => {
-      const row = payload as { week?: string; requestedAt?: string; reason?: string } | null;
-      if (!row || row.week !== week) return;
-      const signature = `${row.requestedAt ?? ""}|${row.reason ?? ""}`;
-      if (!signature.trim() || lastManufacturingReconcileRequestRef.current === signature) return;
-      lastManufacturingReconcileRequestRef.current = signature;
-      handleAutoPlanWeekBoardRef.current();
-    };
-
-    try {
-      const raw = window.localStorage.getItem(`rezeptlogik-manufacturing-reconcile-${week}`);
-      if (raw) handlePayload(JSON.parse(raw));
-    } catch {
-      // Ignore stale local reconcile requests.
-    }
-
-    const onRequest = (event: Event) => {
-      handlePayload((event as CustomEvent).detail);
-    };
-    window.addEventListener("rezeptlogik:manufacturing-reconcile-request", onRequest);
-
-    let cancelled = false;
-    let unsubscribe: (() => void) | null = null;
-    void (async () => {
-      try {        const { db } = getFirebase();
-        if (cancelled) return;
-        unsubscribe = onSnapshot(doc(db, "apps/rezeptlogik/planningRequests", `de_W${weekStr}`), (snapshot) => {
-          if (!snapshot.exists()) return;
-          handlePayload(snapshot.data());
-        });
-      } catch {
-        // Local event/localStorage keep same-browser reconciliation working.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("rezeptlogik:manufacturing-reconcile-request", onRequest);
-      unsubscribe?.();
-    };
-  }, [week, activeShifts.length]);
-
   function openWeekBoardEditor(input: WeekBoardEditorState) {
     const key = assignmentKey(input.recipeCode, input.subRecipeId);
     const existing = scenario.assignments[key];
@@ -1221,7 +655,6 @@ export function PlanningView(
       reason: parsedNote.reason,
       splitSpec,
       notes: stripSplitSpecFromNotes(parsedNote.notes),
-      createSubRecipeWOs: false,
     });
     setBoardEditor(input);
   }
@@ -1236,37 +669,14 @@ export function PlanningView(
     const targetPortions = Math.max(0, Math.round(boardDraft.targetPortions || 0));
     const splitForNote = boardEditor.subRecipeId ? "" : boardDraft.splitSpec;
     const effectiveReason = reasonOverride ?? boardDraft.reason;
-    setStorage((prev) => {
-      let state = assignRecipe(prev, week, scenario.id, recipe, {
-        day: boardEditor.day,
-        shift: boardDraft.shift,
-        subRecipeId: boardEditor.subRecipeId,
-        subRecipeName: boardEditor.subRecipeName,
-        targetPortions,
-        note: buildBoardNote(effectiveReason, composeBoardNotes(boardDraft.notes, splitForNote))
-      });
-      if (boardDraft.createSubRecipeWOs && !boardEditor.subRecipeId) {
-        const recipeAnalysis = analysis.recipes.find(r => r.recipeCode === boardEditor.recipeCode);
-        const platingDay = boardEditor.day;
-        for (const sub of recipeAnalysis?.subRecipes ?? []) {
-          if (sub.assigned) continue;
-          const spec = data.processSpecs?.[sub.subRecipeId];
-          const leadDays = subLeadDaysBeforeNeed(sub.category, spec);
-          const subDay = isSundayPrepSub(sub.category, spec)
-            ? "So" as PlannerDay
-            : preferredSubProductionDay(sub.category, spec, platingDay, leadDays);
-          state = assignRecipe(state, week, scenario.id, recipe, {
-            day: subDay,
-            shift: boardDraft.shift,
-            subRecipeId: sub.subRecipeId,
-            subRecipeName: sub.subRecipeName,
-            targetPortions,
-            note: buildBoardNote("Auto/SubFromMain", ""),
-          });
-        }
-      }
-      return state;
-    });
+    setStorage((prev) => assignRecipe(prev, week, scenario.id, recipe, {
+      day: boardEditor.day,
+      shift: boardDraft.shift,
+      subRecipeId: boardEditor.subRecipeId,
+      subRecipeName: boardEditor.subRecipeName,
+      targetPortions,
+      note: buildBoardNote(effectiveReason, composeBoardNotes(boardDraft.notes, splitForNote))
+    }));
     setBoardEditor(null);
   }
 
@@ -1533,27 +943,12 @@ export function PlanningView(
                   Plating-Plan {platingPlan.week} · {platingPlan.recipes.length} Rezepte
                 </span>
               )}
-              {Object.keys(linePlanRunSplitByRecipe).length > 0 && (
-                <span className="rounded-full bg-cyan-50 px-3 py-1 text-[11px] font-semibold text-cyan-800 ring-1 ring-cyan-300">
-                  Plating Runs: {Object.keys(linePlanRunSplitByRecipe).length} Meals · Ziel 110%
-                </span>
-              )}
-              <button className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800" onClick={handleAutoPlanWeekBoard}>
-                Auto: Meals + Subs
-              </button>
               <button
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold ring-1 transition-colors ${uiSettings.shiftCount >= 2 ? "bg-violet-700 text-white ring-violet-700" : "bg-white text-slate-700 ring-slate-300 hover:bg-violet-50 hover:ring-violet-300"}`}
                 onClick={() => applyShiftPreset(uiSettings.shiftCount >= 2 ? "single-current" : "double-ready")}
                 title="Frühschicht + Spätschicht aktivieren — geplant ab nächstem Monat"
               >
                 {uiSettings.shiftCount >= 2 ? "2-Schicht ✓" : "2-Schicht"}
-              </button>
-              <button
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold ring-1 transition-colors ${aiPanelOpen ? "bg-indigo-700 text-white ring-indigo-700" : "bg-white text-indigo-700 ring-indigo-300 hover:bg-indigo-50"}`}
-                onClick={() => setAiPanelOpen(prev => !prev)}
-                title="KI-Planungsassistent öffnen"
-              >
-                KI-Assistent
               </button>
               <button
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold ring-1 ${calendarFullView ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-100"}`}
@@ -1628,16 +1023,10 @@ export function PlanningView(
 
         {visibleConflictCount > 0 && (
           <div className="border-b border-rose-200 bg-rose-50 px-4 py-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="text-xs font-black tracking-wide text-rose-800">
                 Kollisionen direkt bearbeiten: {fmtNum(visibleConflictCount)}
               </div>
-              <button
-                className="rounded-md bg-rose-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-800"
-                onClick={handleAutoPlanWeekBoard}
-              >
-                Auto: neu abstimmen
-              </button>
             </div>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {visibleStationConflicts.slice(0, 4).map((conflict) => (
@@ -2404,19 +1793,6 @@ export function PlanningView(
             </div>
 
             <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">{tl(locale, "Automatik")}</div>
-              <ToggleChip
-                label={tl(locale, "Auto-Vorschläge")}
-                enabled={uiSettings.showAutoSuggestions}
-                locale={locale}
-                onClick={() => setUiSettings(prev => ({ ...prev, showAutoSuggestions: !prev.showAutoSuggestions }))}
-              />
-              <div className="mt-2 text-[11px] text-slate-500">
-                {locale === "de" ? "Offene Rezepte bekommen nur dann Slot-Empfehlungen, wenn diese Automatik aktiv ist." : locale === "nl" ? "Open recepten krijgen alleen slotvoorstellen als deze automatiek actief is." : "Open recipes only receive slot suggestions when this automation is enabled."}
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">{tl(locale, "Szenarioverwaltung")}</div>
               <div className="space-y-2">
                 <select
@@ -2450,7 +1826,6 @@ export function PlanningView(
         <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
           <PlannerStat label={tl(locale, "Schichten aktiv")} value={fmtNum(activeShifts.length)} />
           <PlannerStat label={tl(locale, "Slots/Woche")} value={fmtNum(MANUFACTURING_DAYS.length * activeShifts.length)} />
-          <PlannerStat label={tl(locale, "Vorschläge")} value={fmtNum(suggestionCount)} accent={uiSettings.showAutoSuggestions && suggestionCount > 0} />
           <PlannerStat label={tl(locale, "Modell")} value={shiftPresetShortLabel(locale, activePreset.id)} />
         </div>
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -2546,133 +1921,6 @@ export function PlanningView(
         </div>
       </div>
 
-      <div className="card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700">Planungsregeln</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Markt-Splits, Schicht-Konfiguration und Fisch-Rezepte · wird lokal gespeichert</p>
-          </div>
-          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
-            2-Schicht: {uiSettings.shiftCount >= 2 ? "aktiv" : "inaktiv"}
-          </span>
-        </div>
-
-        <div className="grid gap-5 md:grid-cols-2">
-
-          {/* ── Schicht-Betrieb ─── */}
-          <div className="space-y-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Schicht-Betrieb</div>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={uiSettings.shiftCount >= 2}
-                onChange={() => applyShiftPreset(uiSettings.shiftCount >= 2 ? "single-current" : "double-ready")}
-                className="h-4 w-4 rounded accent-violet-700"
-              />
-              <span className="text-sm text-slate-700">2-Schicht-Betrieb (Früh + Spät)</span>
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">ab nächstem Monat</span>
-            </label>
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Run 1 / Frühschicht-Anteil</span>
-                <strong className="text-slate-700">{planningRules.firstRunPct}%</strong>
-              </div>
-              <input
-                type="range" min={50} max={90} step={5}
-                value={planningRules.firstRunPct}
-                onChange={e => setPlanningRules(prev => ({ ...prev, firstRunPct: Number(e.target.value) }))}
-                className="w-full accent-violet-700"
-              />
-              <div className="text-[11px] text-slate-400">Run 2 / Spätschicht: {100 - planningRules.firstRunPct}%</div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 whitespace-nowrap">1 Run bis maximal</span>
-              <input
-                type="number" min={0} max={9999} step={100}
-                value={planningRules.singleRunMaxPortions}
-                onChange={e => setPlanningRules(prev => ({ ...prev, singleRunMaxPortions: Math.max(0, Number(e.target.value) || 0) }))}
-                className="w-24 rounded border border-slate-300 px-2 py-1 text-xs text-right"
-              />
-              <span className="text-xs text-slate-400">Portionen</span>
-            </div>
-          </div>
-
-          {/* ── Markt-Fulfillment-Splits ─── */}
-          <div className="space-y-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Markt-Fulfillment</div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>BENL</span>
-                <span>Do: <strong>{planningRules.benlThuPct}%</strong> · Fr: <strong>{planningRules.benlFriPct}%</strong></span>
-              </div>
-              <input
-                type="range" min={0} max={100} step={5}
-                value={planningRules.benlThuPct}
-                onChange={e => {
-                  const thu = Number(e.target.value);
-                  setPlanningRules(prev => ({ ...prev, benlThuPct: thu, benlFriPct: 100 - thu }));
-                }}
-                className="w-full accent-emerald-600"
-              />
-              <div className="text-[11px] text-slate-400">Do {planningRules.benlThuPct}% Plating-fertig · Fr {planningRules.benlFriPct}% Plating-fertig</div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-slate-500">
-                <span>Nordics (DK/SE)</span>
-                <span>Fr: <strong>{planningRules.nordicsFriPct}%</strong> · Sa: <strong>{planningRules.nordicsSatPct}%</strong></span>
-              </div>
-              <input
-                type="range" min={0} max={100} step={5}
-                value={planningRules.nordicsFriPct}
-                onChange={e => {
-                  const fri = Number(e.target.value);
-                  setPlanningRules(prev => ({ ...prev, nordicsFriPct: fri, nordicsSatPct: 100 - fri }));
-                }}
-                className="w-full accent-sky-600"
-              />
-              <div className="text-[11px] text-slate-400">Fr {planningRules.nordicsFriPct}% Koch-fertig · Sa {planningRules.nordicsSatPct}% Koch-fertig</div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 whitespace-nowrap">DE: fertig bis</span>
-              <select
-                value={planningRules.deLatestCookDay}
-                onChange={e => setPlanningRules(prev => ({ ...prev, deLatestCookDay: e.target.value as import("./lib/planner").PlannerDay }))}
-                className="rounded border border-slate-300 px-2 py-1 text-xs bg-white"
-              >
-                {(["Mi", "Do", "Fr", "Sa"] as const).map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
-              <span className="text-[11px] text-slate-400">Samstag der Produktionswoche</span>
-            </div>
-          </div>
-
-          {/* ── Fisch-Rezepte ─── */}
-          <div className="space-y-2 md:col-span-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Fisch-Rezepte
-              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 normal-case">Lead-Time = 0 · so spät wie möglich kochen</span>
-            </div>
-            <textarea
-              value={planningRules.fishRecipeCodes.join("\n")}
-              onChange={e => setPlanningRules(prev => ({
-                ...prev,
-                fishRecipeCodes: e.target.value.split("\n").map(s => s.trim()).filter(Boolean),
-              }))}
-              placeholder={"Je Zeile ein Rezept-Code, z.B.\nFE1234A\nFV5678B"}
-              rows={3}
-              className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs font-mono resize-none"
-            />
-            <div className="text-[11px] text-slate-400">
-              {planningRules.fishRecipeCodes.length === 0
-                ? "Keine Fisch-Rezepte konfiguriert"
-                : `${planningRules.fishRecipeCodes.length} Rezept-Code${planningRules.fishRecipeCodes.length > 1 ? "s" : ""} als Fisch markiert`}
-            </div>
-          </div>
-
-        </div>
-      </div>
 
       <div className="card p-4">
         <div className="flex items-center justify-between gap-2 mb-2">
@@ -2687,7 +1935,6 @@ export function PlanningView(
                 <th className="text-left py-1.5 pr-2">{tl(locale, "Rezept")}</th>
                 <th className="text-right py-1.5 pr-2">Σ {locale === "de" ? "aktiv" : locale === "nl" ? "actief" : "active"}</th>
                 <th className="text-left py-1.5 pr-2">{tl(locale, "Top-Stationen")}</th>
-                {uiSettings.showAutoSuggestions && <th className="text-left py-1.5 pr-2">{tl(locale, "Vorschlag")}</th>}
                 <th className="text-left py-1.5">{tl(locale, "Plan-Slot")}</th>
               </tr>
             </thead>
@@ -2709,18 +1956,6 @@ export function PlanningView(
                     <td className="py-1.5 pr-2 text-xs text-slate-600">
                       {recipe.topStations.map(s => `${s.station} ${fmtMin(s.minutes)}`).join(" · ") || "—"}
                     </td>
-                    {uiSettings.showAutoSuggestions && (
-                      <td className="py-1.5 pr-2 text-xs text-slate-600">
-                        {suggestions[recipe.recipeCode] ? (
-                          <div className="space-y-1">
-                            <button className="btn" style={tone.subPill} onClick={() => applySuggestion(recipe.recipeCode)}>
-                              {suggestions[recipe.recipeCode].day} · {suggestions[recipe.recipeCode].shift}
-                            </button>
-                            <div className="text-[10px] text-slate-500">{suggestions[recipe.recipeCode].reason}</div>
-                          </div>
-                        ) : <span className="text-slate-400">—</span>}
-                      </td>
-                    )}
                     <td className="py-1.5">
                       <select
                         className="w-full rounded-lg border-slate-300 ring-1 ring-slate-300 bg-white px-2 py-1.5 text-sm"
@@ -2741,14 +1976,6 @@ export function PlanningView(
           </table>
         </div>
       </div>
-
-      <PlanningAIPanel
-        isOpen={aiPanelOpen}
-        onClose={() => setAiPanelOpen(false)}
-        planContext={aiPlanContext}
-        recipeLookup={aiRecipeLookup}
-        onApplyChanges={handleApplyAIChanges}
-      />
     </div>
   );
 }

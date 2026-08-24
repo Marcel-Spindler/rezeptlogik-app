@@ -1,6 +1,6 @@
 // GSheet Monitor – React Hooks für Live-Sheet-Daten.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EtData, GSheetChange, GSheetConfig, LinePlaitingData, PostblastData, PreblastData, RtiData } from "./gsheetTypes";
+import type { EtData, GSheetChange, GSheetConfig, LinePlaitingData, PostblastData, PreblastData, ProductionPlanData, RtiData } from "./gsheetTypes";
 import { GSHEET_REGISTRY } from "./gsheetRegistry";
 import { createPoller } from "./gsheetPoller";
 import { parseRti } from "./parsers/parseRti";
@@ -8,9 +8,13 @@ import { parsePostblast } from "./parsers/parsePostblast";
 import { parsePreblast } from "./parsers/parsePreblast";
 import { parseEt } from "./parsers/parseEt";
 import { parseLinePlaiting } from "./parsers/parseLinePlaiting";
+import { parseProductionPlan } from "./parsers/parseProductionPlan";
 
 type ParserFn = (rows: string[][]) => unknown;
 
+// productionplan ist bewusst NICHT hier eingetragen — dieser Source läuft
+// über einen eigenen JSON-Poller (siehe useProductionPlanMonitor unten),
+// nicht über den gemeinsamen CSV-Poller/createPoller wie alle anderen.
 const PARSERS: Record<string, ParserFn> = {
   rti: parseRti,
   preblast: parsePreblast,
@@ -177,6 +181,86 @@ export function useLinePlaitingMonitor(gid: string): GSheetMonitorState<LinePlai
     parser: "lineplaiting",
   }), [gid]);
   return useConfiguredGSheetMonitor<LinePlaitingData>(config, parseLinePlaiting, "Kein LinePlaiting-Tab konfiguriert");
+}
+
+// ─── Production Plan: eigenes Sheet, Tab (gid) wechselt jede KW ────────────
+// Wie LinePlaiting (siehe oben) kann die Config nicht statisch in
+// GSHEET_REGISTRY stehen — Marcel trägt den neuen Tab-Link/gid jede KW im
+// Vorstellungsplan-View ein. Startwert = Tab "W36 - Plating Plan [WIP]"
+// (2026-08-24, aktuelle HF-Woche zum Bauzeitpunkt).
+//
+// Anders als die anderen GSheet-Quellen läuft dieser Poller NICHT über den
+// anonymen gviz/tq-CSV-Export (fetchSheetCsv/createPoller): dieses Sheet lässt
+// Text-Zellen ("Cup"/"Slicing") in den Tages-Matrix-Spalten dort still
+// leer, während Zahlen korrekt ankommen (verifiziert per Sheets-API-
+// Gegenprobe, FORMULA/UNFORMATTED_VALUE/FORMATTED_VALUE stimmen überein,
+// nur der öffentliche CSV-Export lässt den Text weg). Stattdessen ruft dieser
+// Hook den lokalen WMS-Server (scripts/wms-local-server.ts, Endpunkt
+// /production-plan) auf, der per Service Account über die echte Sheets API
+// liest — setzt voraus, dass `npm run start`/der lokale Dev-Server läuft.
+const PRODUCTIONPLAN_GID_STORAGE_KEY = "productionplan_gid_v1";
+const PRODUCTIONPLAN_DEFAULT_GID = "321735032";
+const PRODUCTIONPLAN_POLL_MS = 60_000;
+
+export function useProductionPlanGid(): readonly [string, (input: string) => boolean] {
+  const [gid, setGidState] = useState(() => {
+    try { return localStorage.getItem(PRODUCTIONPLAN_GID_STORAGE_KEY) || PRODUCTIONPLAN_DEFAULT_GID; }
+    catch { return PRODUCTIONPLAN_DEFAULT_GID; }
+  });
+
+  const setGid = useCallback((input: string): boolean => {
+    const extracted = extractGidFromInput(input);
+    if (!extracted) return false;
+    setGidState(extracted);
+    try { localStorage.setItem(PRODUCTIONPLAN_GID_STORAGE_KEY, extracted); } catch { /* quota */ }
+    return true;
+  }, []);
+
+  return [gid, setGid] as const;
+}
+
+export function useProductionPlanMonitor(gid: string): GSheetMonitorState<ProductionPlanData> {
+  const [data, setData] = useState<ProductionPlanData | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchOnce = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch(`/api/production-plan?gid=${encodeURIComponent(gid)}`, { signal, cache: "no-store" });
+    const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; rows?: string[][] } | null;
+    if (!res.ok || !body?.ok) {
+      throw new Error(body?.error || `Production-Plan-Server antwortete mit ${res.status}`);
+    }
+    setData(parseProductionPlan(body.rows ?? []));
+    setLastUpdate(Date.now());
+    setError(null);
+  }, [gid]);
+
+  useEffect(() => {
+    if (!gid) return;
+    const controller = new AbortController();
+    setIsPolling(true);
+
+    async function poll() {
+      try { await fetchOnce(controller.signal); }
+      catch (err) { if ((err as Error).name !== "AbortError") setError((err as Error).message); }
+    }
+
+    void poll();
+    const timer = setInterval(poll, PRODUCTIONPLAN_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      setIsPolling(false);
+    };
+  }, [gid, fetchOnce]);
+
+  const forceRefresh = useCallback(async () => {
+    try { await fetchOnce(); }
+    catch (err) { setError((err as Error).message); }
+  }, [fetchOnce]);
+
+  return { data, lastUpdate, changes: [], isPolling, error, forceRefresh };
 }
 
 export function useGSheetChangeListener(callback: (event: { sheetKey: string; change: GSheetChange }) => void) {

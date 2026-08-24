@@ -2,7 +2,7 @@
 // Extrahiert aus WmsKwOverviewView, damit andere Views (z.B. der Rezept-Detail-
 // Meal-Trace) dieselbe Retry-/Fehlerlogik nutzen können, statt sie zu duplizieren.
 import type {
-  AllData, BasePayload, InboundPayload, SleevingPayload,
+  AllData, BasePayload, InboundPayload, PlhDetailPayload, SleevingPayload,
   StoredPayload, StoredRow, WoDetailPayload, WorkordersPayload,
 } from "./wmsTypes";
 
@@ -90,4 +90,41 @@ export async function fetchPlatingHoldingRows(whId = "VF", limit = 25000): Promi
   const payload = await res.json() as StoredPayload;
   if (!payload.ok) throw new Error(payload.error ?? "Unbekannter Fehler");
   return payload.rows;
+}
+
+// Eigenständiger PLH-Detail-Fetch: Bestand + Bewegungshistorie der KW.
+// Läuft unabhängig vom großen 9-Stationen-Fetch, damit PLH-Daten nie im Batch untergehen.
+export async function fetchPlhDetail(
+  week: string,
+  opts: { whId?: string; limit?: number; maxRetries?: number; onRetry?: (attempt: number, message: string) => void } = {},
+): Promise<PlhDetailPayload> {
+  const { whId = "VF", limit = 25000, maxRetries = 3, onRetry } = opts;
+
+  const attempt = async (retryCount: number): Promise<PlhDetailPayload> => {
+    try {
+      const p = new URLSearchParams({ whId, week, limit: String(limit), ts: String(Date.now()) });
+      const res = await fetch(`/api/wms-plh-detail?${p}`, { cache: "no-store" });
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("json")) {
+        if (retryCount < maxRetries) {
+          onRetry?.(retryCount + 1, `Warte auf PLH-Detail-Server… (Versuch ${retryCount + 1}/${maxRetries})`);
+          await new Promise(r => setTimeout(r, 2500));
+          return attempt(retryCount + 1);
+        }
+        throw new Error(`PLH-Detail nicht erreichbar (HTTP ${res.status})`);
+      }
+      const payload = await res.json() as PlhDetailPayload;
+      if (!payload.ok) throw new Error(payload.error ?? "PLH-Detail Fehler");
+      return payload;
+    } catch (e) {
+      if (retryCount < maxRetries && e instanceof TypeError && e.message.includes("fetch")) {
+        onRetry?.(retryCount + 1, `Warte auf PLH-Detail-Server… (Versuch ${retryCount + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, 2500));
+        return attempt(retryCount + 1);
+      }
+      throw e;
+    }
+  };
+
+  return attempt(0);
 }

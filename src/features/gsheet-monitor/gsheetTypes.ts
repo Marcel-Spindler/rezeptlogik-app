@@ -193,3 +193,87 @@ export interface LinePlaitingData {
   dayTotals: LinePlaitingDayTotal[];
   lastUpdated: number;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// PRODUCTION PLAN — "F_VE Production Plan"-Sheet (eigene Datei, andere ID als
+// LinePlaiting/Postblast/RTI/ET), ein Tab pro KW ("W37 - Plating Plan [WIP]"),
+// von Marcel von Hand vorgeplant — gid wechselt jede KW (siehe
+// useProductionPlanGid in useGSheetMonitor.ts). Anders als LinePlaiting (Ist-
+// Tracking der laufenden Woche) ist das hier der VORAB-PLAN für eine
+// kommende Woche: welches Meal wird an welchem Tag (So-Sa) geplatet, inkl.
+// Cup/Slicing-Vorbereitungstagen. Spalten W-AC (0-indiziert 22-28) sind die
+// eigentliche Tages-Matrix je Meal — siehe parseProductionPlan.ts.
+// ════════════════════════════════════════════════════════════════════════════
+
+export type ProductionPlanDay = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
+
+export const PRODUCTION_PLAN_DAYS: readonly ProductionPlanDay[] = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+];
+
+// Eine Tageszelle in der Plating-Matrix ist entweder leer, ein Stationslabel
+// ("Cup"/"Slicing"/"Cup + Slicing" — Vorbereitungstag) oder eine Portionszahl
+// (der tatsächliche Plating-Tag). Beides kann in derselben Zeile an
+// unterschiedlichen Tagen vorkommen (Label am Vorbereitungstag, Zahl am
+// späteren Plating-Tag).
+export type ProductionPlanDayCell =
+  | { kind: "empty" }
+  | { kind: "station"; label: string }
+  | { kind: "portions"; portions: number };
+
+export interface ProductionPlanRow {
+  code: string;
+  preference: string;
+  recipeName: string;
+  benl: number;
+  nordics: number;
+  de: number;
+  total: number;
+  totalWithBuffer: number;
+  complexityScore: number | null;
+  subCount: number | null;
+  cookStationCount: number | null;
+  activeCookMin: number | null;
+  passiveHoldMin: number | null;
+  stations: { grill: boolean; cup: boolean; butter: boolean; oven: boolean; braiser: boolean; slice: boolean };
+  allergens: string;
+  byDay: Record<ProductionPlanDay, ProductionPlanDayCell>;
+  // "Ready"-Spalten (nur Do/Fr/Sa im Sheet vorhanden) — bis wann die Gesamtmenge fertig sein soll.
+  readyByDay: { thu: number | null; fri: number | null; sat: number | null };
+  // "Min Needs"-Spalten (nur Do/Fr/Sa) — negativ = Überschuss, wie bei LinePlaiting.
+  minNeedsByDay: { thu: number | null; fri: number | null; sat: number | null };
+}
+
+export interface ProductionPlanTotals {
+  benl: number | null;
+  nordics: number | null;
+  de: number | null;
+  total: number | null;
+  totalWithBuffer: number | null;
+}
+
+// Zeilen aus dem KPI-Block unterhalb der Meal-Zeilen (Label in Spalte V,
+// Werte je Tag in W-AC) — z.B. "unique meals", "total meals", "per hour",
+// "lines", "per hr/per line", "available plating time", "needd plating time"
+// (Tippfehler im Original-Sheet, bewusst unverändert übernommen), "cupping time".
+export interface ProductionPlanKpiRow {
+  label: string;
+  byDay: Partial<Record<ProductionPlanDay, number | null>>;
+}
+
+// Stationszeilen aus dem "Utilization"-Block (BRAISER, CUPPING, GRILL, OVEN,
+// PATTY MAKER, SCOOPER (BUTTER), HOT SHREDDER, IMMERSION BLENDER, PLANETARY
+// MIXER) — Auslastung je Station und Tag.
+export interface ProductionPlanStationUtilization {
+  station: string;
+  byDay: Partial<Record<ProductionPlanDay, number>>;
+}
+
+export interface ProductionPlanData {
+  week: string; // "2026-W37", aus Zeile "Week" / Spalte B
+  rows: ProductionPlanRow[];
+  totals: ProductionPlanTotals | null;
+  kpiRows: ProductionPlanKpiRow[];
+  utilization: ProductionPlanStationUtilization[];
+  lastUpdated: number;
+}

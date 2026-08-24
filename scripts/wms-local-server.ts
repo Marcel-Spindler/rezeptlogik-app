@@ -7,13 +7,17 @@
 
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { URL } from "node:url";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 
 loadEnv({ path: "functions/.env" });
 loadEnv({ path: ".env.local" });
 
 import snowflake from "snowflake-sdk";
+import { google } from "googleapis";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 3141;
 
 const ACCOUNT = process.env.SNOWFLAKE_ACCOUNT ?? "XG02811-OO69432";
@@ -22,6 +26,49 @@ const ROLE = process.env.SNOWFLAKE_ROLE ?? "US_OPS_ANALYTICS_USER";
 const WAREHOUSE = process.env.SNOWFLAKE_WAREHOUSE ?? "US_OPS_ANALYTICS";
 const DATABASE = process.env.SNOWFLAKE_DATABASE ?? "US_OPS_ANALYTICS";
 const SCHEMA = process.env.SNOWFLAKE_SCHEMA ?? "HIGHJUMP";
+
+// ─── Google Sheets (Service Account) — Production Plan ─────────────────────
+// Eigener Zugriffsweg, unabhängig von Snowflake oben: liest ein einzelnes
+// GSheet-Tab per gid über die authentifizierte Sheets API statt über den
+// anonymen gviz/tq-CSV-Export, den die App für alle anderen GSheet-Quellen
+// nutzt (useGSheetMonitor.ts). Grund: der öffentliche CSV-Export lässt bei
+// diesem konkreten Sheet Text-Zellen ("Cup"/"Slicing") in sonst zahlenlastigen
+// Spalten stillschweigend leer — über die echte Sheets API kommt der
+// Zelleninhalt zuverlässig an (verifiziert: FORMULA/UNFORMATTED_VALUE/
+// FORMATTED_VALUE liefern übereinstimmend den echten Text).
+// Sheet-ID muss mit PRODUCTIONPLAN_SHEET_ID in useGSheetMonitor.ts übereinstimmen.
+const PRODUCTION_PLAN_SHEET_ID = "1zaQjWKlNN4JNCMnE-lrdgf7iNgabfl9HGq5vdOyKedI";
+
+const sheetsAuth = new google.auth.GoogleAuth({
+  keyFile: join(__dirname, "../secrets/service-account.json"),
+  scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+});
+let sheetsClient: ReturnType<typeof google.sheets> | undefined;
+
+async function getSheetsClient() {
+  if (!sheetsClient) {
+    const authClient = await sheetsAuth.getClient();
+    sheetsClient = google.sheets({ version: "v4", auth: authClient as never });
+  }
+  return sheetsClient;
+}
+
+async function fetchProductionPlanRows(gid: string): Promise<string[][]> {
+  const client = await getSheetsClient();
+  const meta = await client.spreadsheets.get({
+    spreadsheetId: PRODUCTION_PLAN_SHEET_ID,
+    fields: "sheets(properties(title,sheetId))",
+  });
+  const tab = (meta.data.sheets ?? []).find(s => String(s.properties?.sheetId ?? "") === gid);
+  if (!tab) throw new Error(`Kein Tab mit gid=${gid} im Production-Plan-Sheet gefunden`);
+  const title = tab.properties?.title ?? "";
+  const valuesRes = await client.spreadsheets.values.get({
+    spreadsheetId: PRODUCTION_PLAN_SHEET_ID,
+    range: `'${title}'!A1:AK500`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  return (valuesRes.data.values ?? []) as string[][];
+}
 
 let cachedConn: snowflake.Connection | undefined;
 let connectingConn: Promise<snowflake.Connection> | undefined;
@@ -63,6 +110,28 @@ WHERE WH_ID = ?
   AND LOCATION_ID ILIKE 'PLH%'
   AND ACTUAL_QTY > 0
 ORDER BY LOCATION_ID, ITEM_NUMBER
+LIMIT ?`;
+
+const WMS_PLH_MOVEMENTS_SQL = `
+SELECT
+    CASE WHEN LOCATION_ID_2 ILIKE 'PLH%' THEN LOCATION_ID ELSE LOCATION_ID_2 END AS COUNTERPART_LOC,
+    CASE WHEN LOCATION_ID_2 ILIKE 'PLH%' THEN 'IN' ELSE 'OUT' END AS DIRECTION,
+    CASE WHEN LOCATION_ID ILIKE 'PLH%' THEN LOCATION_ID ELSE LOCATION_ID_2 END AS PLH_LOC,
+    TRAN_TYPE,
+    DESCRIPTION,
+    ITEM_NUMBER,
+    TRAN_QTY,
+    LOT_NUMBER,
+    HU_ID,
+    COALESCE(END_TRAN_DATE, START_TRAN_DATE) AS TRAN_DATE,
+    WEEKOFYEAR(COALESCE(END_TRAN_DATE, START_TRAN_DATE)) AS KW,
+    EMPLOYEE_ID
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_TRAN_LOG
+WHERE WH_ID = ?
+  AND (LOCATION_ID ILIKE 'PLH%' OR LOCATION_ID_2 ILIKE 'PLH%')
+  AND COALESCE(END_TRAN_DATE, START_TRAN_DATE) >= TO_TIMESTAMP_NTZ(?)
+  AND COALESCE(END_TRAN_DATE, START_TRAN_DATE) < TO_TIMESTAMP_NTZ(?)
+ORDER BY TRAN_DATE DESC
 LIMIT ?`;
 
 const WMS_SLEEVING_SQL = `
@@ -260,6 +329,21 @@ type WmsSleevingRow = {
 };
 
 type WmsPlatingHistoryRow = WmsSleevingRow;
+
+type WmsPlhMovementRow = {
+  counterpartLoc: string;
+  direction: "IN" | "OUT";
+  plhLoc: string;
+  tranType: string;
+  description: string;
+  itemNumber: string;
+  tranQty: number | null;
+  lotNumber: string;
+  huId: string;
+  tranDate: string | null;
+  kw: number | null;
+  employeeId: string;
+};
 
 type WmsInboundRow = {
   poNumber: string;
@@ -493,6 +577,23 @@ function mapWmsPlatingRow(row: Record<string, unknown>): WmsPlatingRow {
   };
 }
 
+function mapPlhMovementRow(row: Record<string, unknown>): WmsPlhMovementRow {
+  return {
+    counterpartLoc: stringValue(row, "COUNTERPART_LOC"),
+    direction: stringValue(row, "DIRECTION") as "IN" | "OUT",
+    plhLoc: stringValue(row, "PLH_LOC"),
+    tranType: stringValue(row, "TRAN_TYPE"),
+    description: stringValue(row, "DESCRIPTION"),
+    itemNumber: stringValue(row, "ITEM_NUMBER"),
+    tranQty: numberValue(row, "TRAN_QTY"),
+    lotNumber: stringValue(row, "LOT_NUMBER"),
+    huId: stringValue(row, "HU_ID"),
+    tranDate: dateValue(row, "TRAN_DATE"),
+    kw: numberValue(row, "KW"),
+    employeeId: stringValue(row, "EMPLOYEE_ID"),
+  };
+}
+
 function mapWmsSleevingRow(row: Record<string, unknown>): WmsSleevingRow {
   return {
     von: stringValue(row, "VON"),
@@ -686,6 +787,53 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         limit,
         generatedAt: new Date().toISOString(),
         rows: rows.map(mapWmsPlatingRow),
+      });
+    } catch (error) {
+      if (cachedConn) {
+        void destroyConnection(cachedConn);
+        cachedConn = undefined;
+      }
+      connectingConn = undefined;
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/wms-plh-detail" && req.method === "GET") {
+    const whId = url.searchParams.get("whId")?.trim() || "VF";
+    const week = url.searchParams.get("week")?.trim() || currentHfWeek();
+    const range = wmsRangeForToolWeek(week);
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 25000);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(50000, Math.max(1, Math.round(requestedLimit)))
+      : 25000;
+
+    try {
+      const conn = await ensureConnection();
+      console.log(`WMS PLH Detail Query startet: WH_ID=${whId}, RANGE=${range.startDate}..${range.endDate}, LIMIT=${limit}`);
+      const [stockRows, movementRows] = await Promise.all([
+        executeQuery(conn, WMS_PLATING_HOLDING_SQL, [whId, limit]),
+        executeQuery(conn, WMS_PLH_MOVEMENTS_SQL, [whId, range.startDate, range.endDate, limit]),
+      ]);
+      const movements = movementRows.map(mapPlhMovementRow);
+      const summary = {
+        totalPutaway: movements.filter(m => m.direction === "IN" && m.tranType === "212").reduce((s, m) => s + Math.abs(m.tranQty ?? 0), 0),
+        totalPicked: movements.filter(m => m.direction === "OUT" && ["203", "204"].includes(m.tranType)).reduce((s, m) => s + Math.abs(m.tranQty ?? 0), 0),
+        totalLost: movements.filter(m => ["023", "026"].includes(m.tranType)).reduce((s, m) => s + Math.abs(m.tranQty ?? 0), 0),
+        cycleCountDelta: movements.filter(m => m.tranType === "800").reduce((s, m) => s + (m.tranQty ?? 0), 0),
+        activeSkus: new Set(movements.map(m => m.itemNumber)).size,
+        activeLocations: new Set(movements.map(m => m.plhLoc)).size,
+      };
+      sendJson(res, 200, {
+        ok: true,
+        whId,
+        week: range.toolWeek,
+        rangeStart: range.startDate,
+        rangeEnd: range.endDate,
+        generatedAt: new Date().toISOString(),
+        stock: stockRows.map(mapWmsPlatingRow),
+        movements,
+        summary,
       });
     } catch (error) {
       if (cachedConn) {
@@ -1049,16 +1197,31 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  // ─── Production Plan (Google Sheets, Service Account) ────────────────────
+  if (url.pathname === "/production-plan" && req.method === "GET") {
+    const gid = url.searchParams.get("gid")?.trim() || "";
+    if (!gid) { sendJson(res, 400, { ok: false, error: "gid fehlt" }); return; }
+
+    try {
+      console.log(`Production Plan Query startet: gid=${gid}`);
+      const rows = await fetchProductionPlanRows(gid);
+      sendJson(res, 200, { ok: true, gid, generatedAt: new Date().toISOString(), rows });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   sendJson(res, 404, {
     ok: false,
     error: "query-not-configured",
-    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /redzone-plating-status",
+    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /redzone-plating-status, /production-plan",
   });
 });
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Snowflake Local Server laeuft auf http://127.0.0.1:${PORT}`);
-  console.log("Endpoints: GET /health, GET /connect, GET /wms-plating?week=YYYY-Www&whId=VF&limit=25000, GET /wms-plating-history?week=YYYY-Www&whId=VF&limit=25000&lookbackDays=28, GET /wms-sleeving?week=YYYY-Www&whId=VF&limit=25000, GET /wms-inbound?week=YYYY-Www&whId=VF&limit=25000, GET /wms-staging?week=YYYY-Www&whId=VF&limit=25000, GET /wms-debox?week=YYYY-Www&whId=VF&limit=25000, GET /wms-postblast?week=YYYY-Www&whId=VF&limit=25000");
+  console.log("Endpoints: GET /health, GET /connect, GET /wms-plating?week=YYYY-Www&whId=VF&limit=25000, GET /wms-plating-history?week=YYYY-Www&whId=VF&limit=25000&lookbackDays=28, GET /wms-sleeving?week=YYYY-Www&whId=VF&limit=25000, GET /wms-inbound?week=YYYY-Www&whId=VF&limit=25000, GET /wms-staging?week=YYYY-Www&whId=VF&limit=25000, GET /wms-debox?week=YYYY-Www&whId=VF&limit=25000, GET /wms-postblast?week=YYYY-Www&whId=VF&limit=25000, GET /production-plan?gid=...");
 });
 
 server.on("error", (err) => {

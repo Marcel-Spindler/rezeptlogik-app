@@ -1,7 +1,7 @@
 // WMS Übersicht – Aggregation je Station, SKU-Bilanz, Kettenbruch-Erkennung.
 import type {
   AggInboundRow, AggSleevingRow, AggStoredRow, AggWorkorderMeal,
-  InboundRow, SleevingRow, StoredRow, WorkorderRow,
+  InboundRow, PlhMovementRow, SleevingRow, StoredRow, WorkorderRow,
 } from "./wmsTypes";
 import { cleanName, maxDate, minDate, skuKey } from "./wmsFormat";
 
@@ -234,5 +234,47 @@ export function detectKettenbruch(e: SkuBilanzEntry): KettenbruchResult | null {
     }
   }
   return worstLabel ? { label: worstLabel, severity: "drop" } : null;
+}
+
+// ─── PLH Movement Aggregation ────────────────────────────────────────────────
+
+export type AggPlhSkuRow = {
+  sku: string;
+  putaway: number;
+  picked: number;
+  lost: number;
+  cycleCountDelta: number;
+  netFlow: number;
+  transCount: number;
+  locations: string[];
+  sources: string[];
+  destinations: string[];
+  lastMovement: string | null;
+  rawMovements: PlhMovementRow[];
+};
+
+export function aggregatePlhMovements(movements: PlhMovementRow[]): AggPlhSkuRow[] {
+  const map = new Map<string, AggPlhSkuRow>();
+  for (const m of movements) {
+    const sku = skuKey(m.itemNumber);
+    if (!sku) continue;
+    let agg = map.get(sku);
+    if (!agg) {
+      agg = { sku, putaway: 0, picked: 0, lost: 0, cycleCountDelta: 0, netFlow: 0, transCount: 0, locations: [], sources: [], destinations: [], lastMovement: null, rawMovements: [] };
+      map.set(sku, agg);
+    }
+    const qty = Math.abs(m.tranQty ?? 0);
+    if (m.tranType === "212") { agg.putaway += qty; agg.netFlow += qty; }
+    else if (["203", "204"].includes(m.tranType)) { agg.picked += qty; agg.netFlow -= qty; }
+    else if (["023", "026"].includes(m.tranType)) { agg.lost += qty; agg.netFlow -= qty; }
+    else if (m.tranType === "800") { agg.cycleCountDelta += m.tranQty ?? 0; }
+    agg.transCount++;
+    agg.lastMovement = maxDate(agg.lastMovement, m.tranDate);
+    if (m.plhLoc && !agg.locations.includes(m.plhLoc)) agg.locations.push(m.plhLoc);
+    if (m.direction === "IN" && m.counterpartLoc && !agg.sources.includes(m.counterpartLoc)) agg.sources.push(m.counterpartLoc);
+    if (m.direction === "OUT" && m.counterpartLoc && !agg.destinations.includes(m.counterpartLoc)) agg.destinations.push(m.counterpartLoc);
+    agg.rawMovements.push(m);
+  }
+  return [...map.values()].sort((a, b) => b.putaway - a.putaway);
 }
 

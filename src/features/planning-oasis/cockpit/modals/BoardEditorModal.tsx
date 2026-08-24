@@ -16,7 +16,6 @@ export type WeekBoardEditorDraft = {
   reason: string;
   splitSpec: string;
   notes: string;
-  createSubRecipeWOs: boolean;
 };
 
 function fmtNum(n: number, digits = 0): string {
@@ -45,7 +44,6 @@ export function BoardEditorModal({
   const editorAnalysis = analysisRecipes.find(row => row.recipeCode === boardEditor.recipeCode);
   const demand = Math.max(0, Math.round((editorRecipe?.totalVerdenVolume ?? 0) * portionMultiplier));
   const mapped = editorAnalysis?.assigned?.targetPortions ?? 0;
-  const unassignedSubCount = editorAnalysis?.subRecipes.filter(s => !s.assigned).length ?? 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4" onClick={onClose}>
@@ -108,16 +106,6 @@ export function BoardEditorModal({
             Notes
             <textarea className="mt-1 h-16 w-full resize-none rounded border border-slate-300 px-2 py-2 text-sm" placeholder="Add notes about this work order" value={boardDraft.notes} onChange={event => setBoardDraft(prev => ({ ...prev, notes: event.target.value }))} />
           </label>
-          {!boardEditor.subRecipeId && unassignedSubCount > 0 && (
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={boardDraft.createSubRecipeWOs}
-                onChange={e => setBoardDraft(prev => ({ ...prev, createSubRecipeWOs: e.target.checked }))}
-              />
-              Create sub-recipe WOs ({unassignedSubCount} unassigned)
-            </label>
-          )}
         </div>
         <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
           <button className="rounded border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700" onClick={onRemoveAssignment}>Remove assignment</button>

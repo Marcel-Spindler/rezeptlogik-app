@@ -8,7 +8,6 @@ export const PLANNER_UI_SETTINGS_STORAGE_KEY = "rezeptlogik-planner-ui-settings-
 export type PlannerUiSettings = {
   shiftPresetId: string;
   shiftCount: number;
-  showAutoSuggestions: boolean;
   showStationConflicts: boolean;
   showPoolConflicts: boolean;
   autoSplitProfileId: string;
@@ -17,7 +16,6 @@ export type PlannerUiSettings = {
 const DEFAULT_PLANNER_UI_SETTINGS: PlannerUiSettings = {
   shiftPresetId: "single-current",
   shiftCount: 1,
-  showAutoSuggestions: true,
   showStationConflicts: true,
   showPoolConflicts: true,
   autoSplitProfileId: "mhd-smart",
@@ -78,7 +76,6 @@ export function loadPlannerUiSettings(): PlannerUiSettings {
     return {
       shiftPresetId: preset.id,
       shiftCount: shiftCount >= 1 && shiftCount <= 3 ? shiftCount : 1,
-      showAutoSuggestions: parsed.showAutoSuggestions ?? true,
       showStationConflicts: parsed.showStationConflicts ?? true,
       showPoolConflicts: parsed.showPoolConflicts ?? true,
       autoSplitProfileId: AUTO_FULFILLMENT_PROFILES.some(profile => profile.id === parsed.autoSplitProfileId)

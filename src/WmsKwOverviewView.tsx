@@ -3,11 +3,11 @@ import type { DataBundle } from "./core/types";
 import { buildSkuInfoIndex, skuKey, weekPlannedSkuSet } from "./lib/wmsSkuEnrichment";
 
 import { STATION_META, STATION_ORDER } from "./features/wms-overview/wmsTypes";
-import type { AllData, LoadState, StationKey, WoTransactionRow } from "./features/wms-overview/wmsTypes";
-import { fetchAllWmsStations } from "./features/wms-overview/wmsFetch";
+import type { AllData, LoadState, PlhDetailPayload, StationKey, WoTransactionRow } from "./features/wms-overview/wmsTypes";
+import { fetchAllWmsStations, fetchPlhDetail } from "./features/wms-overview/wmsFetch";
 import { fmtQty } from "./features/wms-overview/wmsFormat";
 import { generateWmsWeeks, resolveSelectedWeekFromStationRows, weekNumFromHfWeek, woMatchesSelectedWeek } from "./features/wms-overview/wmsWeeks";
-import { aggregateInbound, aggregateSleeving, aggregateStored, aggregateWorkorders, buildSkuBilanz, detectKettenbruch } from "./features/wms-overview/wmsAggregate";
+import { aggregateInbound, aggregatePlhMovements, aggregateSleeving, aggregateStored, aggregateWorkorders, buildSkuBilanz, detectKettenbruch } from "./features/wms-overview/wmsAggregate";
 import { loadSnapshots, loadTimeline, persistSnapshot, persistTimelineSnapshot, removeSnapshot } from "./features/wms-overview/wmsSnapshots";
 import type { TimelineSnapshot, WmsSnapshot } from "./features/wms-overview/wmsSnapshots";
 import { buildFunnel, buildLotStationMap, buildSkuStationMap } from "./features/wms-overview/wmsIndex";
@@ -22,7 +22,7 @@ import { ReadinessBadge } from "./features/wms-overview/WmsWoFlowWidgets";
 import { WoListTable, WorkordersMealTable } from "./features/wms-overview/WmsWoTables";
 import { InboundAggTable, SleevingAggTable, StoredAggTable } from "./features/wms-overview/WmsStationTables";
 import { StationsBilanz, SnapshotPanel } from "./features/wms-overview/WmsBilanzPanels";
-import { buildMealOperations, MealOperationsBoard } from "./features/wms-overview/WmsMealOperations";
+import { buildMealOperations, buildPlhReadiness, MealOperationsBoard, PlhReadyToPlateBoard } from "./features/wms-overview/WmsMealOperations";
 import { WmsTimelinePanel } from "./features/wms-overview/WmsTimelineView";
 
 function WmsServerErrorPanel({ errorMsg, onRetry }: { errorMsg: string; onRetry: () => void }) {
@@ -157,6 +157,7 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   // WO-Scope: nur Artikel zeigen, die in den Workorders der gewählten KW
   // als Submeal/Meal vorkommen. Default ON — liefert eine saubere 100%-Basis.
   const [weekScopeFilter, setWeekScopeFilter] = useState(true);
+  const [plhDetail, setPlhDetail] = useState<PlhDetailPayload | null>(null);
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const liveTickRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const selectedWeekRef = useRef(selectedWeek);
@@ -188,6 +189,14 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
 
   useEffect(() => {
     if (selectedWeek) void doLoad(selectedWeek);
+  }, [selectedWeek]);
+
+  // PLH-Detail: eigenständiger Fetch unabhängig vom großen 9-Stationen-Batch
+  useEffect(() => {
+    if (!selectedWeek) return;
+    let cancelled = false;
+    fetchPlhDetail(selectedWeek).then(result => { if (!cancelled) setPlhDetail(result); }).catch(() => { /* PLH-Detail optional */ });
+    return () => { cancelled = true; };
   }, [selectedWeek]);
 
   useEffect(() => {
@@ -293,6 +302,7 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const aggSleeving       = useMemo(() => aggregateSleeving(rawSleeving),     [rawSleeving]);
   const aggPlating        = useMemo(() => aggregateStored(rawPlating),        [rawPlating]);
   const aggPlatingHolding = useMemo(() => aggregateStored(rawPlatingHolding), [rawPlatingHolding]);
+  const aggPlhMovements   = useMemo(() => plhDetail ? aggregatePlhMovements(plhDetail.movements) : [], [plhDetail]);
 
   // ── Cross-station indices ─────────────────────────────────────────────────
   const skuMap = useMemo(
@@ -354,6 +364,7 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
     () => buildMealOperations(aggWorkorders, aggPlating, aggPlatingHolding, aggPostblast, aggDebox, aggStaging, aggSleeving, skuInfoIndex),
     [aggWorkorders, aggPlating, aggPlatingHolding, aggPostblast, aggDebox, aggStaging, aggSleeving, skuInfoIndex],
   );
+  const plhReadiness = useMemo(() => buildPlhReadiness(mealOperations), [mealOperations]);
 
   const compareSnap = useMemo(
     () => snapshots.find(s => s.id === compareSnapId) ?? null,
@@ -587,6 +598,7 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
             {/* ─── TAB: Leitwarte (Command) ─── */}
             {activeTab === "command" && (
               <div className="space-y-3">
+                <PlhReadyToPlateBoard rows={plhReadiness} onTrace={handleTrace} onWoDetail={handleWoDetail} />
                 <MealOperationsBoard rows={mealOperations} onTrace={handleTrace} onWoDetail={handleWoDetail} />
 
                 {/* Gesamtfluss: Aggregierte Mengen pro Station */}
@@ -758,10 +770,52 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
               </SectionCard>
             )}
 
-            {/* ─── TAB: Plating ─── */}
+            {/* ─── TAB: Plating Holding ─── */}
             {activeTab === "platingHolding" && (
               <SectionCard stationKey="platingHolding" totalCount={totalCounts.platingHolding}>
                 <StoredAggTable rows={aggPlatingHolding} stationKey="platingHolding" skuMap={skuMap} lotMap={lotMap} search={search} onTrace={handleTrace} onDetail={handleDetail} itemToWoMap={itemToWoMap} onWoDetail={handleWoDetail} skuInfoIndex={skuInfoIndex} />
+                {/* PLH Bewegungshistorie (eigenständige Query) */}
+                {plhDetail && aggPlhMovements.length > 0 && (
+                  <div className="mt-4 border-t border-indigo-100 pt-4">
+                    <h4 className="text-sm font-semibold text-indigo-700 mb-2">
+                      Bewegungshistorie KW ({plhDetail.summary.activeSkus} SKUs, {plhDetail.summary.activeLocations} Locations)
+                    </h4>
+                    <div className="grid grid-cols-4 gap-2 mb-3 text-xs">
+                      <div className="bg-emerald-50 rounded px-2 py-1"><span className="text-emerald-700 font-medium">Putaway:</span> {fmtQty(plhDetail.summary.totalPutaway)}</div>
+                      <div className="bg-blue-50 rounded px-2 py-1"><span className="text-blue-700 font-medium">Picked:</span> {fmtQty(plhDetail.summary.totalPicked)}</div>
+                      <div className="bg-rose-50 rounded px-2 py-1"><span className="text-rose-700 font-medium">Lost:</span> {fmtQty(plhDetail.summary.totalLost)}</div>
+                      <div className="bg-amber-50 rounded px-2 py-1"><span className="text-amber-700 font-medium">Cycle Count:</span> {fmtQty(plhDetail.summary.cycleCountDelta)}</div>
+                    </div>
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-indigo-50 text-indigo-700">
+                          <th className="px-2 py-1 text-left">SKU</th>
+                          <th className="px-2 py-1 text-right">Putaway</th>
+                          <th className="px-2 py-1 text-right">Picked</th>
+                          <th className="px-2 py-1 text-right">Lost</th>
+                          <th className="px-2 py-1 text-right">Netto</th>
+                          <th className="px-2 py-1 text-left">Quellen</th>
+                          <th className="px-2 py-1 text-left">Ziele</th>
+                          <th className="px-2 py-1 text-right">Trans.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aggPlhMovements.filter(r => !search || r.sku.includes(search.toUpperCase())).map(r => (
+                          <tr key={r.sku} className="border-t border-slate-100 hover:bg-indigo-50/50 cursor-pointer" onClick={() => handleDetail(r.sku)}>
+                            <td className="px-2 py-1 font-mono text-[11px]">{r.sku}</td>
+                            <td className="px-2 py-1 text-right text-emerald-700">{r.putaway > 0 ? fmtQty(r.putaway) : "–"}</td>
+                            <td className="px-2 py-1 text-right text-blue-700">{r.picked > 0 ? fmtQty(r.picked) : "–"}</td>
+                            <td className="px-2 py-1 text-right text-rose-700">{r.lost > 0 ? fmtQty(r.lost) : "–"}</td>
+                            <td className={`px-2 py-1 text-right font-medium ${r.netFlow > 0 ? "text-emerald-700" : r.netFlow < 0 ? "text-rose-700" : "text-slate-400"}`}>{fmtQty(r.netFlow)}</td>
+                            <td className="px-2 py-1 text-[10px] text-slate-500">{r.sources.slice(0, 2).join(", ")}</td>
+                            <td className="px-2 py-1 text-[10px] text-slate-500">{r.destinations.slice(0, 2).join(", ")}</td>
+                            <td className="px-2 py-1 text-right text-slate-500">{r.transCount}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </SectionCard>
             )}
 

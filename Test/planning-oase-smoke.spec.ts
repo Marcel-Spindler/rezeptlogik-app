@@ -76,11 +76,13 @@ test("Planning OASE cockpit renders on mobile", async ({ page }) => {
   await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
 });
 
-// Cockpit-Linie V2 / Batch-Split Automatik / Schema-Planung cards were removed in
-// 037d278 (replaced by the KI-Planungsassistent panel) — this spec now covers that.
-test("KI-Planungsassistent panel opens from the cockpit toolbar", async ({ page }) => {
+// KI-Planungsassistent + Auto-Plan/Vorschläge/Planungsregeln were removed
+// (2026-08-24): Planning OASE no longer auto-computes a schedule, it mirrors
+// the hand-maintained GSheet instead (see VorstellungsplanView). This spec
+// now guards against the automation UI silently reappearing.
+test("cockpit toolbar has no automation controls", async ({ page }) => {
   await page.goto(`${BASE_URL}?view=planning&oase=cockpit`);
   await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible({ timeout: 30000 });
-  await page.getByRole("button", { name: "KI-Assistent" }).click();
-  await expect(page.getByText("KI-Planungsassistent")).toBeVisible();
+  await expect(page.getByRole("button", { name: "KI-Assistent" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Auto: Meals + Subs" })).toHaveCount(0);
 });

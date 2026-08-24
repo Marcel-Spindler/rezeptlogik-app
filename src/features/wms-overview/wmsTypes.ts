@@ -152,6 +152,44 @@ export type InboundPayload   = BasePayload & { rows: InboundRow[] };
 export type WorkordersPayload = { ok: boolean; rows: WorkorderRow[]; error?: string };
 export type WoDetailPayload   = { ok: boolean; rows: WoTransactionRow[]; error?: string; source?: string; cachedAt?: string; week?: string; wmsWeek?: string; controlPattern?: string };
 
+// ─── PLH Detail Types ────────────────────────────────────────────────────────
+
+export type PlhMovementRow = {
+  counterpartLoc: string;
+  direction: "IN" | "OUT";
+  plhLoc: string;
+  tranType: string;
+  description: string;
+  itemNumber: string;
+  tranQty: number | null;
+  lotNumber: string;
+  huId: string;
+  tranDate: string | null;
+  kw: number | null;
+  employeeId: string;
+};
+
+export type PlhDetailSummary = {
+  totalPutaway: number;
+  totalPicked: number;
+  totalLost: number;
+  cycleCountDelta: number;
+  activeSkus: number;
+  activeLocations: number;
+};
+
+export type PlhDetailPayload = {
+  ok: boolean;
+  stock: StoredRow[];
+  movements: PlhMovementRow[];
+  summary: PlhDetailSummary;
+  week?: string;
+  rangeStart?: string;
+  rangeEnd?: string;
+  generatedAt?: string;
+  error?: string;
+};
+
 export type AllData = {
   plating:        StoredPayload;
   platingHolding: StoredPayload;
