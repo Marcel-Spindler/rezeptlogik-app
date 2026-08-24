@@ -334,16 +334,17 @@ export function AllergenPlatingView({ data }: { data: DataBundle }) {
     const wb = XLSX.utils.book_new();
     const rows: (string | number)[][] = [
       [`${weekLabel} – Allergenkennzeichnung (inkl. Sub-Meals)`],
-      ["Code", "Rezept / Sub-Meal", ...COLS],
+      ["Rezept", ...COLS],
     ];
     results.forEach(r => {
-      rows.push([r.recipeCode ?? "", `▶ ${r.name}`, ...COLS.map(c => r.allergens.has(c) ? "X" : "")]);
+      const label = r.recipeCode ? `${r.recipeCode} - ${r.name}` : r.name;
+      rows.push([label, ...COLS.map(c => r.allergens.has(c) ? "X" : "")]);
       r.subs.forEach(s => {
-        rows.push(["", `    ↳ ${s.name}`, ...COLS.map(c => s.allergens.has(c) ? "x" : "")]);
+        rows.push([`    ↳ ${s.name}`, ...COLS.map(c => s.allergens.has(c) ? "x" : "")]);
       });
     });
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"] = [{ wch: 10 }, { wch: 50 }, ...COLS.map(() => ({ wch: 14 }))];
+    ws["!cols"] = [{ wch: 55 }, ...COLS.map(() => ({ wch: 14 }))];
     XLSX.utils.book_append_sheet(wb, ws, `${weekLabel} Allergene`);
     XLSX.writeFile(wb, `${weekLabel}_Allergene_Plating.xlsx`);
     showToast("Detail-Export exportiert ✓");
@@ -353,21 +354,22 @@ export function AllergenPlatingView({ data }: { data: DataBundle }) {
   function exportExcelCollapsed() {
     if (!results.length) return;
 
-    const headers = ["Code", "Rezeptname", ...COLS, "Allergen-Profil"];
+    const headers = ["Rezept", ...COLS, "Allergen-Profil"];
 
     const headerCells = headers.map((h, i) =>
-      `<th style="background:#1F3864;color:#fff;padding:7px 9px;border:1px solid #0d2347;font-size:10px;font-weight:bold;white-space:nowrap;${i > 1 && i < headers.length - 1 ? "text-align:center;" : "text-align:left;"}">${h}</th>`
+      `<th style="background:#1F3864;color:#fff;padding:7px 9px;border:1px solid #0d2347;font-size:10px;font-weight:bold;white-space:nowrap;${i > 0 && i < headers.length - 1 ? "text-align:center;" : "text-align:left;"}">${h}</th>`
     ).join("");
 
     const dataRows = results.map(r => {
       const key     = [...r.allergens].sort().join("|");
       const bg      = getColor(key);
       const profile = r.allergens.size > 0 ? [...r.allergens].sort().join(" + ") : "Keine Allergene";
-      const cells = [r.recipeCode ?? "", r.name, ...COLS.map(c => r.allergens.has(c) ? "X" : ""), profile]
+      const label = r.recipeCode ? `${r.recipeCode} - ${r.name}` : r.name;
+      const cells = [label, ...COLS.map(c => r.allergens.has(c) ? "X" : ""), profile]
         .map((v, i) => {
-          const center = i > 1 && i < headers.length - 1;
+          const center = i > 0 && i < headers.length - 1;
           const isX    = v === "X";
-          return `<td style="background:${bg};padding:6px 8px;border:1px solid #ccc;font-size:${i === 1 ? 11 : 10}px;font-weight:${i <= 1 || isX ? "bold" : "normal"};${center ? "text-align:center;" : ""}${isX ? "color:#B71C1C;" : "color:#555;"}">${v}</td>`;
+          return `<td style="background:${bg};padding:6px 8px;border:1px solid #ccc;font-size:${i === 0 ? 11 : 10}px;font-weight:${i === 0 || isX ? "bold" : "normal"};${center ? "text-align:center;" : ""}${isX ? "color:#B71C1C;" : "color:#555;"}">${v}</td>`;
         }).join("");
       return `<tr>${cells}</tr>`;
     }).join("");
