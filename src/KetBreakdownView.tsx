@@ -18,6 +18,7 @@ import { buildPdf } from "./features/ket-plan/ketPdf";
 import { EmptyState, KetErrorBoundary, KetWoOverview, MissingDataScreen } from "./features/ket-plan/KetSharedUi";
 import { WoDetail } from "./features/ket-plan/KetWoDetail";
 import { generateWoInstruction, generateWoInstructionsBatch } from "./features/ket-plan/woInstructionBot";
+import { loadInstructionsFromFirestore, saveInstructionsBatchToFirestore } from "./features/ket-plan/useInstructionFirestore";
 import { computeRunAssignments, shiftLabel } from "./features/ket-plan/ketRunLogic";
 import { KetEquipmentPanel } from "./features/ket-plan/KetEquipmentPanel";
 import { KetShopfloorDashboard } from "./features/ket-plan/KetShopfloorDashboard";
@@ -329,6 +330,31 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     if (Object.keys(cached).length > 0) {
       setWoInstructions((prev) => ({ ...cached, ...prev }));
     }
+  }, [ketRows, calcMap]);
+
+  // Firestore-Backup laden: füllt localStorage nach Cache-Verlust automatisch nach.
+  const firestoreLoadedRef = useRef(false);
+  useEffect(() => {
+    if (firestoreLoadedRef.current) return;
+    firestoreLoadedRef.current = true;
+    loadInstructionsFromFirestore().then((remote) => {
+      if (!Object.keys(remote).length) return;
+      const local = instructionCacheRef.current;
+      let merged = false;
+      for (const [key, val] of Object.entries(remote)) {
+        if (!local[key]) { local[key] = val; merged = true; }
+      }
+      if (merged) {
+        instructionCacheRef.current = local;
+        saveInstructionCache(local);
+        if (ketRows.length) {
+          const resolved = resolveInstructionsFromCache(ketRows, calcMap, local);
+          if (Object.keys(resolved).length > 0) {
+            setWoInstructions((prev) => ({ ...resolved, ...prev }));
+          }
+        }
+      }
+    });
   }, [ketRows, calcMap]);
 
   const liveWeekNum = useMemo(() => weekNumFromHfWeek(liveWeek), [liveWeek]);
@@ -658,13 +684,19 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   // (targets: WO-Ebene oder einzelne Komponenten, siehe generationTargetsForRow).
   const persistInstructions = useCallback((generated: Record<string, WoInstruction>, targets: GenerationTarget[]) => {
     const cache = instructionCacheRef.current;
+    const firestoreEntries: [string, WoInstruction][] = [];
     for (const target of targets) {
       const inst = generated[target.key];
-      if (inst) cache[target.cacheKey] = inst;
+      if (inst) {
+        cache[target.cacheKey] = inst;
+        firestoreEntries.push([target.cacheKey, inst]);
+      }
     }
     instructionCacheRef.current = cache;
     saveInstructionCache(cache);
     setWoInstructions((current) => ({ ...current, ...generated }));
+    // Fire-and-forget: Firestore-Backup, Fehler nur geloggt.
+    saveInstructionsBatchToFirestore(firestoreEntries);
   }, []);
 
   // Löscht den gesamten Instruction-Cache
