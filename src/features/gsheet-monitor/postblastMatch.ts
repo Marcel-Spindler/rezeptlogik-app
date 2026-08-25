@@ -53,6 +53,14 @@ export interface WoMatchedStatus {
   run: number;
   weighings: PostblastEntry[];
   lastWeighing: string | null;
+  // Bereits als Fertigware vorhandener Puffer laut RTI "Plating holding Kg" —
+  // unabhängig davon, ob diese WO schon einen Backfill-Bedarf ausgelöst hat
+  // (siehe BackfillNeed.platingHoldingKg, das nur in der finalen Backfill-
+  // Phase gefüllt ist). Hier je WO verfügbar, damit z.B. eine Fertigstellungs-
+  // Prognose schon während der laufenden Produktion weiß, dass ein Teil des
+  // Bedarfs bereits gedeckt ist.
+  platingHoldingKg: number;
+  rtiStatus: RtiSubRecipeEntry["status"] | null;
 }
 
 export interface MealProgress {
@@ -118,6 +126,7 @@ export function matchPostblastToWorkOrders(
 ): { matched: WoMatchedStatus[]; meals: MealProgress[]; backfill: BackfillNeed[] } {
   if (!productionPlan || !postblast) return { matched: [], meals: [], backfill: [] };
 
+  const { byWo: rtiByWo } = buildRtiIndex(rtiData);
   const matched: WoMatchedStatus[] = [];
 
   for (const wo of productionPlan.rows) {
@@ -147,6 +156,7 @@ export function matchPostblastToWorkOrders(
     // (Pre-Blast-Gewicht da), das ist kein "nichts passiert"-Kritisch-Fall,
     // sondern wartet nur noch auf die zweite Wiegung.
     const isCritical = hasPlan && plannedKg > 0 && progressPct < 30 && actualKg === 0 && !awaitingPostBlast;
+    const rtiEntry = rtiByWo.get(woNum);
 
     matched.push({
       workOrder: woNum,
@@ -171,6 +181,8 @@ export function matchPostblastToWorkOrders(
       run: wo.run ?? 1,
       weighings,
       lastWeighing: weighings.length > 0 ? weighings[weighings.length - 1].timestamp : null,
+      platingHoldingKg: rtiEntry?.platingHoldingKg ?? 0,
+      rtiStatus: rtiEntry?.status ?? null,
     });
   }
 
@@ -213,7 +225,7 @@ export function matchPostblastToWorkOrders(
   // Sheet verbunden, gilt dessen Status ("done"/"no") als zusätzliche, verlässlichere
   // Quelle — inklusive Veto: markiert der Mensch eine WO im Sheet als "no" (kein
   // Backfill nötig, meist Überschuss), wird die ganze Gruppe übersprungen.
-  const { byWo: rtiByWo } = buildRtiIndex(rtiData);
+  // (rtiByWo wurde oben schon für rtiStatus/platingHoldingKg je WO gebaut.)
 
   const bySubRecipeGroup = new Map<string, WoMatchedStatus[]>();
   for (const m of matched) {
@@ -228,7 +240,7 @@ export function matchPostblastToWorkOrders(
 
   const backfill: BackfillNeed[] = [];
   for (const group of bySubRecipeGroup.values()) {
-    const rtiStatuses = group.map(w => rtiByWo.get(w.workOrder)?.status);
+    const rtiStatuses = group.map(w => w.rtiStatus);
     if (rtiStatuses.some(s => s === "not-needed")) continue; // Mensch hat "kein Backfill" markiert
 
     const allRegularWosDone = group.every((w, idx) => w.isComplete || rtiStatuses[idx] === "done");
@@ -243,7 +255,7 @@ export function matchPostblastToWorkOrders(
     const missingPct = plannedKg > 0 ? (missingKg / plannedKg) * 100 : 0;
     const totalPlannedMeals = group.reduce((s, w) => s + w.plannedMeals, 0);
     const portionsPerKg = totalPlannedMeals > 0 && plannedKg > 0 ? totalPlannedMeals / plannedKg : 0;
-    const platingHoldingKg = group.reduce((s, w) => s + (rtiByWo.get(w.workOrder)?.platingHoldingKg ?? 0), 0);
+    const platingHoldingKg = group.reduce((s, w) => s + w.platingHoldingKg, 0);
 
     backfill.push({
       workOrder: anchor.workOrder,

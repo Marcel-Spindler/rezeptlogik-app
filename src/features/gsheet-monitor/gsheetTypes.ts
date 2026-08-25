@@ -340,3 +340,41 @@ export interface RecipeProfilData {
   byCode: Map<string, RecipeProfilRow>;
   lastUpdated: number;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// SHORTS TRACKER — separates Sheet ("VE Warehouse/Inventory Shorts Tracker"),
+// Tab "Shorts Tracker". Rohstoff-/Zutaten-Engpässe, die GANZ AM ANFANG der
+// Produktion auftreten (Procurement/Warehouse trägt ein, bevor überhaupt
+// gekocht wird) — unabhängig von den Postblast/Preblast-Wiegungen, die erst
+// NACH dem Kochen greifen. Sheet ist privat mit dem Service-Account geteilt
+// (nicht per gviz/tq-CSV lesbar), läuft daher wie Production Plan/Forecast/
+// Recipe Profil über die authentifizierte Route in wms-local-server.ts.
+//
+// Die "WO"-Spalte trägt hier NUR die laufende Nummer ohne KW-Präfix — anders
+// als überall sonst in der App ("<KW>-<Nummer>", siehe weekPrefixFromWoNumber).
+// parseShortsTracker.ts rekonstruiert das Präfix aus der "Staging Day"-Spalte,
+// damit sich ein Eintrag hier per exakter WO-Nummer mit Postblast/ET/
+// Produktionsplan verknüpfen lässt (siehe shortageAlerts.ts).
+export interface ShortageEntry {
+  rawWorkOrderSuffix: string;
+  stagingDay: string; // ISO "2026-08-22", "" falls im Sheet nicht parsbar
+  // Rekonstruierte volle WO-Nummer "<KW>-<Nummer>" — null, wenn stagingDay
+  // fehlt/nicht parsbar war und die KW deshalb nicht bestimmbar ist.
+  workOrder: string | null;
+  ingredient: string;
+  sku: string;
+  shortKg: number;
+  recoveryStatus: string;
+  ticketNumber: string;
+  notes: string;
+  filled: boolean;
+  // Zeilenindex im Sheet — dient als stabile Identität, um neue/verschwundene
+  // Zeilen zwischen zwei Polls zu erkennen (siehe shortageAlerts.ts).
+  rowIndex: number;
+}
+
+export interface ShortsTrackerData {
+  entries: ShortageEntry[];
+  byWorkOrder: Map<string, ShortageEntry[]>;
+  lastUpdated: number;
+}

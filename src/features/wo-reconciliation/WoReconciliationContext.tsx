@@ -3,13 +3,13 @@
 // laufend zu einer Tabelle zusammen und schreibt periodisch einen Snapshot
 // nach Firestore, damit später über den Verlauf ausgewertet werden kann
 // (nicht nur der aktuelle Live-Zustand).
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppState } from "../../app/AppContext";
 import { usePostblastMonitor } from "../gsheet-monitor/useGSheetMonitor";
 import { useKetRowsData } from "../ket-plan/useKetRowsData";
 import type { KetRow } from "../ket-plan/ketTypes";
 import type { PetRow } from "../pet-plan/petTypes";
-import type { RecipeWeightLookup } from "../gsheet-monitor/parsers/parseExportRecipes";
+import { parseExportRecipesCsv, type RecipeWeightLookup } from "../gsheet-monitor/parsers/parseExportRecipes";
 import type { WorkorderRow } from "../wms-overview/wmsTypes";
 import { reconcileWorkOrders, severityByRecipe } from "./reconcileWorkOrders";
 import type { ReconcileSource, WoReconciliationRow } from "./woReconcileTypes";
@@ -58,6 +58,9 @@ export interface WoReconciliationState {
   bySeverityRecipe: Map<string, { severity: "warn" | "critical"; count: number }>;
   sourcesAvailable: ReconcileSource[];
   ingestWmsWorkorders: (rows: WorkorderRow[]) => void;
+  recipeWeights: RecipeWeightLookup | null;
+  uploadRecipeWeightsFile: (file: File) => void;
+  clearRecipeWeights: () => void;
 }
 
 const WoReconciliationContext = createContext<WoReconciliationState | null>(null);
@@ -75,10 +78,40 @@ export function WoReconciliationProvider({ children }: { children: ReactNode }) 
   // WO" (Produktionsplan → Live-WMS), damit hier kein eigener Upload nötig ist.
   const csvKetRows = useLocalStorageSource<KetRow[]>(KET_CSV_STORAGE_KEY, raw => JSON.parse(raw));
   const { ketRows } = useKetRowsData(data, selectedWeek, csvKetRows);
-  const weights = useLocalStorageSource<RecipeWeightLookup>(RECIPE_WEIGHTS_STORAGE_KEY, raw => {
-    const parsed = JSON.parse(raw) as { entries: [string, number][]; recipeCount: number; rowCount: number };
-    return { gramsPerPortion: new Map(parsed.entries), recipeCount: parsed.recipeCount, rowCount: parsed.rowCount };
+  const [recipeWeights, setRecipeWeightsState] = useState<RecipeWeightLookup | null>(() => {
+    try {
+      const raw = localStorage.getItem(RECIPE_WEIGHTS_STORAGE_KEY);
+      if (!raw) return null;
+      const p = JSON.parse(raw) as { entries: [string, number][]; recipeCount: number; rowCount: number };
+      return { gramsPerPortion: new Map(p.entries), recipeCount: p.recipeCount, rowCount: p.rowCount };
+    } catch { return null; }
   });
+
+  const clearRecipeWeights = useCallback(() => {
+    setRecipeWeightsState(null);
+    try { localStorage.removeItem(RECIPE_WEIGHTS_STORAGE_KEY); } catch { /* quota */ }
+  }, []);
+
+  const uploadRecipeWeightsFile = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const text = typeof e.target?.result === "string" ? e.target.result : "";
+      if (!text) return;
+      try {
+        const lookup = parseExportRecipesCsv(text);
+        if (lookup.gramsPerPortion.size === 0) return;
+        setRecipeWeightsState(lookup);
+        try {
+          localStorage.setItem(RECIPE_WEIGHTS_STORAGE_KEY, JSON.stringify({
+            entries: [...lookup.gramsPerPortion.entries()],
+            recipeCount: lookup.recipeCount,
+            rowCount: lookup.rowCount,
+          }));
+        } catch { /* quota */ }
+      } catch { /* parse error — ignore silently */ }
+    };
+    reader.readAsText(file, "utf-8");
+  }, []);
   const petRows = useLocalStorageSource<PetRow[]>(PET_CSV_STORAGE_KEY, raw => JSON.parse(raw));
 
   // WMS-Submeals kommen nicht global (Live-Snowflake, on-demand) — Views wie
@@ -87,8 +120,8 @@ export function WoReconciliationProvider({ children }: { children: ReactNode }) 
   const ingestWmsWorkorders = (rows: WorkorderRow[]) => setWmsWorkorders(rows);
 
   const rows = useMemo(
-    () => reconcileWorkOrders(data?.productionPlan, ketRows, petRows, postblast.data, weights, wmsWorkorders),
-    [data?.productionPlan, ketRows, petRows, postblast.data, weights, wmsWorkorders],
+    () => reconcileWorkOrders(data?.productionPlan, ketRows, petRows, postblast.data, recipeWeights, wmsWorkorders),
+    [data?.productionPlan, ketRows, petRows, postblast.data, recipeWeights, wmsWorkorders],
   );
 
   const bySeverityRecipe = useMemo(
@@ -139,7 +172,7 @@ export function WoReconciliationProvider({ children }: { children: ReactNode }) 
     })();
   }, [rows, sourcesAvailable, surface]);
 
-  const value: WoReconciliationState = { rows, bySeverityRecipe, sourcesAvailable, ingestWmsWorkorders };
+  const value: WoReconciliationState = { rows, bySeverityRecipe, sourcesAvailable, ingestWmsWorkorders, recipeWeights, uploadRecipeWeightsFile, clearRecipeWeights };
 
   return <WoReconciliationContext.Provider value={value}>{children}</WoReconciliationContext.Provider>;
 }

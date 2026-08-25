@@ -2,19 +2,24 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import type { DataBundle, WorkOrderEntry } from "../../core/types";
 import type { PostblastData } from "./gsheetTypes";
-import { useEtMonitor, usePostblastMonitor, usePreblastMonitor, useRtiMonitor } from "./useGSheetMonitor";
-import { matchPostblastToWorkOrders, type BackfillNeed, type WoMatchedStatus } from "./postblastMatch";
+import {
+  useEtMonitor, usePostblastMonitor, usePreblastMonitor, useProductionPlanMonitor, useProductionPlanWeeks,
+  useRtiMonitor, useShortsTrackerMonitor,
+} from "./useGSheetMonitor";
+import { matchPostblastToWorkOrders, type BackfillNeed, type MealProgress, type WoMatchedStatus } from "./postblastMatch";
 import { findEquipmentForSubRecipe } from "./backfillGenerator";
 import { analyzeProduction, type AlertSeverity } from "./productionAgent";
 import { respondToChat, type ChatMessage, type ChatContext } from "./postblastChat";
+import { correlateShortages, describeShortageImpact } from "./shortageAlerts";
 import { fmt, fmtMass } from "../whatif/whatIfFormat";
 import { currentHfWeek } from "../../lib/hfWeek";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWeeks";
 import { fetchWmsWorkorderCache, filterRowsToWeekWindow, wmsWorkorderRowToEntry } from "../../lib/wmsCache";
 import { parseKetCsv } from "../ket-plan/ketLogic";
 import type { KetRow } from "../ket-plan/ketTypes";
-import { parseExportRecipesCsv, recipeWeightKey, type RecipeWeightLookup } from "./parsers/parseExportRecipes";
+import { recipeWeightKey, type RecipeWeightLookup } from "./parsers/parseExportRecipes";
 import { useBackfillsOptional } from "../backfills/BackfillsContext";
+import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -168,6 +173,363 @@ export function estimatePlannedKg(
   return (grams * targetPortions) / 1000;
 }
 
+// ─── Plating-Warteschlange ──────────────────────────────────────────────────
+
+// Exakte Berechnung der max. platierbaren Meals aus Post-Blast-Wiegungen.
+// Primär: Gramm/Portion aus export-recipes.csv (exakt, unabhängig vom Planwert).
+// Fallback: Planverhältnis mit N/M-Skalierung für OHNE-PLAN-WOs (Schätzung).
+// Gibt null zurück wenn zu wenig Daten vorhanden sind.
+function computeMaxPlateable(
+  meal: MealProgress,
+  recipeWeights: RecipeWeightLookup | null
+): { meals: number; exact: boolean; bottleneckSubRecipe: string | null } | null {
+
+  // ── Primär: Gramm/Portion (export-recipes.csv) ────────────────────────
+  if (recipeWeights) {
+    // Aggregiert pro Sub-Rezept über alle Batches (mehrere WOs = mehrere Chargen)
+    const bySubRecipe = new Map<string, { actualKg: number; recipeCode: string; hasBlockingZero: boolean; anyInChiller: boolean }>();
+    for (const wo of meal.workOrders) {
+      const key = wo.subRecipe;
+      if (!bySubRecipe.has(key)) bySubRecipe.set(key, { actualKg: 0, recipeCode: wo.recipeCode, hasBlockingZero: false, anyInChiller: false });
+      const entry = bySubRecipe.get(key)!;
+      entry.actualKg += wo.actualKg;
+      if (wo.awaitingPostBlast) entry.anyInChiller = true;
+      if (wo.hasPlan && wo.plannedKg > 0 && wo.actualKg === 0 && !wo.awaitingPostBlast) entry.hasBlockingZero = true;
+    }
+    // Erst nach vollständiger Akkumulierung prüfen: wenn bereits kg vorhanden sind, ist kein Blocker
+    for (const entry of bySubRecipe.values()) {
+      if (entry.actualKg > 0) entry.hasBlockingZero = false;
+    }
+
+    let minMeals = Infinity;
+    let bottleneckSub: string | null = null;
+    let found = 0;
+
+    for (const [subRecipe, { actualKg, recipeCode, hasBlockingZero }] of bySubRecipe) {
+      const grams = recipeWeights.gramsPerPortion.get(recipeWeightKey(recipeCode, subRecipe));
+      if (!grams || grams <= 0) {
+        // Kein Gewichtseintrag → KET-Plan vermutlich veraltet.
+        // Wenn dieses Sub-Rezept trotzdem als Blocker gilt (0 kg, hat Plan), als 0 werten.
+        if (hasBlockingZero) { minMeals = 0; bottleneckSub = subRecipe; found++; }
+        continue;
+      }
+      const maxFromThis = hasBlockingZero ? 0 : Math.floor(actualKg / (grams / 1000));
+      found++;
+      if (maxFromThis < minMeals) { minMeals = maxFromThis; bottleneckSub = subRecipe; }
+    }
+
+    if (found === 0) return null;
+    const meals = minMeals === Infinity ? 0 : minMeals;
+    return { meals, exact: true, bottleneckSubRecipe: meals < (meal.plannedMeals || Infinity) ? bottleneckSub : null };
+  }
+
+  // ── Fallback: Planverhältnis mit N/M-Skalierung ───────────────────────
+  if (meal.plannedMeals <= 0) return null;
+
+  const bySubRecipe = new Map<string, {
+    actualKg: number; plannedKgSum: number;
+    plannedWOCount: number; totalWOCount: number;
+    hasBlockingZero: boolean; subRecipe: string;
+  }>();
+
+  for (const wo of meal.workOrders) {
+    const key = wo.subRecipe;
+    if (!bySubRecipe.has(key)) bySubRecipe.set(key, { actualKg: 0, plannedKgSum: 0, plannedWOCount: 0, totalWOCount: 0, hasBlockingZero: false, subRecipe: wo.subRecipe });
+    const entry = bySubRecipe.get(key)!;
+    entry.actualKg += wo.actualKg;
+    entry.totalWOCount++;
+    if (wo.hasPlan && wo.plannedKg > 0) { entry.plannedKgSum += wo.plannedKg; entry.plannedWOCount++; }
+    if (wo.hasPlan && wo.plannedKg > 0 && wo.actualKg === 0 && !wo.awaitingPostBlast) entry.hasBlockingZero = true;
+  }
+  // Erst nach vollständiger Akkumulierung: wenn bereits kg vorhanden → kein Blocker
+  for (const entry of bySubRecipe.values()) {
+    if (entry.actualKg > 0) entry.hasBlockingZero = false;
+  }
+
+  let minMeals = Infinity;
+  let bottleneckSub: string | null = null;
+  let anyComputable = false;
+
+  for (const entry of bySubRecipe.values()) {
+    if (entry.plannedWOCount === 0) continue; // kein Planwert → überspringen
+    if (entry.hasBlockingZero) {
+      return { meals: 0, exact: false, bottleneckSubRecipe: entry.subRecipe };
+    }
+    // N/M-Skalierung: Ø Planmenge pro WO × Gesamt-WO-Zahl = geschätzte Gesamt-Planmenge
+    const estimatedTotalPlanned = (entry.plannedKgSum / entry.plannedWOCount) * entry.totalWOCount;
+    const meals = estimatedTotalPlanned > 0 ? Math.floor((entry.actualKg / estimatedTotalPlanned) * meal.plannedMeals) : 0;
+    anyComputable = true;
+    if (meals < minMeals) { minMeals = meals; bottleneckSub = entry.subRecipe; }
+  }
+
+  if (!anyComputable || minMeals === Infinity) return null;
+  return { meals: minMeals, exact: false, bottleneckSubRecipe: minMeals < meal.plannedMeals ? bottleneckSub : null };
+}
+
+// Hilfsfunktion: Engpass-WO und maximal platierbare Meals für ein Meal berechnen.
+// Alle WOs mit Plan müssen Gewicht haben — das Minimum setzt die Grenze.
+// Eine WO mit 0 kg (die nicht im Chiller ist) blockiert das Meal komplett.
+function mealPlatingCapacity(meal: MealProgress): {
+  maxMeals: number;
+  bottleneckPct: number;
+  bottleneckSubRecipe: string | null;
+  hasBlockingZeroWo: boolean;
+} {
+  const withPlan = meal.workOrders.filter(w => w.hasPlan && w.plannedKg > 0);
+  if (withPlan.length === 0) return { maxMeals: 0, bottleneckPct: 0, bottleneckSubRecipe: null, hasBlockingZeroWo: false };
+
+  // Per Sub-Rezept aggregieren (inkl. WOs ohne Planmenge, z.B. R0-Chicken mit plannedKg=0)
+  const bySubRecipe = new Map<string, { totalActual: number; totalPlanned: number; anyInChiller: boolean }>();
+  for (const wo of meal.workOrders) {
+    if (!bySubRecipe.has(wo.subRecipe)) bySubRecipe.set(wo.subRecipe, { totalActual: 0, totalPlanned: 0, anyInChiller: false });
+    const e = bySubRecipe.get(wo.subRecipe)!;
+    e.totalActual += wo.actualKg;
+    if (wo.hasPlan && wo.plannedKg > 0) e.totalPlanned += wo.plannedKg;
+    if (wo.awaitingPostBlast) e.anyInChiller = true;
+  }
+
+  // Blocker: Sub-Rezept hat Planmenge, aber null kg produziert und nicht im Chiller
+  let hasBlockingZeroWo = false;
+  for (const e of bySubRecipe.values()) {
+    if (e.totalPlanned > 0 && e.totalActual === 0 && !e.anyInChiller) { hasBlockingZeroWo = true; break; }
+  }
+
+  // Fortschritt und Bottleneck per Sub-Rezept (nicht per einzelnem WO)
+  let minPct = Infinity;
+  let bottleneckSub: string | null = null;
+  for (const [sub, e] of bySubRecipe) {
+    if (e.totalPlanned <= 0) continue;
+    const pct = Math.min(100, (e.totalActual / e.totalPlanned) * 100);
+    if (pct < minPct) { minPct = pct; bottleneckSub = sub; }
+  }
+
+  const bottleneckPct = minPct === Infinity ? 0 : minPct;
+  const maxMeals = meal.plannedMeals > 0 ? Math.floor(bottleneckPct / 100 * meal.plannedMeals) : 0;
+
+  return {
+    maxMeals,
+    bottleneckPct,
+    bottleneckSubRecipe: bottleneckPct < 99 ? bottleneckSub : null,
+    hasBlockingZeroWo,
+  };
+}
+
+function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; recipeWeights: RecipeWeightLookup | null }) {
+  if (meals.length === 0) return null;
+
+  const dayName = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
+
+  type ReadyEntry = { meal: MealProgress; maxMeals: number; bottleneckPct: number; bottleneckSubRecipe: string | null };
+  type ChillerEntry = { meal: MealProgress; kgInChiller: number; maxAfterChiller: number };
+
+  const readyList: ReadyEntry[] = [];
+  const chillerList: ChillerEntry[] = [];
+  const runningMeals: MealProgress[] = [];
+  const criticalMeals: MealProgress[] = [];
+
+  for (const meal of meals) {
+    if (meal.totalWOs === 0) continue;
+    const wos = meal.workOrders;
+    const cap = mealPlatingCapacity(meal);
+    const hasHolding = wos.some(w => w.platingHoldingKg > 0);
+    const hasChillerWo = wos.some(w => w.awaitingPostBlast);
+
+    if (!cap.hasBlockingZeroWo && (cap.maxMeals > 0 || hasHolding)) {
+      // Alle Sub-Meals haben Gewicht — max. platierbare Menge klar
+      readyList.push({ meal, maxMeals: cap.maxMeals, bottleneckPct: cap.bottleneckPct, bottleneckSubRecipe: cap.bottleneckSubRecipe });
+    } else if (hasChillerWo) {
+      // Mindestens eine WO ist noch im Chiller — bald bereit
+      const kgInChiller = wos.filter(w => w.awaitingPostBlast).reduce((s, w) => s + w.preBlastKg, 0);
+      const maxAfterChiller = cap.maxMeals; // aktuell schon platierbare Portion (könnte 0 sein)
+      chillerList.push({ meal, kgInChiller, maxAfterChiller });
+    } else if (cap.hasBlockingZeroWo || wos.some(w => w.isCritical && w.hasPlan)) {
+      criticalMeals.push(meal);
+    } else {
+      runningMeals.push(meal);
+    }
+  }
+
+  readyList.sort((a, b) => b.maxMeals - a.maxMeals);
+  chillerList.sort((a, b) => b.meal.progressPct - a.meal.progressPct);
+  runningMeals.sort((a, b) => a.progressPct - b.progressPct);
+
+  const MAX = 5;
+
+  return (
+    <div className="card p-5 shadow-md border-0">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <div className="font-bold text-slate-900 text-sm">Was kann ich plaiten?</div>
+          <div className="text-[10px] text-slate-400">{dayName}</div>
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {readyList.length > 0 && (
+            <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold ring-1 ring-emerald-200">
+              ✅ {readyList.length} bereit
+            </span>
+          )}
+          {chillerList.length > 0 && (
+            <span className="text-[10px] px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 font-bold ring-1 ring-cyan-200">
+              ⏳ {chillerList.length} im Chiller
+            </span>
+          )}
+          {criticalMeals.length > 0 && (
+            <span className="text-[10px] px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-bold ring-1 ring-red-200">
+              ⚠ {criticalMeals.length} blockiert
+            </span>
+          )}
+          {runningMeals.length > 0 && (
+            <span className="text-[10px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium ring-1 ring-slate-200">
+              {runningMeals.length} laufen noch
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {/* ── Jetzt plaiten ── */}
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 mb-2">
+            ✅ Jetzt plaiten{readyList.length > 0 ? ` (${readyList.length})` : ""}
+          </div>
+          {readyList.length === 0 ? (
+            <div className="text-[10px] text-slate-300 italic">Noch kein Meal vollständig produziert</div>
+          ) : (
+            <div className="space-y-1.5">
+              {readyList.slice(0, MAX).map(({ meal: m, bottleneckPct }) => {
+                const holdKg = m.workOrders.reduce((s, w) => s + w.platingHoldingKg, 0);
+                const cap = computeMaxPlateable(m, recipeWeights);
+                return (
+                  <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-emerald-50 ring-1 ring-emerald-200">
+                    <div className="flex items-baseline justify-between gap-1">
+                      <span className="font-mono text-[11px] font-bold text-slate-900">{m.recipeCode}</span>
+                      {cap != null ? (
+                        <span className="text-[11px] font-bold font-mono text-emerald-700">
+                          {cap.exact ? "" : "~"}{cap.meals.toLocaleString("de-DE")} Meals
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-bold font-mono text-slate-500">{Math.round(bottleneckPct)}%</span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mb-1.5 truncate">{m.recipeName}</div>
+                    <ProgressBar pct={bottleneckPct} size="xs" color="bg-emerald-500" />
+                    <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1">
+                      <span>{m.totalActualKg.toFixed(0)} / {m.totalPlannedKg > 0 ? m.totalPlannedKg.toFixed(0) : "—"} kg</span>
+                      <span>{m.completedWOs}/{m.totalWOs} WOs</span>
+                    </div>
+                    {cap?.bottleneckSubRecipe && (
+                      <div className="text-[9px] text-amber-600 font-medium mt-0.5 truncate">
+                        ⚡ Engpass: {cap.bottleneckSubRecipe}
+                      </div>
+                    )}
+                    {!cap?.exact && cap != null && (
+                      <div className="text-[9px] text-amber-600 mt-0.5">≈ Schätzung — KET-Plan mit aktuellen WOs neu exportieren</div>
+                    )}
+                    {holdKg > 0 && (
+                      <div className="text-[9px] text-emerald-600 font-medium mt-0.5">+{holdKg.toFixed(0)} kg Puffer (RTI)</div>
+                    )}
+                  </div>
+                );
+              })}
+              {readyList.length > MAX && (
+                <div className="text-[10px] text-slate-400 text-center py-1">+{readyList.length - MAX} weitere</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Im Chiller + Kritisch/Blockiert ── */}
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-cyan-700 mb-2">
+            ⏳ Im Chiller{chillerList.length > 0 ? ` (${chillerList.length})` : ""}
+          </div>
+          {chillerList.length === 0 ? (
+            <div className="text-[10px] text-slate-300 italic">Kein Meal im Chiller</div>
+          ) : (
+            <div className="space-y-1.5">
+              {chillerList.slice(0, MAX).map(({ meal: m, kgInChiller }) => (
+                <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-cyan-50 ring-1 ring-cyan-200">
+                  <div className="flex items-baseline justify-between gap-1">
+                    <span className="font-mono text-[11px] font-bold text-slate-900">{m.recipeCode}</span>
+                    <span className="text-[11px] font-bold font-mono text-slate-600">{Math.round(m.progressPct)}%</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mb-1.5 truncate">{m.recipeName}</div>
+                  <ProgressBar pct={m.progressPct} size="xs" color="bg-cyan-400" />
+                  <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1">
+                    <span>{m.totalActualKg.toFixed(0)} / {m.totalPlannedKg > 0 ? m.totalPlannedKg.toFixed(0) : "—"} kg</span>
+                    <span>{m.completedWOs}/{m.totalWOs} WOs</span>
+                  </div>
+                  {kgInChiller > 0 && (
+                    <div className="text-[9px] text-cyan-600 font-medium mt-0.5">⏳ {kgInChiller.toFixed(0)} kg wartet auf Post-Blast</div>
+                  )}
+                </div>
+              ))}
+              {chillerList.length > MAX && (
+                <div className="text-[10px] text-slate-400 text-center py-1">+{chillerList.length - MAX} weitere</div>
+              )}
+            </div>
+          )}
+          {criticalMeals.length > 0 && (
+            <>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-red-600 mt-4 mb-2">
+                ⛔ Blockiert — Sub-Meal fehlt ({criticalMeals.length})
+              </div>
+              <div className="space-y-1.5">
+                {criticalMeals.slice(0, 4).map(m => {
+                  const missingWos = m.workOrders.filter(w => w.hasPlan && w.plannedKg > 0 && w.actualKg === 0 && !w.awaitingPostBlast);
+                  return (
+                    <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-red-50 ring-1 ring-red-200">
+                      <div className="flex items-baseline justify-between gap-1">
+                        <span className="font-mono text-[11px] font-bold text-slate-900">{m.recipeCode}</span>
+                        <span className="text-[10px] font-bold text-red-600">0 Meals</span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate">{m.recipeName}</div>
+                      {missingWos.slice(0, 2).map(w => (
+                        <div key={w.workOrder} className="text-[9px] text-red-600 mt-0.5 truncate">
+                          ✕ {w.subRecipe} (0 / {w.plannedKg.toFixed(0)} kg)
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Noch in Produktion ── */}
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">
+            🔵 Noch in Produktion ({runningMeals.length})
+          </div>
+          {runningMeals.length === 0 ? (
+            <div className="text-[10px] text-slate-300 italic">Alle Meals abgeschlossen</div>
+          ) : (
+            <div className="space-y-1.5">
+              {runningMeals.slice(0, MAX).map(m => (
+                <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-white ring-1 ring-slate-200">
+                  <div className="flex items-baseline justify-between gap-1">
+                    <span className="font-mono text-[11px] font-bold text-slate-800">{m.recipeCode}</span>
+                    <span className="text-[11px] font-bold font-mono text-slate-500">{Math.round(m.progressPct)}%</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 mb-1.5 truncate">{m.recipeName}</div>
+                  <ProgressBar pct={m.progressPct} size="xs" />
+                  <div className="text-[9px] text-slate-400 mt-1">
+                    {m.totalActualKg.toFixed(0)} / {m.totalPlannedKg > 0 ? m.totalPlannedKg.toFixed(0) : "—"} kg
+                  </div>
+                </div>
+              ))}
+              {runningMeals.length > MAX && (
+                <div className="text-[10px] text-slate-400 text-center py-1">+{runningMeals.length - MAX} weitere</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Hauptkomponente ─────────────────────────────────────────────────────────
 
 export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
@@ -175,6 +537,14 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const preblastMonitor = usePreblastMonitor();
   const rtiMonitor = useRtiMonitor();
   const etMonitor = useEtMonitor();
+  // Rohstoff-Engpässe (Shorts-Tracker-Sheet) — separat von den Postblast/
+  // Preblast-Wiegungen, weil die schon VOR dem Kochen auftreten. Siehe
+  // shortageAlerts.ts für die Verknüpfung mit den aktuellen WOs.
+  const shortsTrackerMonitor = useShortsTrackerMonitor();
+  // F_VE-Production-Plan-Sheet (Ready/Min-Needs je Do/Fr/Sa) — eigene
+  // Wochen-Tabs (gid pro KW), siehe productionPlanReadiness.ts. Nur der Tab
+  // der gerade ausgewählten Woche wird geladen.
+  const { weeks: planWeekOptions } = useProductionPlanWeeks();
   // Cross-Source-Frühwarnungen (Küche vs. Plating/LinePlaiting) — kommen aus
   // dem app-weiten BackfillsProvider, damit hier keine zweite, abweichende
   // Berechnung entsteht. Optional, weil diese Ansicht theoretisch auch ohne
@@ -185,52 +555,44 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   // gleiche Fallback, den KetBreakdownView schon nutzt, wenn der Firestore-Plan
   // für die aktuelle Woche leer ist. Liefert echte Portionen/Sub-Rezept-Namen
   // direkt aus dem WMS (Snowflake-Pull), nur eben (noch) ohne kg-Ziel — siehe
-  // wmsWorkorderRowToEntry. Wird nur einmal beim Laden abgefragt, nicht gepollt.
+  // wmsWorkorderRowToEntry. Wird alle 60 s neu abgefragt damit neue WOs live erscheinen.
   const [liveWmsRows, setLiveWmsRows] = useState<WorkOrderEntry[] | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchWmsWorkorderCache().then(res => {
-      if (cancelled || !res?.rows.length) return;
-      const { kept } = filterRowsToWeekWindow(res.rows, currentHfWeek());
-      const mapped = kept.reduce<WorkOrderEntry[]>((acc, row) => {
-        try { acc.push(wmsWorkorderRowToEntry(row)); }
-        catch (error) { console.warn("[PostblastLive] Skipping malformed WMS row:", error); }
-        return acc;
-      }, []);
-      if (!cancelled && mapped.length) setLiveWmsRows(mapped);
-    }).catch(error => {
-      if (!cancelled) console.error("[PostblastLive] Failed to fetch WMS workorder cache:", error);
-    });
-    return () => { cancelled = true; };
+    const fetchWms = () => {
+      fetchWmsWorkorderCache().then(res => {
+        if (cancelled || !res?.rows.length) return;
+        const { kept } = filterRowsToWeekWindow(res.rows, currentHfWeek());
+        const mapped = kept.reduce<WorkOrderEntry[]>((acc, row) => {
+          try { acc.push(wmsWorkorderRowToEntry(row)); }
+          catch (error) { console.warn("[PostblastLive] Skipping malformed WMS row:", error); }
+          return acc;
+        }, []);
+        if (!cancelled && mapped.length) setLiveWmsRows(mapped);
+      }).catch(error => {
+        if (!cancelled) console.error("[PostblastLive] Failed to fetch WMS workorder cache:", error);
+      });
+    };
+    fetchWms();
+    const interval = setInterval(fetchWms, 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
   // ── Manuelle Datei-Uploads: schließen die kg-Lücke, die weder ET noch der
-  // Live-WMS-Cache füllen können (beide liefern keine Zielmenge). Zwei Dateien:
-  // 1) KET-CSV (dieselbe, die "KET Plan / WO" nutzt — Storage-Key bewusst
-  //    identisch, damit ein dort schon hochgeladener Plan hier sofort mitgilt)
-  //    liefert echte Ziel-Portionen je WO.
-  // 2) "export-recipes*.csv" liefert Gramm/Portion je Sub-Rezept. Portionen ×
-  //    Gramm/Portion = GESCHÄTZTE Ziel-Menge — keine echte Firestore-Zahl,
-  //    daher überall als "isEstimated" markiert (siehe postblastMatch.ts).
+  // Live-WMS-Cache füllen können (beide liefern keine Zielmenge).
+  // KET-CSV (dieselbe, die "KET Plan / WO" nutzt) liefert echte Ziel-Portionen je WO.
+  // Rezept-Gewichte (export-recipes.csv) kommen global aus WoReconciliationContext.
   const KET_CSV_STORAGE_KEY = "ket-csv-rows-v1";
-  const RECIPE_WEIGHTS_STORAGE_KEY = "pb_recipe_weights_v1";
 
   const [ketCsvRows, setKetCsvRows] = useState<KetRow[] | null>(() => {
     try { const raw = localStorage.getItem(KET_CSV_STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
     catch { return null; }
   });
   const [ketCsvFileName, setKetCsvFileName] = useState("");
-  const [recipeWeights, setRecipeWeights] = useState<RecipeWeightLookup | null>(() => {
-    try {
-      const raw = localStorage.getItem(RECIPE_WEIGHTS_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { entries: [string, number][]; recipeCount: number; rowCount: number };
-      return { gramsPerPortion: new Map(parsed.entries), recipeCount: parsed.recipeCount, rowCount: parsed.rowCount };
-    } catch { return null; }
-  });
-  const [recipeWeightsFileName, setRecipeWeightsFileName] = useState("");
   const ketFileInputRef = useRef<HTMLInputElement>(null);
-  const recipeWeightsFileInputRef = useRef<HTMLInputElement>(null);
+
+  const woRecon = useWoReconciliation();
+  const recipeWeights = woRecon?.recipeWeights ?? null;
 
   function handleKetCsvFile(file: File) {
     setKetCsvFileName(file.name);
@@ -245,31 +607,6 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         try { localStorage.setItem(KET_CSV_STORAGE_KEY, JSON.stringify(rows)); } catch { /* quota */ }
       } catch (error) {
         alert(`Fehler beim Verarbeiten der KET-CSV: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    };
-    reader.onerror = () => alert("Fehler beim Lesen der Datei.");
-    reader.readAsText(file, "utf-8");
-  }
-
-  function handleRecipeWeightsFile(file: File) {
-    setRecipeWeightsFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = e => {
-      const text = typeof e.target?.result === "string" ? e.target.result : "";
-      if (!text) { alert("Fehler beim Lesen der Datei."); return; }
-      try {
-        const lookup = parseExportRecipesCsv(text);
-        if (lookup.gramsPerPortion.size === 0) { alert("Keine Portions-Gewichte in dieser Datei gefunden."); return; }
-        setRecipeWeights(lookup);
-        try {
-          localStorage.setItem(RECIPE_WEIGHTS_STORAGE_KEY, JSON.stringify({
-            entries: [...lookup.gramsPerPortion.entries()],
-            recipeCount: lookup.recipeCount,
-            rowCount: lookup.rowCount,
-          }));
-        } catch { /* quota */ }
-      } catch (error) {
-        alert(`Fehler beim Verarbeiten der Rezept-Gewichte: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
     reader.onerror = () => alert("Fehler beim Lesen der Datei.");
@@ -381,6 +718,16 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   }
 
   const selectedWeekNum = selectedWeek ? weekNumFromHfWeek(selectedWeek) : null;
+
+  // gid des F_VE-Production-Plan-Tabs, der zur gewählten Woche passt — die
+  // Tab-Liste selbst zeigt nur ab der aktuell laufenden KW aufwärts (siehe
+  // wms-local-server.ts), eine gewählte Vergangenheits-KW liefert also bewusst
+  // keinen Treffer (kein Plan-Check für längst abgeschlossene Wochen).
+  const planGid = useMemo(
+    () => (selectedWeekNum != null ? planWeekOptions.find(w => w.week === selectedWeekNum)?.gid ?? "" : ""),
+    [planWeekOptions, selectedWeekNum]
+  );
+  const { data: planSheetData } = useProductionPlanMonitor(planGid);
 
   // Effektiver Plan für die gewählte Woche, gestaffelt nach Vertrauenswürdigkeit
   // — genau die Kette, die KetBreakdownView für dasselbe Problem schon nutzt,
@@ -516,6 +863,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const [mealFilter, setMealFilter] = useState<"all" | "critical" | "running" | "done">("all");
   const [shiftEndHours, setShiftEndHours] = useState(8);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [shortagesExpanded, setShortagesExpanded] = useState(false);
+  const [recsExpanded, setRecsExpanded] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatPanelRef = useRef<HTMLDivElement>(null);
 
@@ -552,8 +901,11 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
     };
   }, [monitor.data, selectedWeekNum]);
   const intelligence = useMemo(
-    () => analyzeProduction(weekScopedPostblast, meals, backfill, filteredProductionPlan, shiftEndHours),
-    [weekScopedPostblast, meals, backfill, filteredProductionPlan, shiftEndHours]
+    () => analyzeProduction(
+      weekScopedPostblast, meals, backfill, matched, filteredProductionPlan, shiftEndHours,
+      planSheetData?.rows ?? [], shortsTrackerMonitor.data?.entries ?? []
+    ),
+    [weekScopedPostblast, meals, backfill, matched, filteredProductionPlan, shiftEndHours, planSheetData, shortsTrackerMonitor.data]
   );
   const todayEntries = useMemo(
     () => (weekScopedPostblast?.entries ?? []).filter(e => e.date === todayStr),
@@ -611,6 +963,12 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
     return map;
   }, [matched, filteredProductionPlan, data.equipmentBible]);
 
+  // ── Rohstoff-Engpässe (Shorts Tracker) ──
+  const shortageImpacts = useMemo(
+    () => correlateShortages(shortsTrackerMonitor.data?.entries ?? [], matched),
+    [shortsTrackerMonitor.data, matched]
+  );
+
   // ── Sets & Filter ──
   const backfillByWo = useMemo(() => new Map(backfill.map(b => [b.workOrder, b])), [backfill]);
 
@@ -658,7 +1016,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   }
 
   function buildCtx(): ChatContext {
-    return { meals, backfill, intelligence, matched, todayEntries, postblast: weekScopedPostblast };
+    return { meals, backfill, intelligence, matched, todayEntries };
   }
 
   function handleChat(e: FormEvent) {
@@ -695,6 +1053,65 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
   return (
     <div className="space-y-4 pb-8">
+
+      {/* ══ ROHSTOFF-ENGPÄSSE (Shorts Tracker) ═════════════════════════════ */}
+      {shortageImpacts.length > 0 && (
+        <div className={`card shadow-sm transition-all ${shortagesExpanded ? "p-4 bg-red-50 ring-1 ring-red-300" : "px-4 py-3 bg-red-50/70 ring-1 ring-red-200"}`}>
+          <button
+            onClick={() => setShortagesExpanded(e => !e)}
+            className="w-full flex items-center justify-between gap-2 text-left"
+          >
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <span className="text-xs font-bold text-red-700 uppercase tracking-wide shrink-0">
+                ⚠ {shortageImpacts.length} Rohstoff-Engpass{shortageImpacts.length > 1 ? "e" : ""}
+                {shortageImpacts.some(i => i.isNew) && (
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-red-200 text-red-800 font-bold">NEU</span>
+                )}
+              </span>
+              {!shortagesExpanded && (
+                <div className="flex flex-wrap gap-1 min-w-0">
+                  {shortageImpacts.slice(0, 5).map(impact => {
+                    const ing = impact.shortage.ingredient ?? "";
+                    const shortName = ing.includes("/")
+                      ? (ing.split("/")[1]?.split(",")[0]?.trim() ?? ing)
+                      : (ing.split(",")[0]?.trim() ?? ing);
+                    const kg = Math.abs(impact.shortage.shortKg ?? 0);
+                    return (
+                      <span
+                        key={impact.shortage.rowIndex}
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${
+                          impact.isNew ? "bg-red-200 text-red-800" : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {impact.isNew ? "🆕 " : ""}{shortName} −{kg.toFixed(0)} kg
+                      </span>
+                    );
+                  })}
+                  {shortageImpacts.length > 5 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-500">
+                      +{shortageImpacts.length - 5} weitere
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <span className="text-[10px] text-red-400 shrink-0">{shortagesExpanded ? "▲ Zuklappen" : "▼ Details"}</span>
+          </button>
+          {shortagesExpanded && (
+            <ul className="mt-3 space-y-1.5 text-xs text-red-900">
+              {shortageImpacts.map(impact => (
+                <li key={impact.shortage.rowIndex} className="flex items-start gap-2">
+                  <span className="shrink-0 mt-0.5">{impact.isNew ? "🆕" : "⚠"}</span>
+                  <span>{describeShortageImpact(impact)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {shortsTrackerMonitor.error && (
+            <div className="text-[10px] text-red-500 mt-1">{shortsTrackerMonitor.error}</div>
+          )}
+        </div>
+      )}
 
       {/* ══ HEADER ══════════════════════════════════════════════════════════ */}
       <div className="card p-6 bg-gradient-to-br from-teal-600 to-cyan-700 text-white border-0 shadow-lg">
@@ -850,6 +1267,9 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         </div>
       </div>
 
+      {/* ══ PLATING-QUEUE ════════════════════════════════════════════════ */}
+      <PlatingNowPanel meals={meals} recipeWeights={recipeWeights} />
+
       {/* ══ ZUSATZDATEN FÜR KG-SCHÄTZUNG ═══════════════════════════════════ */}
       <div className="card p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -880,33 +1300,13 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
           )}
 
           <div className="w-px h-4 bg-slate-200 mx-1" />
-
-          <input
-            ref={recipeWeightsFileInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleRecipeWeightsFile(f); e.target.value = ""; }}
-          />
-          <button
-            onClick={() => recipeWeightsFileInputRef.current?.click()}
-            className={`px-3 py-1.5 rounded-full font-medium transition ${recipeWeights ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-          >
-            {recipeWeights ? `✓ Rezept-Gewichte · ${recipeWeights.recipeCount} Rezepte` : "export-recipes.csv hochladen"}
-          </button>
-          {recipeWeightsFileName && <span className="text-slate-400 text-[10px]">{recipeWeightsFileName}</span>}
-          {recipeWeights && (
-            <button
-              onClick={() => { setRecipeWeights(null); try { localStorage.removeItem(RECIPE_WEIGHTS_STORAGE_KEY); } catch { /* quota */ } }}
-              className="text-slate-300 hover:text-slate-500"
-              title="Rezept-Gewichte entfernen"
-            >
-              ✕
-            </button>
-          )}
+          {recipeWeights
+            ? <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 font-medium">✓ {recipeWeights.recipeCount} Rezept-Gewichte</span>
+            : <span className="text-[10px] text-slate-400">Rezept-Gewichte: über Nav-Leiste hochladen</span>
+          }
         </div>
         <p className="text-[10px] text-slate-400 mt-2">
-          Beide zusammen ergeben eine <strong>geschätzte</strong> Ziel-Menge (Ziel-Portionen × Gewicht/Portion) für WOs ohne echten Produktionsplan — sichtbar als "≈ GESCHÄTZT", nie als echtes Soll. Die KET-CSV teilt sich den Upload mit "KET Plan / WO".
+          KET-CSV liefert Ziel-Portionen je WO. Rezept-Gewichte (export-recipes.csv) können global über die linke Nav-Leiste hochgeladen werden und gelten app-weit.
         </p>
       </div>
 
@@ -1029,9 +1429,21 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
           {/* Empfehlungen */}
           {intelligence.recommendations.length > 0 && (
             <div className="bg-purple-50 rounded-xl p-4 ring-1 ring-purple-200 mb-4">
-              <div className="text-[10px] uppercase font-bold text-purple-700 mb-2 tracking-wide">Empfehlungen</div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] uppercase font-bold text-purple-700 tracking-wide">
+                  Empfehlungen ({intelligence.recommendations.length})
+                </div>
+                {intelligence.recommendations.length > 4 && (
+                  <button
+                    onClick={() => setRecsExpanded(e => !e)}
+                    className="text-[10px] text-purple-500 hover:text-purple-700 font-medium"
+                  >
+                    {recsExpanded ? "▲ Weniger" : `▼ Alle ${intelligence.recommendations.length} zeigen`}
+                  </button>
+                )}
+              </div>
               <ul className="space-y-1.5 text-xs text-slate-700">
-                {intelligence.recommendations.map((rec, i) => (
+                {(recsExpanded ? intelligence.recommendations : intelligence.recommendations.slice(0, 4)).map((rec, i) => (
                   <li key={i} className="flex items-start gap-2">
                     <span className="text-purple-400 shrink-0 mt-0.5">▸</span>
                     <span>{rec}</span>
@@ -1244,6 +1656,25 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                             <span>{meal.completedWOs}/{meal.totalWOs} WOs fertig</span>
                             <span>·</span>
                             <span>{fmt(meal.plannedMeals)} Meals</span>
+                            {(() => {
+                              const cap = computeMaxPlateable(meal, recipeWeights);
+                              if (!cap) {
+                                // recipeWeights geladen aber kein Eintrag → KET-Plan veraltet
+                                if (recipeWeights) return (
+                                  <span className="text-amber-500 font-medium">· KET-Plan aktualisieren</span>
+                                );
+                                return null; // kein File geladen → kein Hinweis im Header
+                              }
+                              if (cap.meals === 0) return (
+                                <span className="text-red-600 font-bold">· 0 platierbar ⛔</span>
+                              );
+                              return (
+                                <span className={cap.exact ? "text-emerald-600 font-bold" : "text-amber-600 font-medium"}>
+                                  · {cap.exact ? "" : "~"}{cap.meals.toLocaleString("de-DE")} platierbar
+                                  {!cap.exact && <span className="text-amber-400 font-normal" title="KET-Plan mit aktuellen WOs exportieren → export-recipes.csv hochladen"> ≈</span>}
+                                </span>
+                              );
+                            })()}
                             {hasRuns && runEntries.map(([r, wos]) => (
                               <span key={r} className={`font-medium ${wos.every(w => w.isComplete) ? "text-emerald-600" : wos.some(w => w.isCritical) ? "text-red-600" : "text-slate-400"}`}>
                                 R{r}:{wos.filter(w => w.isComplete).length}/{wos.length}

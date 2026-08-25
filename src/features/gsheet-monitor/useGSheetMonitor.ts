@@ -1,6 +1,6 @@
 // GSheet Monitor – React Hooks für Live-Sheet-Daten.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EtData, ForecastData, GSheetChange, GSheetConfig, LinePlaitingData, PostblastData, PreblastData, ProductionPlanData, ProductionPlanWeekOption, RecipeProfilData, RtiData } from "./gsheetTypes";
+import type { EtData, ForecastData, GSheetChange, GSheetConfig, LinePlaitingData, PostblastData, PreblastData, ProductionPlanData, ProductionPlanWeekOption, RecipeProfilData, RtiData, ShortsTrackerData } from "./gsheetTypes";
 import { GSHEET_REGISTRY } from "./gsheetRegistry";
 import { createPoller } from "./gsheetPoller";
 import { parseRti } from "./parsers/parseRti";
@@ -11,6 +11,7 @@ import { parseLinePlaiting } from "./parsers/parseLinePlaiting";
 import { parseProductionPlan } from "./parsers/parseProductionPlan";
 import { parseForecast } from "./parsers/parseForecast";
 import { parseRecipeProfil } from "./parsers/parseRecipeProfil";
+import { parseShortsTracker } from "./parsers/parseShortsTracker";
 
 type ParserFn = (rows: string[][]) => unknown;
 
@@ -422,6 +423,52 @@ export function useRecipeProfilMonitor(): GSheetMonitorState<RecipeProfilData> {
 
     void poll();
     const timer = setInterval(poll, RECIPE_PROFIL_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      setIsPolling(false);
+    };
+  }, [fetchOnce]);
+
+  const forceRefresh = useCallback(async () => {
+    try { await fetchOnce(); }
+    catch (err) { setError((err as Error).message); }
+  }, [fetchOnce]);
+
+  return { data, lastUpdate, changes: [], isPolling, error, forceRefresh };
+}
+
+// Shorts Tracker meldet Rohstoff-Engpässe, die sofort auffallen sollen ("hier
+// wurde gerade eine neue Zeile eingetragen") -- ähnlich dringend wie Postblast/
+// Preblast (30s), nicht wie das seltener wechselnde Recipe Profil.
+const SHORTS_TRACKER_POLL_MS = 30_000;
+
+export function useShortsTrackerMonitor(): GSheetMonitorState<ShortsTrackerData> {
+  const [data, setData] = useState<ShortsTrackerData | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchOnce = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch(`/api/shorts-tracker`, { signal, cache: "no-store" });
+    const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; rows?: string[][] } | null;
+    if (!res.ok || !body?.ok) throw new Error(body?.error || `Shorts-Tracker-Server antwortete mit ${res.status}`);
+    setData(parseShortsTracker(body.rows ?? []));
+    setLastUpdate(Date.now());
+    setError(null);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setIsPolling(true);
+
+    async function poll() {
+      try { await fetchOnce(controller.signal); }
+      catch (err) { if ((err as Error).name !== "AbortError") setError((err as Error).message); }
+    }
+
+    void poll();
+    const timer = setInterval(poll, SHORTS_TRACKER_POLL_MS);
     return () => {
       controller.abort();
       clearInterval(timer);

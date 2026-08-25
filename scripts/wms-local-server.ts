@@ -139,6 +139,25 @@ async function fetchRecipeProfilRows(): Promise<string[][]> {
   return (valuesRes.data.values ?? []) as string[][];
 }
 
+// ─── Shorts Tracker (Google Sheets, Service Account) ───────────────────────
+// Separates Sheet ("VE Warehouse/Inventory Shorts Tracker") — Rohstoff-
+// Engpässe, die Procurement/Warehouse ganz am Anfang der Produktion einträgt,
+// bevor überhaupt gekocht wird. Privat mit dem Service-Account geteilt (nicht
+// per gviz/tq-CSV lesbar), daher derselbe authentifizierte Zugriffsweg wie
+// Production Plan/Forecast/Recipe Profil oben. Siehe parseShortsTracker.ts
+// für die Spalten-Semantik und die WO-Rekonstruktion.
+const SHORTS_TRACKER_SHEET_ID = "18ItpSvuN1wMGX6f2-IpWqSm2K6tcnFOyISRV2vXnRtU";
+
+async function fetchShortsTrackerRows(): Promise<string[][]> {
+  const client = await getSheetsClient();
+  const valuesRes = await client.spreadsheets.values.get({
+    spreadsheetId: SHORTS_TRACKER_SHEET_ID,
+    range: `'Shorts Tracker'!A1:J500`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  return (valuesRes.data.values ?? []) as string[][];
+}
+
 // ─── Transparency Plan (Google Sheets, Service Account) ────────────────────
 // Separates Sheet ("F_VE Transparency Plan"), unabhaengig vom Production-Plan-
 // Sheet oben: Live-Wiegungen (Raw/Pre-/Post-Blast) je Work Order/Subrezept,
@@ -1383,10 +1402,20 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  if (url.pathname === "/shorts-tracker" && req.method === "GET") {
+    try {
+      const rows = await fetchShortsTrackerRows();
+      sendJson(res, 200, { ok: true, generatedAt: new Date().toISOString(), rows });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   sendJson(res, 404, {
     ok: false,
     error: "query-not-configured",
-    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=...",
+    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=..., /shorts-tracker",
   });
 });
 

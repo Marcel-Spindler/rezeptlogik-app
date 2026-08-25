@@ -1,6 +1,8 @@
+import { useRef } from "react";
 import type { AppView } from "./AppContext";
 import { LiveCount } from "../features/redzone-live/LiveBadge";
 import { BackfillNavBadge } from "../features/backfills/BackfillAlertBanner";
+import { useWoReconciliation } from "../features/wo-reconciliation/WoReconciliationContext";
 
 interface NavGroup {
   label: string;
@@ -46,6 +48,9 @@ export function siblingViews(view: AppView): readonly AppView[] {
 
 export function NavTabs({ view, onChange }: { view: AppView; onChange: (v: AppView) => void }) {
   const groups = NAV_GROUPS.filter((g) => !g.localOnly || import.meta.env.DEV);
+  const woRecon = useWoReconciliation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <nav className="card p-1.5 flex flex-col gap-0.5">
       {groups.map((g) => {
@@ -68,6 +73,48 @@ export function NavTabs({ view, onChange }: { view: AppView; onChange: (v: AppVi
           </button>
         );
       })}
+
+      {/* KET Plan (export-recipes.csv) — global für genaue Platier-Berechnung */}
+      <div className="mt-1 pt-1.5 border-t border-slate-100">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          className="hidden"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f && woRecon) woRecon.uploadRecipeWeightsFile(f);
+            e.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          title="export-recipes.csv hochladen — ermöglicht genaue platierbare Meal-Berechnung in Postblast Live"
+          className={`w-full text-left px-3 py-2 text-xs rounded-lg font-medium transition-colors flex items-center gap-2 ${
+            woRecon?.recipeWeights
+              ? "text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+              : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          }`}
+        >
+          <span className="text-sm leading-none">{woRecon?.recipeWeights ? "✓" : "↑"}</span>
+          <span className="truncate">
+            {woRecon?.recipeWeights
+              ? `${woRecon.recipeWeights.recipeCount} Rezepte geladen`
+              : "KET Plan hochladen"}
+          </span>
+          {woRecon?.recipeWeights && (
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); woRecon.clearRecipeWeights(); }}
+              title="Rezept-Gewichte entfernen"
+              className="ml-auto text-slate-300 hover:text-slate-500 leading-none"
+            >
+              ✕
+            </button>
+          )}
+        </button>
+      </div>
     </nav>
   );
 }

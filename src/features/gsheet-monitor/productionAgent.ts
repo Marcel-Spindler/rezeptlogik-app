@@ -1,8 +1,11 @@
 // Production Intelligence Agent — regelbasierte + heuristische Produktionsüberwachung.
 // Analysiert Postblast-Daten, erkennt Muster, generiert Alerts und Empfehlungen.
-import type { PostblastData } from "./gsheetTypes";
-import type { BackfillNeed, MealProgress } from "./postblastMatch";
+import type { PostblastData, ProductionPlanRow, ShortageEntry } from "./gsheetTypes";
+import type { BackfillNeed, MealProgress, WoMatchedStatus } from "./postblastMatch";
 import type { ProductionPlan } from "../../core/types";
+import { describeMealEtaReasoning, describeWoEtaReasoning } from "./productionEta";
+import { checkPlanReadiness, describePlanReadiness } from "./productionPlanReadiness";
+import { correlateShortages, describeShortageImpact } from "./shortageAlerts";
 
 export type AlertSeverity = "critical" | "warning" | "info" | "success";
 export type AlertCategory = "pace" | "gap" | "anomaly" | "equipment" | "recommendation" | "summary";
@@ -261,7 +264,13 @@ function shortName(name: string, words = 3): string {
   return name.split(/[\s\-]+/).slice(0, words).join(" ");
 }
 
-function generateRecommendations(meals: MealProgress[], backfill: BackfillNeed[]): string[] {
+function generateRecommendations(
+  meals: MealProgress[],
+  backfill: BackfillNeed[],
+  matched: WoMatchedStatus[],
+  planRows: ProductionPlanRow[],
+  shortages: ShortageEntry[]
+): string[] {
   const recs: string[] = [];
 
   // Kritisch → sofort, mit fehlender Stückzahl je Sub-Rezept
@@ -272,11 +281,27 @@ function generateRecommendations(meals: MealProgress[], backfill: BackfillNeed[]
     recs.push(`Sofort melden: ${names}${more}`);
   }
 
-  // Fast fertige Meals zuerst abschließen
+  // Fast fertige Meals zuerst abschließen — jede "bald fertig"-Aussage bekommt
+  // sofort mit dazu, WANN (Uhrzeit/Prognose) und WARUM (Tempo-Quelle,
+  // limitierende WO, RTI-Holding-Puffer) die KI das annimmt, siehe
+  // describeMealEtaReasoning in productionEta.ts.
   const almostDone = meals.filter(m => m.progressPct >= 80 && m.completedWOs < m.totalWOs);
   if (almostDone.length > 0) {
-    recs.push(`Fast fertig: ${almostDone.slice(0, 3).map(m => `${m.recipeCode} (${m.totalWOs - m.completedWOs} WOs offen)`).join(", ")}`);
+    almostDone.slice(0, 3).forEach(m => recs.push(`Fast fertig: ${describeMealEtaReasoning(m, matched)}`));
+    if (almostDone.length > 3) recs.push(`+${almostDone.length - 3} weitere Meals fast fertig`);
   }
+
+  // Einzelne Sub-Meals, die selbst gleich fertig sind, auch wenn ihr Meal
+  // insgesamt noch NICHT "fast fertig" ist (z.B. eine schnelle Zubereitung in
+  // einem sonst noch langsamen Meal) — eigenes Signal, sonst geht das im
+  // Meal-Gesamtfortschritt unter. Meals, die oben schon als "Fast fertig"
+  // gelistet sind, werden hier übersprungen (deren limitierende WO steht
+  // schon in der Begründung).
+  const almostDoneMealCodes = new Set(almostDone.map(m => m.recipeCode));
+  const almostDoneWos = matched
+    .filter(w => w.hasPlan && w.plannedKg > 0 && !w.isComplete && w.progressPct >= 80 && !almostDoneMealCodes.has(w.recipeCode))
+    .sort((a, b) => b.progressPct - a.progressPct);
+  almostDoneWos.slice(0, 2).forEach(w => recs.push(`Sub-Meal fast fertig: ${describeWoEtaReasoning(w, matched)}`));
 
   // Gleiche Sub-Rezepte fehlen in mehreren Meals — nur Anzahl, Details im Bündelungs-Block
   const subCounts = new Map<string, number>();
@@ -285,6 +310,27 @@ function generateRecommendations(meals: MealProgress[], backfill: BackfillNeed[]
   if (bundleCount > 0) {
     recs.push(`${bundleCount} Sub-Rezept${bundleCount > 1 ? "e" : ""} fehlen in mehreren Meals — zusammen als einen Backfill anlegen (↓ Details)`);
   }
+
+  // Plan-Check gegen das F_VE-Production-Plan-Sheet (Ready/Min-Needs je Do/Fr/Sa,
+  // siehe productionPlanReadiness.ts) — nur für Meals, wo unsere Live-Schätzung
+  // spürbar unter dem Sheet-Ziel liegt, sonst wird die Liste zu lang.
+  const planByCode = new Map(planRows.map(r => [r.code, r]));
+  for (const meal of meals) {
+    const row = planByCode.get(meal.recipeCode);
+    if (!row) continue;
+    const check = checkPlanReadiness(row, meal);
+    if (!check) continue;
+    if (check.readyTargetPortions - check.estimatedProducedPortions > check.readyTargetPortions * 0.1) {
+      recs.push(`Plan-Check: ${describePlanReadiness(check)}`);
+    }
+  }
+
+  // Rohstoff-Engpässe aus dem Shorts-Tracker-Sheet — ganz am Anfang der
+  // Produktion eingetragen, bevor überhaupt gekocht wird (siehe
+  // shortageAlerts.ts). Neue, noch nicht triagierte Einträge zuerst.
+  const openShortages = correlateShortages(shortages, matched);
+  openShortages.slice(0, 3).forEach(impact => recs.push(describeShortageImpact(impact)));
+  if (openShortages.length > 3) recs.push(`+${openShortages.length - 3} weitere offene Shortage-Meldungen`);
 
   return recs;
 }
@@ -345,8 +391,11 @@ export function analyzeProduction(
   postblast: PostblastData | null,
   meals: MealProgress[],
   backfill: BackfillNeed[],
+  matched: WoMatchedStatus[],
   productionPlan: ProductionPlan | undefined,
-  shiftEndHours = 8
+  shiftEndHours = 8,
+  planRows: ProductionPlanRow[] = [],
+  shortages: ShortageEntry[] = []
 ): ProductionIntelligence {
   if (!postblast) return { alerts: [], shiftSummary: null, recommendations: [], lastAnalysis: Date.now() };
 
@@ -371,7 +420,7 @@ export function analyzeProduction(
   const severityOrder: Record<AlertSeverity, number> = { critical: 0, warning: 1, info: 2, success: 3 };
   dedupedAlerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
-  const recommendations = generateRecommendations(meals, backfill);
+  const recommendations = generateRecommendations(meals, backfill, matched, planRows, shortages);
   const shiftSummary = computeShiftSummary(postblast, meals, shiftEndHours);
 
   return { alerts: dedupedAlerts, shiftSummary, recommendations, lastAnalysis: Date.now() };

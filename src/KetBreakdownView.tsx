@@ -22,6 +22,7 @@ import { loadInstructionsFromFirestore, saveInstructionsBatchToFirestore } from 
 import { computeRunAssignments, shiftLabel } from "./features/ket-plan/ketRunLogic";
 import { KetEquipmentPanel } from "./features/ket-plan/KetEquipmentPanel";
 import { KetShopfloorDashboard } from "./features/ket-plan/KetShopfloorDashboard";
+import { KetFrischelistePanel } from "./features/ket-plan/KetFrischelistePanel";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS & PATTERNS
@@ -258,7 +259,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const [showEquip, setShowEquip] = useState(false);
   const [showInstructionTools, setShowInstructionTools] = useState(false);
   const [woSearch, setWoSearch] = useState("");
-  const [mainViewMode, setMainViewMode] = useState<"detail" | "list" | "equipment" | "shopfloor">("detail");
+  const [mainViewMode, setMainViewMode] = useState<"detail" | "list" | "equipment" | "shopfloor" | "frischeliste">("detail");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [woSortMode, setWoSortMode] = useState<WoSortMode>("date");
@@ -1452,6 +1453,13 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             >
               Shopfloor
             </button>
+            <button
+              type="button"
+              onClick={() => setMainViewMode("frischeliste")}
+              className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "frischeliste" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
+            >
+              Frischeliste
+            </button>
           </div>
         </div>
 
@@ -1472,6 +1480,12 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               progress={shopfloorProgress}
               onToggleDone={setShopfloorDone}
               syncError={shopfloorSyncError}
+            />
+          ) : mainViewMode === "frischeliste" ? (
+            <KetFrischelistePanel
+              rows={weekFilteredRows}
+              calcMap={calcMap}
+              weekLabel={liveWeek}
             />
           ) : mainViewMode === "list" ? (
             <KetWoOverview
