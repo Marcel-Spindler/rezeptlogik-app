@@ -1,6 +1,6 @@
 // GSheet Monitor – React Hooks für Live-Sheet-Daten.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EtData, GSheetChange, GSheetConfig, LinePlaitingData, PostblastData, PreblastData, ProductionPlanData, RtiData } from "./gsheetTypes";
+import type { EtData, ForecastData, GSheetChange, GSheetConfig, LinePlaitingData, PostblastData, PreblastData, ProductionPlanData, ProductionPlanWeekOption, RecipeProfilData, RtiData } from "./gsheetTypes";
 import { GSHEET_REGISTRY } from "./gsheetRegistry";
 import { createPoller } from "./gsheetPoller";
 import { parseRti } from "./parsers/parseRti";
@@ -9,6 +9,8 @@ import { parsePreblast } from "./parsers/parsePreblast";
 import { parseEt } from "./parsers/parseEt";
 import { parseLinePlaiting } from "./parsers/parseLinePlaiting";
 import { parseProductionPlan } from "./parsers/parseProductionPlan";
+import { parseForecast } from "./parsers/parseForecast";
+import { parseRecipeProfil } from "./parsers/parseRecipeProfil";
 
 type ParserFn = (rows: string[][]) => unknown;
 
@@ -184,10 +186,13 @@ export function useLinePlaitingMonitor(gid: string): GSheetMonitorState<LinePlai
 }
 
 // ─── Production Plan: eigenes Sheet, Tab (gid) wechselt jede KW ────────────
-// Wie LinePlaiting (siehe oben) kann die Config nicht statisch in
-// GSHEET_REGISTRY stehen — Marcel trägt den neuen Tab-Link/gid jede KW im
-// Vorstellungsplan-View ein. Startwert = Tab "W36 - Plating Plan [WIP]"
-// (2026-08-24, aktuelle HF-Woche zum Bauzeitpunkt).
+// Frueher trug Marcel den neuen Tab-Link/gid jede KW manuell im
+// Vorstellungsplan-View ein (localStorage-Persistenz). Jetzt liest der lokale
+// WMS-Server (scripts/wms-local-server.ts, Endpunkt /production-plan-weeks)
+// live alle Tabs aus, die dem Muster "W{NN} - Plating Plan [WIP]" folgen, und
+// useProductionPlanSelection waehlt automatisch "aktuelle KW + 1" -- neue
+// Wochen-Tabs, die Marcel im Sheet anlegt, tauchen beim naechsten Poll von
+// selbst auf, kein manuelles Verlinken mehr noetig.
 //
 // Anders als die anderen GSheet-Quellen läuft dieser Poller NICHT über den
 // anonymen gviz/tq-CSV-Export (fetchSheetCsv/createPoller): dieses Sheet lässt
@@ -198,25 +203,103 @@ export function useLinePlaitingMonitor(gid: string): GSheetMonitorState<LinePlai
 // Hook den lokalen WMS-Server (scripts/wms-local-server.ts, Endpunkt
 // /production-plan) auf, der per Service Account über die echte Sheets API
 // liest — setzt voraus, dass `npm run start`/der lokale Dev-Server läuft.
-const PRODUCTIONPLAN_GID_STORAGE_KEY = "productionplan_gid_v1";
-const PRODUCTIONPLAN_DEFAULT_GID = "321735032";
 const PRODUCTIONPLAN_POLL_MS = 60_000;
+const PRODUCTIONPLAN_WEEKS_POLL_MS = 60_000;
 
-export function useProductionPlanGid(): readonly [string, (input: string) => boolean] {
-  const [gid, setGidState] = useState(() => {
-    try { return localStorage.getItem(PRODUCTIONPLAN_GID_STORAGE_KEY) || PRODUCTIONPLAN_DEFAULT_GID; }
-    catch { return PRODUCTIONPLAN_DEFAULT_GID; }
-  });
+export interface ProductionPlanWeeksState {
+  weeks: ProductionPlanWeekOption[];
+  currentHfWeek: string | null;
+  sheetId: string | null;
+  loading: boolean;
+  error: string | null;
+  forceRefresh: () => Promise<void>;
+}
 
-  const setGid = useCallback((input: string): boolean => {
-    const extracted = extractGidFromInput(input);
-    if (!extracted) return false;
-    setGidState(extracted);
-    try { localStorage.setItem(PRODUCTIONPLAN_GID_STORAGE_KEY, extracted); } catch { /* quota */ }
-    return true;
+export function useProductionPlanWeeks(): ProductionPlanWeeksState {
+  const [weeks, setWeeks] = useState<ProductionPlanWeekOption[]>([]);
+  const [currentHfWeekState, setCurrentHfWeekState] = useState<string | null>(null);
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchOnce = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch("/api/production-plan-weeks", { signal, cache: "no-store" });
+    const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; weeks?: ProductionPlanWeekOption[]; currentHfWeek?: string; sheetId?: string } | null;
+    if (!res.ok || !body?.ok) throw new Error(body?.error || `Production-Plan-Wochenliste antwortete mit ${res.status}`);
+    setWeeks(body.weeks ?? []);
+    setCurrentHfWeekState(body.currentHfWeek ?? null);
+    setSheetId(body.sheetId ?? null);
+    setError(null);
   }, []);
 
-  return [gid, setGid] as const;
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function poll() {
+      try { await fetchOnce(controller.signal); }
+      catch (err) { if ((err as Error).name !== "AbortError") setError((err as Error).message); }
+      finally { setLoading(false); }
+    }
+
+    void poll();
+    const timer = setInterval(poll, PRODUCTIONPLAN_WEEKS_POLL_MS);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, [fetchOnce]);
+
+  const forceRefresh = useCallback(async () => {
+    try { await fetchOnce(); } catch (err) { setError((err as Error).message); }
+  }, [fetchOnce]);
+
+  return { weeks, currentHfWeek: currentHfWeekState, sheetId, loading, error, forceRefresh };
+}
+
+export interface ProductionPlanSelection {
+  selected: ProductionPlanWeekOption | null;
+  autoOption: ProductionPlanWeekOption | null;
+  isAuto: boolean;
+  select: (week: number) => void;
+  resetToAuto: () => void;
+}
+
+// Waehlt automatisch "aktuelle KW + 1" aus der Wochenliste. select() erlaubt
+// spontanes Zurueckblaettern (z.B. um KW36 selbst noch mal zu pruefen),
+// resetToAuto() kehrt zur automatischen Vorauswahl zurueck. Die manuelle Wahl
+// wird bewusst NICHT persistiert (kein localStorage) -- beim naechsten
+// Seitenaufruf/naechste Woche greift wieder automatisch "naechste KW".
+export function useProductionPlanSelection(weeks: ProductionPlanWeekOption[], currentHfWeekLabel: string | null): ProductionPlanSelection {
+  const [manualWeek, setManualWeek] = useState<number | null>(null);
+
+  const targetWeekNum = useMemo(() => {
+    const m = currentHfWeekLabel ? /W(\d{2})$/.exec(currentHfWeekLabel) : null;
+    return m ? Number(m[1]) + 1 : null;
+  }, [currentHfWeekLabel]);
+
+  const autoOption = useMemo(() => {
+    if (!weeks.length) return null;
+    if (targetWeekNum != null) {
+      const exact = weeks.find(w => w.week === targetWeekNum);
+      if (exact) return exact;
+    }
+    // Naechste-Woche-Tab noch nicht angelegt -> die zeitlich naechstgelegene
+    // verfuegbare Woche (Liste ist aufsteigend sortiert, siehe Server).
+    return weeks[0];
+  }, [weeks, targetWeekNum]);
+
+  const selected = useMemo(() => {
+    if (manualWeek != null) {
+      const found = weeks.find(w => w.week === manualWeek);
+      if (found) return found;
+    }
+    return autoOption;
+  }, [weeks, manualWeek, autoOption]);
+
+  return {
+    selected,
+    autoOption,
+    isAuto: manualWeek == null,
+    select: (week: number) => setManualWeek(week),
+    resetToAuto: () => setManualWeek(null),
+  };
 }
 
 export function useProductionPlanMonitor(gid: string): GSheetMonitorState<ProductionPlanData> {
@@ -254,6 +337,97 @@ export function useProductionPlanMonitor(gid: string): GSheetMonitorState<Produc
       setIsPolling(false);
     };
   }, [gid, fetchOnce]);
+
+  const forceRefresh = useCallback(async () => {
+    try { await fetchOnce(); }
+    catch (err) { setError((err as Error).message); }
+  }, [fetchOnce]);
+
+  return { data, lastUpdate, changes: [], isPolling, error, forceRefresh };
+}
+
+// ─── Forecast & Recipe Profil: Live-Vergleich für den Production Plan ─────
+// Siehe productionPlanLiveCheck.ts -- beide laufen unabhängig vom Production-
+// Plan-Poller oben, damit ein Fehlschlag hier nie die Haupttabelle blockiert.
+const FORECAST_POLL_MS = 60_000;
+
+export function useForecastMonitor(week: string): GSheetMonitorState<ForecastData> {
+  const [data, setData] = useState<ForecastData | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchOnce = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch(`/api/forecast?week=${encodeURIComponent(week)}`, { signal, cache: "no-store" });
+    const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; rows?: string[][] } | null;
+    if (!res.ok || !body?.ok) throw new Error(body?.error || `Forecast-Server antwortete mit ${res.status}`);
+    setData(parseForecast(body.rows ?? [], week));
+    setLastUpdate(Date.now());
+    setError(null);
+  }, [week]);
+
+  useEffect(() => {
+    if (!week) return;
+    const controller = new AbortController();
+    setIsPolling(true);
+
+    async function poll() {
+      try { await fetchOnce(controller.signal); }
+      catch (err) { if ((err as Error).name !== "AbortError") setError((err as Error).message); }
+    }
+
+    void poll();
+    const timer = setInterval(poll, FORECAST_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      setIsPolling(false);
+    };
+  }, [week, fetchOnce]);
+
+  const forceRefresh = useCallback(async () => {
+    try { await fetchOnce(); }
+    catch (err) { setError((err as Error).message); }
+  }, [fetchOnce]);
+
+  return { data, lastUpdate, changes: [], isPolling, error, forceRefresh };
+}
+
+// Recipe Profil ist global (nicht wochenweise) und aendert sich selten -- laengeres Poll-Intervall.
+const RECIPE_PROFIL_POLL_MS = 300_000;
+
+export function useRecipeProfilMonitor(): GSheetMonitorState<RecipeProfilData> {
+  const [data, setData] = useState<RecipeProfilData | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchOnce = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch(`/api/recipe-profil`, { signal, cache: "no-store" });
+    const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; rows?: string[][] } | null;
+    if (!res.ok || !body?.ok) throw new Error(body?.error || `Recipe-Profil-Server antwortete mit ${res.status}`);
+    setData(parseRecipeProfil(body.rows ?? []));
+    setLastUpdate(Date.now());
+    setError(null);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setIsPolling(true);
+
+    async function poll() {
+      try { await fetchOnce(controller.signal); }
+      catch (err) { if ((err as Error).name !== "AbortError") setError((err as Error).message); }
+    }
+
+    void poll();
+    const timer = setInterval(poll, RECIPE_PROFIL_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      setIsPolling(false);
+    };
+  }, [fetchOnce]);
 
   const forceRefresh = useCallback(async () => {
     try { await fetchOnce(); }

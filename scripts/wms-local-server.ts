@@ -53,6 +53,45 @@ async function getSheetsClient() {
   return sheetsClient;
 }
 
+// Alle Tabs im Production-Plan-Sheet, die dem Muster "W{NN} - Plating Plan
+// [WIP]" folgen -- Marcel legt jede Woche einen neuen Tab an (Kopie des
+// Vorwochen-Tabs), die gid steht nirgends hart hinterlegt. Aeltere Tabs (vor
+// W33) folgen uneinheitlichen Namen ("[Updated] W29 - Plan", "adapted W30 -
+// Plating Plan [WIP]", Duplikate) und werden bewusst NICHT erkannt -- fuer
+// die Vorstellung der kommenden Woche irrelevant, siehe gsheetTypes.ts.
+const PRODUCTION_PLAN_TAB_PATTERN = /^W(\d{1,2})\s*-\s*Plating Plan\s*\[WIP\]$/i;
+
+interface ProductionPlanWeekTab {
+  week: number;
+  gid: string;
+  title: string;
+}
+
+async function fetchProductionPlanWeekTabs(): Promise<ProductionPlanWeekTab[]> {
+  const client = await getSheetsClient();
+  const meta = await client.spreadsheets.get({
+    spreadsheetId: PRODUCTION_PLAN_SHEET_ID,
+    fields: "sheets(properties(title,sheetId))",
+  });
+  const tabs: ProductionPlanWeekTab[] = [];
+  for (const sheet of meta.data.sheets ?? []) {
+    const title = (sheet.properties?.title ?? "").trim();
+    const match = PRODUCTION_PLAN_TAB_PATTERN.exec(title);
+    if (!match) continue;
+    tabs.push({ week: Number(match[1]), gid: String(sheet.properties?.sheetId ?? ""), title });
+  }
+
+  // "ab jetzt aufwaerts": Wochenzahlen allein tragen kein Jahr -- direkt um
+  // den Jahreswechsel herum koennte z.B. "W01" (naechstes Jahr) numerisch
+  // kleiner als die laufende KW49 wirken. Grobe Absicherung: bei einer
+  // laufenden KW > 45 zaehlen auch kleine Wochenzahlen (<=6) als "zukuenftig".
+  const currentWeekNum = Number(/W(\d{2})$/.exec(currentHfWeek())?.[1] ?? "0");
+  const wrapsToNextYear = currentWeekNum > 45;
+  return tabs
+    .filter(t => t.week >= currentWeekNum || (wrapsToNextYear && t.week <= 6))
+    .sort((a, b) => a.week - b.week);
+}
+
 async function fetchProductionPlanRows(gid: string): Promise<string[][]> {
   const client = await getSheetsClient();
   const meta = await client.spreadsheets.get({
@@ -65,6 +104,94 @@ async function fetchProductionPlanRows(gid: string): Promise<string[][]> {
   const valuesRes = await client.spreadsheets.values.get({
     spreadsheetId: PRODUCTION_PLAN_SHEET_ID,
     range: `'${title}'!A1:AK500`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  return (valuesRes.data.values ?? []) as string[][];
+}
+
+// ─── Forecast & Recipe Profil (Live-Vergleich, siehe productionPlanLiveCheck.ts) ──
+// Zwei weitere Tabs im selben Sheet, aus denen der Production-Plan-Tab selbst
+// per VLOOKUP/FILTER gespeist wird -- hier NICHT als Ersatzquelle geholt,
+// sondern damit der Client abgleichen kann, ob der im Production-Plan-Tab
+// eingefrorene Wert noch zu Forecast/Recipe Profil passt (z.B. neue Zeile,
+// VLOOKUP-Formeln noch nicht heruntergezogen).
+async function fetchForecastRows(hfWeek: string): Promise<string[][]> {
+  const client = await getSheetsClient();
+  const valuesRes = await client.spreadsheets.values.get({
+    spreadsheetId: PRODUCTION_PLAN_SHEET_ID,
+    range: `'Forecast'!A1:V5000`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  const rows = (valuesRes.data.values ?? []) as string[][];
+  // Serverseitig auf die gewuenschte HF-Woche filtern (Spalte A) -- Forecast
+  // waechst ueber viele Wochen hinweg, das komplette Tab clientseitig zu
+  // parsen waere unnoetig langsam.
+  return rows.filter(r => (r[0] ?? "").trim() === hfWeek);
+}
+
+async function fetchRecipeProfilRows(): Promise<string[][]> {
+  const client = await getSheetsClient();
+  const valuesRes = await client.spreadsheets.values.get({
+    spreadsheetId: PRODUCTION_PLAN_SHEET_ID,
+    range: `'Recipe Profil'!A1:M5000`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  return (valuesRes.data.values ?? []) as string[][];
+}
+
+// ─── Transparency Plan (Google Sheets, Service Account) ────────────────────
+// Separates Sheet ("F_VE Transparency Plan"), unabhaengig vom Production-Plan-
+// Sheet oben: Live-Wiegungen (Raw/Pre-/Post-Blast) je Work Order/Subrezept,
+// Status durch die Stationen (Staging -> Kitchen -> Post), Bedarf/RTI-Bestand,
+// plus Logistik-/Ausfuehrungs-Tabs. Ein generisches Tab-Registry + eine Route
+// statt eines Endpoints pro Tab, weil hier deutlich mehr Tabs relevant sind
+// als bei Production Plan/Forecast/Recipe Profil oben.
+const TRANSPARENCY_SHEET_ID = "1BEaL3ggpHGS5TbncUM5OLMUbVgRx-ADKOtRr_Sc8xXY";
+
+const TRANSPARENCY_TAB_REGISTRY: Record<string, { title: string; range: string }> = {
+  "planning-check": { title: "Planning Check", range: "A1:U120" },
+  "total-overview": { title: "Transperancy Total Overview", range: "A1:BF4200" },
+  "importrange-weights": { title: "Importrange Weights", range: "A1:R23000" },
+  rtem: { title: "RTEM", range: "A1:R1800" },
+  forecast: { title: "[Import] Forecast", range: "A1:X1200" },
+  "wms-wo": { title: "WMS WO", range: "A1:N1200" },
+  et: { title: "ET", range: "A1:O1200" },
+  "input-kitchen": { title: "Input Kitchen ", range: "A1:Z1200" },
+  ku: { title: "KU", range: "A1:AC250" },
+  "ku-week": { title: "KU Week", range: "A1:T120" },
+  "sleeving-output": { title: "🍱 Sleeving - Output", range: "A1:J150" },
+  "sleeving-requirements": { title: "🍱 Sleeving - Requirements", range: "A1:T150" },
+  "printing-output": { title: "🖨️ Printing - Output", range: "A1:H220" },
+  "printing-requirements": { title: "🖨️ Printing - Requirements", range: "A1:K260" },
+  "benl-outbound": { title: "🚚 BENL Outbound", range: "A1:Z100" },
+  "printing-overview": { title: "Printing Overview", range: "A1:Z1200" },
+  "plating-execution": { title: "Plating Excecution Tracking", range: "A1:U1200" },
+  "counting-plating-holding": { title: "Counting Plating Holding", range: "A1:H1200" },
+  "kitchen-kpis": { title: "Kitchen KPIs", range: "A1:Z1200" },
+  "issue-tracker": { title: "Issue Tracker", range: "A1:F1200" },
+  "eaches-conversion": { title: "Eaches Converstion", range: "A1:B1200" },
+  "manual-check": { title: "Manual Check", range: "A1:H120" },
+  "all-shortages": { title: "All shortages W24", range: "A1:F1200" },
+  "analysis-eli": { title: "Analysis Eli", range: "A1:BC1200" },
+  "stock-recount": { title: "Stock Re-Count", range: "A1:I120" },
+  sheet82: { title: "Sheet82", range: "A1:Z1200" },
+  sheet93: { title: "Sheet93", range: "A1:P1200" },
+  "sum-of-all-recipes": { title: "Sum of all recipes", range: "A1:I1200" },
+  "calculation-gewicht": { title: "Calculation Gewicht per Workorder ", range: "A1:G1200" },
+  "input-plating-sleeving": { title: "Input Plating/Sleeving", range: "A1:F1200" },
+  "post-blast-wms": { title: "Post Blast WMS", range: "A1:Z1200" },
+  "kitchen-wms": { title: "Kitchen WMS", range: "A1:Z1200" },
+  "blast-overview": { title: "Blast Overview", range: "A1:R1200" },
+  "all-recipes": { title: "All recipes", range: "A1:AI38300" },
+};
+
+async function fetchTransparencyTabRows(key: string): Promise<string[][]> {
+  const cfg = TRANSPARENCY_TAB_REGISTRY[key];
+  if (!cfg) throw new Error(`Unbekannter Transparency-Tab-Key: ${key}`);
+  const client = await getSheetsClient();
+  const valuesRes = await client.spreadsheets.values.get({
+    spreadsheetId: TRANSPARENCY_SHEET_ID,
+    range: `'${cfg.title.replace(/'/g, "''")}'!${cfg.range}`,
     valueRenderOption: "FORMATTED_VALUE",
   });
   return (valuesRes.data.values ?? []) as string[][];
@@ -1198,6 +1325,16 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   // ─── Production Plan (Google Sheets, Service Account) ────────────────────
+  if (url.pathname === "/production-plan-weeks" && req.method === "GET") {
+    try {
+      const weeks = await fetchProductionPlanWeekTabs();
+      sendJson(res, 200, { ok: true, weeks, currentHfWeek: currentHfWeek(), sheetId: PRODUCTION_PLAN_SHEET_ID, generatedAt: new Date().toISOString() });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   if (url.pathname === "/production-plan" && req.method === "GET") {
     const gid = url.searchParams.get("gid")?.trim() || "";
     if (!gid) { sendJson(res, 400, { ok: false, error: "gid fehlt" }); return; }
@@ -1212,16 +1349,50 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  if (url.pathname === "/forecast" && req.method === "GET") {
+    const week = url.searchParams.get("week")?.trim() || "";
+    if (!week) { sendJson(res, 400, { ok: false, error: "week fehlt" }); return; }
+    try {
+      const rows = await fetchForecastRows(week);
+      sendJson(res, 200, { ok: true, week, generatedAt: new Date().toISOString(), rows });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/recipe-profil" && req.method === "GET") {
+    try {
+      const rows = await fetchRecipeProfilRows();
+      sendJson(res, 200, { ok: true, generatedAt: new Date().toISOString(), rows });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  if (url.pathname === "/transparency-sheet" && req.method === "GET") {
+    const tab = url.searchParams.get("tab")?.trim() || "";
+    if (!tab) { sendJson(res, 400, { ok: false, error: "tab fehlt" }); return; }
+    try {
+      const rows = await fetchTransparencyTabRows(tab);
+      sendJson(res, 200, { ok: true, tab, generatedAt: new Date().toISOString(), rows });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   sendJson(res, 404, {
     ok: false,
     error: "query-not-configured",
-    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /redzone-plating-status, /production-plan",
+    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=...",
   });
 });
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Snowflake Local Server laeuft auf http://127.0.0.1:${PORT}`);
-  console.log("Endpoints: GET /health, GET /connect, GET /wms-plating?week=YYYY-Www&whId=VF&limit=25000, GET /wms-plating-history?week=YYYY-Www&whId=VF&limit=25000&lookbackDays=28, GET /wms-sleeving?week=YYYY-Www&whId=VF&limit=25000, GET /wms-inbound?week=YYYY-Www&whId=VF&limit=25000, GET /wms-staging?week=YYYY-Www&whId=VF&limit=25000, GET /wms-debox?week=YYYY-Www&whId=VF&limit=25000, GET /wms-postblast?week=YYYY-Www&whId=VF&limit=25000, GET /production-plan?gid=...");
+  console.log("Endpoints: GET /health, GET /connect, GET /wms-plating?week=YYYY-Www&whId=VF&limit=25000, GET /wms-plating-history?week=YYYY-Www&whId=VF&limit=25000&lookbackDays=28, GET /wms-sleeving?week=YYYY-Www&whId=VF&limit=25000, GET /wms-inbound?week=YYYY-Www&whId=VF&limit=25000, GET /wms-staging?week=YYYY-Www&whId=VF&limit=25000, GET /wms-debox?week=YYYY-Www&whId=VF&limit=25000, GET /wms-postblast?week=YYYY-Www&whId=VF&limit=25000, GET /production-plan?gid=..., GET /production-plan-weeks, GET /forecast?week=YYYY-Www..., GET /recipe-profil, GET /transparency-sheet?tab=planning-check|total-overview|importrange-weights|rtem|forecast|...");
 });
 
 server.on("error", (err) => {

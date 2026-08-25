@@ -9,6 +9,8 @@ import {
   collection,
   writeBatch,
   setDoc,
+  updateDoc,
+  deleteField,
   getDoc,
   getDocs,
   onSnapshot,
@@ -16,7 +18,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 
-export { doc, collection, writeBatch, setDoc, getDoc, getDocs, onSnapshot, addDoc, serverTimestamp };
+export { doc, collection, writeBatch, setDoc, updateDoc, deleteField, getDoc, getDocs, onSnapshot, addDoc, serverTimestamp };
 
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;

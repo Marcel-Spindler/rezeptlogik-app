@@ -1,7 +1,8 @@
 // Postblast Live — regelbasierte Chat-KI für Produktionsabfragen.
-import type { PostblastEntry } from "./gsheetTypes";
+import type { PostblastData, PostblastEntry } from "./gsheetTypes";
 import type { MealProgress, WoMatchedStatus, BackfillNeed } from "./postblastMatch";
 import type { ProductionIntelligence } from "./productionAgent";
+import { estimateMealEta, estimateWoEta } from "./productionEta";
 
 export interface ChatMessage {
   role: "user" | "agent";
@@ -18,6 +19,37 @@ export interface ChatContext {
   intelligence: ProductionIntelligence;
   matched: WoMatchedStatus[];
   todayEntries: PostblastEntry[];
+  postblast: PostblastData | null;
+}
+
+function findMealByCodeInQuery(q: string, meals: MealProgress[]): MealProgress | undefined {
+  const upper = q.toUpperCase();
+  return [...meals]
+    .sort((a, b) => b.recipeCode.length - a.recipeCode.length)
+    .find(m => upper.includes(m.recipeCode.toUpperCase()));
+}
+
+function describeMealEta(meal: MealProgress, ctx: ChatContext): string {
+  if (meal.completedWOs === meal.totalWOs) {
+    return `${meal.recipeCode} "${meal.recipeName}" ist bereits fertig — kann geplatet werden.`;
+  }
+  const eta = estimateMealEta(meal, ctx.postblast);
+  if (eta.etaHours == null) {
+    return `${meal.recipeCode} "${meal.recipeName}": noch ${eta.remainingKg.toFixed(0)} kg offen, aber zu wenig eigene Wiegungen heute für eine Prognose.`;
+  }
+  const clock = eta.etaTime!.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  return `${meal.recipeCode} "${meal.recipeName}": noch ${eta.remainingKg.toFixed(0)} kg offen, bei ${eta.paceKgPerHour.toFixed(0)} kg/h aktuell ca. ${clock} Uhr fertig (in ~${eta.etaHours.toFixed(1)} h).`;
+}
+
+function describeWoEta(wo: WoMatchedStatus): string {
+  if (wo.isComplete) return `WO ${wo.workOrder} "${wo.subRecipe}" ist bereits fertig.`;
+  if (!wo.hasPlan) return `WO ${wo.workOrder} "${wo.subRecipe}" hat kein bekanntes Soll — keine Prognose möglich.`;
+  const eta = estimateWoEta(wo);
+  if (eta.etaHours == null) {
+    return `WO ${wo.workOrder} "${wo.subRecipe}": noch ${eta.remainingKg.toFixed(0)} kg offen, aber zu wenig eigene Wiegungen heute für eine Prognose.`;
+  }
+  const clock = eta.etaTime!.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  return `WO ${wo.workOrder} "${wo.subRecipe}": noch ${eta.remainingKg.toFixed(0)} kg offen, bei ${eta.paceKgPerHour.toFixed(0)} kg/h ca. ${clock} Uhr fertig (in ~${eta.etaHours.toFixed(1)} h).`;
 }
 
 export function respondToChat(input: string, ctx: ChatContext): string {
@@ -27,6 +59,10 @@ export function respondToChat(input: string, ctx: ChatContext): string {
   if (q === "hilfe" || q === "help" || q === "?" || q === "befehle") {
     return [
       "Verfügbare Befehle:",
+      "'wann ist FV4063A fertig' — ETA für ein Meal",
+      "'wann können wir X plaiten' — Plating-ETA für ein Meal",
+      "'wann ist WO 35-209 fertig' — ETA für eine einzelne WO",
+      "'nächstes meal fertig' — welches Meal ist als nächstes durch",
       "'status' — Gesamtüberblick Schicht",
       "'was fehlt' — Backfill-Bedarf nach Meal",
       "'als nächstes' — Top-Prioritäten jetzt",
@@ -45,6 +81,34 @@ export function respondToChat(input: string, ctx: ChatContext): string {
       "'WO 35-209' — spezifische Work Order",
       "'meal FV0516A' — spezifisches Meal",
     ].join("\n");
+  }
+
+  // ETA-Fragen: "wann ist X fertig", "wann können wir X plaiten", "nächstes
+  // meal fertig" — VOR dem generischen "fertig"-Block geprüft, sonst würde
+  // "wann ist FV4063A fertig" dort als reine "zeig mir alle fertigen WOs"-
+  // Anfrage landen, weil "fertig" ebenfalls matcht.
+  const asksWhenReady = (q.includes("wann") || q.includes("nächste") || q.includes("naechste"))
+    && (q.includes("fertig") || q.includes("plait") || q.includes("platier") || q.includes("bereit"));
+  if (asksWhenReady) {
+    const woNumMatch = /(?:wo|work.?order)\s*[#:]?\s*([\d-]{2,})/i.exec(q);
+    if (woNumMatch) {
+      const woNum = woNumMatch[1].replace(/-+$/, "");
+      const wo = ctx.matched.find(m => m.workOrder.includes(woNum));
+      if (wo) return describeWoEta(wo);
+    }
+    const targetMeal = findMealByCodeInQuery(q, ctx.meals);
+    if (targetMeal) return describeMealEta(targetMeal, ctx);
+
+    // Kein konkretes Ziel genannt → welches offene Meal wird als nächstes fertig?
+    const withEta = ctx.meals
+      .filter(m => m.completedWOs < m.totalWOs && m.totalPlannedKg > 0)
+      .map(m => ({ meal: m, eta: estimateMealEta(m, ctx.postblast) }))
+      .filter((x): x is { meal: MealProgress; eta: ReturnType<typeof estimateMealEta> & { etaHours: number; etaTime: Date } } => x.eta.etaHours != null)
+      .sort((a, b) => a.eta.etaHours - b.eta.etaHours);
+    if (withEta.length === 0) return "Für die offenen Meals lässt sich aktuell keine Prognose berechnen — zu wenig eigene Wiegungen heute.";
+    const top = withEta[0];
+    const clock = top.eta.etaTime.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    return `Als nächstes fertig: ${top.meal.recipeCode} "${top.meal.recipeName}" — noch ${top.eta.remainingKg.toFixed(0)} kg, ca. ${clock} Uhr (in ~${top.eta.etaHours.toFixed(1)} h).`;
   }
 
   // Gesamtstatus / Überblick

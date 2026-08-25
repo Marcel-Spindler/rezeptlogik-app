@@ -23,6 +23,7 @@ test("all nav groups render via deep link and highlight themselves in the sideba
     ["allergen-plating", "Bots", "Allergen Plating"],
     ["postblast-live", "Monitoring", "Postblast Live"],
     ["backfills", "Monitoring", "Backfills"],
+    ["transparency-plan", "Monitoring", "Transparency Plan"],
     // Redzone Live is dev-only (needs the local WMS/Snowflake server) — valid to test
     // here since these specs always run against a local dev server.
     ["redzone-live", "Redzone Live"],

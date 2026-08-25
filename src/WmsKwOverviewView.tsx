@@ -134,7 +134,8 @@ function WmsServerErrorPanel({ errorMsg, onRetry }: { errorMsg: string; onRetry:
 }
 
 export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
-  const allWmsWeeks = useMemo(() => generateWmsWeeks(2026, 1), []);
+  const [allWmsWeeks, setAllWmsWeeks] = useState(() => generateWmsWeeks(2026, 1));
+  const [userManuallySelected, setUserManuallySelected] = useState(false);
 
   const [selectedWeek, setSelectedWeek] = useState<string>(() => allWmsWeeks[allWmsWeeks.length - 1] ?? "");
   const [allData,      setAllData]      = useState<AllData | null>(null);
@@ -158,6 +159,24 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   // als Submeal/Meal vorkommen. Default ON — liefert eine saubere 100%-Basis.
   const [weekScopeFilter, setWeekScopeFilter] = useState(true);
   const [plhDetail, setPlhDetail] = useState<PlhDetailPayload | null>(null);
+
+  // Auto-Reset: bei Tab-Focus Wochen-Liste aktualisieren und ggf. zur aktuellen KW springen
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState !== "visible") return;
+      const fresh = generateWmsWeeks(2026, 1);
+      setAllWmsWeeks(prev => {
+        if (prev.length === fresh.length && prev[prev.length - 1] === fresh[fresh.length - 1]) return prev;
+        return fresh;
+      });
+      if (!userManuallySelected) {
+        const currentWeek = fresh[fresh.length - 1] ?? "";
+        setSelectedWeek(prev => prev === currentWeek ? prev : currentWeek);
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [userManuallySelected]);
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const liveTickRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const selectedWeekRef = useRef(selectedWeek);
@@ -445,10 +464,21 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
           <select
             className="rounded bg-slate-800 border border-slate-600 px-2 py-1 text-xs font-mono text-slate-200"
             value={selectedWeek}
-            onChange={e => setSelectedWeek(e.target.value)}
+            onChange={e => { setSelectedWeek(e.target.value); setUserManuallySelected(true); }}
           >
             {allWmsWeeks.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
+
+          {selectedWeek !== allWmsWeeks[allWmsWeeks.length - 1] && (
+            <button
+              type="button"
+              className="rounded bg-amber-600 hover:bg-amber-500 text-white px-2 py-1 text-[11px] font-bold"
+              onClick={() => { setSelectedWeek(allWmsWeeks[allWmsWeeks.length - 1] ?? ""); setUserManuallySelected(false); }}
+              title="Zur aktuellen KW springen"
+            >
+              ↺ Heute
+            </button>
+          )}
 
           <button
             type="button"
@@ -498,6 +528,13 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
             </div>
           )}
         </div>
+
+        {selectedWeek !== allWmsWeeks[allWmsWeeks.length - 1] && (
+          <div className="mt-2 rounded bg-slate-700/60 border border-slate-500/50 px-2.5 py-1.5 text-[11px] text-slate-300 flex items-center gap-2">
+            <span>📅 Historische Ansicht: KW {selectedWeekNum} — MHD-Daten und Bestände entsprechen diesem Zeitraum, nicht dem aktuellen Stand.</span>
+            <button type="button" className="underline text-amber-300 hover:text-amber-200" onClick={() => { setSelectedWeek(allWmsWeeks[allWmsWeeks.length - 1] ?? ""); setUserManuallySelected(false); }}>Zur aktuellen KW</button>
+          </div>
+        )}
 
         {wmsWeekFallbackActive && (
           <div className="mt-2 rounded bg-amber-900/40 border border-amber-600/50 px-2.5 py-1.5 text-[11px] text-amber-200">

@@ -351,13 +351,22 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   const [selectedWeek, setSelectedWeek] = useState("");
   useEffect(() => {
     if (weekOptions.length === 0) return;
+    const hf = currentHfWeek();
+    const hfWeekNum = weekNumFromHfWeek(hf);
+    // RTI darf die Auswahl nur nach VORNE ziehen (Schicht läuft schon in einer
+    // Woche, die der Firestore-Plan noch nicht kennt), nie nach HINTEN — die
+    // KW-Zelle im RTI-Sheet wird von Hand gepflegt und bleibt oft tagelang auf
+    // der letzten Woche stehen, bis jemand daran denkt sie zu ändern. Ohne
+    // diese Sperre würde ein stehen gelassenes "KW 35" die App auch dann noch
+    // in KW35 starten lassen, wenn die reale Kalenderwoche längst KW36 ist.
+    const rtiIsStale = rtiWeekNum != null && hfWeekNum != null
+      && (((rtiWeekNum - hfWeekNum + 26) % 52 + 52) % 52) - 26 < 0;
     setSelectedWeek(prev => {
       if (userPickedWeekRef.current && prev && weekOptions.includes(prev)) return prev;
-      if (rtiWeekNum != null) {
+      if (rtiWeekNum != null && !rtiIsStale) {
         const rtiMatch = weekOptions.find(w => weekNumFromHfWeek(w) === rtiWeekNum);
         if (rtiMatch) return rtiMatch;
       }
-      const hf = currentHfWeek();
       if (weekOptions.includes(hf)) return hf;
       const planWeek = data.productionPlan?.week;
       if (planWeek && weekOptions.includes(planWeek)) return planWeek;
@@ -649,7 +658,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   }
 
   function buildCtx(): ChatContext {
-    return { meals, backfill, intelligence, matched, todayEntries };
+    return { meals, backfill, intelligence, matched, todayEntries, postblast: weekScopedPostblast };
   }
 
   function handleChat(e: FormEvent) {

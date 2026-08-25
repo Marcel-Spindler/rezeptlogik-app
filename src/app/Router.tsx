@@ -23,6 +23,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BlastChillerView } from "../features/blast-chiller/BlastChillerView";
 import { AllergenPlatingView } from "../features/allergen-plating/AllergenPlatingView";
 import { PostblastLiveView } from "../features/gsheet-monitor/PostblastLiveView";
+import { TransparencyPlanView } from "../features/gsheet-monitor/TransparencyPlanView";
 import { BackfillsView } from "../features/backfills/BackfillsView";
 import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
 import { RedzoneLiveView } from "../features/redzone-live/RedzoneLiveView";
@@ -113,6 +114,9 @@ function MainPane({ view }: { view: AppView }) {
 
     case "backfills":
       return <BackfillsView />;
+
+    case "transparency-plan":
+      return <TransparencyPlanView />;
 
     case "redzone-live":
       if (!import.meta.env.DEV) {

@@ -183,8 +183,13 @@ export function matchPostblastToWorkOrders(
 
   const meals: MealProgress[] = [];
   for (const [recipeCode, wos] of mealMap) {
-    const totalPlannedKg = wos.reduce((s, w) => s + w.plannedKg, 0);
-    const totalActualKg = wos.reduce((s, w) => s + w.actualKg, 0);
+    // Nur WOs mit echtem Soll (plannedKg > 0) fließen in den Meal-Fortschritt
+    // ein — sonst trägt eine WO ohne Soll ihre volle Ist-Menge zum Zähler bei,
+    // ohne je etwas zum Nenner beizutragen, und treibt den % künstlich über
+    // 100%, während andere WOs desselben Meals noch bei 0% stehen.
+    const plannedWos = wos.filter(w => w.plannedKg > 0);
+    const totalPlannedKg = plannedWos.reduce((s, w) => s + w.plannedKg, 0);
+    const totalActualKg = plannedWos.reduce((s, w) => s + w.actualKg, 0);
     meals.push({
       recipeCode,
       recipeName: wos[0].recipeName,

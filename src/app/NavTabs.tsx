@@ -23,7 +23,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
   { label: "Rundmail", views: ["rundmail"] },
   { label: "CSV Import", views: ["import"] },
   { label: "Bots", views: ["blast-chiller", "allergen-plating"] },
-  { label: "Monitoring", views: ["postblast-live", "backfills"] },
+  { label: "Monitoring", views: ["postblast-live", "backfills", "transparency-plan"] },
   // Redzone Live braucht den lokalen WMS-Server (Browser-SSO-Auth zu Snowflake) —
   // die deployte Cloud Function hat aktuell keinen gültigen Snowflake-Key und
   // keinen Cache-Fallback, deshalb online ausgeblendet, lokal aber sichtbar.
@@ -36,6 +36,7 @@ const VIEW_LABELS: Partial<Record<AppView, string>> = {
   "allergen-plating": "Allergen Plating",
   "postblast-live": "Postblast Live",
   "backfills": "Backfills",
+  "transparency-plan": "Transparency Plan",
 };
 
 /** Alle Views derselben Menügruppe wie `view` (nur `view` selbst, wenn sie allein steht). */

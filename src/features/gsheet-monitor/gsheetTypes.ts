@@ -277,3 +277,66 @@ export interface ProductionPlanData {
   utilization: ProductionPlanStationUtilization[];
   lastUpdated: number;
 }
+
+// Ein per Namensmuster ("W{NN} - Plating Plan [WIP]") live im Sheet gefundener
+// Wochen-Tab -- siehe /production-plan-weeks in scripts/wms-local-server.ts.
+// Nur Tabs ab der aktuell laufenden KW aufwaerts, aeltere Tabs im Sheet folgen
+// uneinheitlichen Namen (Duplikate, "[Updated] ...", kein "[WIP]"-Suffix) und
+// werden absichtlich nicht erkannt.
+export interface ProductionPlanWeekOption {
+  week: number;   // reine Wochenzahl aus dem Tab-Namen, z.B. 37 (kein Jahr im Tab-Namen enthalten)
+  gid: string;
+  title: string;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FORECAST & RECIPE PROFIL — zwei weitere Tabs im selben "F_VE Production
+// Plan"-Sheet, aus denen die Production-Plan-Zeilen selbst per VLOOKUP/FILTER
+// gespeist werden (siehe parseProductionPlan.ts-Kommentar). Der Production-
+// Plan-Tab liefert bereits die von Google Sheets fertig berechneten Werte --
+// diese beiden Quellen werden NICHT als Ersatz dafür geholt, sondern für den
+// unabhängigen Live-Vergleich (productionPlanLiveCheck.ts): weicht der im
+// Production-Plan-Tab eingefrorene Wert von dem ab, was Forecast/Recipe
+// Profil gerade jetzt sagen (typischer Fall: eine neue Zeile, deren VLOOKUP-
+// Formeln noch nicht heruntergezogen wurden), wird das sichtbar.
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface ForecastRow {
+  hfWeek: string;
+  code: string;
+  preference: string;
+  recipeName: string;
+  benl: number;
+  nordics: number;
+  de: number;
+  total: number;
+}
+
+export interface ForecastData {
+  week: string;
+  rows: ForecastRow[];
+  byCode: Map<string, ForecastRow>;
+  lastUpdated: number;
+}
+
+// "Recipe Profil"-Tab: eine Zeile pro Rezeptcode, global (nicht wochenweise).
+// complexityScore = Spalte "Complexity cx" (median-normiert, im Sheet selbst
+// live aus Gewichten B3:E3 berechnet) -- die rohe "Complexity raw" wird nicht
+// gebraucht, weil der Production-Plan-Tab per VLOOKUP nur die normierte holt.
+export interface RecipeProfilRow {
+  code: string;
+  recipeName: string;
+  activeCookMin: number | null;
+  cookStationCount: number | null;
+  subCount: number | null;
+  complexityScore: number | null;
+  stationsText: string; // Rohtext, z.B. "BLAST CHILLER, BRAISER, GRILL, ..." -- Basis für die Stationsflags (SEARCH-Vergleich im Sheet)
+  allergens: string;
+  passiveHoldMin: number | null;
+}
+
+export interface RecipeProfilData {
+  rows: RecipeProfilRow[];
+  byCode: Map<string, RecipeProfilRow>;
+  lastUpdated: number;
+}
