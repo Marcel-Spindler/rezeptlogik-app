@@ -3,6 +3,129 @@
 import type { KetRow, BatchCalc, IngCalc } from "./ketTypes";
 import { classifyDeboxDepartment, parseDateShift } from "./ketLogic";
 
+// ── Einkauf-Ansicht: Gesamtmengen je Zutat (kein Meal-Grouping) ─────────────
+
+export interface FrischeIngredientTotal {
+  name: string;
+  id: string;
+  totalKg: number;
+  woCount: number;
+}
+
+export interface FrischelisteEinkauf {
+  veggie: FrischeIngredientTotal[];
+  protein: FrischeIngredientTotal[];
+  totalVeggieKg: number;
+  totalProteinKg: number;
+}
+
+export function buildFrischelisteEinkauf(
+  ketRows: KetRow[],
+  calcMap: Map<string, BatchCalc>,
+  selectedWeekdays: number[],
+): FrischelisteEinkauf {
+  const selectedSet = new Set(selectedWeekdays);
+  type IngBuf = Map<string, { name: string; id: string; totalKg: number; wos: Set<string> }>;
+  const veggieBuf: IngBuf = new Map();
+  const proteinBuf: IngBuf = new Map();
+
+  for (const row of ketRows) {
+    const { date } = parseDateShift(row.dateNeeded);
+    if (!date) continue;
+    const weekday = parseWeekday(date);
+    if (!selectedSet.has(weekday)) continue;
+
+    const calc = calcMap.get(row.key);
+    if (!calc) continue;
+    const dept = classifyDeboxDepartment(calc);
+    if (!dept) continue;
+
+    const buf = dept === "protein" ? proteinBuf : veggieBuf;
+    const allIngs: IngCalc[] =
+      calc.components.length > 0
+        ? calc.components.flatMap((c) => c.ingredients)
+        : calc.ingredients;
+
+    for (const ing of allIngs) {
+      if (!isPhf(ing.category)) continue;
+      if (ing.totalKg <= 0) continue;
+      const ingKey = ing.name.trim().toLowerCase();
+      const existing = buf.get(ingKey);
+      if (existing) {
+        existing.totalKg += ing.totalKg;
+        existing.wos.add(row.woNumber);
+      } else {
+        buf.set(ingKey, { name: ing.name, id: ing.id, totalKg: ing.totalKg, wos: new Set([row.woNumber]) });
+      }
+    }
+  }
+
+  function toTotals(buf: IngBuf): FrischeIngredientTotal[] {
+    return [...buf.values()]
+      .map((v) => ({ name: v.name, id: v.id, totalKg: v.totalKg, woCount: v.wos.size }))
+      .sort((a, b) => b.totalKg - a.totalKg);
+  }
+
+  const veggie = toTotals(veggieBuf);
+  const protein = toTotals(proteinBuf);
+  return { veggie, protein, totalVeggieKg: veggie.reduce((s, i) => s + i.totalKg, 0), totalProteinKg: protein.reduce((s, i) => s + i.totalKg, 0) };
+}
+
+// ── Middle Kitchen – Spezial-Artikel (WOs ohne Komponenten, ganze KW) ────────
+
+export interface SpezialArtikelSummary {
+  veggie: FrischeIngredientTotal[];
+  protein: FrischeIngredientTotal[];
+  totalVeggieKg: number;
+  totalProteinKg: number;
+}
+
+export function buildSpezialArtikelWeek(
+  targetWeekRows: KetRow[],
+  calcMap: Map<string, BatchCalc>,
+): SpezialArtikelSummary {
+  type IngBuf = Map<string, { name: string; id: string; totalKg: number; wos: Set<string> }>;
+  const veggieBuf: IngBuf = new Map();
+  const proteinBuf: IngBuf = new Map();
+
+  for (const row of targetWeekRows) {
+    const calc = calcMap.get(row.key);
+    if (!calc) continue;
+    const dept = classifyDeboxDepartment(calc);
+    if (!dept) continue;
+
+    const buf = dept === "protein" ? proteinBuf : veggieBuf;
+    // Alle PHF-Zutaten aus dem WO – egal ob mit oder ohne Komponenten
+    const allIngs: IngCalc[] =
+      calc.components.length > 0
+        ? calc.components.flatMap((c) => c.ingredients)
+        : calc.ingredients;
+
+    for (const ing of allIngs) {
+      if (!isPhf(ing.category)) continue;
+      if (ing.totalKg <= 0) continue;
+      const ingKey = ing.name.trim().toLowerCase();
+      const existing = buf.get(ingKey);
+      if (existing) {
+        existing.totalKg += ing.totalKg;
+        existing.wos.add(row.woNumber);
+      } else {
+        buf.set(ingKey, { name: ing.name, id: ing.id, totalKg: ing.totalKg, wos: new Set([row.woNumber]) });
+      }
+    }
+  }
+
+  function toTotals(buf: IngBuf): FrischeIngredientTotal[] {
+    return [...buf.values()]
+      .map((v) => ({ name: v.name, id: v.id, totalKg: v.totalKg, woCount: v.wos.size }))
+      .sort((a, b) => b.totalKg - a.totalKg);
+  }
+
+  const veggie = toTotals(veggieBuf);
+  const protein = toTotals(proteinBuf);
+  return { veggie, protein, totalVeggieKg: veggie.reduce((s, i) => s + i.totalKg, 0), totalProteinKg: protein.reduce((s, i) => s + i.totalKg, 0) };
+}
+
 export interface FrischeItem {
   name: string;
   id: string;
@@ -11,11 +134,20 @@ export interface FrischeItem {
   woNumbers: string[];
 }
 
+export interface FrischeMealComponent {
+  componentName: string;
+  items: FrischeItem[];
+  totalKg: number;
+}
+
 export interface FrischeMealGroup {
   mealName: string;
   portions: number;
   woNumbers: string[];
+  // Zutaten direkt an der WO (nur wenn keine Komponenten vorhanden)
   items: FrischeItem[];
+  // Pro Sub-Rezept-Komponente (wenn WO zusammengesetzt ist)
+  components: FrischeMealComponent[];
   totalKg: number;
 }
 
@@ -41,7 +173,25 @@ function parseWeekday(date: string): number {
 }
 
 type IngBuf = Map<string, { name: string; id: string; totalKg: number; category: string; wos: Set<string> }>;
-type MealBuf = Map<string, { mealName: string; portions: number; wos: Set<string>; ings: IngBuf }>;
+type CompBuf = Map<string, { name: string; ings: IngBuf }>;
+type MealBuf = Map<string, { mealName: string; portions: number; wos: Set<string>; ings: IngBuf; compBuf: CompBuf }>;
+
+function accumulateIng(buf: IngBuf, ing: IngCalc, woNumber: string) {
+  const ingKey = ing.name.trim().toLowerCase();
+  const existing = buf.get(ingKey);
+  if (existing) {
+    existing.totalKg += ing.totalKg;
+    existing.wos.add(woNumber);
+  } else {
+    buf.set(ingKey, { name: ing.name, id: ing.id, totalKg: ing.totalKg, category: ing.category, wos: new Set([woNumber]) });
+  }
+}
+
+function ingBufToItems(buf: IngBuf): FrischeItem[] {
+  return [...buf.values()]
+    .map((v) => ({ name: v.name, id: v.id, totalKg: v.totalKg, category: v.category, woNumbers: [...v.wos].sort() }))
+    .sort((a, b) => b.totalKg - a.totalKg);
+}
 
 export function buildFrischeliste(
   ketRows: KetRow[],
@@ -76,37 +226,32 @@ export function buildFrischeliste(
     const buf = dept === "protein" ? proteinBuf : veggieBuf;
     const rawName = (row.recipeName || row.woNumber || "Unbekannt").trim();
     const portions = row.targetPortions ?? 0;
-    // Separate grouping for same recipe at different portion counts
     const mealKey = `${rawName.toLowerCase()}__${portions}`;
 
     if (!buf.has(mealKey)) {
-      buf.set(mealKey, { mealName: rawName, portions, wos: new Set(), ings: new Map() });
+      buf.set(mealKey, { mealName: rawName, portions, wos: new Set(), ings: new Map(), compBuf: new Map() });
     }
     const mealEntry = buf.get(mealKey)!;
     mealEntry.wos.add(row.woNumber);
 
-    const allIngs: IngCalc[] =
-      calc.components.length > 0
-        ? calc.components.flatMap((c) => c.ingredients)
-        : calc.ingredients;
-
-    for (const ing of allIngs) {
-      if (!isPhf(ing.category)) continue;
-      if (ing.totalKg <= 0) continue;
-
-      const ingKey = ing.name.trim().toLowerCase();
-      const existing = mealEntry.ings.get(ingKey);
-      if (existing) {
-        existing.totalKg += ing.totalKg;
-        existing.wos.add(row.woNumber);
-      } else {
-        mealEntry.ings.set(ingKey, {
-          name: ing.name,
-          id: ing.id,
-          totalKg: ing.totalKg,
-          category: ing.category,
-          wos: new Set([row.woNumber]),
-        });
+    if (calc.components.length > 0) {
+      // Zusammengesetztes WO: jede Komponente separat führen
+      for (const comp of calc.components) {
+        const compKey = comp.name.trim().toLowerCase();
+        if (!mealEntry.compBuf.has(compKey)) {
+          mealEntry.compBuf.set(compKey, { name: comp.name, ings: new Map() });
+        }
+        const compEntry = mealEntry.compBuf.get(compKey)!;
+        for (const ing of comp.ingredients) {
+          if (!isPhf(ing.category) || ing.totalKg <= 0) continue;
+          accumulateIng(compEntry.ings, ing, row.woNumber);
+        }
+      }
+    } else {
+      // Einfaches WO: Zutaten direkt
+      for (const ing of calc.ingredients) {
+        if (!isPhf(ing.category) || ing.totalKg <= 0) continue;
+        accumulateIng(mealEntry.ings, ing, row.woNumber);
       }
     }
   }
@@ -114,13 +259,21 @@ export function buildFrischeliste(
   function toMealGroups(buf: MealBuf): FrischeMealGroup[] {
     return [...buf.values()]
       .map((m) => {
-        const items = [...m.ings.values()]
-          .map((v) => ({ name: v.name, id: v.id, totalKg: v.totalKg, category: v.category, woNumbers: [...v.wos].sort() }))
+        const items = ingBufToItems(m.ings);
+        const components: FrischeMealComponent[] = [...m.compBuf.values()]
+          .map((cb) => {
+            const compItems = ingBufToItems(cb.ings);
+            return { componentName: cb.name, items: compItems, totalKg: compItems.reduce((s, i) => s + i.totalKg, 0) };
+          })
+          .filter((c) => c.items.length > 0)
           .sort((a, b) => b.totalKg - a.totalKg);
-        const totalKg = items.reduce((s, i) => s + i.totalKg, 0);
-        return { mealName: m.mealName, portions: m.portions, woNumbers: [...m.wos].sort(), items, totalKg };
+        const totalKg = components.length > 0
+          ? components.reduce((s, c) => s + c.totalKg, 0)
+          : items.reduce((s, i) => s + i.totalKg, 0);
+        if (totalKg <= 0) return null;
+        return { mealName: m.mealName, portions: m.portions, woNumbers: [...m.wos].sort(), items, components, totalKg };
       })
-      .filter((g) => g.items.length > 0)
+      .filter((g): g is FrischeMealGroup => g !== null)
       .sort((a, b) => b.totalKg - a.totalKg);
   }
 
@@ -144,6 +297,24 @@ function sortedByPtn(groups: FrischeMealGroup[]): FrischeMealGroup[] {
 
 // ── Export helpers ──────────────────────────────────────────────────────────
 
+function q(s: string) { return `"${s.replace(/"/g, '""')}"`; }
+
+function groupCsvRows(g: FrischeMealGroup, dept: string): string[] {
+  const rows: string[] = [];
+  if (g.components.length > 0) {
+    for (const comp of g.components) {
+      for (const item of comp.items) {
+        rows.push(`${dept},${g.portions},${q(g.mealName)},${q(comp.componentName)},${q(item.name)},${item.totalKg.toFixed(2)}`);
+      }
+    }
+  } else {
+    for (const item of g.items) {
+      rows.push(`${dept},${g.portions},${q(g.mealName)},,${q(item.name)},${item.totalKg.toFixed(2)}`);
+    }
+  }
+  return rows;
+}
+
 export function frischelisteToCsvString(
   liste: Frischeliste,
   weekLabel: string,
@@ -151,19 +322,10 @@ export function frischelisteToCsvString(
 ): string {
   const lines: string[] = [
     `# PHF-Frischeliste ${weekLabel} – ${dayLabel}`,
-    "Abteilung,PTN,Mahlzeit,Artikel,Menge (kg)",
+    "Abteilung,PTN,Mahlzeit,Komponente,Artikel,Menge (kg)",
   ];
-
-  function addGroup(groups: FrischeMealGroup[], dept: string) {
-    for (const g of groups) {
-      for (const item of g.items) {
-        lines.push(`${dept},${g.portions},"${g.mealName.replace(/"/g, '""')}","${item.name.replace(/"/g, '""')}",${item.totalKg.toFixed(2)}`);
-      }
-    }
-  }
-
-  addGroup(liste.protein, "Protein Debox");
-  addGroup(liste.veggie, "Veggie Debox");
+  for (const g of liste.protein) lines.push(...groupCsvRows(g, "Protein Debox"));
+  for (const g of liste.veggie) lines.push(...groupCsvRows(g, "Veggie Debox"));
   return lines.join("\n");
 }
 
@@ -174,19 +336,10 @@ export function frischelisteToCsvStringByPtn(
 ): string {
   const lines: string[] = [
     `# PHF-Frischeliste ${weekLabel} – ${dayLabel} – nach PTN`,
-    "Abteilung,PTN,Mahlzeit,Artikel,Menge (kg)",
+    "Abteilung,PTN,Mahlzeit,Komponente,Artikel,Menge (kg)",
   ];
-
-  function addGroup(groups: FrischeMealGroup[], dept: string) {
-    for (const g of sortedByPtn(groups)) {
-      for (const item of g.items) {
-        lines.push(`${dept},${g.portions},"${g.mealName.replace(/"/g, '""')}","${item.name.replace(/"/g, '""')}",${item.totalKg.toFixed(2)}`);
-      }
-    }
-  }
-
-  addGroup(liste.protein, "Protein Debox");
-  addGroup(liste.veggie, "Veggie Debox");
+  for (const g of sortedByPtn(liste.protein)) lines.push(...groupCsvRows(g, "Protein Debox"));
+  for (const g of sortedByPtn(liste.veggie)) lines.push(...groupCsvRows(g, "Veggie Debox"));
   return lines.join("\n");
 }
 
@@ -203,6 +356,32 @@ export function buildFrischelistePdfHtmlByPtn(
     { header: "#fff1f2", border: "#fecdd3", text: "#9f1239" },
     { header: "#f0fdfa", border: "#99f6e4", text: "#134e4a" },
   ];
+
+  function ingTableHtml(items: FrischeItem[], border: string): string {
+    return `<table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${border};border-top:none;">
+      <tbody>
+        ${items.map((item, j) => `
+          <tr style="background:${j % 2 === 0 ? "#fff" : "#f8fafc"};">
+            <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;">${item.name}</td>
+            <td style="text-align:right;padding:4px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;font-variant-numeric:tabular-nums;">${item.totalKg.toFixed(2)} kg</td>
+          </tr>`).join("")}
+      </tbody>
+    </table>`;
+  }
+
+  function mealBodyHtml(g: FrischeMealGroup, c: { header: string; border: string; text: string }): string {
+    if (g.components.length > 0) {
+      return g.components.map((comp) => `
+        <div style="margin-bottom:4px;">
+          <div style="background:#f1f5f9;border:1px solid ${c.border};border-bottom:none;padding:3px 8px;display:flex;justify-content:space-between;">
+            <span style="font-size:9px;font-weight:700;color:#475569;">${comp.componentName}</span>
+            <span style="font-size:9px;font-weight:600;color:#64748b;">${comp.totalKg.toFixed(1)} kg</span>
+          </div>
+          ${ingTableHtml(comp.items, c.border)}
+        </div>`).join("");
+    }
+    return ingTableHtml(g.items, c.border);
+  }
 
   function ptnSectionsHtml(groups: FrischeMealGroup[]): string {
     if (!groups.length) return `<p style="color:#94a3b8;font-size:11px;padding:8px 0;">Keine PHF-Frischware für diese Auswahl.</p>`;
@@ -224,15 +403,7 @@ export function buildFrischelistePdfHtmlByPtn(
             <span style="font-size:10px;font-weight:800;color:${c.text};">${g.mealName}</span>
             <span style="font-size:9px;font-weight:700;color:${c.text};opacity:.8;">${g.totalKg.toFixed(1)} kg</span>
           </div>
-          <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${c.border};border-top:none;">
-            <tbody>
-              ${g.items.map((item, j) => `
-                <tr style="background:${j % 2 === 0 ? "#fff" : "#f8fafc"};">
-                  <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;">${item.name}</td>
-                  <td style="text-align:right;padding:4px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;font-variant-numeric:tabular-nums;">${item.totalKg.toFixed(2)} kg</td>
-                </tr>`).join("")}
-            </tbody>
-          </table>
+          ${mealBodyHtml(g, c)}
         </div>`;
       }).join("");
       return `
@@ -307,21 +478,39 @@ export function buildFrischelistePdfHtml(
     if (!groups.length) return `<p style="color:#94a3b8;font-size:11px;padding:8px 0;">Keine PHF-Frischware für diese Auswahl.</p>`;
     return groups.map((g, i) => {
       const c = COLORS[i % COLORS.length];
+      const bodyHtml = g.components.length > 0
+        ? g.components.map((comp) => `
+          <div style="margin-bottom:4px;">
+            <div style="background:#f1f5f9;border:1px solid ${c.border};border-bottom:none;padding:3px 8px;display:flex;justify-content:space-between;">
+              <span style="font-size:9px;font-weight:700;color:#475569;">${comp.componentName}</span>
+              <span style="font-size:9px;color:#64748b;">${comp.totalKg.toFixed(1)} kg</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${c.border};border-top:none;">
+              <tbody>
+                ${comp.items.map((item, j) => `
+                  <tr style="background:${j % 2 === 0 ? "#fff" : "#f8fafc"};">
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;">${item.name}</td>
+                    <td style="text-align:right;padding:5px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;font-variant-numeric:tabular-nums;">${item.totalKg.toFixed(2)} kg</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>
+          </div>`).join("")
+        : `<table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${c.border};border-top:none;">
+            <tbody>
+              ${g.items.map((item, j) => `
+                <tr style="background:${j % 2 === 0 ? "#fff" : "#f8fafc"};">
+                  <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;">${item.name}</td>
+                  <td style="text-align:right;padding:5px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;font-variant-numeric:tabular-nums;">${item.totalKg.toFixed(2)} kg</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>`;
       return `
       <div style="margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;background:${c.header};border:1px solid ${c.border};border-bottom:none;border-radius:6px 6px 0 0;padding:5px 8px;">
           <span style="font-size:10px;font-weight:800;color:${c.text};">${g.mealName}</span>
           <span style="font-size:9px;font-weight:700;color:${c.text};opacity:.8;">${g.portions > 0 ? g.portions + " PTN · " : ""}${g.totalKg.toFixed(1)} kg</span>
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${c.border};border-top:none;border-radius:0 0 6px 6px;overflow:hidden;">
-          <tbody>
-            ${g.items.map((item, j) => `
-              <tr style="background:${j % 2 === 0 ? "#fff" : "#f8fafc"};">
-                <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;">${item.name}</td>
-                <td style="text-align:right;padding:5px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;font-variant-numeric:tabular-nums;">${item.totalKg.toFixed(2)} kg</td>
-              </tr>`).join("")}
-          </tbody>
-        </table>
+        ${bodyHtml}
       </div>`;
     }).join("");
   }

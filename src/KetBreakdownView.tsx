@@ -546,6 +546,12 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     return ketRows.filter((row) => weekPrefixFromWoNumber(row.woNumber) === liveWeekNum);
   }, [ketRows, weekFilterEnabled, liveWeekNum]);
 
+  // Folge-KW-Zeilen für Middle Kitchen Spezial-Artikel (componentlose Solo-WOs)
+  const nextWeekRows = useMemo(() => {
+    if (liveWeekNum == null) return [];
+    return ketRows.filter((row) => weekPrefixFromWoNumber(row.woNumber) === liveWeekNum + 1);
+  }, [ketRows, liveWeekNum]);
+
   // Run-Zuteilung ist eine SCHÄTZUNG (kumulierte Wochen-Portionen je Meal,
   // siehe ketRunLogic.ts) — nur berechnet, wenn showRuns aktiv ist. Bewusst auf
   // Basis von weekFilteredRows (nicht ketRows): Runs sind ein Innerhalb-der-
@@ -1684,6 +1690,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           ) : mainViewMode === "frischeliste" ? (
             <KetFrischelistePanel
               rows={weekFilteredRows}
+              nextWeekRows={nextWeekRows}
               calcMap={calcMap}
               weekLabel={liveWeek}
             />

@@ -24,6 +24,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
   { label: "What-If Rechner", views: ["whatif"] },
   { label: "Rundmail", views: ["rundmail"] },
   { label: "CSV Import", views: ["import"] },
+  { label: "Artikel / KW", views: ["artikel-woche"] },
   { label: "Bots", views: ["blast-chiller", "allergen-plating"] },
   { label: "Monitoring", views: ["postblast-live", "backfills", "transparency-plan"] },
   // Redzone Live braucht den lokalen WMS-Server (Browser-SSO-Auth zu Snowflake) —

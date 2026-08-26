@@ -7,10 +7,10 @@ import { useAppData } from "./useAppData";
 import { useRecipeSelection, type RecipeSelection } from "./useRecipeSelection";
 import type { DataBundle } from "../core/types";
 
-export type AppView = "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live" | "backfills" | "redzone-live" | "transparency-plan";
+export type AppView = "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live" | "backfills" | "redzone-live" | "transparency-plan" | "artikel-woche";
 export type AppSurface = "full" | "kitchen" | "rundmail" | "redzone" | "shopfloor";
 
-export const ALL_VIEWS: readonly AppView[] = ["recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating", "postblast-live", "backfills", "redzone-live", "transparency-plan"];
+export const ALL_VIEWS: readonly AppView[] = ["recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating", "postblast-live", "backfills", "redzone-live", "transparency-plan", "artikel-woche"];
 
 export interface AppState extends RecipeSelection {
   surface: AppSurface;

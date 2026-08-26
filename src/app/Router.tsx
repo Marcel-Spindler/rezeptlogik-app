@@ -27,6 +27,7 @@ import { TransparencyPlanView } from "../features/gsheet-monitor/TransparencyPla
 import { BackfillsView } from "../features/backfills/BackfillsView";
 import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
 import { RedzoneLiveView } from "../features/redzone-live/RedzoneLiveView";
+import { ArtikelWocheView } from "../features/artikel-woche/ArtikelWocheView";
 import { resolveRecipeByCode } from "../lib/helpers";
 
 function MainPane({ view }: { view: AppView }) {
@@ -128,6 +129,15 @@ function MainPane({ view }: { view: AppView }) {
         );
       }
       return <RedzoneLiveView />;
+
+    case "artikel-woche":
+      return (
+        <ArtikelWocheView
+          data={data}
+          selectedWeek={selectedWeek}
+          upliftPercent={upliftPercent}
+        />
+      );
   }
 }
 
