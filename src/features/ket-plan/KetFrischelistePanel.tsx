@@ -7,7 +7,9 @@ import type { KetRow, BatchCalc } from "./ketTypes";
 import {
   buildFrischeliste,
   frischelisteToCsvString,
+  frischelisteToCsvStringByPtn,
   buildFrischelistePdfHtml,
+  buildFrischelistePdfHtmlByPtn,
   type FrischeMealGroup,
   type Frischeliste,
 } from "./frischelisteLogic";
@@ -72,21 +74,25 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
     .map((d) => d.label)
     .join(", ") || "–";
 
-  function downloadCsv() {
-    const csv = frischelisteToCsvString(liste, weekLabel, dayLabel);
+  function downloadCsv(ptnMode = false) {
+    const csv = ptnMode
+      ? frischelisteToCsvStringByPtn(liste, weekLabel, dayLabel)
+      : frischelisteToCsvString(liste, weekLabel, dayLabel);
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${weekLabel}_PHF-Frischeliste.csv`;
+    a.download = ptnMode
+      ? `${weekLabel}_PHF-Frischeliste-PTN.csv`
+      : `${weekLabel}_PHF-Frischeliste.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function downloadExcel() {
+  function downloadExcel(ptnMode = false) {
     const wb = XLSX.utils.book_new();
 
-    function makeSheet(groups: FrischeMealGroup[], dept: string) {
+    function makeMealSheet(groups: FrischeMealGroup[], dept: string) {
       const sheetRows: (string | number)[][] = [
         [`PHF-Frischeliste ${weekLabel} – ${dept} – ${dayLabel}`],
         ["PTN", "Mahlzeit", "Artikel", "Menge (kg)", "WOs"],
@@ -102,27 +108,15 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
       return ws;
     }
 
-    XLSX.utils.book_append_sheet(wb, makeSheet(liste.protein, "Protein Debox"), "Protein Debox");
-    XLSX.utils.book_append_sheet(wb, makeSheet(liste.veggie, "Veggie Debox"), "Veggie Debox");
-    XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste.xlsx`);
-  }
-
-  // PTN-Export: gleiche Daten, aber nach Portionsanzahl gruppiert
-  function downloadExcelPtn() {
-    const wb = XLSX.utils.book_new();
-
-    function makeSheetByPtn(groups: FrischeMealGroup[], dept: string) {
-      // Sortierung: PTN aufsteigend, dann totalKg absteigend
+    function makePtnSheet(groups: FrischeMealGroup[], dept: string) {
       const sorted = [...groups].sort((a, b) => a.portions - b.portions || b.totalKg - a.totalKg);
       const sheetRows: (string | number)[][] = [
         [`PHF-Frischeliste ${weekLabel} – ${dept} – ${dayLabel} – nach PTN`],
         ["PTN", "Mahlzeit", "Artikel", "Menge (kg)", "WOs"],
       ];
-
       let lastPtn = -1;
       for (const g of sorted) {
         if (g.portions !== lastPtn) {
-          // PTN-Trennzeile
           sheetRows.push([`=== ${g.portions} Portionen ===`, "", "", "", ""]);
           lastPtn = g.portions;
         }
@@ -136,13 +130,21 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
       return ws;
     }
 
-    XLSX.utils.book_append_sheet(wb, makeSheetByPtn(liste.protein, "Protein Debox"), "Protein PTN");
-    XLSX.utils.book_append_sheet(wb, makeSheetByPtn(liste.veggie, "Veggie Debox"), "Veggie PTN");
-    XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste-PTN.xlsx`);
+    if (ptnMode) {
+      XLSX.utils.book_append_sheet(wb, makePtnSheet(liste.protein, "Protein Debox"), "Protein PTN");
+      XLSX.utils.book_append_sheet(wb, makePtnSheet(liste.veggie, "Veggie Debox"), "Veggie PTN");
+      XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste-PTN.xlsx`);
+    } else {
+      XLSX.utils.book_append_sheet(wb, makeMealSheet(liste.protein, "Protein Debox"), "Protein Debox");
+      XLSX.utils.book_append_sheet(wb, makeMealSheet(liste.veggie, "Veggie Debox"), "Veggie Debox");
+      XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste.xlsx`);
+    }
   }
 
-  function printPdf() {
-    const html = buildFrischelistePdfHtml(liste, weekLabel, dayLabel);
+  function printPdf(ptnMode = false) {
+    const html = ptnMode
+      ? buildFrischelistePdfHtmlByPtn(liste, weekLabel, dayLabel)
+      : buildFrischelistePdfHtml(liste, weekLabel, dayLabel);
     const w = window.open("", "_blank");
     if (!w) return;
     w.document.write(html);
@@ -188,40 +190,52 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
             </div>
           </div>
 
-          {/* Export-Buttons */}
-          <div className="flex flex-wrap gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={downloadCsv}
-              disabled={isEmpty}
-              className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700 transition-colors disabled:opacity-40"
-            >
-              CSV
-            </button>
-            <button
-              type="button"
-              onClick={downloadExcel}
-              disabled={isEmpty}
-              className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-40"
-            >
-              Excel
-            </button>
-            <button
-              type="button"
-              onClick={downloadExcelPtn}
-              disabled={isEmpty}
-              className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-40"
-            >
-              Excel PTN
-            </button>
-            <button
-              type="button"
-              onClick={printPdf}
-              disabled={isEmpty}
-              className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-40"
-            >
-              PDF / Drucken
-            </button>
+          {/* Export-Gruppen */}
+          <div className="flex flex-col gap-1.5 shrink-0">
+            {/* PHF nach Mahlzeit */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 w-12 shrink-0">Mahlzeit</span>
+              <button
+                type="button"
+                onClick={() => downloadCsv(false)}
+                disabled={isEmpty}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700 transition-colors disabled:opacity-40"
+              >CSV</button>
+              <button
+                type="button"
+                onClick={() => downloadExcel(false)}
+                disabled={isEmpty}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-40"
+              >Excel</button>
+              <button
+                type="button"
+                onClick={() => printPdf(false)}
+                disabled={isEmpty}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-40"
+              >PDF</button>
+            </div>
+            {/* PHF nach PTN */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 w-12 shrink-0">PTN</span>
+              <button
+                type="button"
+                onClick={() => downloadCsv(true)}
+                disabled={isEmpty}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-indigo-300 hover:text-indigo-700 transition-colors disabled:opacity-40"
+              >CSV</button>
+              <button
+                type="button"
+                onClick={() => downloadExcel(true)}
+                disabled={isEmpty}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-40"
+              >Excel</button>
+              <button
+                type="button"
+                onClick={() => printPdf(true)}
+                disabled={isEmpty}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-40"
+              >PDF</button>
+            </div>
           </div>
         </div>
       </div>

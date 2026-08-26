@@ -136,6 +136,12 @@ export function buildFrischeliste(
   };
 }
 
+// ── Shared helpers ──────────────────────────────────────────────────────────
+
+function sortedByPtn(groups: FrischeMealGroup[]): FrischeMealGroup[] {
+  return [...groups].sort((a, b) => a.portions - b.portions || b.totalKg - a.totalKg);
+}
+
 // ── Export helpers ──────────────────────────────────────────────────────────
 
 export function frischelisteToCsvString(
@@ -159,6 +165,128 @@ export function frischelisteToCsvString(
   addGroup(liste.protein, "Protein Debox");
   addGroup(liste.veggie, "Veggie Debox");
   return lines.join("\n");
+}
+
+export function frischelisteToCsvStringByPtn(
+  liste: Frischeliste,
+  weekLabel: string,
+  dayLabel: string,
+): string {
+  const lines: string[] = [
+    `# PHF-Frischeliste ${weekLabel} – ${dayLabel} – nach PTN`,
+    "Abteilung,PTN,Mahlzeit,Artikel,Menge (kg)",
+  ];
+
+  function addGroup(groups: FrischeMealGroup[], dept: string) {
+    for (const g of sortedByPtn(groups)) {
+      for (const item of g.items) {
+        lines.push(`${dept},${g.portions},"${g.mealName.replace(/"/g, '""')}","${item.name.replace(/"/g, '""')}",${item.totalKg.toFixed(2)}`);
+      }
+    }
+  }
+
+  addGroup(liste.protein, "Protein Debox");
+  addGroup(liste.veggie, "Veggie Debox");
+  return lines.join("\n");
+}
+
+export function buildFrischelistePdfHtmlByPtn(
+  liste: Frischeliste,
+  weekLabel: string,
+  dayLabel: string,
+): string {
+  const COLORS = [
+    { header: "#eff6ff", border: "#bfdbfe", text: "#1e40af" },
+    { header: "#f0fdf4", border: "#bbf7d0", text: "#166534" },
+    { header: "#fdf4ff", border: "#e9d5ff", text: "#6b21a8" },
+    { header: "#fffbeb", border: "#fde68a", text: "#92400e" },
+    { header: "#fff1f2", border: "#fecdd3", text: "#9f1239" },
+    { header: "#f0fdfa", border: "#99f6e4", text: "#134e4a" },
+  ];
+
+  function ptnSectionsHtml(groups: FrischeMealGroup[]): string {
+    if (!groups.length) return `<p style="color:#94a3b8;font-size:11px;padding:8px 0;">Keine PHF-Frischware für diese Auswahl.</p>`;
+    const sorted = sortedByPtn(groups);
+    const byPtn = new Map<number, FrischeMealGroup[]>();
+    for (const g of sorted) {
+      if (!byPtn.has(g.portions)) byPtn.set(g.portions, []);
+      byPtn.get(g.portions)!.push(g);
+    }
+    let colorIdx = 0;
+    return [...byPtn.entries()].map(([ptn, ptnGroups]) => {
+      const ptnTotal = ptnGroups.reduce((s, g) => s + g.totalKg, 0);
+      const mealsHtml = ptnGroups.map((g) => {
+        const c = COLORS[colorIdx % COLORS.length];
+        colorIdx++;
+        return `
+        <div style="margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;background:${c.header};border:1px solid ${c.border};border-bottom:none;border-radius:6px 6px 0 0;padding:4px 8px;">
+            <span style="font-size:10px;font-weight:800;color:${c.text};">${g.mealName}</span>
+            <span style="font-size:9px;font-weight:700;color:${c.text};opacity:.8;">${g.totalKg.toFixed(1)} kg</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${c.border};border-top:none;">
+            <tbody>
+              ${g.items.map((item, j) => `
+                <tr style="background:${j % 2 === 0 ? "#fff" : "#f8fafc"};">
+                  <td style="padding:4px 8px;border-bottom:1px solid #f1f5f9;">${item.name}</td>
+                  <td style="text-align:right;padding:4px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;font-variant-numeric:tabular-nums;">${item.totalKg.toFixed(2)} kg</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`;
+      }).join("");
+      return `
+      <div style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#1e3a5f;color:#fff;border-radius:6px;padding:5px 10px;margin-bottom:8px;">
+          <span style="font-size:11px;font-weight:900;">${ptn} Portionen</span>
+          <span style="font-size:9px;font-weight:700;opacity:.8;">${ptnGroups.length} Mahlzeiten · ${ptnTotal.toFixed(1)} kg</span>
+        </div>
+        ${mealsHtml}
+      </div>`;
+    }).join("");
+  }
+
+  const totalProtein = liste.protein.reduce((s, g) => s + g.totalKg, 0);
+  const totalVeggie  = liste.veggie.reduce((s, g) => s + g.totalKg, 0);
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>PHF-Frischeliste PTN ${weekLabel}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Arial, sans-serif; margin: 0; padding: 16px 20px; color: #0f172a; }
+  h1 { font-size: 18px; font-weight: 900; margin: 0 0 2px; color: #0f2240; }
+  .subtitle { font-size: 10px; color: #64748b; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; padding: 6px 8px; margin: 0 0 8px; border-radius: 6px; display: flex; justify-content: space-between; }
+  .protein-title { background: #fef2f2; color: #991b1b; }
+  .veggie-title  { background: #f0fdf4; color: #166534; }
+  @media print { body { padding: 8px 12px; } }
+</style>
+</head>
+<body>
+  <h1>PHF-Frischeliste – nach PTN – ${weekLabel}</h1>
+  <div class="subtitle">Tage: ${dayLabel} · Erstellt: ${new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}</div>
+  <div class="grid">
+    <div>
+      <div class="section-title protein-title">
+        <span>🥩 Protein Debox (${liste.protein.length} Mahlzeiten)</span>
+        <span>${totalProtein.toFixed(1)} kg</span>
+      </div>
+      ${ptnSectionsHtml(liste.protein)}
+    </div>
+    <div>
+      <div class="section-title veggie-title">
+        <span>🥦 Veggie Debox (${liste.veggie.length} Mahlzeiten)</span>
+        <span>${totalVeggie.toFixed(1)} kg</span>
+      </div>
+      ${ptnSectionsHtml(liste.veggie)}
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 export function buildFrischelistePdfHtml(
