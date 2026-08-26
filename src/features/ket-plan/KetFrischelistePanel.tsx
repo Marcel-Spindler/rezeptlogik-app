@@ -141,7 +141,7 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
     }
   }
 
-  function printPdf(ptnMode = false) {
+  function openPreview(ptnMode = false) {
     const html = ptnMode
       ? buildFrischelistePdfHtmlByPtn(liste, weekLabel, dayLabel)
       : buildFrischelistePdfHtml(liste, weekLabel, dayLabel);
@@ -149,7 +149,6 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
     if (!w) return;
     w.document.write(html);
     w.document.close();
-    setTimeout(() => w.print(), 300);
   }
 
   const totalProtein = liste.protein.reduce((s, g) => s + g.totalKg, 0);
@@ -194,7 +193,7 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
           <div className="flex flex-col gap-1.5 shrink-0">
             {/* PHF nach Mahlzeit */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 w-12 shrink-0">Mahlzeit</span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 w-8 shrink-0">PHF</span>
               <button
                 type="button"
                 onClick={() => downloadCsv(false)}
@@ -209,14 +208,14 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
               >Excel</button>
               <button
                 type="button"
-                onClick={() => printPdf(false)}
+                onClick={() => openPreview(false)}
                 disabled={isEmpty}
                 className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-40"
-              >PDF</button>
+              >Vorschau</button>
             </div>
             {/* PHF nach PTN */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 w-12 shrink-0">PTN</span>
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 w-8 shrink-0">PTN</span>
               <button
                 type="button"
                 onClick={() => downloadCsv(true)}
@@ -231,10 +230,10 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
               >Excel</button>
               <button
                 type="button"
-                onClick={() => printPdf(true)}
+                onClick={() => openPreview(true)}
                 disabled={isEmpty}
                 className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-40"
-              >PDF</button>
+              >Vorschau</button>
             </div>
           </div>
         </div>
