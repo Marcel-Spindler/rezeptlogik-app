@@ -1,15 +1,14 @@
 // Frischeliste-Tab im KET Plan:
-// Frischware-Bedarf (alles außer DRY/SPI) für wählbare Tage,
-// aufgeteilt in Veggie Debox / Protein Debox.
+// Nur PHF-Frischware für wählbare Tage,
+// gruppiert nach Mahlzeit, aufgeteilt in Veggie Debox / Protein Debox.
 import { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import type { KetRow, BatchCalc } from "./ketTypes";
-import { catColor } from "./ketLogic";
 import {
   buildFrischeliste,
   frischelisteToCsvString,
   buildFrischelistePdfHtml,
-  type FrischeItem,
+  type FrischeMealGroup,
   type Frischeliste,
 } from "./frischelisteLogic";
 
@@ -28,7 +27,6 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
     [rows, calcMap, selectedWeekdays],
   );
 
-  // Nur Tage anbieten, die im Datensatz vorkommen
   const availableDays = liste.availableDays;
 
   // Wenn nach dem Laden keine der Default-Tage im Plan sind, alle verfügbaren auswählen
@@ -58,7 +56,7 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${weekLabel}_Frischeliste.csv`;
+    a.download = `${weekLabel}_PHF-Frischeliste.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -66,29 +64,25 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
   function downloadExcel() {
     const wb = XLSX.utils.book_new();
 
-    function makeSheet(items: FrischeItem[], dept: string) {
-      const header = [`Frischeliste ${weekLabel} – ${dept} – ${dayLabel}`];
-      const cols = ["Artikel", "Kategorie", "Menge (kg)", "WOs"];
-      const dataRows = items.map((i) => [
-        i.name,
-        i.category || "–",
-        parseFloat(i.totalKg.toFixed(2)),
-        i.woNumbers.join(", "),
-      ]);
-      const totalRow = [
-        "GESAMT",
-        "",
-        parseFloat(items.reduce((s, i) => s + i.totalKg, 0).toFixed(2)),
-        "",
+    function makeSheet(groups: FrischeMealGroup[], dept: string) {
+      const rows: (string | number)[][] = [
+        [`PHF-Frischeliste ${weekLabel} – ${dept} – ${dayLabel}`],
+        ["Mahlzeit", "Artikel", "Menge (kg)", "WOs"],
       ];
-      const ws = XLSX.utils.aoa_to_sheet([header, cols, ...dataRows, totalRow]);
-      ws["!cols"] = [{ wch: 50 }, { wch: 8 }, { wch: 12 }, { wch: 45 }];
+      for (const g of groups) {
+        for (const item of g.items) {
+          rows.push([g.mealName, item.name, parseFloat(item.totalKg.toFixed(2)), item.woNumbers.join(", ")]);
+        }
+        rows.push(["", "GESAMT Mahlzeit", parseFloat(g.totalKg.toFixed(2)), ""]);
+      }
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 50 }, { wch: 45 }, { wch: 12 }, { wch: 30 }];
       return ws;
     }
 
     XLSX.utils.book_append_sheet(wb, makeSheet(liste.protein, "Protein Debox"), "Protein Debox");
     XLSX.utils.book_append_sheet(wb, makeSheet(liste.veggie, "Veggie Debox"), "Veggie Debox");
-    XLSX.writeFile(wb, `${weekLabel}_Frischeliste.xlsx`);
+    XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste.xlsx`);
   }
 
   function printPdf() {
@@ -100,8 +94,9 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
     setTimeout(() => w.print(), 300);
   }
 
-  const totalProtein = liste.protein.reduce((s, i) => s + i.totalKg, 0);
-  const totalVeggie = liste.veggie.reduce((s, i) => s + i.totalKg, 0);
+  const totalProtein = liste.protein.reduce((s, g) => s + g.totalKg, 0);
+  const totalVeggie  = liste.veggie.reduce((s, g) => s + g.totalKg, 0);
+  const isEmpty = liste.protein.length === 0 && liste.veggie.length === 0;
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
@@ -142,7 +137,7 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
             <button
               type="button"
               onClick={downloadCsv}
-              disabled={liste.protein.length === 0 && liste.veggie.length === 0}
+              disabled={isEmpty}
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700 transition-colors disabled:opacity-40"
             >
               CSV
@@ -150,7 +145,7 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
             <button
               type="button"
               onClick={downloadExcel}
-              disabled={liste.protein.length === 0 && liste.veggie.length === 0}
+              disabled={isEmpty}
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-40"
             >
               Excel
@@ -158,7 +153,7 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
             <button
               type="button"
               onClick={printPdf}
-              disabled={liste.protein.length === 0 && liste.veggie.length === 0}
+              disabled={isEmpty}
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-40"
             >
               PDF / Drucken
@@ -169,10 +164,10 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
 
       {/* Content: two columns */}
       <div className="flex-1 min-h-0 overflow-y-auto p-5">
-        {liste.protein.length === 0 && liste.veggie.length === 0 ? (
+        {isEmpty ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400">
             <div className="text-3xl mb-3">🥗</div>
-            <div className="text-sm font-semibold">Keine Frischware für die gewählten Tage</div>
+            <div className="text-sm font-semibold">Keine PHF-Frischware für die gewählten Tage</div>
             <div className="text-xs mt-1">Tage auswählen, für die Daten vorliegen</div>
           </div>
         ) : (
@@ -186,14 +181,14 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
                     Protein Debox
                   </span>
                   <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
-                    {liste.protein.length} Artikel
+                    {liste.protein.length} Mahlzeiten
                   </span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-500">
-                  {totalProtein.toFixed(1)} kg
+                  {totalProtein.toFixed(1)} kg PHF
                 </span>
               </div>
-              <FrischeTable items={liste.protein} />
+              <MealGroupList groups={liste.protein} />
             </div>
 
             {/* Veggie */}
@@ -205,14 +200,14 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
                     Veggie Debox
                   </span>
                   <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">
-                    {liste.veggie.length} Artikel
+                    {liste.veggie.length} Mahlzeiten
                   </span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-500">
-                  {totalVeggie.toFixed(1)} kg
+                  {totalVeggie.toFixed(1)} kg PHF
                 </span>
               </div>
-              <FrischeTable items={liste.veggie} />
+              <MealGroupList groups={liste.veggie} />
             </div>
           </div>
         )}
@@ -221,55 +216,47 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
   );
 }
 
-function FrischeTable({ items }: { items: FrischeItem[] }) {
-  if (!items.length) {
-    return <p className="text-xs text-slate-400 py-4 text-center">Keine Einträge</p>;
+function MealGroupList({ groups }: { groups: FrischeMealGroup[] }) {
+  if (!groups.length) {
+    return <p className="text-xs text-slate-400 py-4 text-center">Keine PHF-Einträge</p>;
   }
   return (
-    <div className="rounded-xl border border-slate-200 overflow-hidden">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="bg-slate-50 border-b border-slate-200">
-            <th className="text-left px-3 py-2 font-bold text-slate-500 text-[10px] uppercase tracking-wide">
-              Artikel
-            </th>
-            <th className="text-right px-3 py-2 font-bold text-slate-500 text-[10px] uppercase tracking-wide">
-              Menge
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item, idx) => (
-            <tr
-              key={item.name}
-              className={`border-b border-slate-100 last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
-            >
-              <td className="px-3 py-2">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-medium text-slate-800">{item.name}</span>
-                  {item.category && (
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${catColor(item.category)}`}>
-                      {item.category}
-                    </span>
-                  )}
-                </div>
-              </td>
-              <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-700 whitespace-nowrap">
-                {item.totalKg.toFixed(2)} kg
-              </td>
-            </tr>
-          ))}
-          {/* Gesamt-Zeile */}
-          <tr className="bg-slate-100 border-t border-slate-200">
-            <td className="px-3 py-2 font-black text-slate-700 text-[10px] uppercase tracking-wide">
-              Gesamt
-            </td>
-            <td className="px-3 py-2 text-right font-black tabular-nums text-slate-800">
-              {items.reduce((s, i) => s + i.totalKg, 0).toFixed(2)} kg
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-3">
+      {groups.map((g) => (
+        <MealGroupSection key={g.mealName} group={g} />
+      ))}
+    </div>
+  );
+}
+
+function MealGroupSection({ group }: { group: FrischeMealGroup }) {
+  return (
+    <div>
+      {/* Mahlzeit-Header */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-100 border border-b-0 border-slate-200 rounded-t-lg">
+        <span className="text-[11px] font-bold text-slate-700 truncate pr-2">{group.mealName}</span>
+        <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">
+          {group.totalKg.toFixed(1)} kg
+        </span>
+      </div>
+      {/* Zutaten-Tabelle */}
+      <div className="rounded-b-lg border border-slate-200 overflow-hidden">
+        <table className="w-full text-xs">
+          <tbody>
+            {group.items.map((item, idx) => (
+              <tr
+                key={item.name}
+                className={`border-b border-slate-100 last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
+              >
+                <td className="px-3 py-1.5 font-medium text-slate-800">{item.name}</td>
+                <td className="px-3 py-1.5 text-right font-bold tabular-nums text-slate-700 whitespace-nowrap">
+                  {item.totalKg.toFixed(2)} kg
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
