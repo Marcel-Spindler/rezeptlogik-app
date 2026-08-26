@@ -1,5 +1,5 @@
 // Frischeliste – nur PHF-Zutaten aus den WOs des ausgewählten Tages-Sets,
-// aufgeteilt in Veggie Debox / Protein Debox, gruppiert nach Mahlzeit.
+// aufgeteilt in Veggie Debox / Protein Debox, gruppiert nach Mahlzeit + PTN.
 import type { KetRow, BatchCalc, IngCalc } from "./ketTypes";
 import { classifyDeboxDepartment, parseDateShift } from "./ketLogic";
 
@@ -13,6 +13,7 @@ export interface FrischeItem {
 
 export interface FrischeMealGroup {
   mealName: string;
+  portions: number;
   woNumbers: string[];
   items: FrischeItem[];
   totalKg: number;
@@ -40,7 +41,7 @@ function parseWeekday(date: string): number {
 }
 
 type IngBuf = Map<string, { name: string; id: string; totalKg: number; category: string; wos: Set<string> }>;
-type MealBuf = Map<string, { mealName: string; wos: Set<string>; ings: IngBuf }>;
+type MealBuf = Map<string, { mealName: string; portions: number; wos: Set<string>; ings: IngBuf }>;
 
 export function buildFrischeliste(
   ketRows: KetRow[],
@@ -74,10 +75,12 @@ export function buildFrischeliste(
 
     const buf = dept === "protein" ? proteinBuf : veggieBuf;
     const rawName = (row.recipeName || row.woNumber || "Unbekannt").trim();
-    const mealKey = rawName.toLowerCase();
+    const portions = row.targetPortions ?? 0;
+    // Separate grouping for same recipe at different portion counts
+    const mealKey = `${rawName.toLowerCase()}__${portions}`;
 
     if (!buf.has(mealKey)) {
-      buf.set(mealKey, { mealName: rawName, wos: new Set(), ings: new Map() });
+      buf.set(mealKey, { mealName: rawName, portions, wos: new Set(), ings: new Map() });
     }
     const mealEntry = buf.get(mealKey)!;
     mealEntry.wos.add(row.woNumber);
@@ -115,7 +118,7 @@ export function buildFrischeliste(
           .map((v) => ({ name: v.name, id: v.id, totalKg: v.totalKg, category: v.category, woNumbers: [...v.wos].sort() }))
           .sort((a, b) => b.totalKg - a.totalKg);
         const totalKg = items.reduce((s, i) => s + i.totalKg, 0);
-        return { mealName: m.mealName, woNumbers: [...m.wos].sort(), items, totalKg };
+        return { mealName: m.mealName, portions: m.portions, woNumbers: [...m.wos].sort(), items, totalKg };
       })
       .filter((g) => g.items.length > 0)
       .sort((a, b) => b.totalKg - a.totalKg);
@@ -142,13 +145,13 @@ export function frischelisteToCsvString(
 ): string {
   const lines: string[] = [
     `# PHF-Frischeliste ${weekLabel} – ${dayLabel}`,
-    "Abteilung,Mahlzeit,Artikel,Menge (kg)",
+    "Abteilung,PTN,Mahlzeit,Artikel,Menge (kg)",
   ];
 
   function addGroup(groups: FrischeMealGroup[], dept: string) {
     for (const g of groups) {
       for (const item of g.items) {
-        lines.push(`${dept},"${g.mealName.replace(/"/g, '""')}","${item.name.replace(/"/g, '""')}",${item.totalKg.toFixed(2)}`);
+        lines.push(`${dept},${g.portions},"${g.mealName.replace(/"/g, '""')}","${item.name.replace(/"/g, '""')}",${item.totalKg.toFixed(2)}`);
       }
     }
   }
@@ -163,24 +166,36 @@ export function buildFrischelistePdfHtml(
   weekLabel: string,
   dayLabel: string,
 ): string {
+  const COLORS = [
+    { header: "#eff6ff", border: "#bfdbfe", text: "#1e40af" },
+    { header: "#f0fdf4", border: "#bbf7d0", text: "#166534" },
+    { header: "#fdf4ff", border: "#e9d5ff", text: "#6b21a8" },
+    { header: "#fffbeb", border: "#fde68a", text: "#92400e" },
+    { header: "#fff1f2", border: "#fecdd3", text: "#9f1239" },
+    { header: "#f0fdfa", border: "#99f6e4", text: "#134e4a" },
+  ];
+
   function mealGroupsHtml(groups: FrischeMealGroup[]): string {
     if (!groups.length) return `<p style="color:#94a3b8;font-size:11px;padding:8px 0;">Keine PHF-Frischware für diese Auswahl.</p>`;
-    return groups.map((g) => `
+    return groups.map((g, i) => {
+      const c = COLORS[i % COLORS.length];
+      return `
       <div style="margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;border-bottom:none;border-radius:6px 6px 0 0;padding:5px 8px;">
-          <span style="font-size:10px;font-weight:800;color:#1e293b;">${g.mealName}</span>
-          <span style="font-size:9px;font-weight:700;color:#64748b;">${g.totalKg.toFixed(1)} kg</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;background:${c.header};border:1px solid ${c.border};border-bottom:none;border-radius:6px 6px 0 0;padding:5px 8px;">
+          <span style="font-size:10px;font-weight:800;color:${c.text};">${g.mealName}</span>
+          <span style="font-size:9px;font-weight:700;color:${c.text};opacity:.8;">${g.portions > 0 ? g.portions + " PTN · " : ""}${g.totalKg.toFixed(1)} kg</span>
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid #e2e8f0;border-radius:0 0 6px 6px;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid ${c.border};border-top:none;border-radius:0 0 6px 6px;overflow:hidden;">
           <tbody>
-            ${g.items.map((item, i) => `
-              <tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"};">
+            ${g.items.map((item, j) => `
+              <tr style="background:${j % 2 === 0 ? "#fff" : "#f8fafc"};">
                 <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;">${item.name}</td>
                 <td style="text-align:right;padding:5px 8px;border-bottom:1px solid #f1f5f9;font-weight:700;font-variant-numeric:tabular-nums;">${item.totalKg.toFixed(2)} kg</td>
               </tr>`).join("")}
           </tbody>
         </table>
-      </div>`).join("");
+      </div>`;
+    }).join("");
   }
 
   const totalProtein = liste.protein.reduce((s, g) => s + g.totalKg, 0);

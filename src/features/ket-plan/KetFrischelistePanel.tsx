@@ -1,6 +1,6 @@
 // Frischeliste-Tab im KET Plan:
 // Nur PHF-Frischware für wählbare Tage,
-// gruppiert nach Mahlzeit, aufgeteilt in Veggie Debox / Protein Debox.
+// gruppiert nach Mahlzeit + PTN, aufgeteilt in Veggie Debox / Protein Debox.
 import { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import type { KetRow, BatchCalc } from "./ketTypes";
@@ -12,6 +12,30 @@ import {
   type Frischeliste,
 } from "./frischelisteLogic";
 
+// Zyklische Farbpalette für Mahlzeiten-Gruppen
+const MEAL_COLORS = [
+  "bg-blue-100/80 border-blue-200 text-blue-900",
+  "bg-teal-100/80 border-teal-200 text-teal-900",
+  "bg-violet-100/80 border-violet-200 text-violet-900",
+  "bg-amber-100/80 border-amber-200 text-amber-900",
+  "bg-rose-100/80 border-rose-200 text-rose-900",
+  "bg-emerald-100/80 border-emerald-200 text-emerald-900",
+  "bg-orange-100/80 border-orange-200 text-orange-900",
+  "bg-cyan-100/80 border-cyan-200 text-cyan-900",
+];
+
+// Passende Zutaten-Zeilen-Farbe zur Header-Farbe
+const ROW_COLORS = [
+  "bg-blue-50/50",
+  "bg-teal-50/50",
+  "bg-violet-50/50",
+  "bg-amber-50/50",
+  "bg-rose-50/50",
+  "bg-emerald-50/50",
+  "bg-orange-50/50",
+  "bg-cyan-50/50",
+];
+
 interface Props {
   rows: KetRow[];
   calcMap: Map<string, BatchCalc>;
@@ -19,7 +43,6 @@ interface Props {
 }
 
 export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
-  // Default: Sonntag (0) + Montag (1)
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([0, 1]);
 
   const liste: Frischeliste = useMemo(
@@ -29,7 +52,6 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
 
   const availableDays = liste.availableDays;
 
-  // Wenn nach dem Laden keine der Default-Tage im Plan sind, alle verfügbaren auswählen
   useMemo(() => {
     if (availableDays.length === 0) return;
     const inPlan = selectedWeekdays.filter((d) => availableDays.some((a) => a.weekday === d));
@@ -65,24 +87,58 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
     const wb = XLSX.utils.book_new();
 
     function makeSheet(groups: FrischeMealGroup[], dept: string) {
-      const rows: (string | number)[][] = [
+      const sheetRows: (string | number)[][] = [
         [`PHF-Frischeliste ${weekLabel} – ${dept} – ${dayLabel}`],
-        ["Mahlzeit", "Artikel", "Menge (kg)", "WOs"],
+        ["PTN", "Mahlzeit", "Artikel", "Menge (kg)", "WOs"],
       ];
       for (const g of groups) {
         for (const item of g.items) {
-          rows.push([g.mealName, item.name, parseFloat(item.totalKg.toFixed(2)), item.woNumbers.join(", ")]);
+          sheetRows.push([g.portions, g.mealName, item.name, parseFloat(item.totalKg.toFixed(2)), item.woNumbers.join(", ")]);
         }
-        rows.push(["", "GESAMT Mahlzeit", parseFloat(g.totalKg.toFixed(2)), ""]);
+        sheetRows.push(["", "", "GESAMT Mahlzeit", parseFloat(g.totalKg.toFixed(2)), ""]);
       }
-      const ws = XLSX.utils.aoa_to_sheet(rows);
-      ws["!cols"] = [{ wch: 50 }, { wch: 45 }, { wch: 12 }, { wch: 30 }];
+      const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+      ws["!cols"] = [{ wch: 6 }, { wch: 48 }, { wch: 42 }, { wch: 12 }, { wch: 25 }];
       return ws;
     }
 
     XLSX.utils.book_append_sheet(wb, makeSheet(liste.protein, "Protein Debox"), "Protein Debox");
     XLSX.utils.book_append_sheet(wb, makeSheet(liste.veggie, "Veggie Debox"), "Veggie Debox");
     XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste.xlsx`);
+  }
+
+  // PTN-Export: gleiche Daten, aber nach Portionsanzahl gruppiert
+  function downloadExcelPtn() {
+    const wb = XLSX.utils.book_new();
+
+    function makeSheetByPtn(groups: FrischeMealGroup[], dept: string) {
+      // Sortierung: PTN aufsteigend, dann totalKg absteigend
+      const sorted = [...groups].sort((a, b) => a.portions - b.portions || b.totalKg - a.totalKg);
+      const sheetRows: (string | number)[][] = [
+        [`PHF-Frischeliste ${weekLabel} – ${dept} – ${dayLabel} – nach PTN`],
+        ["PTN", "Mahlzeit", "Artikel", "Menge (kg)", "WOs"],
+      ];
+
+      let lastPtn = -1;
+      for (const g of sorted) {
+        if (g.portions !== lastPtn) {
+          // PTN-Trennzeile
+          sheetRows.push([`=== ${g.portions} Portionen ===`, "", "", "", ""]);
+          lastPtn = g.portions;
+        }
+        for (const item of g.items) {
+          sheetRows.push([g.portions, g.mealName, item.name, parseFloat(item.totalKg.toFixed(2)), item.woNumbers.join(", ")]);
+        }
+        sheetRows.push(["", "", `Gesamt ${g.mealName}`, parseFloat(g.totalKg.toFixed(2)), ""]);
+      }
+      const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+      ws["!cols"] = [{ wch: 6 }, { wch: 48 }, { wch: 42 }, { wch: 12 }, { wch: 25 }];
+      return ws;
+    }
+
+    XLSX.utils.book_append_sheet(wb, makeSheetByPtn(liste.protein, "Protein Debox"), "Protein PTN");
+    XLSX.utils.book_append_sheet(wb, makeSheetByPtn(liste.veggie, "Veggie Debox"), "Veggie PTN");
+    XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste-PTN.xlsx`);
   }
 
   function printPdf() {
@@ -133,7 +189,7 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
           </div>
 
           {/* Export-Buttons */}
-          <div className="flex gap-2 shrink-0">
+          <div className="flex flex-wrap gap-2 shrink-0">
             <button
               type="button"
               onClick={downloadCsv}
@@ -149,6 +205,14 @@ export function KetFrischelistePanel({ rows, calcMap, weekLabel }: Props) {
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-40"
             >
               Excel
+            </button>
+            <button
+              type="button"
+              onClick={downloadExcelPtn}
+              disabled={isEmpty}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors disabled:opacity-40"
+            >
+              Excel PTN
             </button>
             <button
               type="button"
@@ -222,20 +286,30 @@ function MealGroupList({ groups }: { groups: FrischeMealGroup[] }) {
   }
   return (
     <div className="flex flex-col gap-3">
-      {groups.map((g) => (
-        <MealGroupSection key={g.mealName} group={g} />
+      {groups.map((g, idx) => (
+        <MealGroupSection key={`${g.mealName}__${g.portions}`} group={g} colorIdx={idx} />
       ))}
     </div>
   );
 }
 
-function MealGroupSection({ group }: { group: FrischeMealGroup }) {
+function MealGroupSection({ group, colorIdx }: { group: FrischeMealGroup; colorIdx: number }) {
+  const headerCls = MEAL_COLORS[colorIdx % MEAL_COLORS.length];
+  const rowAccent = ROW_COLORS[colorIdx % ROW_COLORS.length];
+
   return (
     <div>
       {/* Mahlzeit-Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-slate-100 border border-b-0 border-slate-200 rounded-t-lg">
-        <span className="text-[11px] font-bold text-slate-700 truncate pr-2">{group.mealName}</span>
-        <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">
+      <div className={`flex items-center justify-between px-3 py-1.5 border border-b-0 rounded-t-lg ${headerCls}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[11px] font-bold truncate">{group.mealName}</span>
+          {group.portions > 0 && (
+            <span className="shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded bg-black/10">
+              {group.portions} PTN
+            </span>
+          )}
+        </div>
+        <span className="text-[10px] font-bold whitespace-nowrap ml-2 opacity-80">
           {group.totalKg.toFixed(1)} kg
         </span>
       </div>
@@ -246,7 +320,7 @@ function MealGroupSection({ group }: { group: FrischeMealGroup }) {
             {group.items.map((item, idx) => (
               <tr
                 key={item.name}
-                className={`border-b border-slate-100 last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"}`}
+                className={`border-b border-slate-100 last:border-0 ${idx % 2 === 0 ? "bg-white" : rowAccent}`}
               >
                 <td className="px-3 py-1.5 font-medium text-slate-800">{item.name}</td>
                 <td className="px-3 py-1.5 text-right font-bold tabular-nums text-slate-700 whitespace-nowrap">
