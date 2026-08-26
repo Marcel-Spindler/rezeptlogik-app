@@ -23,6 +23,7 @@ import { computeRunAssignments, shiftLabel } from "./features/ket-plan/ketRunLog
 import { KetEquipmentPanel } from "./features/ket-plan/KetEquipmentPanel";
 import { KetShopfloorDashboard } from "./features/ket-plan/KetShopfloorDashboard";
 import { KetFrischelistePanel } from "./features/ket-plan/KetFrischelistePanel";
+import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS & PATTERNS
@@ -86,6 +87,187 @@ function detectSource(
  */
 function sanitizeFilename(name: string): string {
   return name.replace(SAFE_FILENAME_PATTERN, "_");
+}
+
+/** Rundet auf 1 Nachkommastelle, oder leer wenn kein Wert. */
+function rnd1(v: number | null | undefined): number | "" {
+  return v != null && v > 0 ? Math.round(v * 10) / 10 : "";
+}
+
+/**
+ * Baut die WO-Übersichts-Zeilen (eine Zeile pro WO, alle relevanten Felder).
+ * Wird für Excel-Sheet-1 und CSV verwendet.
+ */
+function buildWoOverviewRows(
+  rows: KetRow[],
+  calcMap: Map<string, BatchCalc>,
+  woInstructions: Record<string, WoInstruction>,
+) {
+  return rows.map((row) => {
+    const c = calcMap.get(row.key);
+    const inst = woInstructions[row.key];
+
+    // Scoop: einfache WO → c.scoopInfo; zusammengesetzte → alle Komponenten auflisten
+    const scoopStr = c
+      ? c.components.length > 0
+        ? c.components
+            .filter((comp) => comp.scoopInfo?.methodType)
+            .map((comp) => {
+              const s = comp.scoopInfo!;
+              return [comp.name, s.methodType, s.methodColor, s.yieldGrams ? `${s.yieldGrams}g` : ""].filter(Boolean).join(" ");
+            })
+            .join(" | ")
+        : [c.scoopInfo?.methodType, c.scoopInfo?.methodColor, c.scoopInfo?.yieldGrams ? `${c.scoopInfo.yieldGrams}g` : ""]
+            .filter(Boolean)
+            .join(" ")
+      : "";
+
+    // GN-Bleche: direkt aus c.gnTraySummary (aggregiert über alle Zutaten)
+    const gnSummary = (c?.gnTraySummary ?? []).map((g) => `${g.trays}× ${g.gnType}`).join(", ");
+
+    return {
+      "WO Nummer": row.woNumber,
+      "Mealcode": row.recipeCode,
+      "Sub-Rezept / Rezept": row.subRecipeName || row.recipeName,
+      "Datum": extractDate(row.dateNeeded),
+      "Shift": extractShift(row.dateNeeded),
+      "Ziel Portionen": row.targetPortions,
+      "Gekochte Portionen": row.woCookedPortions ?? "",
+      "Portionen Überschuss": row.cookedPortionsExcess ?? "",
+      "Kitchen Status": row.kitchenStatus,
+      "Staging Status": row.stagingStatus,
+      "Staging Kommentar": row.stagingComment,
+      "WO Kommentar": row.workOrderComment,
+      "Cook Methods": row.cookMethods.join(", "),
+      "Primary Equipment": c?.primaryEquip ?? "",
+      "Alle Equipment-Batche": c?.equipBatches.map((b) => `${b.label} ${b.batches}×${rnd1(b.perBatchKg)}kg`).join(" | ") ?? "",
+      "Batche": c?.batches ?? "",
+      "KG gesamt": rnd1(c?.totalKg),
+      "KG je Batch": c && c.batches > 0 ? rnd1(c.perBatchKg) : "",
+      "Factor Batche": c?.factorBatches ?? "",
+      "Factor KG je Batch": rnd1(c?.factorBatchQtyKg),
+      "RTI": c?.rti ? "ja" : "",
+      "Never Batch": c?.neverBatch ? "ja" : "",
+      "Ready Made": c?.readyMade ? "ja" : "",
+      "Allergene (CONTAINS)": c?.allergensContains.join(", ") ?? "",
+      "Blast Chiller": c?.chillerAssignment?.key ?? "",
+      "Chiller Gruppe": c?.chillerAssignment?.cfg?.label ?? "",
+      "Scoop": scoopStr,
+      "GN Bleche": gnSummary,
+      "Anweisung DE": inst?.german ?? "",
+      "Anweisung EN": inst?.english ?? "",
+    };
+  });
+}
+
+/**
+ * Baut die Zutaten-Detail-Zeilen (eine Zeile pro Zutat pro WO, Komponenten aufgelöst).
+ */
+function buildIngredientRows(rows: KetRow[], calcMap: Map<string, BatchCalc>) {
+  const result: Record<string, string | number>[] = [];
+  for (const row of rows) {
+    const c = calcMap.get(row.key);
+    if (!c) continue;
+    const woAllergene = c.allergensContains.join(", ");
+    const woBlastChiller = c.chillerAssignment?.key ?? "";
+
+    const sources = c.components.length > 0
+      ? c.components.map((comp) => {
+          const s = comp.scoopInfo;
+          const scoopStr = s?.methodType
+            ? [s.methodType, s.methodColor, s.yieldGrams ? `${s.yieldGrams}g` : ""].filter(Boolean).join(" ")
+            : "";
+          const gnStr = comp.gnTraySummary.map((g) => `${g.trays}× ${g.gnType}`).join(", ");
+          return { componentName: comp.name, ingredients: comp.ingredients, scoopStr, gnStr };
+        })
+      : [{
+          componentName: "",
+          ingredients: c.ingredients,
+          scoopStr: c.scoopInfo?.methodType
+            ? [c.scoopInfo.methodType, c.scoopInfo.methodColor, c.scoopInfo.yieldGrams ? `${c.scoopInfo.yieldGrams}g` : ""].filter(Boolean).join(" ")
+            : "",
+          gnStr: c.gnTraySummary.map((g) => `${g.trays}× ${g.gnType}`).join(", "),
+        }];
+
+    for (const { componentName, ingredients, scoopStr, gnStr } of sources) {
+      for (const ing of ingredients) {
+        result.push({
+          "WO Nummer": row.woNumber,
+          "Mealcode": row.recipeCode,
+          "Sub-Rezept / Rezept": row.subRecipeName || row.recipeName,
+          "Datum": extractDate(row.dateNeeded),
+          "Komponente": componentName,
+          "Zutat": ing.name,
+          "Zutat ID": ing.id,
+          "Kategorie": ing.category,
+          "UOM": ing.uom,
+          "KG gesamt": rnd1(ing.totalKg),
+          "KG je Batch": rnd1(ing.perBatchKg),
+          "Stück gesamt": ing.totalPcs > 0 ? ing.totalPcs : "",
+          "Yield %": ing.yieldPct != null ? Math.round(ing.yieldPct * 100) / 100 : "",
+          "Allergen Zutat": ing.allergen ?? "",
+          "Allergene WO (CONTAINS)": woAllergene,
+          "SEPARATE": ing.separate ? "ja" : "",
+          "Spice Room": ing.spiceRoom ? "ja" : "",
+          "GN Bleche Zutat": ing.gnTrays != null ? ing.gnTrays : "",
+          "GN Typ": ing.gnType ?? "",
+          "GN Bleche Komponente": gnStr,
+          "Scoop": scoopStr,
+          "Blast Chiller WO": woBlastChiller,
+        });
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Excel-Export (Multi-Sheet):
+ * Sheet 1 "WOs" — eine Zeile pro WO, alle Felder
+ * Sheet 2 "Zutaten" — eine Zeile pro Zutat pro WO
+ */
+function exportWosToXlsx(
+  rows: KetRow[],
+  calcMap: Map<string, BatchCalc>,
+  woInstructions: Record<string, WoInstruction>,
+  filename: string,
+): void {
+  const overviewRows = buildWoOverviewRows(rows, calcMap, woInstructions);
+  const ingredientRows = buildIngredientRows(rows, calcMap);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(overviewRows), "WOs");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ingredientRows), "Zutaten");
+  XLSX.writeFile(wb, `${filename}.xlsx`);
+}
+
+/**
+ * CSV-Export (flach, nur WO-Übersicht mit allen Feldern).
+ */
+function exportWosToCsv(
+  rows: KetRow[],
+  calcMap: Map<string, BatchCalc>,
+  woInstructions: Record<string, WoInstruction>,
+  filename: string,
+): void {
+  const data = buildWoOverviewRows(rows, calcMap, woInstructions);
+  if (data.length === 0) return;
+  const cols = Object.keys(data[0]);
+  const escape = (v: string | number) => {
+    const s = String(v ?? "");
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"`
+      : s;
+  };
+  const lines = [cols.join(","), ...data.map((r) => cols.map((c) => escape((r as Record<string, string | number>)[c] ?? "")).join(","))];
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /**
@@ -1424,6 +1606,24 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
         {/* Detail / Alle WOs toggle — its own bar so it stays visible
             regardless of mode and survives selecting/deselecting a WO. */}
         <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-2 bg-gradient-to-r from-[#0f2240] via-[#1e3a5f] to-[#0f2240] border-b border-white/10">
+          <div className="flex gap-1 shrink-0">
+            <button
+              type="button"
+              title={`${filteredRows.length} WOs als Excel exportieren (2 Sheets: WO-Übersicht + Zutaten)`}
+              onClick={() => exportWosToXlsx(filteredRows, calcMap, woInstructions, sanitizeFilename(`KET-WOs-${liveWeek || "export"}`))}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-400 transition-colors"
+            >
+              ⬇ Excel ({filteredRows.length})
+            </button>
+            <button
+              type="button"
+              title={`${filteredRows.length} WOs als CSV exportieren (WO-Übersicht, alle Felder)`}
+              onClick={() => exportWosToCsv(filteredRows, calcMap, woInstructions, sanitizeFilename(`KET-WOs-${liveWeek || "export"}`))}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-slate-600 text-white hover:bg-slate-500 transition-colors"
+            >
+              ⬇ CSV
+            </button>
+          </div>
           <div className="flex rounded-xl overflow-hidden border border-white/20">
             <button
               type="button"

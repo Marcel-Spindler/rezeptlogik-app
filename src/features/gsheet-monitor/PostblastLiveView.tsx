@@ -1,7 +1,7 @@
 // Postblast Live View — Echtzeit-Dashboard: GSheet-Wiegungen vs. geplante Work Orders.
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import type { DataBundle, WorkOrderEntry } from "../../core/types";
-import type { PostblastData } from "./gsheetTypes";
+import type { PostblastData, ProductionPlanRow } from "./gsheetTypes";
 import {
   useEtMonitor, usePostblastMonitor, usePreblastMonitor, useProductionPlanMonitor, useProductionPlanWeeks,
   useRtiMonitor, useShortsTrackerMonitor,
@@ -20,6 +20,7 @@ import type { KetRow } from "../ket-plan/ketTypes";
 import { recipeWeightKey, type RecipeWeightLookup } from "./parsers/parseExportRecipes";
 import { useBackfillsOptional } from "../backfills/BackfillsContext";
 import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
+import { useRedzoneOptional, type RedzoneState } from "../redzone-live/RedzoneContext";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -213,6 +214,8 @@ function computeMaxPlateable(
         if (hasBlockingZero) { minMeals = 0; bottleneckSub = subRecipe; found++; }
         continue;
       }
+      // OHNE PLAN / Chiller-WOs mit 0 kg sind kein Blocker — nicht in das Minimum einrechnen
+      if (actualKg === 0 && !hasBlockingZero) continue;
       const maxFromThis = hasBlockingZero ? 0 : Math.floor(actualKg / (grams / 1000));
       found++;
       if (maxFromThis < minMeals) { minMeals = maxFromThis; bottleneckSub = subRecipe; }
@@ -314,7 +317,26 @@ function mealPlatingCapacity(meal: MealProgress): {
   };
 }
 
-function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; recipeWeights: RecipeWeightLookup | null }) {
+function PlatingNowPanel({
+  meals,
+  recipeWeights,
+  wmsRows,
+  redzone,
+}: {
+  meals: MealProgress[];
+  recipeWeights: RecipeWeightLookup | null;
+  wmsRows?: WorkOrderEntry[] | null;
+  redzone?: RedzoneState | null;
+}) {
+  const [showAllReady, setShowAllReady] = useState(false);
+  const [showAllChiller, setShowAllChiller] = useState(false);
+  const [showAllCritical, setShowAllCritical] = useState(false);
+  const [showAllProd, setShowAllProd] = useState(false);
+  const refReady = useRef<HTMLDivElement>(null);
+  const refChiller = useRef<HTMLDivElement>(null);
+  const refBlocked = useRef<HTMLDivElement>(null);
+  const refProd = useRef<HTMLDivElement>(null);
+
   if (meals.length === 0) return null;
 
   const dayName = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
@@ -335,13 +357,10 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
     const hasChillerWo = wos.some(w => w.awaitingPostBlast);
 
     if (!cap.hasBlockingZeroWo && (cap.maxMeals > 0 || hasHolding)) {
-      // Alle Sub-Meals haben Gewicht — max. platierbare Menge klar
       readyList.push({ meal, maxMeals: cap.maxMeals, bottleneckPct: cap.bottleneckPct, bottleneckSubRecipe: cap.bottleneckSubRecipe });
     } else if (hasChillerWo) {
-      // Mindestens eine WO ist noch im Chiller — bald bereit
       const kgInChiller = wos.filter(w => w.awaitingPostBlast).reduce((s, w) => s + w.preBlastKg, 0);
-      const maxAfterChiller = cap.maxMeals; // aktuell schon platierbare Portion (könnte 0 sein)
-      chillerList.push({ meal, kgInChiller, maxAfterChiller });
+      chillerList.push({ meal, kgInChiller, maxAfterChiller: cap.maxMeals });
     } else if (cap.hasBlockingZeroWo || wos.some(w => w.isCritical && w.hasPlan)) {
       criticalMeals.push(meal);
     } else {
@@ -353,6 +372,25 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
   chillerList.sort((a, b) => b.meal.progressPct - a.meal.progressPct);
   runningMeals.sort((a, b) => a.progressPct - b.progressPct);
 
+  // WMS-WOs die noch gar nicht im Postblast aufgetaucht sind → "Noch in Produktion"
+  const matchedWoNums = new Set(meals.flatMap(m => m.workOrders.map(w => w.workOrder)));
+  type WmsGroup = { recipeCode: string; recipeName: string; subRecipes: Array<{ name: string; portions: number }>; maxPortions: number };
+  const wmsGroupMap = new Map<string, WmsGroup>();
+  if (wmsRows) {
+    for (const row of wmsRows) {
+      if (matchedWoNums.has(row.workOrder)) continue;
+      if (!wmsGroupMap.has(row.recipeCode)) {
+        wmsGroupMap.set(row.recipeCode, { recipeCode: row.recipeCode, recipeName: row.recipeName, subRecipes: [], maxPortions: 0 });
+      }
+      const g = wmsGroupMap.get(row.recipeCode)!;
+      const portions = row.targetPortions ?? row.plannedMeals ?? 0;
+      if (!g.subRecipes.find(s => s.name === row.subRecipe)) g.subRecipes.push({ name: row.subRecipe, portions });
+      if (portions > g.maxPortions) g.maxPortions = portions;
+    }
+  }
+  const wmsInProdList = [...wmsGroupMap.values()].sort((a, b) => b.maxPortions - a.maxPortions);
+  const totalInProd = runningMeals.length + wmsInProdList.length;
+
   const MAX = 5;
 
   return (
@@ -362,33 +400,45 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
           <div className="font-bold text-slate-900 text-sm">Was kann ich plaiten?</div>
           <div className="text-[10px] text-slate-400">{dayName}</div>
         </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {readyList.length > 0 && (
-            <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 font-bold ring-1 ring-emerald-200">
+            <button
+              onClick={() => refReady.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
+              className="text-[11px] px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-800 font-bold ring-1 ring-emerald-300 hover:bg-emerald-200 active:scale-95 transition-all cursor-pointer select-none"
+            >
               ✅ {readyList.length} bereit
-            </span>
+            </button>
           )}
           {chillerList.length > 0 && (
-            <span className="text-[10px] px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-700 font-bold ring-1 ring-cyan-200">
+            <button
+              onClick={() => refChiller.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
+              className="text-[11px] px-3 py-1.5 rounded-full bg-cyan-100 text-cyan-800 font-bold ring-1 ring-cyan-300 hover:bg-cyan-200 active:scale-95 transition-all cursor-pointer select-none"
+            >
               ⏳ {chillerList.length} im Chiller
-            </span>
+            </button>
           )}
           {criticalMeals.length > 0 && (
-            <span className="text-[10px] px-2.5 py-1 rounded-full bg-red-100 text-red-700 font-bold ring-1 ring-red-200">
-              ⚠ {criticalMeals.length} blockiert
-            </span>
+            <button
+              onClick={() => refBlocked.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
+              className="text-[11px] px-3 py-1.5 rounded-full bg-red-100 text-red-800 font-bold ring-1 ring-red-300 hover:bg-red-200 active:scale-95 transition-all cursor-pointer select-none"
+            >
+              ⛔ {criticalMeals.length} blockiert
+            </button>
           )}
-          {runningMeals.length > 0 && (
-            <span className="text-[10px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium ring-1 ring-slate-200">
-              {runningMeals.length} laufen noch
-            </span>
+          {totalInProd > 0 && (
+            <button
+              onClick={() => refProd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
+              className="text-[11px] px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 font-semibold ring-1 ring-slate-300 hover:bg-slate-200 active:scale-95 transition-all cursor-pointer select-none"
+            >
+              🔵 {totalInProd} in Produktion
+            </button>
           )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* ── Jetzt plaiten ── */}
-        <div>
+        <div ref={refReady}>
           <div className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 mb-2">
             ✅ Jetzt plaiten{readyList.length > 0 ? ` (${readyList.length})` : ""}
           </div>
@@ -396,11 +446,11 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
             <div className="text-[10px] text-slate-300 italic">Noch kein Meal vollständig produziert</div>
           ) : (
             <div className="space-y-1.5">
-              {readyList.slice(0, MAX).map(({ meal: m, bottleneckPct }) => {
+              {(showAllReady ? readyList : readyList.slice(0, MAX)).map(({ meal: m, bottleneckPct }) => {
                 const holdKg = m.workOrders.reduce((s, w) => s + w.platingHoldingKg, 0);
                 const cap = computeMaxPlateable(m, recipeWeights);
                 return (
-                  <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-emerald-50 ring-1 ring-emerald-200">
+                  <div key={m.recipeCode} className={`rounded-xl px-3 py-2.5 ring-1 ${redzone?.isPlatingNow(m.recipeCode) ? "bg-red-50 ring-red-200" : "bg-emerald-50 ring-emerald-200"}`}>
                     <div className="flex items-baseline justify-between gap-1">
                       <span className="font-mono text-[11px] font-bold text-slate-900">{m.recipeCode}</span>
                       {cap != null ? (
@@ -411,6 +461,12 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
                         <span className="text-[11px] font-bold font-mono text-slate-500">{Math.round(bottleneckPct)}%</span>
                       )}
                     </div>
+                    {redzone?.isPlatingNow(m.recipeCode) && (
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse inline-block shrink-0" />
+                        <span className="text-[10px] font-bold text-red-600 uppercase tracking-wide">wird platiert</span>
+                      </div>
+                    )}
                     <div className="text-[10px] text-slate-500 mb-1.5 truncate">{m.recipeName}</div>
                     <ProgressBar pct={bottleneckPct} size="xs" color="bg-emerald-500" />
                     <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1">
@@ -432,14 +488,19 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
                 );
               })}
               {readyList.length > MAX && (
-                <div className="text-[10px] text-slate-400 text-center py-1">+{readyList.length - MAX} weitere</div>
+                <button
+                  onClick={() => setShowAllReady(v => !v)}
+                  className="w-full text-[10px] text-emerald-600 hover:text-emerald-800 text-center py-1.5 hover:bg-emerald-50 rounded-lg transition-colors font-medium"
+                >
+                  {showAllReady ? "▲ Weniger anzeigen" : `▼ +${readyList.length - MAX} weitere anzeigen`}
+                </button>
               )}
             </div>
           )}
         </div>
 
         {/* ── Im Chiller + Kritisch/Blockiert ── */}
-        <div>
+        <div ref={refChiller}>
           <div className="text-[10px] font-bold uppercase tracking-wide text-cyan-700 mb-2">
             ⏳ Im Chiller{chillerList.length > 0 ? ` (${chillerList.length})` : ""}
           </div>
@@ -447,35 +508,55 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
             <div className="text-[10px] text-slate-300 italic">Kein Meal im Chiller</div>
           ) : (
             <div className="space-y-1.5">
-              {chillerList.slice(0, MAX).map(({ meal: m, kgInChiller }) => (
-                <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-cyan-50 ring-1 ring-cyan-200">
-                  <div className="flex items-baseline justify-between gap-1">
-                    <span className="font-mono text-[11px] font-bold text-slate-900">{m.recipeCode}</span>
-                    <span className="text-[11px] font-bold font-mono text-slate-600">{Math.round(m.progressPct)}%</span>
+              {(showAllChiller ? chillerList : chillerList.slice(0, MAX)).map(({ meal: m, kgInChiller }) => {
+                const chillerWos = m.workOrders.filter(w => w.awaitingPostBlast);
+                return (
+                  <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-cyan-50 ring-1 ring-cyan-200">
+                    <div className="flex items-baseline justify-between gap-1">
+                      <span className="font-mono text-[11px] font-bold text-slate-900">{m.recipeCode}</span>
+                      <span className="text-[11px] font-bold font-mono text-slate-600">{Math.round(m.progressPct)}%</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 mb-1.5 truncate">{m.recipeName}</div>
+                    <ProgressBar pct={m.progressPct} size="xs" color="bg-cyan-400" />
+                    <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1">
+                      <span>{m.totalActualKg.toFixed(0)} / {m.totalPlannedKg > 0 ? m.totalPlannedKg.toFixed(0) : "—"} kg</span>
+                      <span>{m.completedWOs}/{m.totalWOs} WOs</span>
+                    </div>
+                    {chillerWos.length > 0 && (
+                      <div className="mt-1.5 pt-1.5 border-t border-cyan-200 space-y-0.5">
+                        {chillerWos.map(w => (
+                          <div key={w.workOrder} className="flex items-center justify-between text-[9px]">
+                            <span className="text-cyan-700 font-medium truncate flex-1 mr-2">⏳ {w.subRecipe}</span>
+                            <span className="text-cyan-600 font-mono shrink-0">{w.preBlastKg.toFixed(0)} kg</span>
+                          </div>
+                        ))}
+                        {chillerWos.length > 1 && (
+                          <div className="text-[9px] text-cyan-500 font-medium pt-0.5 border-t border-cyan-100">
+                            Gesamt {kgInChiller.toFixed(0)} kg → Post-Blast ausstehend
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="text-[10px] text-slate-500 mb-1.5 truncate">{m.recipeName}</div>
-                  <ProgressBar pct={m.progressPct} size="xs" color="bg-cyan-400" />
-                  <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1">
-                    <span>{m.totalActualKg.toFixed(0)} / {m.totalPlannedKg > 0 ? m.totalPlannedKg.toFixed(0) : "—"} kg</span>
-                    <span>{m.completedWOs}/{m.totalWOs} WOs</span>
-                  </div>
-                  {kgInChiller > 0 && (
-                    <div className="text-[9px] text-cyan-600 font-medium mt-0.5">⏳ {kgInChiller.toFixed(0)} kg wartet auf Post-Blast</div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
               {chillerList.length > MAX && (
-                <div className="text-[10px] text-slate-400 text-center py-1">+{chillerList.length - MAX} weitere</div>
+                <button
+                  onClick={() => setShowAllChiller(v => !v)}
+                  className="w-full text-[10px] text-cyan-600 hover:text-cyan-800 text-center py-1.5 hover:bg-cyan-50 rounded-lg transition-colors font-medium"
+                >
+                  {showAllChiller ? "▲ Weniger anzeigen" : `▼ +${chillerList.length - MAX} weitere anzeigen`}
+                </button>
               )}
             </div>
           )}
           {criticalMeals.length > 0 && (
             <>
-              <div className="text-[10px] font-bold uppercase tracking-wide text-red-600 mt-4 mb-2">
+              <div ref={refBlocked} className="text-[10px] font-bold uppercase tracking-wide text-red-600 mt-4 mb-2">
                 ⛔ Blockiert — Sub-Meal fehlt ({criticalMeals.length})
               </div>
               <div className="space-y-1.5">
-                {criticalMeals.slice(0, 4).map(m => {
+                {(showAllCritical ? criticalMeals : criticalMeals.slice(0, 4)).map(m => {
                   const missingWos = m.workOrders.filter(w => w.hasPlan && w.plannedKg > 0 && w.actualKg === 0 && !w.awaitingPostBlast);
                   return (
                     <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-red-50 ring-1 ring-red-200">
@@ -492,21 +573,32 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
                     </div>
                   );
                 })}
+                {criticalMeals.length > 4 && (
+                  <button
+                    onClick={() => setShowAllCritical(v => !v)}
+                    className="w-full text-[10px] text-red-500 hover:text-red-700 text-center py-1.5 hover:bg-red-50 rounded-lg transition-colors font-medium"
+                  >
+                    {showAllCritical ? "▲ Weniger" : `▼ +${criticalMeals.length - 4} weitere`}
+                  </button>
+                )}
               </div>
             </>
           )}
         </div>
 
-        {/* ── Noch in Produktion ── */}
-        <div>
+        {/* ── Noch in Produktion (WMS) ── */}
+        <div ref={refProd}>
           <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">
-            🔵 Noch in Produktion ({runningMeals.length})
+            🔵 Noch in Produktion ({totalInProd})
           </div>
-          {runningMeals.length === 0 ? (
-            <div className="text-[10px] text-slate-300 italic">Alle Meals abgeschlossen</div>
+          {totalInProd === 0 ? (
+            <div className="text-[10px] text-slate-300 italic">
+              {wmsRows ? "Alle WMS-WOs verbucht oder im Postblast" : "WMS-Daten werden geladen…"}
+            </div>
           ) : (
             <div className="space-y-1.5">
-              {runningMeals.slice(0, MAX).map(m => (
+              {/* Postblast-basierte "laufende" Meals (teilweise gebucht, aber noch nicht vollständig) */}
+              {runningMeals.map(m => (
                 <div key={m.recipeCode} className="rounded-xl px-3 py-2.5 bg-white ring-1 ring-slate-200">
                   <div className="flex items-baseline justify-between gap-1">
                     <span className="font-mono text-[11px] font-bold text-slate-800">{m.recipeCode}</span>
@@ -515,17 +607,400 @@ function PlatingNowPanel({ meals, recipeWeights }: { meals: MealProgress[]; reci
                   <div className="text-[10px] text-slate-500 mb-1.5 truncate">{m.recipeName}</div>
                   <ProgressBar pct={m.progressPct} size="xs" />
                   <div className="text-[9px] text-slate-400 mt-1">
-                    {m.totalActualKg.toFixed(0)} / {m.totalPlannedKg > 0 ? m.totalPlannedKg.toFixed(0) : "—"} kg
+                    {m.totalActualKg.toFixed(0)} / {m.totalPlannedKg > 0 ? m.totalPlannedKg.toFixed(0) : "—"} kg · {m.totalWOs} WOs
                   </div>
                 </div>
               ))}
-              {runningMeals.length > MAX && (
-                <div className="text-[10px] text-slate-400 text-center py-1">+{runningMeals.length - MAX} weitere</div>
+              {/* WMS-WOs die noch keine Postblast-Wiegung haben */}
+              {(showAllProd ? wmsInProdList : wmsInProdList.slice(0, Math.max(0, MAX - runningMeals.length))).map(g => (
+                <div key={g.recipeCode} className="rounded-xl px-3 py-2.5 bg-slate-50 ring-1 ring-slate-200">
+                  <div className="flex items-baseline justify-between gap-1">
+                    <span className="font-mono text-[11px] font-bold text-slate-800">{g.recipeCode}</span>
+                    {g.maxPortions > 0 && (
+                      <span className="text-[10px] font-mono text-slate-500">{g.maxPortions.toLocaleString("de-DE")} Stk</span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mb-1 truncate">{g.recipeName}</div>
+                  {g.subRecipes.slice(0, 3).map(s => (
+                    <div key={s.name} className="text-[9px] text-slate-400 truncate">
+                      · {s.name}{s.portions > 0 ? ` (${s.portions.toLocaleString("de-DE")} Stk)` : ""}
+                    </div>
+                  ))}
+                  {g.subRecipes.length > 3 && (
+                    <div className="text-[9px] text-slate-300">+{g.subRecipes.length - 3} Sub-Rezepte</div>
+                  )}
+                  <div className="text-[9px] text-blue-500 font-medium mt-1">● WMS · noch keine Wiegung</div>
+                </div>
+              ))}
+              {wmsInProdList.length > Math.max(0, MAX - runningMeals.length) && (
+                <button
+                  onClick={() => setShowAllProd(v => !v)}
+                  className="w-full text-[10px] text-slate-400 hover:text-slate-600 text-center py-1.5 hover:bg-slate-50 rounded-lg transition-colors"
+                >
+                  {showAllProd
+                    ? "▲ Weniger anzeigen"
+                    : `▼ +${wmsInProdList.length - Math.max(0, MAX - runningMeals.length)} weitere (WMS)`}
+                </button>
               )}
             </div>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Minimum-Needs-Panel ─────────────────────────────────────────────────────
+
+const MIN_NEEDS_DAYS = [
+  { key: "thu" as const, label: "Do", fullLabel: "Donnerstag" },
+  { key: "fri" as const, label: "Fr", fullLabel: "Freitag" },
+  { key: "sat" as const, label: "Sa", fullLabel: "Samstag" },
+];
+
+interface MinNeedsMealStatus {
+  code: string;
+  recipeName: string;
+  minNeeds: number | null;
+  readyTarget: number | null;
+  met: boolean;
+}
+
+function todayCheckpoint(): "thu" | "fri" | "sat" {
+  const d = new Date().getDay();
+  if (d === 5) return "fri";
+  if (d === 6) return "sat";
+  return "thu";
+}
+
+function MinimumNeedsPanel({
+  planRows,
+  redzone,
+}: {
+  planRows: ProductionPlanRow[];
+  redzone?: RedzoneState | null;
+}) {
+  const [expandedDay, setExpandedDay] = useState<"thu" | "fri" | "sat" | null>(() => todayCheckpoint());
+
+  // Platierte Portionen je Rezept-Code aus abgeschlossenen Redzone-Runs (letzte 24h)
+  const platedByCode = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const run of redzone?.platingDone ?? []) {
+      if (run.mealCode) map.set(run.mealCode, (map.get(run.mealCode) ?? 0) + (run.outCount ?? 0));
+    }
+    // Aktive Runs miteinrechnen (outCount wird live aktualisiert)
+    for (const run of redzone ? [...redzone.platingNow.values()] : []) {
+      if (run.mealCode && run.outCount) map.set(run.mealCode, (map.get(run.mealCode) ?? 0) + run.outCount);
+    }
+    return map;
+  }, [redzone?.platingDone, redzone?.platingNow]);
+
+  const byDay = useMemo(() => {
+    const result = new Map<"thu" | "fri" | "sat", MinNeedsMealStatus[]>();
+    for (const { key } of MIN_NEEDS_DAYS) {
+      const statuses: MinNeedsMealStatus[] = [];
+      for (const row of planRows) {
+        const minNeeds = row.minNeedsByDay[key];
+        const readyTarget = row.readyByDay[key];
+        if (minNeeds == null && readyTarget == null) continue;
+        statuses.push({
+          code: row.code,
+          recipeName: row.recipeName,
+          minNeeds,
+          readyTarget,
+          met: minNeeds != null ? minNeeds <= 0 : readyTarget != null,
+        });
+      }
+      // Unerfüllte (größter Bedarf) zuerst, dann Überschüsse
+      statuses.sort((a, b) => (b.minNeeds ?? 0) - (a.minNeeds ?? 0));
+      result.set(key, statuses);
+    }
+    return result;
+  }, [planRows]);
+
+  const hasAnyData = [...byDay.values()].some(list => list.length > 0);
+  if (!hasAnyData) return null;
+
+  return (
+    <div className="card p-5 shadow-md border-0">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <div>
+          <div className="font-bold text-slate-900 text-sm">Minimum Needs</div>
+          <div className="text-[10px] text-slate-400">
+            Plan-Ziele Do · Fr · Sa · Negativ = Überschuss ✓ · Positiv = noch fehlend ✗
+          </div>
+        </div>
+        <a
+          href="https://docs.google.com/spreadsheets/d/13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U/edit?gid=591593997#gid=591593997"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[11px] px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition font-medium ring-1 ring-slate-200"
+        >
+          ↗ Kitchen Priority Sheet
+        </a>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {MIN_NEEDS_DAYS.map(({ key, label, fullLabel }) => {
+          const statuses = byDay.get(key) ?? [];
+          if (statuses.length === 0) return (
+            <div key={key} className="rounded-xl p-4 bg-slate-50 ring-1 ring-slate-200 text-center">
+              <div className="text-xs font-bold text-slate-400 uppercase">{label}</div>
+              <div className="text-[10px] text-slate-300 mt-1">Kein Plan</div>
+            </div>
+          );
+
+          const metCount = statuses.filter(s => s.met).length;
+          const totalCount = statuses.length;
+          const allMet = metCount === totalCount;
+          const noneMet = metCount === 0;
+          const isOpen = expandedDay === key;
+
+          const ringCls = allMet ? "ring-emerald-200" : noneMet ? "ring-red-200" : "ring-amber-200";
+          const bgCls = allMet ? "bg-emerald-50" : noneMet ? "bg-red-50" : "bg-amber-50";
+          const textCls = allMet ? "text-emerald-700" : noneMet ? "text-red-700" : "text-amber-700";
+          const barCls = allMet ? "bg-emerald-500" : noneMet ? "bg-red-500" : "bg-amber-500";
+          const badgeCls = allMet
+            ? "bg-emerald-100 text-emerald-700"
+            : noneMet ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700";
+
+          return (
+            <div key={key} className={`rounded-xl overflow-hidden ring-1 ${ringCls} ${bgCls}`}>
+              <button
+                onClick={() => setExpandedDay(e => e === key ? null : key)}
+                className="w-full p-4 text-left"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-xs font-bold uppercase tracking-wide ${textCls}`}>
+                    {label} · {fullLabel}
+                  </span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeCls}`}>
+                    {allMet ? "✓ ALLE OK" : `${metCount}/${totalCount} OK`}
+                  </span>
+                </div>
+                <div className={`text-2xl font-bold font-mono ${textCls}`}>
+                  {metCount}
+                  <span className="text-sm font-normal opacity-50">/{totalCount}</span>
+                </div>
+                <div className={`text-[10px] mt-0.5 mb-2 ${textCls}`}>
+                  {allMet ? "Alle Minimum Needs erfüllt ✓" : `${totalCount - metCount} unter Minimum`}
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-white/60 overflow-hidden">
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-700 ${barCls}`}
+                    style={{ width: `${totalCount > 0 ? (metCount / totalCount) * 100 : 0}%` }}
+                  />
+                </div>
+                <div className={`text-[9px] mt-1.5 ${textCls} opacity-70`}>
+                  {isOpen ? "▲ Zuklappen" : "▼ Details anzeigen"}
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="px-4 pb-4 space-y-1 border-t border-white/40 pt-2 max-h-72 overflow-y-auto">
+                  {statuses.map(s => {
+                    const plated = platedByCode.get(s.code);
+                    const isActivePlating = redzone?.isPlatingNow(s.code) ?? false;
+                    return (
+                      <div key={s.code} className="text-[10px] space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`shrink-0 font-bold ${s.met ? "text-emerald-600" : "text-red-600"}`}>
+                            {s.met ? "✓" : "✗"}
+                          </span>
+                          <span className="font-mono font-bold text-slate-900 shrink-0">{s.code}</span>
+                          <span className="text-slate-500 truncate flex-1 min-w-0 text-[9px]">{s.recipeName}</span>
+                          {s.minNeeds != null && (
+                            <span className={`font-mono font-bold shrink-0 tabular-nums ${
+                              s.minNeeds <= 0 ? "text-emerald-600" : "text-red-600"
+                            }`}>
+                              {s.minNeeds <= 0
+                                ? `+${Math.abs(Math.round(s.minNeeds)).toLocaleString("de-DE")}`
+                                : `−${Math.round(s.minNeeds).toLocaleString("de-DE")}`}
+                            </span>
+                          )}
+                        </div>
+                        {(plated != null || isActivePlating) && (
+                          <div className="flex items-center gap-1 ml-4">
+                            {isActivePlating && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                            )}
+                            <span className="text-[9px] text-slate-400">
+                              Redzone: {plated != null ? `${plated.toLocaleString("de-DE")} platiert` : "aktiv"}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Redzone-Monitor-Panel ───────────────────────────────────────────────────
+
+function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
+  const [expanded, setExpanded] = useState(true);
+
+  if (!redzone) return null;
+
+  const { activeLineCount, platingNow, platingDone, cookingNow, totalPlated, loading, error, lastUpdate, secondsUntilRefresh } = redzone;
+
+  // Abgeschlossene Runs nach mealCode gruppieren (letzte 24h)
+  const doneTotals = useMemo(() => {
+    const map = new Map<string, { mealCode: string; name: string; total: number }>();
+    for (const run of platingDone) {
+      if (!run.mealCode) continue;
+      const existing = map.get(run.mealCode);
+      if (existing) existing.total += run.outCount ?? 0;
+      else map.set(run.mealCode, { mealCode: run.mealCode, name: run.productTypeName, total: run.outCount ?? 0 });
+    }
+    return [...map.values()].sort((a, b) => b.total - a.total);
+  }, [platingDone]);
+
+  const activeRuns = [...platingNow.values()];
+
+  // Kompakte Zeitdarstellung: "seit X min" / "seit Xh Ym"
+  function sinceMin(start: string | null): string {
+    if (!start) return "—";
+    const mins = Math.round((Date.now() - new Date(start).getTime()) / 60_000);
+    if (mins < 60) return `${mins} min`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  }
+
+  const lastUpdateStr = lastUpdate
+    ? new Date(lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
+    : "—";
+
+  const hasAnyActivity = activeRuns.length > 0 || cookingNow.length > 0 || doneTotals.length > 0;
+
+  return (
+    <div className={`card shadow-md border-0 overflow-hidden transition-all ${
+      activeLineCount > 0 ? "ring-1 ring-red-200" : "ring-1 ring-slate-200"
+    }`}>
+      {/* Header */}
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className={`w-full px-5 py-3.5 flex items-center justify-between gap-3 text-left ${
+          activeLineCount > 0 ? "bg-red-50" : "bg-slate-50"
+        }`}
+      >
+        <div className="flex items-center gap-3 flex-wrap min-w-0">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className={`w-2 h-2 rounded-full ${
+              loading ? "bg-slate-400" :
+              error ? "bg-amber-500" :
+              activeLineCount > 0 ? "bg-red-500 animate-pulse" : "bg-emerald-500"
+            }`} />
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">Redzone Live · Plating</span>
+          </div>
+          {activeLineCount > 0 && (
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 ring-1 ring-red-200 font-bold shrink-0">
+              {activeLineCount} {activeLineCount === 1 ? "Linie" : "Linien"} aktiv
+            </span>
+          )}
+          {cookingNow.length > 0 && (
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-700 ring-1 ring-orange-200 font-bold shrink-0">
+              🔥 {cookingNow.length} Ofen/Braiser
+            </span>
+          )}
+          {totalPlated > 0 && (
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium shrink-0">
+              {totalPlated.toLocaleString("de-DE")} Portionen fertig (24h)
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {!loading && !error && (
+            <span className="text-[10px] text-slate-400">Stand {lastUpdateStr} · ⟳ {secondsUntilRefresh}s</span>
+          )}
+          {error && <span className="text-[10px] text-amber-600 font-medium truncate max-w-40">{error}</span>}
+          <span className="text-[10px] text-slate-400">{expanded ? "▲" : "▼"}</span>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="p-5 space-y-5">
+          {!hasAnyActivity && !loading && (
+            <div className="text-[10px] text-slate-400 italic text-center py-4">
+              Keine aktiven Plating- oder Kochvorgänge in den letzten 24 Stunden
+            </div>
+          )}
+
+          {/* Aktive Plating-Linien */}
+          {activeRuns.length > 0 && (
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-red-600 mb-2">
+                🔴 Aktiv platieren ({activeRuns.length})
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {activeRuns.map(run => (
+                  <div key={run.locationName + run.runName} className="rounded-xl px-3 py-2.5 bg-red-50 ring-1 ring-red-200">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-slate-900 truncate">{run.locationName}</span>
+                      {run.mealCode && (
+                        <span className="font-mono text-[11px] font-bold text-red-700 shrink-0">{run.mealCode}</span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-500 truncate mt-0.5">{run.productTypeName}</div>
+                    <div className="flex items-center justify-between mt-1.5 text-[10px]">
+                      <span className="text-slate-400">seit {sinceMin(run.startTime)}</span>
+                      {run.outCount != null && run.outCount > 0 && (
+                        <span className="font-mono font-bold text-red-600">
+                          {run.outCount.toLocaleString("de-DE")} Stk
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Aktive Kocher (Ofen / Braiser) */}
+          {cookingNow.length > 0 && (
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-orange-600 mb-2">
+                🔥 Ofen / Braiser aktiv ({cookingNow.length})
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {cookingNow.map(run => (
+                  <div key={run.locationName + run.runName} className="rounded-xl px-3 py-2 bg-orange-50 ring-1 ring-orange-200">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-bold text-slate-800 truncate">{run.locationName}</span>
+                      <span className="text-[10px] text-orange-600 shrink-0">{run.areaName}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 truncate">{run.productTypeName}</div>
+                    <div className="text-[9px] text-slate-400 mt-1">seit {sinceMin(run.startTime)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Heute fertig (abgeschlossene Runs, gruppiert nach Meal) */}
+          {doneTotals.length > 0 && (
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">
+                ✓ Fertig platiert heute ({doneTotals.length} Rezepte · {totalPlated.toLocaleString("de-DE")} Portionen gesamt)
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {doneTotals.map(entry => (
+                  <div key={entry.mealCode} className="rounded-lg px-2.5 py-1.5 bg-slate-50 ring-1 ring-slate-200 text-[10px]">
+                    <span className="font-mono font-bold text-slate-800">{entry.mealCode}</span>
+                    <span className="text-slate-500 ml-1.5">{entry.total.toLocaleString("de-DE")} Stk</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -550,6 +1025,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   // Berechnung entsteht. Optional, weil diese Ansicht theoretisch auch ohne
   // den Provider funktionieren muss (z.B. in Tests).
   const backfillAlerts = useBackfillsOptional()?.alerts ?? [];
+  const redzone = useRedzoneOptional();
 
   // Live-WMS-Cache (wmsCache/workorders, siehe scripts/sync-wms-cache.ts) — der
   // gleiche Fallback, den KetBreakdownView schon nutzt, wenn der Firestore-Plan
@@ -1153,6 +1629,28 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               >
                 {preblastMonitor.data ? "● Pre-Blast abgeglichen" : "○ Pre-Blast wartet"}
               </span>
+              <span
+                title={
+                  redzone && !redzone.error
+                    ? `Redzone Live verbunden — ${redzone.activeLineCount} Plating-${redzone.activeLineCount === 1 ? "Linie" : "Linien"} aktiv, ${redzone.totalPlated.toLocaleString("de-DE")} Portionen fertig (letzte 24h)`
+                    : redzone?.error
+                    ? `Redzone Fehler: ${redzone.error}`
+                    : "Redzone wird geladen"
+                }
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ring-1 ${
+                  redzone && !redzone.error
+                    ? redzone.activeLineCount > 0
+                      ? "bg-red-400/30 text-red-100 ring-red-300/60 animate-pulse"
+                      : "bg-emerald-400/20 text-emerald-200 ring-emerald-400/40"
+                    : "bg-white/10 text-teal-200/60 ring-white/20"
+                }`}
+              >
+                {redzone && !redzone.error
+                  ? redzone.activeLineCount > 0
+                    ? `● Redzone · ${redzone.activeLineCount} ${redzone.activeLineCount === 1 ? "Linie" : "Linien"}`
+                    : "● Redzone verbunden"
+                  : "○ Redzone wartet"}
+              </span>
               {rtiWeekMismatch && (
                 <button
                   onClick={() => {
@@ -1268,7 +1766,13 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
       </div>
 
       {/* ══ PLATING-QUEUE ════════════════════════════════════════════════ */}
-      <PlatingNowPanel meals={meals} recipeWeights={recipeWeights} />
+      <PlatingNowPanel meals={meals} recipeWeights={recipeWeights} wmsRows={liveWmsRows} redzone={redzone} />
+
+      {/* ══ REDZONE LIVE ═════════════════════════════════════════════════ */}
+      <RedzoneMonitorPanel redzone={redzone} />
+
+      {/* ══ MINIMUM NEEDS ════════════════════════════════════════════════ */}
+      <MinimumNeedsPanel planRows={planSheetData?.rows ?? []} redzone={redzone} />
 
       {/* ══ ZUSATZDATEN FÜR KG-SCHÄTZUNG ═══════════════════════════════════ */}
       <div className="card p-4 shadow-sm">
