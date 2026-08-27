@@ -1,9 +1,12 @@
 // Frischeliste-Tab im KET Plan:
-// Zwei Ansichten: Küche (nach Mahlzeit gruppiert) und Einkauf (Gesamtmengen je Zutat).
-// Plus: Middle-Kitchen-Vorschau für Spezial-Artikel (componentlose WOs) der Folge-KW.
+// V1: Zwei Ansichten: Küche (nach Mahlzeit gruppiert) und Einkauf (Gesamtmengen je Zutat).
+//     Plus: Middle-Kitchen-Vorschau für Spezial-Artikel (componentlose WOs) der Folge-KW.
+// V2: Frischeliste 2.0 – Live Google Sheets + Rezept-Daten, alle Stationen, Tag-Spalten.
 import { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
+import type { DataBundle } from "../../core/types";
 import type { KetRow, BatchCalc } from "./ketTypes";
+import { FrischelisteV2Panel } from "./FrischelisteV2Panel";
 import {
   buildFrischeliste,
   buildFrischelisteEinkauf,
@@ -40,11 +43,14 @@ interface Props {
   nextWeekRows: KetRow[];   // Folge-KW (für Middle Kitchen Spezial-Artikel)
   calcMap: Map<string, BatchCalc>;
   weekLabel: string;
+  data: DataBundle;         // für Frischeliste 2.0
 }
 
+type TabMode = "v1" | "v2";
 type ViewMode = "kueche" | "einkauf";
 
-export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel }: Props) {
+export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel, data }: Props) {
+  const [tabMode, setTabMode] = useState<TabMode>("v1");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([0, 1]);
   const [viewMode, setViewMode] = useState<ViewMode>("kueche");
   const [spezialOpen, setSpezialOpen] = useState(true);
@@ -243,6 +249,41 @@ export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel }:
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
+      {/* ── Tab-Umschalter V1 / V2 ── */}
+      <div className="shrink-0 flex gap-0 border-b border-slate-200 bg-white px-5 pt-2">
+        <button
+          type="button"
+          onClick={() => setTabMode("v1")}
+          className={`px-4 py-2 text-[11px] font-black uppercase tracking-wide border-b-2 transition-colors ${
+            tabMode === "v1"
+              ? "border-[#1e3a5f] text-[#1e3a5f]"
+              : "border-transparent text-slate-400 hover:text-slate-600"
+          }`}
+        >
+          V1 · WMS / Work Orders
+        </button>
+        <button
+          type="button"
+          onClick={() => setTabMode("v2")}
+          className={`px-4 py-2 text-[11px] font-black uppercase tracking-wide border-b-2 transition-colors ${
+            tabMode === "v2"
+              ? "border-emerald-600 text-emerald-700"
+              : "border-transparent text-slate-400 hover:text-slate-600"
+          }`}
+        >
+          V2 · Frischeliste 2.0 · Live Sheet
+        </button>
+      </div>
+
+      {/* ── Frischeliste 2.0 ── */}
+      {tabMode === "v2" && (
+        <div className="flex-1 min-h-0">
+          <FrischelisteV2Panel data={data} weekLabel={weekLabel} />
+        </div>
+      )}
+
+      {/* ── V1 ── */}
+      {tabMode === "v1" && <>
       {/* ── Toolbar ── */}
       <div className="shrink-0 px-5 pt-4 pb-3 border-b border-slate-100 bg-slate-50">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -427,6 +468,7 @@ export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel }:
           </div>
         )}
       </div>
+      </>}
     </div>
   );
 }

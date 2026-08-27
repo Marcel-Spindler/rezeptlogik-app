@@ -1693,6 +1693,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               nextWeekRows={nextWeekRows}
               calcMap={calcMap}
               weekLabel={liveWeek}
+              data={data}
             />
           ) : mainViewMode === "list" ? (
             <KetWoOverview
