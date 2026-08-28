@@ -14,18 +14,24 @@
 // KET_DRIVE_FOLDER_ID = Ziel-(Shared-)Drive/-Ordner (Default: der von Marcel
 // genannte Ordner).
 //
-// Idempotent: gleiche Datei wird überschrieben, keine Duplikate. Bereits in
-// Firestore (apps/rezeptlogik/woInstructions) vorhandene Anweisungen werden
-// wiederverwendet (exakter cacheKey + unscharfer Fallback), nur wirklich fehlende
-// gehen an Gemini und werden zurückgeschrieben — die Web-App sieht sie dann auch.
+// Idempotent: gleiche WO → gleicher Pfad + Dateiname → wird überschrieben, nie
+// dupliziert. Danach räumt der Lauf jede WO_*.pdf in den bearbeiteten
+// "W<nn>-Gemini"-Ordnern weg, die er NICHT geschrieben hat (WO in anderen Tag/
+// Station verschoben oder aus dem Plan raus) — `--no-prune` schaltet das ab.
+// Der KET-Export kann nur die KOMPLETTE Woche liefern (kein Delta), deshalb ist
+// „alles neu rendern + Reste wegräumen" der richtige Modus.
+// Bereits in Firestore (apps/rezeptlogik/woInstructions) vorhandene Anweisungen
+// werden wiederverwendet (exakter cacheKey + unscharfer Fallback), nur wirklich
+// fehlende gehen an Gemini und werden zurückgeschrieben — die Web-App sieht sie
+// dann auch.
 
 import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 loadEnv();
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import admin from "firebase-admin";
 import { chromium } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
@@ -71,6 +77,12 @@ const DRIVE_FOLDER_ID = process.env.KET_DRIVE_FOLDER_ID ?? DEFAULT_DRIVE_FOLDER_
 // vorhandene Anweisungen lesen + PDFs rendern/ablegen. Zum Prüfen von Layout &
 // Ordnerstruktur, ohne Kontingent/Firestore zu berühren.
 const DRY_RUN = process.env.KET_DRY_RUN === "1" || process.argv.includes("--dry-run");
+// Nach dem Lauf in den bearbeiteten "W<nn>-Gemini"-Ordnern jede WO_*.pdf löschen,
+// die dieser Lauf NICHT geschrieben hat (WO in anderen Tag/Station verschoben oder
+// aus dem Plan raus). Standard an — der KET-Export enthält immer die ganze Woche,
+// also spiegelt der Ordner danach exakt den aktuellen Plan. `--no-prune` schaltet
+// es ab. Wochen mit Render-/Upload-Fehler werden nie aufgeräumt.
+const NO_PRUNE = process.env.KET_NO_PRUNE === "1" || process.argv.includes("--no-prune");
 
 const INSTRUCTIONS_COLLECTION = ["apps", "rezeptlogik", "woInstructions"] as const;
 
@@ -130,6 +142,62 @@ function woFileName(row: KetRow): string {
   if (row.recipeCode) parts.push(row.recipeCode);
   parts.push(row.subRecipeName || row.recipeName);
   return `${sanitizeSegment(parts.join("_"))}.pdf`;
+}
+
+const relKey = (root: string, abs: string) => relative(root, abs).split(sep).join("/");
+const IS_WO_PDF = /^WO_.*\.pdf$/i;
+
+// Entfernt in einem "W<nn>-Gemini"-Ordner alle WO_*.pdf, die dieser Lauf nicht
+// geschrieben hat, und danach leere Unterordner. Nur Dateien mit WO_-Präfix —
+// alles andere im Ordner bleibt unangetastet.
+function pruneStaleWeek(root: string, weekDirName: string, keep: Set<string>): string[] {
+  const removed: string[] = [];
+  const weekDir = join(root, weekDirName);
+  if (!existsSync(weekDir)) return removed;
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) {
+        walk(p);
+        try {
+          if (readdirSync(p).filter((n) => n.toLowerCase() !== "desktop.ini").length === 0) {
+            rmSync(p, { recursive: true, force: true });
+          }
+        } catch { /* Drive-FUSE zickt gelegentlich beim rmdir — nicht fatal */ }
+      } else if (IS_WO_PDF.test(e.name) && !keep.has(relKey(root, p))) {
+        try { rmSync(p, { force: true }); removed.push(relKey(root, p)); } catch { /* s.o. */ }
+      }
+    }
+  };
+  walk(weekDir);
+  return removed;
+}
+
+// Drive-API-Pendant: veraltete WO_*.pdf unter den (per folderCache bekannten)
+// Wochen-Unterordnern löschen.
+async function pruneStaleWeekDrive(
+  drive: DriveClient,
+  folderCache: Map<string, string>,
+  weekDirName: string,
+  keep: Set<string>,
+): Promise<string[]> {
+  const removed: string[] = [];
+  for (const [path, folderId] of folderCache) {
+    if (path !== weekDirName && !path.startsWith(`${weekDirName}/`)) continue;
+    const res = await drive.files.list({
+      q: `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`,
+      fields: "files(id,name)",
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+    for (const f of res.data.files ?? []) {
+      if (f.name && IS_WO_PDF.test(f.name) && !keep.has(`${path}/${f.name}`)) {
+        await drive.files.delete({ fileId: f.id!, supportsAllDrives: true });
+        removed.push(`${path}/${f.name}`);
+      }
+    }
+  }
+  return removed;
 }
 
 // ── Ziel-Ermittlung (WO bzw. je Komponente) — spiegelt generationTargetsForRow /
@@ -319,16 +387,18 @@ async function main() {
   if (!csvPath || !existsSync(csvPath)) {
     fail(csvArg ? `KET-CSV nicht gefunden: ${csvArg}` : "Keine KET*.csv im Downloads-Ordner gefunden. Pfad als Argument angeben.");
   }
-  // Trockenlauf ohne Ziel-Pfad → in ./scratch/ket-publish schreiben.
+  // Trockenlauf schreibt IMMER nur nach ./scratch/ket-publish — nie an das echte
+  // Ziel (Drive-Mount oder API), auch wenn KET_DRIVE_ROOT/-API gesetzt sind.
+  const scratchRoot = join(ROOT, "scratch", "ket-publish");
   const driveApi = USE_DRIVE_API && !DRY_RUN;
-  const localRoot = DRIVE_ROOT || (DRY_RUN ? join(ROOT, "scratch", "ket-publish") : "");
+  const localRoot = DRY_RUN ? scratchRoot : DRIVE_ROOT;
   if (!driveApi && !localRoot) {
     fail("KET_DRIVE_ROOT nicht gesetzt (lokaler Drive-Mount-Pfad). Oder KET_DRIVE_API=1 für Upload via API.");
   }
-  if (!driveApi && DRIVE_ROOT && !existsSync(DRIVE_ROOT)) {
-    fail(`KET_DRIVE_ROOT existiert nicht: ${DRIVE_ROOT}`);
+  if (!driveApi && !DRY_RUN && !existsSync(localRoot)) {
+    fail(`KET_DRIVE_ROOT existiert nicht: ${localRoot}`);
   }
-  if (!driveApi && !DRIVE_ROOT) mkdirSync(localRoot, { recursive: true });
+  if (DRY_RUN) mkdirSync(scratchRoot, { recursive: true });
   if (!existsSync(BUNDLE_PATH)) {
     fail(`${BUNDLE_PATH} fehlt — 'npm run import:local' (bzw. sync:all) ausführen.`);
   }
@@ -402,6 +472,9 @@ async function main() {
   const folderCache = new Map<string, string>(); // API: Pfad → folderId
   const browser = await chromium.launch({ headless: true });
   const perFolder = new Map<string, number>();
+  const writtenRel = new Set<string>();       // "W37-Gemini/Veggie/Mo 31.08/WO_….pdf"
+  const touchedWeeks = new Set<string>();      // "W37-Gemini"
+  const weeksWithErr = new Set<string>();
   let written = 0, errors = 0;
 
   try {
@@ -409,6 +482,7 @@ async function main() {
       const calc = calcMap.get(row.key)!;
       const segs = [weekFolder(row), stationFolder(calc), dayFolder(row)];
       const fileName = woFileName(row);
+      touchedWeeks.add(segs[0]);
       try {
         const pdf = await renderWoPdf(browser, row, calcMap, woInstructions);
         if (drive) {
@@ -432,11 +506,13 @@ async function main() {
           writeFileSync(join(dir, fileName), pdf);
         }
         const key = segs.join("/");
+        writtenRel.add(`${key}/${fileName}`);
         perFolder.set(key, (perFolder.get(key) ?? 0) + 1);
         written++;
         process.stdout.write(`\r  ${written}/${rows.length} PDFs …   `);
       } catch (e) {
         errors++;
+        weeksWithErr.add(segs[0]);
         console.warn(`\n  ✗ WO ${row.woNumber}: ${e instanceof Error ? e.message : e}`);
       }
     }
@@ -446,6 +522,25 @@ async function main() {
 
   console.log(`\n\nFertig: ${written} PDFs geschrieben${errors ? `, ${errors} Fehler` : ""}.`);
   for (const [folder, n] of [...perFolder.entries()].sort()) console.log(`  ${folder}  →  ${n}`);
+
+  // Veraltete WO-PDFs entfernen — der KET-Export enthält immer die ganze Woche,
+  // danach spiegelt der Ordner exakt den aktuellen Plan (keine Doppel/Reste).
+  if (!NO_PRUNE) {
+    const stale: string[] = [];
+    for (const week of touchedWeeks) {
+      if (weeksWithErr.has(week)) {
+        console.warn(`  ⚠ ${week}: wegen Fehlern NICHT aufgeräumt.`);
+        continue;
+      }
+      stale.push(...(drive
+        ? await pruneStaleWeekDrive(drive, folderCache, week, writtenRel)
+        : pruneStaleWeek(localRoot, week, writtenRel)));
+    }
+    if (stale.length) {
+      console.log(`\n  ${stale.length} veraltete PDF(s) entfernt (WO verschoben/aus Plan raus):`);
+      for (const s of stale) console.log(`    − ${s}`);
+    }
+  }
 }
 
 main().catch((e) => fail(e instanceof Error ? e.stack ?? e.message : String(e)));

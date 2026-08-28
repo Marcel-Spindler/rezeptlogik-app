@@ -301,7 +301,9 @@ Alle Region `europe-west3`. Rewrites in `firebase.json` → `/api/*`.
 KI-Kochanweisungen erzeugen (`scripts/lib/gemini-instruction.mjs`, geteilt mit
 `db:serve`) → je WO ein PDF → sortiert nach `W<nn>-Gemini/<Protein|Veggie>/<Tag>/`
 in Google Drive (gemountetes Laufwerk `KET_DRIVE_ROOT`, sonst Drive-API mit
-`KET_DRIVE_API=1`). Idempotent; `--dry-run` rendert nur nach `scratch/ket-publish`.
+`KET_DRIVE_API=1`). Idempotent: gleiche WO überschreibt ihre Datei, danach werden
+verwaiste `WO_*.pdf` der Woche entfernt (`--no-prune` aus). `--dry-run` schreibt
+nur nach `scratch/ket-publish`.
 
 **Utility:** `discover:sheets` (Tab-Namen + GIDs aller Sheets), `dump:kpl`,
 `watch:operational`, `test:smoke:oase`.
