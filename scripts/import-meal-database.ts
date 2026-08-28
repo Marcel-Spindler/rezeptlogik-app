@@ -148,10 +148,29 @@ class DriveImageMirror {
   }
 }
 
-function findHeaderRow(sheet: ExcelJS.Worksheet): number | undefined {
-  for (let rowNumber = 1; rowNumber <= Math.min(sheet.rowCount, 5); rowNumber++) {
+const MEAL_ID_RE = /^[A-Z]{2}\d{4,5}[A-Z0-9]*$/i;
+
+// Findet Header-Zeile + Meal-ID-Spalte (1-basiert).
+// Primär: Zelle mit Text "Meal ID". Fallback: falls die Kopfzelle im Sheet
+// kaputt ist (z. B. versehentlich auf eine Zahl überschrieben, wie im
+// "Meal DB_Nutrition"-Tab gesehen), gilt die Zeile als Header, ab der eine der
+// ersten Spalten fortlaufend Meal-ID-Codes enthält.
+function findHeader(sheet: ExcelJS.Worksheet): { row: number; mealIdCol: number } | undefined {
+  for (let rowNumber = 1; rowNumber <= Math.min(sheet.rowCount, 8); rowNumber++) {
     const values = sheet.getRow(rowNumber).values as ExcelJS.CellValue[];
-    if (values.some(value => /^meal\s*id$/i.test(valueOf(value)))) return rowNumber;
+    const textIdx = values.findIndex(value => /^meal\s*id$/i.test(valueOf(value)));
+    if (textIdx >= 1) return { row: rowNumber, mealIdCol: textIdx };
+
+    for (let col = 1; col <= 3; col++) {
+      const self = valueOf(sheet.getRow(rowNumber).getCell(col).value);
+      if (MEAL_ID_RE.test(self)) continue; // diese Zeile ist selbst schon Daten
+      const below = [rowNumber + 1, rowNumber + 2]
+        .map(r => valueOf(sheet.getRow(r).getCell(col).value))
+        .filter(Boolean);
+      if (below.length > 0 && below.every(v => MEAL_ID_RE.test(v))) {
+        return { row: rowNumber, mealIdCol: col };
+      }
+    }
   }
   return undefined;
 }
@@ -192,14 +211,16 @@ export async function loadMealDatabase(file = process.env.MEAL_DATABASE_XLSX?.tr
   for (const sheetName of SOURCE_SHEETS) {
     const sheet = workbook.getWorksheet(sheetName);
     if (!sheet) continue;
-    const headerRow = findHeaderRow(sheet);
-    if (!headerRow) {
+    const header = findHeader(sheet);
+    if (!header) {
       console.warn(`  Meal Database: Header "Meal ID" fehlt in "${sheetName}"`);
       continue;
     }
+    const headerRow = header.row;
 
     const headers = headersOf(sheet, headerRow);
-    const mealIdIndex = headers.findIndex(header => /^meal\s*id$/i.test(header));
+    const mealIdIndex = header.mealIdCol - 1;
+    if (!/^meal\s*id$/i.test(headers[mealIdIndex] ?? "")) headers[mealIdIndex] = "Meal ID";
     let imported = 0;
 
     for (let rowNumber = headerRow + 1; rowNumber <= sheet.rowCount; rowNumber++) {
