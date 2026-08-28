@@ -32,14 +32,27 @@ async function clearCollection(collName: string) {
 
 async function batchedSet<T extends Record<string, unknown>>(collName: string, docs: { id: string; data: T }[]) {
   const coll = APP_ROOT.collection(collName);
-  const CHUNK = 400;
-  for (let i = 0; i < docs.length; i += CHUNK) {
+  const MAX_DOCS = 400;                // Firestore erlaubt 500 Writes/Batch
+  const MAX_BYTES = 8 * 1024 * 1024;   // Firestore-Requestlimit ~10 MiB — mit Puffer batchen
+  let i = 0;
+  let done = 0;
+  while (i < docs.length) {
     const batch = db.batch();
-    for (const { id, data } of docs.slice(i, i + CHUNK)) {
-      batch.set(coll.doc(id), data, { merge: true });
+    let bytes = 0;
+    let n = 0;
+    while (i < docs.length && n < MAX_DOCS) {
+      const { id, data } = docs[i];
+      const sz = Buffer.byteLength(JSON.stringify(data));
+      // Mindestens 1 Doc pro Batch — auch wenn es allein schon groß ist.
+      if (n > 0 && bytes + sz > MAX_BYTES) break;
+      batch.set(coll.doc(id), data as Record<string, unknown>, { merge: true });
+      bytes += sz;
+      n++;
+      i++;
     }
     await batch.commit();
-    console.log(`  ${collName}: ${Math.min(i + CHUNK, docs.length)}/${docs.length}`);
+    done += n;
+    console.log(`  ${collName}: ${done}/${docs.length}`);
   }
 }
 

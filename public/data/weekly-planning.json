@@ -1,11 +1,11 @@
 {
-  "cw": 34,
+  "cw": 36,
   "year": 2026,
   "isReference": false,
-  "referenceNote": "KW34 Daten",
-  "spreadsheetName": "Weekly planning F_ 2026 CW34",
-  "spreadsheetId": "1fcrvi9KwdmBxfw5vGIsMb-SMs0VT5bYpU-wvIwF8gH4",
-  "generatedAt": "2026-08-11T05:33:05.407Z",
+  "referenceNote": "KW36 Daten",
+  "spreadsheetName": "Weekly planning F_ 2026 CW36",
+  "spreadsheetId": "1ZKwK_acsiBZUUYNv8eY52uXnny8dgxaNS9Wvw6yfRMo",
+  "generatedAt": "2026-08-28T04:55:54.342Z",
   "boxesPerLinePerShift": 6608,
   "boxSchedule": [
     {
@@ -52,62 +52,62 @@
   "teamByDay": [
     {
       "dayLabel": "Monday",
-      "date": "2026-08-11",
+      "date": "2026-08-25",
       "platingLinesEarly": 0,
       "platingLinesLate": 1,
       "platingHeadcountEarly": 0,
-      "platingHeadcountLate": 8,
+      "platingHeadcountLate": 4.8,
       "kitchenHeadcountEarly": 19,
-      "kitchenHeadcountLate": 21,
-      "allStaffEarly": 55.7,
-      "allStaffLate": 34.4,
+      "kitchenHeadcountLate": 19,
+      "allStaffEarly": 58.4,
+      "allStaffLate": 30.9,
       "areas": {
-        "FFM4": {
-          "early": 8,
+        "FFM2": {
+          "early": 5.6,
           "late": 0
         },
         "Agency": {
           "early": 6,
           "late": 0
         },
-        "Plating4": {
+        "Plating2": {
           "early": 0,
-          "late": 8
+          "late": 4.8
         },
         "K1": {
-          "early": 9,
+          "early": 8,
           "late": 0
         },
         "K2": {
-          "early": 10,
+          "early": 11,
           "late": 0
         },
         "K3": {
           "early": 0,
-          "late": 11
+          "late": 10
         },
         "K4": {
           "early": 0,
-          "late": 10
+          "late": 9
         },
         "Sanitation": {
-          "early": 6.3,
+          "early": 5.6,
           "late": 0
         },
         "Print": {
-          "early": 3,
+          "early": 2,
           "late": 0
         },
         "W1": {
-          "early": 5.95,
+          "early": 0,
+          "late": 5.1
+        },
+        "W2": {
+          "early": 5.1,
           "late": 0
         },
         "W3": {
-          "early": 0,
-          "late": 3.4
-        },
-        "W4": {
-          "early": 3.4,
+          "early": 5.1,
           "late": 0
         },
         "Quality1": {
@@ -127,33 +127,33 @@
           "late": 0
         },
         "Agency Cost": {
-          "early": 1271.04,
+          "early": 2542.08,
           "late": 0
         },
         "Date": {
-          "early": 46244,
-          "late": 46245
+          "early": 46258,
+          "late": 46259
         }
       }
     },
     {
       "dayLabel": "Tuesday",
-      "date": "2026-08-12",
+      "date": "2026-08-26",
       "platingLinesEarly": 3,
       "platingLinesLate": 1,
-      "platingHeadcountEarly": 28,
-      "platingHeadcountLate": 8,
-      "kitchenHeadcountEarly": 19,
-      "kitchenHeadcountLate": 21,
-      "allStaffEarly": 136.5,
-      "allStaffLate": 36.4,
+      "platingHeadcountEarly": 21.6,
+      "platingHeadcountLate": 4.8,
+      "kitchenHeadcountEarly": 20,
+      "kitchenHeadcountLate": 19,
+      "allStaffEarly": 124.7,
+      "allStaffLate": 32.9,
       "areas": {
-        "FFM1": {
-          "early": 9.6,
+        "FFM2": {
+          "early": 5.6,
           "late": 0
         },
-        "FFM2": {
-          "early": 6.4,
+        "FFM3": {
+          "early": 4,
           "late": 0
         },
         "FFM4": {
@@ -161,60 +161,60 @@
           "late": 0
         },
         "Agency": {
-          "early": 36,
-          "late": 0
-        },
-        "Plating1": {
-          "early": 8,
-          "late": 0
-        },
-        "Plating2": {
-          "early": 9,
-          "late": 0
-        },
-        "Plating3": {
           "early": 11,
           "late": 0
         },
-        "Plating4": {
+        "Plating1": {
+          "early": 4.8,
+          "late": 0
+        },
+        "Plating2": {
           "early": 0,
-          "late": 8
+          "late": 4.8
+        },
+        "Plating3": {
+          "early": 8,
+          "late": 0
+        },
+        "Plating4": {
+          "early": 8.8,
+          "late": 0
         },
         "K1": {
           "early": 9,
           "late": 0
         },
         "K2": {
-          "early": 10,
+          "early": 11,
           "late": 0
         },
         "K3": {
           "early": 0,
-          "late": 11
+          "late": 10
         },
         "K4": {
           "early": 0,
-          "late": 10
+          "late": 9
         },
         "Sanitation": {
-          "early": 6.3,
+          "early": 7,
           "late": 0
         },
         "Print": {
-          "early": 3,
+          "early": 2,
           "late": 0
         },
         "W1": {
+          "early": 0,
+          "late": 5.1
+        },
+        "W2": {
           "early": 5.95,
           "late": 0
         },
-        "W2": {
-          "early": 6.8,
-          "late": 0
-        },
         "W3": {
-          "early": 0,
-          "late": 3.4
+          "early": 5.1,
+          "late": 0
         },
         "W4": {
           "early": 3.4,
@@ -241,37 +241,37 @@
           "late": 0
         },
         "Agency Cost": {
-          "early": 7626.24,
+          "early": 8049.92,
           "late": 0
         },
         "Date": {
-          "early": 46246,
-          "late": 46247
+          "early": 46260,
+          "late": 46261
         }
       }
     },
     {
       "dayLabel": "Wednesday",
-      "date": "2026-08-13",
+      "date": "2026-08-27",
       "platingLinesEarly": 3,
       "platingLinesLate": 1,
-      "platingHeadcountEarly": 28,
-      "platingHeadcountLate": 8,
-      "kitchenHeadcountEarly": 18.6,
-      "kitchenHeadcountLate": 14.7,
-      "allStaffEarly": 142.5,
-      "allStaffLate": 31,
+      "platingHeadcountEarly": 22.4,
+      "platingHeadcountLate": 4.8,
+      "kitchenHeadcountEarly": 20.6,
+      "kitchenHeadcountLate": 13.3,
+      "allStaffEarly": 142.3,
+      "allStaffLate": 27.2,
       "areas": {
         "FFM1": {
-          "early": 9.6,
+          "early": 6.4,
           "late": 0
         },
         "FFM2": {
-          "early": 6.4,
+          "early": 4.8,
           "late": 0
         },
         "FFM3": {
-          "early": 6.4,
+          "early": 4,
           "late": 0
         },
         "FFM4": {
@@ -279,60 +279,60 @@
           "late": 0
         },
         "Agency": {
-          "early": 36,
+          "early": 21,
           "late": 0
         },
         "Plating1": {
-          "early": 8,
+          "early": 4.8,
           "late": 0
         },
         "Plating2": {
-          "early": 9,
-          "late": 0
+          "early": 0,
+          "late": 4.8
         },
         "Plating3": {
-          "early": 11,
+          "early": 8.8,
           "late": 0
         },
         "Plating4": {
-          "early": 0,
-          "late": 8
+          "early": 8.8,
+          "late": 0
         },
         "K1": {
           "early": 8.82,
           "late": 0
         },
         "K2": {
-          "early": 9.8,
+          "early": 11.76,
           "late": 0
         },
         "K3": {
           "early": 0,
-          "late": 7.7
+          "late": 7
         },
         "K4": {
           "early": 0,
-          "late": 7
+          "late": 6.3
         },
         "Sanitation": {
-          "early": 6.3,
+          "early": 7.7,
           "late": 0
         },
         "Print": {
-          "early": 3,
+          "early": 2,
           "late": 0
         },
         "W1": {
+          "early": 0,
+          "late": 5.1
+        },
+        "W2": {
           "early": 5.95,
           "late": 0
         },
-        "W2": {
-          "early": 6.8,
-          "late": 0
-        },
         "W3": {
-          "early": 0,
-          "late": 4.25
+          "early": 5.1,
+          "late": 0
         },
         "W4": {
           "early": 3.4,
@@ -359,29 +359,29 @@
           "late": 0
         },
         "Agency Cost": {
-          "early": 7626.24,
+          "early": 10168.32,
           "late": 0
         },
         "Date": {
-          "early": 46248,
-          "late": 46249
+          "early": 46262,
+          "late": 46263
         }
       }
     },
     {
       "dayLabel": "Thursday",
-      "date": "2026-08-14",
+      "date": "2026-08-28",
       "platingLinesEarly": 3,
       "platingLinesLate": 1,
-      "platingHeadcountEarly": 28,
-      "platingHeadcountLate": 8,
-      "kitchenHeadcountEarly": 19.6,
-      "kitchenHeadcountLate": 14.7,
-      "allStaffEarly": 141.9,
-      "allStaffLate": 30.1,
+      "platingHeadcountEarly": 22.4,
+      "platingHeadcountLate": 4.8,
+      "kitchenHeadcountEarly": 20.6,
+      "kitchenHeadcountLate": 13.3,
+      "allStaffEarly": 140.7,
+      "allStaffLate": 27.2,
       "areas": {
         "FFM1": {
-          "early": 8.8,
+          "early": 8,
           "late": 0
         },
         "FFM2": {
@@ -389,7 +389,7 @@
           "late": 0
         },
         "FFM3": {
-          "early": 6.4,
+          "early": 4,
           "late": 0
         },
         "FFM4": {
@@ -397,60 +397,60 @@
           "late": 0
         },
         "Agency": {
-          "early": 36,
+          "early": 17,
           "late": 0
         },
         "Plating1": {
-          "early": 8,
+          "early": 4.8,
           "late": 0
         },
         "Plating2": {
-          "early": 9,
-          "late": 0
+          "early": 0,
+          "late": 4.8
         },
         "Plating3": {
-          "early": 11,
+          "early": 8.8,
           "late": 0
         },
         "Plating4": {
-          "early": 0,
-          "late": 8
+          "early": 8.8,
+          "late": 0
         },
         "K1": {
           "early": 8.82,
           "late": 0
         },
         "K2": {
-          "early": 10.78,
+          "early": 11.76,
           "late": 0
         },
         "K3": {
           "early": 0,
-          "late": 7.7
+          "late": 7
         },
         "K4": {
           "early": 0,
-          "late": 7
+          "late": 6.3
         },
         "Sanitation": {
-          "early": 6.3,
+          "early": 7.7,
           "late": 0
         },
         "Print": {
-          "early": 3,
+          "early": 2,
           "late": 0
         },
         "W1": {
+          "early": 0,
+          "late": 5.1
+        },
+        "W2": {
           "early": 5.95,
           "late": 0
         },
-        "W2": {
-          "early": 6.8,
-          "late": 0
-        },
         "W3": {
-          "early": 0,
-          "late": 3.4
+          "early": 5.1,
+          "late": 0
         },
         "W4": {
           "early": 3.4,
@@ -477,94 +477,94 @@
           "late": 0
         },
         "Agency Cost": {
-          "early": 7626.24,
+          "early": 9320.96,
           "late": 0
         },
         "Date": {
-          "early": 46250,
+          "early": 46264,
           "late": 0
         }
       }
     },
     {
       "dayLabel": "Friday",
-      "date": "2026-08-15",
+      "date": "2026-08-29",
       "platingLinesEarly": 3,
       "platingLinesLate": 1,
-      "platingHeadcountEarly": 22.1,
-      "platingHeadcountLate": 6.8,
-      "kitchenHeadcountEarly": 8.8,
-      "kitchenHeadcountLate": 14.7,
-      "allStaffEarly": 155.4,
-      "allStaffLate": 28.9,
+      "platingHeadcountEarly": 18.2,
+      "platingHeadcountLate": 3.9,
+      "kitchenHeadcountEarly": 7.8,
+      "kitchenHeadcountLate": 13.3,
+      "allStaffEarly": 140,
+      "allStaffLate": 26.3,
       "areas": {
         "FFM1": {
-          "early": 9.6,
+          "early": 6.5,
           "late": 0
         },
         "FFM2": {
-          "early": 6.4,
+          "early": 4.55,
           "late": 0
         },
         "FFM3": {
-          "early": 6.4,
+          "early": 3.25,
           "late": 0
         },
         "FFM4": {
-          "early": 8,
+          "early": 6.5,
           "late": 0
         },
         "Agency": {
-          "early": 70,
+          "early": 3,
           "late": 0
         },
         "Plating1": {
-          "early": 5.95,
+          "early": 3.9,
           "late": 0
         },
         "Plating2": {
-          "early": 7.65,
-          "late": 0
+          "early": 0,
+          "late": 3.9
         },
         "Plating3": {
-          "early": 8.5,
+          "early": 7.15,
           "late": 0
         },
         "Plating4": {
-          "early": 0,
-          "late": 6.8
+          "early": 7.15,
+          "late": 0
         },
         "K1": {
-          "early": 8.82,
+          "early": 7.84,
           "late": 0
         },
         "K3": {
           "early": 0,
-          "late": 7.7
+          "late": 7
         },
         "K4": {
           "early": 0,
-          "late": 7
+          "late": 6.3
         },
         "Sanitation": {
-          "early": 6.3,
+          "early": 7.7,
           "late": 0
         },
         "Print": {
-          "early": 3,
+          "early": 2,
           "late": 0
         },
         "W1": {
-          "early": 5.95,
-          "late": 0
-        },
-        "W2": {
-          "early": 6.8,
-          "late": 0
+          "early": 0,
+          "late": 5.1
         },
         "W3": {
-          "early": 0,
-          "late": 3.4
+          "early": 5.1,
+          "late": 0
+        },
+        "W4": {
+          "early": 3.4,
+          "late": 0
         },
         "Quality1": {
           "early": 0,
@@ -583,45 +583,45 @@
           "late": 0
         },
         "Agency Cost": {
-          "early": 14828.8,
+          "early": 15464.32,
           "late": 0
         }
       }
     },
     {
       "dayLabel": "Saturday",
-      "date": "2026-08-16",
+      "date": "2026-08-30",
       "platingLinesEarly": 2,
       "platingLinesLate": 0,
-      "platingHeadcountEarly": 16.2,
+      "platingHeadcountEarly": 12.4,
       "platingHeadcountLate": 0,
       "kitchenHeadcountEarly": 0,
       "kitchenHeadcountLate": 0,
-      "allStaffEarly": 60.8,
+      "allStaffEarly": 57.4,
       "allStaffLate": 2,
       "areas": {
-        "FFM2": {
-          "early": 6.4,
+        "FFM1": {
+          "early": 6.5,
           "late": 0
         },
-        "FFM3": {
-          "early": 6.4,
+        "FFM4": {
+          "early": 7.15,
           "late": 0
         },
         "Agency": {
-          "early": 25,
+          "early": 3,
           "late": 0
         },
-        "Plating2": {
-          "early": 7.65,
+        "Plating1": {
+          "early": 5.2,
           "late": 0
         },
-        "Plating3": {
-          "early": 8.5,
+        "Plating4": {
+          "early": 7.15,
           "late": 0
         },
-        "W2": {
-          "early": 6.8,
+        "W4": {
+          "early": 3.4,
           "late": 0
         },
         "Quality4": {
@@ -629,41 +629,41 @@
           "late": 2
         },
         "Agency Cost": {
-          "early": 5296,
+          "early": 5931.52,
           "late": 0
         },
         "Day": {
-          "early": 14.9,
+          "early": 14.3,
           "late": 0
         }
       }
     },
     {
       "dayLabel": "Sunday",
-      "date": "2026-08-17",
+      "date": "2026-08-31",
       "platingLinesEarly": 0,
       "platingLinesLate": 0,
       "platingHeadcountEarly": 0,
       "platingHeadcountLate": 0,
-      "kitchenHeadcountEarly": 8.8,
+      "kitchenHeadcountEarly": 9.8,
       "kitchenHeadcountLate": 0,
-      "allStaffEarly": 49,
+      "allStaffEarly": 50.9,
       "allStaffLate": 0,
       "areas": {
-        "FFM3": {
-          "early": 6.4,
+        "FFM1": {
+          "early": 8,
           "late": 0
         },
         "Agency": {
-          "early": 5,
+          "early": 6,
           "late": 0
         },
         "K1": {
-          "early": 8.82,
+          "early": 9.8,
           "late": 0
         },
-        "W1": {
-          "early": 6.8,
+        "W3": {
+          "early": 5.1,
           "late": 0
         },
         "Quality1": {
@@ -671,7 +671,7 @@
           "late": 0
         },
         "Agency Cost": {
-          "early": 6355.2,
+          "early": 5507.84,
           "late": 0
         }
       }
