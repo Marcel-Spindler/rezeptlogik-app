@@ -9,7 +9,8 @@ import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overvi
 import { LiveBadge } from "./features/redzone-live/LiveBadge";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoComponent, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
-  calcBatch, classifyDeboxDepartment, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, rowInstructionStatus, statusColors,
+  buildFuzzyInstructionIndex, calcBatch, classifyDeboxDepartment, fmtDateHeader, fmtKg, fuzzyInstructionKey,
+  instructionCacheKey, parseKetCsv, parseSortKey, rowInstructionStatus, statusColors,
 } from "./features/ket-plan/ketLogic";
 import { useKetRowsData } from "./features/ket-plan/useKetRowsData";
 import { useGnHints } from "./features/ket-plan/useGnHints";
@@ -415,14 +416,20 @@ function savePrintedWoCache(cache: PrintedWoCache): void {
 
 // Löst aktuelle Generierungsziele (WO oder — bei zusammengesetzten Sub-Rezepten
 // — einzelne Komponenten, siehe generationTargetsForRow) → cache-basierte
-// Instructions auf.
+// Instructions auf. Findet der exakte cacheKey nichts (Sub-Rezept-/Komponenten-
+// name hat sich durch einen Re-Import oder KET-Neuexport minimal geändert),
+// greift ein unscharfer Abgleich über Rezeptcode + normalisierten Namen — sonst
+// wirkten alle Instructions nach jedem Datenimport "weg".
 function resolveInstructionsFromCache(rows: KetRow[], calcMap: Map<string, BatchCalc>, cache: InstructionCache): Record<string, WoInstruction> {
   const resolved: Record<string, WoInstruction> = {};
+  const fuzzyIndex = buildFuzzyInstructionIndex(cache);
   for (const row of rows) {
     const calc = calcMap.get(row.key);
     if (!calc) continue;
     for (const target of generationTargetsForRow(row, calc)) {
-      if (cache[target.cacheKey]) resolved[target.key] = cache[target.cacheKey];
+      const hit = cache[target.cacheKey]
+        ?? fuzzyIndex.get(fuzzyInstructionKey(target.row, target.component?.name));
+      if (hit) resolved[target.key] = hit;
     }
   }
   return resolved;
@@ -446,6 +453,10 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [woSortMode, setWoSortMode] = useState<WoSortMode>("date");
+  // Sortier-/Filter-Block (Sortierung, Debox, Tag-Filter) ist standardmäßig
+  // eingeklappt — so bleibt in der schmalen Sidebar deutlich mehr Platz für die
+  // eigentliche WO-Liste (Marcel: "ich kann nur 2 von 220 sehen").
+  const [showFilters, setShowFilters] = useState(false);
   const [weekFilterEnabled, setWeekFilterEnabled] = useState(true);
   // Schicht-/Run-Anzeige — beide bewusst standardmäßig aus ("später zuschaltbar",
   // Marcel 2026-08-21): Schicht ist eine reine Uhrzeit-Anzeige (unverändert
@@ -614,7 +625,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     () => woSearch.trim().toLowerCase(),
     [woSearch],
   );
-  
+  // Zeigt am eingeklappten Filter-Block an, dass ein Filter/Sortierung aktiv ist.
+  const filtersActive = woSortMode !== "date" || deboxFilter !== "all" || (selectedDayFilter?.size ?? 0) > 0;
+
   const filteredGroups = useMemo(() => {
     const base = !needle
       ? deboxFilteredGroups
@@ -1233,6 +1246,25 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             </div>
           )}
         </div>
+
+        {/* Suche — immer sichtbar, damit Marcel jederzeit filtern kann. */}
+        <div className="px-3 py-2 border-b border-slate-100">
+          <div className="relative">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="m21 21-4.35-4.35"/></svg>
+            <input
+              type="search"
+              placeholder="WO, Rezept, Sub-Rezept …"
+              value={woSearch}
+              onChange={(e) => setWoSearch(e.target.value)}
+              className="w-full pl-7 pr-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:bg-white"
+            />
+          </div>
+        </div>
+
+        {/* Ein gemeinsamer Scroll-Bereich für Equipment + Filter + Kochanweisungen
+            + WO-Liste: so wird die WO-Liste nie auf 0 gequetscht (auch nicht bei
+            Browser-Zoom) — man scrollt notfalls, statt nichts mehr zu sehen. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
 
         {/* Equipment capacities (collapsible) */}
         <div className="border-b border-slate-100">

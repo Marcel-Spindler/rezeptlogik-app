@@ -1069,6 +1069,45 @@ export function instructionCacheKey(row: KetRow, componentName?: string): string
     : `${row.recipeCode}::${row.subRecipeName}`;
 }
 
+// Normalisiert einen Sub-Rezept-/Komponentennamen für den unscharfen Abgleich:
+// Groß/Klein, Satzzeichen, Batch-/Gewichtsangaben und Rausch-Wörter raus. Damit
+// überleben Instructions kleine Umbenennungen im KET-Export bzw. im Rezept-Baum
+// (z.B. "Sauce - Marsala Sauce" ↔ "Marsala Sauce", "... Batch 160g" ↔ "...").
+export function normalizeInstructionName(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .replace(/\bbatch\b/g, " ")
+    .replace(/\b\d+([.,]\d+)?\s*(g|kg|mg|ml|l|oz|lb|stk|pcs?|x)\b/g, " ")
+    .replace(/\((use|rework|neu|new|final)\)/g, " ")
+    .replace(/\b(rework|less\s*fat|low\s*fat|reg|regular|edit|v\d+|final)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+// Unscharfer Schlüssel: Rezeptcode + normalisierter Name. Stabiler als
+// instructionCacheKey, weil der volatile mittlere Teil (subRecipeName aus dem
+// CSV-Freitext) bei zusammengesetzten WOs wegfällt — der Komponentenname aus dem
+// Rezept-Baum ist die verlässlichere Kennung. Nur als Fallback benutzen, wenn
+// der exakte Cache-Key nichts findet.
+export function fuzzyInstructionKey(row: Pick<KetRow, "recipeCode" | "subRecipeName">, componentName?: string): string {
+  return `${row.recipeCode}##${normalizeInstructionName(componentName ?? row.subRecipeName)}`;
+}
+
+// Baut aus einem Instruction-Cache (Schlüssel = instructionCacheKey) einen Index
+// nach fuzzyInstructionKey. Erster Treffer je Fuzzy-Key gewinnt (deterministisch
+// über die Eingabereihenfolge).
+export function buildFuzzyInstructionIndex<T>(cache: Record<string, T>): Map<string, T> {
+  const index = new Map<string, T>();
+  for (const [key, value] of Object.entries(cache)) {
+    const parts = key.split("::");
+    if (parts.length < 2) continue;
+    const recipeCode = parts[0];
+    const namePart = parts[parts.length - 1]; // component bei zusammengesetzt, sonst subRecipe
+    const fk = `${recipeCode}##${normalizeInstructionName(namePart)}`;
+    if (!index.has(fk)) index.set(fk, value);
+  }
+  return index;
+}
+
 // ── Instruktions-Vollständigkeit einer WO ───────────────────────────────────
 // Eine einfache WO braucht genau eine Kochanweisung (Laufzeit-Key = row.key),
 // eine zusammengesetzte WO (calc.components) je EINDEUTIGEM Komponentennamen

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DataBundle } from "../core/types";
 import type { BatchCalc, KetRow } from "../features/ket-plan/ketTypes";
-import { calcBatch, parseKetCsv, parseSortKey, rowInstructionStatus } from "../features/ket-plan/ketLogic";
+import { buildFuzzyInstructionIndex, calcBatch, fuzzyInstructionKey, instructionCacheKey, normalizeInstructionName, parseKetCsv, parseSortKey, rowInstructionStatus } from "../features/ket-plan/ketLogic";
 import { buildPdf } from "../features/ket-plan/ketPdf";
 import { buildWoInstructionContext, orderCookingMethods } from "../features/ket-plan/woInstructionBot";
 import { classify } from "../features/ket-plan/factorRules";
@@ -666,5 +666,37 @@ describe("rowInstructionStatus — Druck-Gate", () => {
     const st = rowInstructionStatus(row, calc, has([`${row.key}::Fleisch`, `${row.key}::Gemüse`]));
     expect(st.total).toBe(2);
     expect(st.complete).toBe(true);
+  });
+});
+
+describe("Fuzzy-Instruction-Matching — überlebt Umbenennungen", () => {
+  it("normalizeInstructionName entfernt Rauschen", () => {
+    expect(normalizeInstructionName("Sauce - Marsala Sauce - REWORK"))
+      .toBe(normalizeInstructionName("sauce marsala sauce"));
+    expect(normalizeInstructionName("Chicken breast Batch 160g"))
+      .toBe(normalizeInstructionName("Chicken breast"));
+    expect(normalizeInstructionName("Roasted Garlic (use)"))
+      .toBe(normalizeInstructionName("Roasted Garlic"));
+  });
+
+  it("findet Instruction wieder wenn der Komponentenname minimal driftet", () => {
+    // gespeichert unter dem alten Namen (mit "Batch 160g")
+    const cache = {
+      [instructionCacheKey({ recipeCode: "FV0002A", subRecipeName: "Marsala" } as KetRow, "Chicken breast Batch 160g")]:
+        { english: "cook it", status: "generated" as const },
+    };
+    const index = buildFuzzyInstructionIndex(cache);
+    // Nachschlagen mit dem neuen Namen (ohne "Batch 160g") + anderem subRecipeName
+    const fk = fuzzyInstructionKey({ recipeCode: "FV0002A", subRecipeName: "Sauce - Marsala" }, "Chicken breast");
+    expect(index.get(fk)?.english).toBe("cook it");
+  });
+
+  it("kein Cross-Rezept-Treffer", () => {
+    const cache = {
+      [instructionCacheKey({ recipeCode: "FV0002A", subRecipeName: "x" } as KetRow, "Reis")]:
+        { english: "A", status: "generated" as const },
+    };
+    const index = buildFuzzyInstructionIndex(cache);
+    expect(index.get(fuzzyInstructionKey({ recipeCode: "FV9999Z", subRecipeName: "y" }, "Reis"))).toBeUndefined();
   });
 });

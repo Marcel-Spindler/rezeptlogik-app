@@ -752,6 +752,22 @@ async function main() {
     console.log(`  Aus DB ergänzt: ${supplementedRecipes} Rezepte, ${supplementedStructures} Strukturen`);
   }
 
+  // Voller Struktur-Dump aus der DB: KET-Breakdowns brauchen den Komponenten-Baum
+  // auch für Rezepte, die gerade NICHT in den geplanten Wochen liegen (Rework,
+  // Nachzügler, alte KW). Fehlt die Struktur, kippt der Breakdown von
+  // "zusammengesetzt" auf "einfach" und die pro Komponente gespeicherten
+  // Kochanweisungen verwaisen. Strukturen sind leicht (~6 KB) — komplett mitgeben.
+  let dbStructures = 0;
+  for (const [code, entry] of Object.entries(recipeDb.recipes)) {
+    if (!structures[code] && entry.structure) {
+      structures[code] = entry.structure;
+      dbStructures++;
+    }
+  }
+  if (dbStructures > 0) {
+    console.log(`  Voller DB-Struktur-Dump: +${dbStructures} Strukturen (Gesamt ${Object.keys(structures).length}) für stabile KET-Breakdowns`);
+  }
+
   // ---- Codes harmonisieren: FE… (Meal Selection) ↔ FV… (Recipes) per 4-stelliger Nummer ----
   const recipeByDigits: Record<string, Recipe> = {};
   for (const r of Object.values(recipes)) recipeByDigits[digitKey(r.code)] = r;
