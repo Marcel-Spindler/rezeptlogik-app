@@ -122,7 +122,7 @@ als Sub-Tab-Leiste über dem Inhalt (`GroupSubTabs`).
 | **Rezept** | `recipe` | `features/recipe-detail/RecipeDetailShell.tsx` | 7 Tabs: Übersicht · Sub-Rezepte · Rezeptstruktur · Workflow & Equipment · Brutto-Zutaten · Plating · Cook-Schedule. Markt-Switcher, Vergleichs-Panel, In-Rezept-Suche. |
 | **Meal Katalog** | `catalog` | `features/meal-catalog/MealCatalogView.tsx` | Verden Meal Database: Suche/Filter/Tags/Cup, Detailkarte, Favoriten, Bild-Overrides (`useImageOverrides`), XLSX-Export, Compare (≤3), Deploy-Button (DEV). |
 | **Planning OASE** | `planning` | `planning-oasis/PlanningOasisView.tsx` | 3 Sections (`?oase=`): **Cockpit** = `PlanningView.tsx` (Drag&Drop-Wochenboard, Stations-/Pool-Konflikte, Run-Split, Batch-Split, Szenarien, Board-Editor-Modal, Firestore-Snapshot); **Linienplanung** = `LinePlanningView` → `features/vorstellungsplan/VorstellungsplanView` (1:1-Spiegel von Marcels „F_VE Production Plan"-GSheet, editierbares Firestore-Overlay, KPI-Vergleich, „Vor-Vor-Planung Text"); **Rack** = `RackV2View.tsx` (ASL1–6 paarweise, `lib/rackV2`). Header zeigt Source-Health + GSheet-Registry + Ramp-Up-Änderungsbanner. |
-| **KET Plan / WO** | `wo` | `KetBreakdownView.tsx` + `features/ket-plan/*` | KET-CSV / Firestore-`productionPlan` / Live-WMS → WO-Breakdown: Batch-/Equipment-Kapazität (Küchenbible-Fallback für BRAISER), Factor-Regeln (`factorRules.ts`: RTI / neverBatch / readyMade / separate / spiceRoom), zusammengesetzte Sub-Rezepte (`WoComponent`), Allergen→Blast-Chiller, GN-Bleche, Scoop, KI-Kochanweisungen (Gemini, Firestore-Cache), Run-Zuweisung, Equipment-Panel, Frischeliste V1 (`KetFrischelistePanel`) + V2 (`FrischelisteV2Panel`/`frischeV2Logic` — *WIP*), Shopfloor-Dashboard, PDF/Excel/CSV. **Braucht die volle Bildschirmbreite (`wide`-Shell).** |
+| **KET Plan / WO** | `wo` | `KetBreakdownView.tsx` + `features/ket-plan/*` | KET-CSV / Firestore-`productionPlan` / Live-WMS → WO-Breakdown: Batch-/Equipment-Kapazität (Küchenbible-Fallback für BRAISER), Factor-Regeln (`factorRules.ts`: RTI / neverBatch / readyMade / separate / spiceRoom), zusammengesetzte Sub-Rezepte (`WoComponent`), Allergen→Blast-Chiller, GN-Bleche, Scoop, KI-Kochanweisungen (Gemini, Firestore-Cache), Run-Zuweisung, Equipment-Panel, Frischeliste V1 (`KetFrischelistePanel`) + V2 (`FrischelisteV2Panel`/`frischeV2Logic` — *WIP*), Shopfloor-Dashboard, PDF/Excel/CSV. PDF: jede WO startet auf eigenem Blatt (`ketPdf.ts` `page-break-before:right`), lange Zutatenliste läuft auf Seite 2. Headless-Massenausdruck nach Drive: `npm run ket:publish` (siehe Scripts). **Braucht die volle Bildschirmbreite (`wide`-Shell).** |
 | **PET Plan / Plating** | `pet` | `PetPlanView.tsx` + `features/pet-plan/*` | KitchenOS-PET-CSV (manueller Upload, keine Alternativquelle) → allergen-bewusste Linienzuweisung, variable Kapazität/h je Linie, Staffing (Submeals + 1 MA), Plating-Bilder, PDF-Linienplan. |
 | **WMS Übersicht** | `wms` | `WmsKwOverviewView.tsx` + `features/wms-overview/*` | Snowflake-Live (lokaler Server 3141) / Firestore-Cache: Stationen Inbound → Staging → Debox → Postblast → Sleeving → Plating, SKU-Funnel & -Trace, Kettenbruch-Erkennung, SKU-Bilanz, Snapshots + Timeline, Meal-Operations-Board, PLH-Ready-to-Plate, MHD-/Yield-Alerts, Planning-Kalender + Weight-Goals. Auto-Reset auf aktuelle KW bei Tab-Focus. |
 | **What-If Rechner** | `whatif` | `WhatIfView.tsx` + `features/whatif/*` | Yield-aware Rohware↔Portionen-Rechner. Echte Yield-% aus `export-sub-recipes-by-recipe-detailed.csv`. Per-Zutat-Overrides in localStorage (`rezeptlogik_v1_yield_override_*`), Forward/Reverse, Engpass-Analyse. |
@@ -296,6 +296,12 @@ Alle Region `europe-west3`. Rewrites in `firebase.json` → `/api/*`.
 `dev:local`.
 
 **Rack:** `rackfile:plan`, `rackfile:generate`.
+
+**KET-WO-Ausdruck:** `ket:publish` (`scripts/ket-publish.ts`) — KET-CSV → fehlende
+KI-Kochanweisungen erzeugen (`scripts/lib/gemini-instruction.mjs`, geteilt mit
+`db:serve`) → je WO ein PDF → sortiert nach `W<nn>-Gemini/<Protein|Veggie>/<Tag>/`
+in Google Drive (gemountetes Laufwerk `KET_DRIVE_ROOT`, sonst Drive-API mit
+`KET_DRIVE_API=1`). Idempotent; `--dry-run` rendert nur nach `scratch/ket-publish`.
 
 **Utility:** `discover:sheets` (Tab-Namen + GIDs aller Sheets), `dump:kpl`,
 `watch:operational`, `test:smoke:oase`.

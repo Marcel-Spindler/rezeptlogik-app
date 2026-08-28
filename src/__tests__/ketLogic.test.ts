@@ -219,7 +219,7 @@ describe("calcBatch equipment resolution", () => {
     expect(pdf).toContain("Gründlich mischen.");
   });
 
-  it("prints each WO card on its own page and sends stations in process order", () => {
+  it("prints each WO card on its own sheet (duplex) and sends stations in process order", () => {
     const calc = {
       totalKg: 10,
       equipBatches: [],
@@ -256,7 +256,10 @@ describe("calcBatch equipment resolution", () => {
     const pdf = buildPdf([row, secondRow], new Map([[row.key, calc], [secondRow.key, calc]]), {}, "WO test");
     const context = JSON.parse(buildWoInstructionContext(row, calc));
 
-    expect(pdf).toContain("page-break-before:always");
+    // Jede WO ab der zweiten startet auf einem frischen Blatt (Duplex): "right"
+    // schiebt bei ungerader Seitenzahl eine Leerseite ein → nie zwei WOs pro Blatt.
+    expect(pdf).toContain('style="page-break-before:right;page-break-after:auto"');
+    expect(pdf).toContain('style="page-break-before:auto;page-break-after:auto"');
     expect(context.processFlow).toEqual(["SPICE PORTIONING", "OVEN"]);
   });
 

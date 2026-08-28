@@ -313,6 +313,24 @@ describe("Smoke: buildPdf", () => {
     expect(html).toContain("BRAISER");
     expect(html).toContain("Test Sauce"); // subRecipeName als sub-heading
   });
+
+  it("Duplex: jede WO ab der zweiten startet auf einem frischen Blatt (page-break-before:right)", () => {
+    const rows = [
+      makeRow({ key: "wo::1", woNumber: "35-7" }),
+      makeRow({ key: "wo::2", woNumber: "35-8" }),
+    ];
+    const calcMap = new Map<string, BatchCalc>([
+      ["wo::1", makeCalc()],
+      ["wo::2", makeCalc()],
+    ]);
+    const html = buildPdf(rows, calcMap, {}, "Woche 35");
+    // erste Karte: kein erzwungener Blattwechsel; zweite: right
+    expect(html).toContain('style="page-break-before:auto;page-break-after:auto"');
+    expect(html).toContain('style="page-break-before:right;page-break-after:auto"');
+    // card-back darf über Seiten fließen (lange Zutatenliste wird nie abgeschnitten)
+    expect(html).toContain(".card-back{page-break-inside:auto;break-inside:auto}");
+    expect(html).not.toContain(".card-front,.card-back{page-break-inside:avoid");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════

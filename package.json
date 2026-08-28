@@ -25,6 +25,7 @@
     "import:pfei": "tsx scripts/import-pfei.ts",
     "import:rampup": "tsx scripts/import-rampup.ts",
     "push:firestore": "tsx scripts/push-firestore.ts",
+    "ket:publish": "tsx scripts/ket-publish.ts",
     "rackfile:plan": "tsx scripts/rackfile-tool.ts plan",
     "rackfile:generate": "tsx scripts/rackfile-tool.ts generate",
     "test:smoke:oase": "playwright test Test/planning-oase-smoke.spec.ts --browser=chromium",
@@ -47,6 +48,7 @@
     "dotenv": "^17.4.2",
     "firebase": "11.0.2",
     "idb": "^8.0.3",
+    "pdf-lib": "^1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "xlsx": "^0.18.5"

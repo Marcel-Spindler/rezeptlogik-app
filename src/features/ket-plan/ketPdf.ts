@@ -295,15 +295,18 @@ export function buildPdf(
       : null;
 
 
-    // Duplex-Druck: "card-front" (alles außer Zutaten) und "card-back" (Zutaten)
-    // sind je ein page-break-inside:avoid-Block (siehe CSS). Passt beides auf eine
-    // Seite, bleibt es eine Seite; reicht der Platz nicht, rutscht der komplette
-    // card-back-Block als Ganzes auf die Rückseite (nie nur ein Teil der Tabelle).
-    // Die Meal-Kennung wird deshalb im card-back-Block wiederholt — falls er allein
-    // auf der Rückseite landet, weiß man ohne Vorderseite trotzdem, zu welcher WO
-    // die Zutaten gehören.
+    // Duplex-Druck: jede WO beginnt auf einem FRISCHEN BLATT — nicht nur einer
+    // neuen Seite. `page-break-before:right` schiebt bei ungerader Seitenzahl eine
+    // Leerseite ein, damit beidseitig gedruckt nie zwei WOs auf Vorder-/Rückseite
+    // desselben Blattes landen (Küchen-Vorgabe: eine WO = ein Zettel).
+    // "card-front" (alles außer Zutaten) bleibt als Block zusammen; "card-back"
+    // (Zutaten) darf über mehrere Seiten fließen, damit eine lange Zutatenliste
+    // vollständig gedruckt wird statt abzuschneiden (`.ings tr` bleibt je Zeile
+    // ungebrochen, der Tabellenkopf wiederholt sich). Die Meal-Kennung wird im
+    // card-back-Block wiederholt — landet er allein auf Seite 2, weiß man ohne
+    // Vorderseite trotzdem, zu welcher WO die Zutaten gehören.
     return `
-<section class="card" style="page-break-before:${i > 0 ? "always" : "auto"};page-break-after:auto">
+<section class="card" style="page-break-before:${i > 0 ? "right" : "auto"};page-break-after:auto">
   <div class="card-front">
   <div class="card-top">
     <div>
@@ -454,14 +457,20 @@ body{font-family:Arial,sans-serif;font-size:9px;color:#111;background:#fff}
 @media print{
   body{font-size:8px}
   .card{
-    page-break-before:always;page-break-after:auto;page-break-inside:auto;
-    break-before:page;break-after:auto;break-inside:auto;
+    /* right = jede WO startet auf einem frischen BLATT (ungerade Seite); bei
+       ungerader Vorgänger-Seitenzahl wird eine Leerseite eingeschoben, damit
+       beidseitig gedruckt nie zwei WOs ein Blatt teilen. */
+    page-break-before:right;page-break-after:auto;page-break-inside:auto;
+    break-before:right;break-after:auto;break-inside:auto;
     margin:0;border-width:1px;box-shadow:none;border-radius:4px;
     padding:6px 8px;
     max-height:none;overflow:visible;
   }
   .card:first-of-type{page-break-before:auto;break-before:auto}
-  .card-front,.card-back{page-break-inside:avoid;break-inside:avoid-page}
+  /* card-front bleibt als Block zusammen; card-back (Zutaten) darf über mehrere
+     Seiten laufen, damit eine lange Zutatenliste vollständig gedruckt wird. */
+  .card-front{page-break-inside:avoid;break-inside:avoid-page}
+  .card-back{page-break-inside:auto;break-inside:auto}
   .back-id{
     display:block;font-size:8px;font-weight:800;color:#1e3a5f;
     padding-bottom:2px;margin-bottom:3px;border-bottom:1.5px solid #1e3a5f;
