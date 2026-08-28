@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import ExcelJS from "exceljs";
 import { google } from "googleapis";
 import type { MealCatalogEntry } from "../src/core/types.ts";
+import {
+  loadMealImageOverrides, isHidden, isPinned, materializePinnedOverride,
+} from "./lib/mealImageOverrides.ts";
 
 const DEFAULT_FILE = "C:\\Users\\MarcelSpindler\\Downloads\\F_EU_Verden Meal Database_v1_March 2026.xlsx";
 const DEFAULT_IMAGE_DIR = "G:\\.shortcut-targets-by-id\\1tSHOPlJpN0vslaIY2JyAEa3gJQT603IF\\Factor EU Meal Images";
@@ -208,6 +211,13 @@ export async function loadMealDatabase(file = process.env.MEAL_DATABASE_XLSX?.tr
   console.log(`  Meal-Bilder lokal: ${[...localImages.values()].reduce((total, images) => total + images.length, 0)} Dateien für ${localImages.size} Rezeptnummern gefunden`);
   let localImageMatches = 0;
 
+  // Manuell festgelegte Bild-Auswahl (Picker in der App) — hat Vorrang vor der
+  // Auto-Score-Heuristik und wird hier NIE überschrieben.
+  const imageOverrides = loadMealImageOverrides();
+  const overrideCount = Object.keys(imageOverrides).length;
+  if (overrideCount) console.log(`  Bild-Overrides: ${overrideCount} Meals manuell festgelegt (werden nicht auto-gewählt)`);
+  let overrideApplied = 0;
+
   for (const sheetName of SOURCE_SHEETS) {
     const sheet = workbook.getWorksheet(sheetName);
     if (!sheet) continue;
@@ -257,8 +267,17 @@ export async function loadMealDatabase(file = process.env.MEAL_DATABASE_XLSX?.tr
       }
       if (sheetName === "Meal DB_Culinary") {
         const sourceUrl = hyperlinkOf(row.getCell(headers.indexOf("Photo Link") + 1));
-        if (sourceUrl) {
-          entry.photoSourceUrl = sourceUrl;
+        if (sourceUrl) entry.photoSourceUrl = sourceUrl;
+
+        const override = imageOverrides[mealId.toUpperCase()];
+        if (isHidden(override)) {
+          delete entry.photoUrl;                    // bewusst kein Bild
+          overrideApplied++;
+        } else if (isPinned(override)) {
+          const pinned = materializePinnedOverride(override, mealId, localImageDir, copyFileSync);
+          if (pinned) { entry.photoUrl = pinned; localImageMatches++; overrideApplied++; }
+          else console.warn(`  Bild-Override für ${mealId} nicht auffindbar (file="${override.file}", driveRel="${override.driveRel ?? ""}")`);
+        } else if (sourceUrl) {
           entry.photoUrl = mirrorLocalImage(localImages, mealId, imageOutputDir)
             ?? await imageMirror.mirror(sourceUrl, mealId)
             ?? sourceUrl;
@@ -270,7 +289,7 @@ export async function loadMealDatabase(file = process.env.MEAL_DATABASE_XLSX?.tr
     console.log(`  Meal Database: ${imported} Meals aus "${sheetName}" importiert`);
   }
 
-  console.log(`  Meal Database: ${Object.keys(catalog).length} eindeutige Meals, ${Object.values(catalog).filter(entry => entry.photoUrl).length} mit Photo Link, ${localImageMatches} lokale Bilder verknüpft`);
+  console.log(`  Meal Database: ${Object.keys(catalog).length} eindeutige Meals, ${Object.values(catalog).filter(entry => entry.photoUrl).length} mit Photo Link, ${localImageMatches} lokale Bilder verknüpft${overrideApplied ? `, ${overrideApplied} manuelle Overrides angewandt` : ""}`);
   return catalog;
 }
 

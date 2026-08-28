@@ -8,6 +8,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createConnection } from "node:net";
 import { extname, join, resolve } from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { loadMealImageOverrides, setMealImageOverride, toDriveRel, isPinned, type MealImageOverride } from "./scripts/lib/mealImageOverrides";
 /// <reference types="vitest" />
 
 type MiddlewareNext = (err?: unknown) => void;
@@ -271,22 +272,76 @@ function saveMealImagePlugin(): Plugin {
         try {
           const srcExt = extname(srcPath).toLowerCase() || ".jpg";
           const destDir = join(process.cwd(), "public", "data", "meal-images");
-          const destPath = join(destDir, `${mealId}${srcExt}`);
-          copyFileSync(srcPath, destPath);
-          const localUrl = `/data/meal-images/${mealId}${srcExt}`;
-          // Keep meal-catalog.json and data.json in sync so deployed version shows the image
-          for (const jsonPath of ["public/data/meal-catalog.json", "public/data/data.json"]) {
-            try {
-              const full = join(process.cwd(), jsonPath);
-              const parsed = JSON.parse(readFileSync(full, "utf8"));
-              const catalog: Record<string, { mealId: string; photoUrl?: string; sheets?: object }> = parsed.mealCatalog ?? parsed;
-              if (catalog[mealId]) catalog[mealId].photoUrl = localUrl;
-              else catalog[mealId] = { mealId, photoUrl: localUrl, sheets: {} };
-              const indent = jsonPath.includes("meal-catalog") ? 2 : 0;
-              writeFileSync(full, JSON.stringify(parsed, null, indent), "utf8");
-            } catch { /* non-fatal */ }
-          }
+          const fileName = `${mealId}${srcExt}`;
+          copyFileSync(srcPath, join(destDir, fileName));
+          const localUrl = `/data/meal-images/${fileName}`;
+
+          // Dauerhaft festhalten: dieser Pick überlebt jeden künftigen Auto-Import.
+          setMealImageOverride(mealId, { file: fileName, driveRel: toDriveRel(DRIVE_SOURCE_DIR, srcPath) });
+
+          // meal-catalog.json direkt mitziehen, damit die deployte Version das Bild sofort zeigt.
+          try {
+            const full = join(process.cwd(), "public", "data", "meal-catalog.json");
+            const parsed = JSON.parse(readFileSync(full, "utf8"));
+            const catalog: Record<string, { mealId: string; photoUrl?: string; sheets?: object }> = parsed.mealCatalog ?? parsed;
+            if (catalog[mealId]) catalog[mealId].photoUrl = localUrl;
+            else catalog[mealId] = { mealId, photoUrl: localUrl, sheets: {} };
+            writeFileSync(full, JSON.stringify(parsed), "utf8");
+          } catch { /* non-fatal */ }
+
           res.end(JSON.stringify({ url: localUrl }));
+        } catch (err) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: String(err) }));
+        }
+      });
+    },
+  };
+}
+
+// GET /api/meal-image-override?mealId=X&op=hide|reset|confirm[&file=Y]
+// Schreibt die committete meal-image-overrides.json — 'Falsch' / 'Reset' /
+// 'Passt' aus dem Bild-Picker landen so dauerhaft im Repo (nicht nur localStorage).
+function mealImageOverridePlugin(): Plugin {
+  return {
+    name: "meal-image-override",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/meal-image-override", (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method !== "GET") { res.statusCode = 405; res.end(); return; }
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        const qs = req.url?.includes("?") ? req.url.slice(req.url.indexOf("?") + 1) : "";
+        const params = new URLSearchParams(qs);
+        const mealId = (params.get("mealId") ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const op = params.get("op") ?? "";
+        if (!mealId || !["hide", "reset", "confirm"].includes(op)) {
+          res.statusCode = 400; res.end(JSON.stringify({ error: "Ungültige Parameter" })); return;
+        }
+        try {
+          let override: MealImageOverride | null;
+          if (op === "reset") override = null;
+          else if (op === "hide") override = { hidden: true };
+          else {
+            const file = (params.get("file") ?? "").split("/").pop() ?? "";
+            if (!file) { res.statusCode = 400; res.end(JSON.stringify({ error: "file fehlt" })); return; }
+            // Falls der Picker gerade schon { file, driveRel } geschrieben hat: nicht plätten.
+            const existing = loadMealImageOverrides()[mealId];
+            override = existing && isPinned(existing) && existing.file === file ? existing : { file };
+          }
+          setMealImageOverride(mealId, override);
+
+          // meal-catalog.json angleichen, damit die deployte Version sofort passt.
+          try {
+            const full = join(process.cwd(), "public", "data", "meal-catalog.json");
+            const parsed = JSON.parse(readFileSync(full, "utf8"));
+            const catalog: Record<string, { mealId: string; photoUrl?: string; sheets?: object }> = parsed.mealCatalog ?? parsed;
+            const entry = catalog[mealId] ?? (catalog[mealId] = { mealId, sheets: {} });
+            if (op === "hide") delete entry.photoUrl;
+            else if (op === "confirm" && override && isPinned(override)) entry.photoUrl = `/data/meal-images/${override.file}`;
+            writeFileSync(full, JSON.stringify(parsed), "utf8");
+          } catch { /* non-fatal */ }
+
+          res.end(JSON.stringify({ ok: true, mealId, op }));
         } catch (err) {
           res.statusCode = 500;
           res.end(JSON.stringify({ error: String(err) }));
@@ -420,7 +475,7 @@ function noopRefreshRampUpPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(), mealImageListPlugin(), deployPlugin(), startWmsServerPlugin(), noopRefreshRampUpPlugin(), react()],
+  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(), mealImageOverridePlugin(), mealImageListPlugin(), deployPlugin(), startWmsServerPlugin(), noopRefreshRampUpPlugin(), react()],
   server: {
     port: 5173,
     open: true,

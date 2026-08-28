@@ -11,10 +11,15 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { loadMealImageOverrides, isHidden, isPinned } from "./lib/mealImageOverrides.ts";
 
 const SOURCE_DIR = "G:/.shortcut-targets-by-id/1tSHOPlJpN0vslaIY2JyAEa3gJQT603IF/Factor EU Meal Images";
 const DEST_DIR = path.resolve("public/data/meal-images");
 const CATALOG_PATH = path.resolve("public/data/meal-catalog.json");
+
+// Manuell festgelegte Bild-Auswahl — gepinnte/ausgeblendete Meals fasst dieser
+// Lauf NICHT an (weder Datei ersetzen noch photoUrl ändern noch aufräumen).
+const OVERRIDES = loadMealImageOverrides();
 
 function extractMealCode(folderName: string): string | null {
   const withLetter = folderName.match(/^([A-Z]{2}\d{4}[A-Z])/i);
@@ -73,12 +78,21 @@ function main() {
     .filter((e) => e.isDirectory())
     .map((e) => e.name);
 
-  let copied = 0, skipped = 0, noSA = 0;
+  let copied = 0, skipped = 0, noSA = 0, pinned = 0;
   const copiedCodes = new Set<string>();
+  // Gepinnte/ausgeblendete Meals gelten als "behandelt" → Aufräum-Schritt fasst
+  // ihre Datei/photoUrl nicht an.
+  const protectedCodes = new Set(Object.keys(OVERRIDES).map((c) => c.toUpperCase()));
 
   for (const dirName of mealDirs) {
     const code = extractMealCode(dirName);
     if (!code) { console.log(`  ⚠ Kein Code erkannt: "${dirName}"`); skipped++; continue; }
+
+    if (OVERRIDES[code]) {
+      console.log(`  ⏻ Manuell festgelegt, übersprungen: ${code}`);
+      pinned++;
+      continue;
+    }
 
     const mealDir = path.join(SOURCE_DIR, dirName);
     const best = findBestImage(mealDir);
@@ -102,11 +116,12 @@ function main() {
   }
 
   // ── Bereinigung: Alle Bilddateien löschen die NICHT aus diesem Lauf stammen ──
-  const existingFiles = fs.readdirSync(DEST_DIR).filter((f) => /\.(jpg|jpeg)$/i.test(f));
+  // (manuell festgelegte Meals ausgenommen)
+  const existingFiles = fs.readdirSync(DEST_DIR).filter((f) => /\.(jpe?g|png|webp)$/i.test(f));
   let deleted = 0;
   for (const filename of existingFiles) {
-    const code = filename.replace(/\.(jpg|jpeg)$/i, "").toUpperCase();
-    if (!copiedCodes.has(code)) {
+    const code = filename.replace(/\.(jpe?g|png|webp)$/i, "").toUpperCase();
+    if (!copiedCodes.has(code) && !protectedCodes.has(code)) {
       fs.unlinkSync(path.join(DEST_DIR, filename));
       console.log(`  🗑 Gelöscht (kein SA/Tray): ${filename}`);
       deleted++;
@@ -114,8 +129,15 @@ function main() {
   }
 
   // ── Bereinigung: photoUrl aus Katalog entfernen wenn kein Bild vorhanden ──
+  // Gepinnte behalten ihr Bild; ausgeblendete ("hidden") bleiben ohne photoUrl.
   let cleared = 0;
   for (const [code, entry] of Object.entries(catalog.mealCatalog) as [string, Record<string, unknown>][]) {
+    const ov = OVERRIDES[code.toUpperCase()];
+    if (isPinned(ov)) {
+      if (fs.existsSync(path.join(DEST_DIR, ov.file))) entry.photoUrl = `/data/meal-images/${ov.file}`;
+      continue;
+    }
+    if (isHidden(ov)) { if (entry.photoUrl) { delete entry.photoUrl; cleared++; } continue; }
     if (entry.photoUrl && !copiedCodes.has(code)) {
       delete entry.photoUrl;
       cleared++;
@@ -127,6 +149,7 @@ function main() {
 
   console.log(`\nFertig:`);
   console.log(`  ${copied} SA/Tray-Bilder kopiert`);
+  console.log(`  ${pinned} manuell festgelegte Meals übersprungen`);
   console.log(`  ${deleted} alte/falsche Bilder gelöscht`);
   console.log(`  ${cleared} photoUrl-Einträge aus Katalog entfernt`);
   console.log(`  ${skipped} Ordner ohne erkennbaren Code`);
