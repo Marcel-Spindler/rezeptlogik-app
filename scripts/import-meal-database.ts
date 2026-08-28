@@ -88,11 +88,18 @@ function collectLocalImages(root: string): Map<string, LocalImage[]> {
   return byDigits;
 }
 
+const MAX_AUTO_IMAGE_BYTES = 12 * 1024 * 1024;
+
 function mirrorLocalImage(images: Map<string, LocalImage[]>, mealId: string, outputDir: string): string | undefined {
   const digits = /(\d{4,5})/.exec(mealId)?.[1];
   const candidates = digits ? images.get(digits) : undefined;
   if (!candidates?.length) return undefined;
-  const image = [...candidates].sort((a, b) => imageScore(b) - imageScore(a) || a.size - b.size)[0];
+  // Riesige "high"/Export-Bilder (30 MB+) nur nehmen, wenn es nichts Kleineres gibt —
+  // für die Auto-Wahl reicht die Web-Auflösung, den Rest pinnt Marcel im Picker.
+  const pool = candidates.some(c => c.size <= MAX_AUTO_IMAGE_BYTES)
+    ? candidates.filter(c => c.size <= MAX_AUTO_IMAGE_BYTES)
+    : candidates;
+  const image = [...pool].sort((a, b) => imageScore(b) - imageScore(a) || a.size - b.size)[0];
   const extension = extname(image.name).toLowerCase();
   mkdirSync(outputDir, { recursive: true });
   copyFileSync(image.path, resolve(outputDir, `${mealId}${extension}`));

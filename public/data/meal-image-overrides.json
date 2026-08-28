@@ -1,1 +1,54 @@
-{}
+{
+  "FV0024A": {
+    "file": "FV0024A.jpeg",
+    "driveRel": "FV0024 - Chicken in tomato cream sauce/SunDriedTomatoChicken_Bento.jpeg"
+  },
+  "FV0169A": {
+    "file": "FV0169A.jpg",
+    "driveRel": "FV0169A - Pork tenderloin in creamy garlic-mustard sauce/FE_Y23_R_W51_EU_FE0169G_SA_REG_low.jpg"
+  },
+  "FV0472A": {
+    "file": "FV0472A.jpg",
+    "driveRel": "FE0472 Indian Butter Chicken/CA_FABX-HERO_CF00472C_IndianStyleButterChicken_2023_Bento.jpg"
+  },
+  "FV0601A": {
+    "file": "FV0601A.jpg",
+    "driveRel": "FV0601A - Mozzarella Burger & Roasted Potatoes/F00601B_MozzarellaBurgerAndRoastedPotatoes_Bento (1).jpg"
+  },
+  "FV0651A": {
+    "file": "FV0651A.jpg",
+    "driveRel": "FV0651 - BBQ Chickpeas & Roasted Cabbage/No green beans/FE_Y24_W18_FE0651B_EU_BBQ_Chickpeas_Roasted_Cabbage_Slaw_SA_low.jpg"
+  },
+  "FV0780A": {
+    "file": "FV0780A.jpg",
+    "driveRel": "FV0780A Pasta Bolognese/Penne bolognese/FA_Y26_W23_FV0780A_REG_Whole_Wheat_Penne_Bolognese_SA_ 4_low.jpg"
+  },
+  "FV1351A": {
+    "file": "FV1351A.jpg",
+    "driveRel": "FV1351 _EU_Cheddar & Red Pepper Chicken Thigh Pasta/Pasta penne/FA_Y25_CW47_FE1351C_EU_Cheddar & Red Pepper Chicken Thigh Pasta_Tray_swap_whole wheat penne_V2_edit_low.jpg"
+  },
+  "FV1444A": {
+    "file": "FV1444A.jpg",
+    "driveRel": "FV1444 - Basil Barramundi & Tomato Risotto/FA_Y26_CW26_FV1444A_EU_Basil_Barramundi_SA_swap_pureed spinach basil pesto Marinade_low.jpg"
+  },
+  "FV4039A": {
+    "file": "FV4039A.jpg",
+    "driveRel": "FV4039A - Salmon in creamy Gochugaru sauce/FA_Y24_CW29_FE4039A_EU_MEAL_ 1low.jpg"
+  },
+  "FV4053C": {
+    "file": "FV4053C.jpg",
+    "driveRel": "FE4053A/Cauliflower florets/FE_Y24_CW45_FE4053A_Gochugaru_Chicken_SA_low.jpg"
+  },
+  "FV4071A": {
+    "file": "FV4071A.jpg",
+    "driveRel": "FV4071 - Pulled Jerk Chicken & Rice/CF50004A_Hero_ShreddedJerkChickenAndRice_W0813_2024_Bento_Print.jpg"
+  },
+  "FV4075A": {
+    "file": "FV4075A.jpg",
+    "driveRel": "FV4075A/Penne/FA_Y26_CW1_FE4075A_EU_Sun-Dried Tomato_Main_Tray_whole wheat penne_edit_low.jpg"
+  },
+  "FV4108A": {
+    "file": "FV4108A.jpg",
+    "driveRel": "FV4108 - Sweet & Sour Chicken/FA_Y26_CW31_FV4108A_EU_Sweet&Sour_Chicken_SA_ 2_low.jpg"
+  }
+}

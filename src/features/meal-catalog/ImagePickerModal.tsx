@@ -4,7 +4,14 @@ interface FolderImage {
   name: string;
   score: number;
   label: string;
+  size?: number; // Bytes
   url: string; // /api/drive-image?p=...
+}
+
+function formatBytes(n?: number): string {
+  if (!n) return "";
+  if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.round(n / 1024)} KB`;
 }
 
 interface Props {
@@ -18,7 +25,7 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
   const [folderImages, setFolderImages] = useState<FolderImage[]>([]);
   const [localImages, setLocalImages] = useState<string[]>([]);
   const digits = mealId.match(/\d{4}/)?.[0] ?? "";
-  const [filter, setFilter] = useState(digits);
+  const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null); // url being saved
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,12 +76,15 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
   }
 
   const needle = filter.toLowerCase();
+  // Ordner-Bilder sind bereits meal-spezifisch (API filtert nach Meal-ID) — ohne
+  // aktive Suche alle zeigen. (Dateien heißen oft nach dem Gericht, nicht nach dem Code.)
   const filteredFolder = needle
     ? folderImages.filter(f => f.name.toLowerCase().includes(needle) || f.label.toLowerCase().includes(needle))
     : folderImages;
+  // Lokale Bilder = kompletter meal-images-Ordner. Ohne Suchbegriff auf dieses Meal eingrenzen.
   const filteredLocal = needle
     ? localImages.filter(f => f.toLowerCase().includes(needle))
-    : localImages;
+    : localImages.filter(f => f.toLowerCase().includes(digits));
 
   return (
     <div
@@ -158,8 +168,15 @@ export function ImagePickerModal({ mealId, currentUrl, onSelect, onClose }: Prop
                             <span className="block truncate font-mono text-[10px] text-slate-600">
                               {img.name.replace(/\.[^.]+$/, "")}
                             </span>
-                            <span className={`text-[9px] font-bold ${img.score >= 8 ? "text-cyan-700" : img.score >= 6 ? "text-green-700" : "text-slate-400"}`}>
-                              {img.label}{img.score >= 6 ? " ✓" : ""}
+                            <span className="flex items-center gap-1.5">
+                              <span className={`text-[9px] font-bold ${img.score >= 8 ? "text-cyan-700" : img.score >= 6 ? "text-green-700" : "text-slate-400"}`}>
+                                {img.label}{img.score >= 6 ? " ✓" : ""}
+                              </span>
+                              {img.size ? (
+                                <span className={`text-[9px] ${img.size > 5 * 1024 * 1024 ? "font-bold text-red-600" : "text-slate-400"}`}>
+                                  {formatBytes(img.size)}{img.size > 5 * 1024 * 1024 ? " ⚠" : ""}
+                                </span>
+                              ) : null}
                             </span>
                           </div>
                         </button>

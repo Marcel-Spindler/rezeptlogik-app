@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import type { Plugin, ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createConnection } from "node:net";
@@ -166,25 +166,31 @@ function folderMatchesMealId(folderName: string, mealId: string): boolean {
 function scoreDriveFile(filename: string): number {
   const lower = filename.toLowerCase();
   const isSA = lower.includes("_sa_") || lower.includes("_sa ") || lower.endsWith("_sa_low.jpg") || lower.endsWith("_sa_high.jpg");
-  const isTray = lower.includes("_tray_");
+  const isTray = /_tray_|_tray\.|tray shot|schale/.test(lower);
+  const isBento = /_bento[_.]|bento/.test(lower);
   const isLow = lower.includes("low");
-  if (isSA && isLow) return 10;
-  if (isSA && !isLow) return 8;
-  if (isTray && isLow) return 6;
-  if (isTray && !isLow) return 4;
+  const isWhiteLabel = /white label|\bwl\b|_wl[_.]|optimized wl|updated wl/.test(lower);
+  const isClip = /_clip[_.]|clipping|cutout/.test(lower);
+  if (isSA) return isLow ? 10 : 8;
+  if (isTray) return isLow ? 6 : 5;
+  if (isBento) return 4;                 // Schale/Bento — oft die beste Wahl wenn kein SA/Tray da ist
+  if (isWhiteLabel || isClip) return 0;  // Verpackungs-/Freisteller-Shots ganz nach unten
   return 1;
 }
 
 function imageLabelFromName(filename: string): string {
   const lower = filename.toLowerCase();
-  if (lower.includes("_sa_")) return "SA";
-  if (lower.includes("_tray_")) return "Tray";
-  if (lower.includes("_bento_")) return "Bento";
-  if (lower.includes("_plated_")) return "Plated";
+  if (/_sa[_.]|_sa /.test(lower)) return "SA";
+  if (/_tray_|_tray\.|schale/.test(lower)) return "Tray";
+  if (/_bento[_.]|bento/.test(lower)) return "Bento";
+  if (/_plated[_.]|plated/.test(lower)) return "Plated";
+  if (/white label|optimized wl|updated wl|\bwl\b|_wl[_.]/.test(lower)) return "White Label";
+  if (/_clip[_.]|clipping|cutout/.test(lower)) return "Clip";
+  if (/_34[_.]|_3-4[_.]|three.?quarter/.test(lower)) return "¾";
   return "Sonstig";
 }
 
-interface DriveImageEntry { name: string; path: string; score: number; label: string; }
+interface DriveImageEntry { name: string; path: string; score: number; label: string; size: number; }
 
 function scanDriveFolder(dir: string): DriveImageEntry[] {
   const results: DriveImageEntry[] = [];
@@ -195,7 +201,9 @@ function scanDriveFolder(dir: string): DriveImageEntry[] {
       if (e.isDirectory()) {
         results.push(...scanDriveFolder(fullPath));
       } else if (/\.(jpe?g|png|webp)$/i.test(e.name)) {
-        results.push({ name: e.name, path: fullPath, score: scoreDriveFile(e.name), label: imageLabelFromName(e.name) });
+        let size = 0;
+        try { size = statSync(fullPath).size; } catch { /* egal */ }
+        results.push({ name: e.name, path: fullPath, score: scoreDriveFile(e.name), label: imageLabelFromName(e.name), size });
       }
     }
   } catch { /* Ordner nicht erreichbar */ }
@@ -217,11 +225,13 @@ function mealFolderImagesPlugin(): Plugin {
             .filter((e: Dirent) => e.isDirectory() && folderMatchesMealId(e.name, mealId))
             .map((e: Dirent) => join(DRIVE_SOURCE_DIR, e.name));
           const allImages: DriveImageEntry[] = mealDirs.flatMap(scanDriveFolder);
-          allImages.sort((a, b) => b.score - a.score);
+          // Score absteigend, dann kleinere Datei zuerst (→ _low vor _high).
+          allImages.sort((a, b) => b.score - a.score || a.size - b.size);
           res.end(JSON.stringify(allImages.map(img => ({
             name: img.name,
             score: img.score,
             label: img.label,
+            size: img.size,
             url: `/api/drive-image?p=${encodeURIComponent(img.path)}`,
           }))));
         } catch { res.end(JSON.stringify([])); }
