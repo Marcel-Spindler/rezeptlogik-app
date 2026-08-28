@@ -77,21 +77,69 @@ export function buildInstructionsMap(recipe: Recipe | undefined): Map<string, st
   return map;
 }
 
+const GRAM_UOMS = new Set(["grams", "gram", "g", "gr"]);
+
+function isGramQuantity(node: DetailedSubRecipe): boolean {
+  return GRAM_UOMS.has((node.uom ?? "").trim().toLowerCase()) && (node.quantity ?? 0) > 0;
+}
+
+/**
+ * Plattierte Netto-Ausgabe eines Sub-Rezepts in Gramm.
+ * Primär: MSKUs `Sub-Recipe N Quantity` (grams) — autoritativ, per Definition exakt.
+ * Fallback (nur `each`-Subs / fehlende Menge, ~5 %): eigener Kochyield × Eingangsmasse.
+ */
+export function computeStatedOutputG(node: DetailedSubRecipe): { statedOutputG: number; statedFromMsku: boolean } {
+  if (isGramQuantity(node)) {
+    return { statedOutputG: node.quantity as number, statedFromMsku: true };
+  }
+  const ings = node.ingredients ?? [];
+  const repYield = ings
+    .map(i => normalizeYield(i.yieldPct))
+    .find(v => v !== undefined) ?? 1;
+  const ownInput = ings.reduce((s, i) => {
+    const base = i.netQty > 0 && i.netQty <= i.grossQty ? i.netQty : i.grossQty;
+    return s + base;
+  }, 0);
+  const childInput = (node.subRecipes ?? []).reduce((s, c) => s + computeStatedOutputG(c).statedOutputG, 0);
+  return { statedOutputG: repYield * (ownInput + childInput), statedFromMsku: false };
+}
+
 export function aggregateSubRecipe(
   node: DetailedSubRecipe,
   parentPath: string[],
   depth: number,
   overrides: Map<string, number>,
-  instructionsMap: Map<string, string>
+  instructionsMap: Map<string, string>,
+  ancestorYieldFactor = 1
 ): SubRecipeAggregate {
   const path = [...parentPath, node.name];
 
+  // 1. Ausgabe (MSKU-Menge) + Eingangsmasse dieses Kochschritts.
+  //    Eingang = getrimmte Zutatenmasse (netQty) + Kind-Ausgaben, damit
+  //    Σ(Zutaten-Netto) == statedOutputG exakt aufgeht.
+  const { statedOutputG, statedFromMsku } = computeStatedOutputG(node);
+  const ownLeafGross = (node.ingredients ?? []).reduce((s, i) => s + i.grossQty, 0);
+  const ownLeafTrimmed = (node.ingredients ?? []).reduce(
+    (s, i) => s + (i.netQty > 0 && i.netQty <= i.grossQty ? i.netQty : i.grossQty),
+    0
+  );
+  const childStatedSum = (node.subRecipes ?? []).reduce(
+    (s, c) => s + computeStatedOutputG(c).statedOutputG,
+    0
+  );
+  const ownGrossInput = ownLeafTrimmed + childStatedSum;
+  const localYield = ownGrossInput > 0 ? statedOutputG / ownGrossInput : 1;
+  const nodeYieldFactor = ancestorYieldFactor * localYield;
+
+  // 2. Zutaten mit kompoundiertem Faktor (raw → Endteller)
   const ingredients: FlatIngredient[] = (node.ingredients ?? []).map(ing => {
     const ovKey = `${ing.id}__${node.id}`;
     const override = overrides.get(ovKey);
-    const { effectiveYield, yieldSource, yieldMissing } = resolveYield(
-      ing.yieldPct, ing.grossQty, ing.netQty, override
-    );
+    const { yieldSource, yieldMissing } = resolveYield(ing.yieldPct, ing.grossQty, ing.netQty, override);
+    const trimRatio =
+      ing.grossQty > 0 && ing.netQty > 0 && ing.netQty < ing.grossQty ? ing.netQty / ing.grossQty : 1;
+    const ownYieldFactor = trimRatio * localYield;
+    const fullFactor = trimRatio * nodeYieldFactor;
     return {
       ingredientId: ing.id,
       ingredientName: ing.name,
@@ -101,26 +149,23 @@ export function aggregateSubRecipe(
       netQty: ing.netQty,
       uom: ing.uom,
       defaultYield: ing.yieldPct,
-      effectiveYield,
+      effectiveYield: override !== undefined ? override : fullFactor,
+      ownYieldFactor,
+      ancestorYieldFactor,
       hasOverride: override !== undefined,
       yieldSource,
       yieldMissing
     };
   });
 
+  // 3. Kinder rekursiv mit dem kompoundierten Faktor dieses Knotens
   const childSubRecipes = (node.subRecipes ?? []).map(child =>
-    aggregateSubRecipe(child, path, depth + 1, overrides, instructionsMap)
+    aggregateSubRecipe(child, path, depth + 1, overrides, instructionsMap, nodeYieldFactor)
   );
 
-  const totalGross = ingredients.reduce((s, x) => s + x.grossQty, 0);
-  const totalNet = ingredients.reduce((s, x) => s + (x.grossQty * x.effectiveYield), 0);
+  const totalGross = ownLeafGross;
+  const totalNet = ingredients.reduce((s, x) => s + x.grossQty * x.effectiveYield, 0);
   const subtreeGross = totalGross + childSubRecipes.reduce((s, child) => s + child.subtreeGrossPerPortion, 0);
-  const subtreeNet = totalNet + childSubRecipes.reduce((s, child) => s + child.subtreeNetPerPortion, 0);
-  const ingsWithYield = ingredients.filter(x => x.effectiveYield > 0);
-  const yieldWeightSum = ingsWithYield.reduce((s, x) => s + x.grossQty, 0);
-  const yieldWeighted = yieldWeightSum > 0
-    ? ingsWithYield.reduce((s, x) => s + (x.effectiveYield * x.grossQty), 0) / yieldWeightSum
-    : undefined;
 
   return {
     subRecipeId: node.id,
@@ -131,8 +176,14 @@ export function aggregateSubRecipe(
     totalGrossPerPortion: totalGross,
     totalNetPerPortion: totalNet,
     subtreeGrossPerPortion: subtreeGross,
-    subtreeNetPerPortion: subtreeNet,
-    avgYield: yieldWeighted,
+    subtreeNetPerPortion: statedOutputG,
+    statedOutputG,
+    ownGrossInput,
+    localYield,
+    ancestorYieldFactor,
+    statedFromMsku,
+    // Ø-Yield für die Anzeige: Gesamt Rohware (inkl. Kinder) → MSKU-Ausgabe.
+    avgYield: subtreeGross > 0 ? statedOutputG / subtreeGross : undefined,
     ingredients,
     childSubRecipes,
     instructions: instructionsMap.get(node.id)
@@ -150,12 +201,24 @@ export function flattenSubRecipes(agg: SubRecipeAggregate): SubRecipeAggregate[]
   return [agg, ...agg.childSubRecipes.flatMap(flattenSubRecipes)];
 }
 
-export function aggregateSubRecipeIngredientNeeds(ingredients: FlatIngredient[], portions: number): SubRecipeIngredientNeed[] {
+/**
+ * Bedarf je Zutat für ein einzelnes Sub-Rezept. `ancestorDivisor` = das
+ * `ancestorYieldFactor` des gewählten Sub-Rezepts: damit rechnet die Funktion
+ * **sub-lokal** (nur Verlust innerhalb dieses Subs), sodass die Summe der
+ * Netto-Mengen exakt der MSKU-Ausgabemenge (`statedOutputG`) des Subs entspricht.
+ */
+export function aggregateSubRecipeIngredientNeeds(
+  ingredients: FlatIngredient[],
+  portions: number,
+  ancestorDivisor = 1
+): SubRecipeIngredientNeed[] {
   const grouped = new Map<string, SubRecipeIngredientNeed>();
+  const div = ancestorDivisor > 0 ? ancestorDivisor : 1;
   for (const ing of ingredients) {
     const key = `${ing.ingredientId}__${ing.uom}`;
     const grossPerPortion = ing.grossQty;
-    const netPerPortion = ing.grossQty * ing.effectiveYield;
+    const localEff = ing.hasOverride ? ing.effectiveYield : ing.effectiveYield / div;
+    const netPerPortion = ing.grossQty * localEff;
     const current = grouped.get(key) ?? {
       key,
       ingredientId: ing.ingredientId,

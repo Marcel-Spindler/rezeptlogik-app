@@ -50,6 +50,7 @@ export function SubRecipeAggregateView({
   const totalGrossForRun = agg.subtreeGrossPerPortion * targetPortions;
   const yieldDisplay = agg.avgYield !== undefined ? `Ø ${(agg.avgYield * 100).toFixed(2)}%` : "—";
   const totalNetForRun = agg.subtreeNetPerPortion * targetPortions;
+  const netLabel = agg.statedFromMsku ? "Netto (MSKU)" : "Netto (geschätzt · each)";
 
   return (
     <div className={`rounded-xl border border-slate-200 border-l-4 ${borderColor} bg-white ${isSelected ? "ring-2 ring-sky-300" : ""}`}>
@@ -83,6 +84,8 @@ export function SubRecipeAggregateView({
               <div className="text-xs font-mono">{fmt(agg.totalGrossPerPortion, 1)} g</div>
               <div className="text-[10px] uppercase font-bold text-slate-400 mt-1">Brutto inkl. Kinder</div>
               <div className="text-xs font-mono text-indigo-700">{fmt(agg.subtreeGrossPerPortion, 1)} g</div>
+              <div className={`text-[10px] uppercase font-bold mt-1 ${agg.statedFromMsku ? "text-slate-400" : "text-amber-600"}`}>{netLabel}</div>
+              <div className="text-xs font-mono text-emerald-700">{fmt(agg.subtreeNetPerPortion, 1)} g</div>
               <div className="text-[10px] text-emerald-600 font-mono">@ {yieldDisplay}</div>
             </>
           )}
@@ -115,7 +118,7 @@ export function SubRecipeAggregateView({
                 <div className="font-mono font-bold text-indigo-700">{fmtMass(totalGrossForRun)}</div>
               </div>
               <div>
-                <div className="text-[10px] uppercase text-slate-500 font-bold">Σ Netto (nach Yield)</div>
+                <div className="text-[10px] uppercase text-slate-500 font-bold">Σ {netLabel}</div>
                 <div className="font-mono font-bold text-emerald-700">{fmtMass(totalNetForRun)}</div>
               </div>
               <div>
@@ -177,6 +180,11 @@ export function IngredientYieldRow({
   const totalGross = ing.grossQty * (showForward ? targetPortions : 1);
   const totalNet = totalGross * ing.effectiveYield;
   const lossGrams = totalGross - totalNet;
+
+  const compounded = ing.ancestorYieldFactor < 0.999 && !ing.hasOverride;
+  const breakdownText = compounded
+    ? `eigener Sub ${(ing.ownYieldFactor * 100).toFixed(1)}% × Eltern-Kette ${(ing.ancestorYieldFactor * 100).toFixed(1)}% = ${(ing.effectiveYield * 100).toFixed(1)}% (raw → Endteller)`
+    : "";
 
   function commit(): void {
     const pct = parseNumInput(tempValue);
@@ -247,16 +255,23 @@ export function IngredientYieldRow({
               }`}
               title={ing.hasOverride
                 ? `Override aktiv. Default war: ${ing.defaultYield !== undefined ? (ing.defaultYield * 100).toFixed(2) + "%" : "—"}`
-                : ing.yieldSource === "csv"
-                  ? "Yield aus CSV (klick zum Überschreiben)"
-                  : ing.yieldSource === "computed"
-                    ? `Berechnet aus netQty/grossQty (${ing.netQty.toFixed(1)}/${ing.grossQty.toFixed(1)})`
-                    : "Kein Yield in Daten → Fallback 100% (klick zum Setzen)"
+                : (breakdownText ? breakdownText + " · " : "") + (
+                  ing.yieldSource === "csv"
+                    ? "Yield aus CSV (klick zum Überschreiben)"
+                    : ing.yieldSource === "computed"
+                      ? `Berechnet aus netQty/grossQty (${ing.netQty.toFixed(1)}/${ing.grossQty.toFixed(1)})`
+                      : "Kein Yield in Daten → Fallback 100% (klick zum Setzen)"
+                )
               }
             >
               {(ing.effectiveYield * 100).toFixed(2)}%
               {ing.hasOverride && " ✏"}
             </button>
+            {compounded && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-700 font-bold" title={breakdownText}>
+                Kette ×{(ing.ancestorYieldFactor * 100).toFixed(0)}%
+              </span>
+            )}
             {ing.effectiveYield > 1 && (
               <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 font-bold">Quell</span>
             )}

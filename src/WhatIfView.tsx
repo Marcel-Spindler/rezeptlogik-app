@@ -259,30 +259,41 @@ export function WhatIfView({
     setUnderweightActualUnitWeight(0);
   }, [upliftedPortions, selectedCode]);
 
+  // ancestorYieldFactor des gewählten Subs → macht die Subrezept-Rechnung sub-lokal
+  // (Summe der Netto-Mengen == MSKU-Ausgabemenge des Subs).
+  const selectedSubAncestorDivisor = selectedSubRecipe?.ancestorYieldFactor ?? 1;
+
   const selectedSubRecipeIngredients = useMemo(() => {
     const ings = selectedSubRecipe ? flattenIngredients(selectedSubRecipe) : [];
     if (!yieldCapEnabled) return ings;
-    return ings.map(ing => ing.effectiveYield > 1 ? { ...ing, effectiveYield: 1 } : ing);
-  }, [selectedSubRecipe, yieldCapEnabled]);
+    // Cap auf 100 % sub-lokal: effektiver Faktor / Eltern-Faktor darf nicht > 1
+    const cap = selectedSubAncestorDivisor;
+    return ings.map(ing => (ing.effectiveYield / (cap > 0 ? cap : 1) > 1
+      ? { ...ing, effectiveYield: cap }
+      : ing));
+  }, [selectedSubRecipe, yieldCapEnabled, selectedSubAncestorDivisor]);
 
   const selectedSubRecipeNeeds = useMemo(() => {
-    const needs = aggregateSubRecipeIngredientNeeds(selectedSubRecipeIngredients, subRecipeMissingMeals);
+    const needs = aggregateSubRecipeIngredientNeeds(selectedSubRecipeIngredients, subRecipeMissingMeals, selectedSubAncestorDivisor);
     if (needsSortBy === 'loss') return [...needs].sort((a, b) => b.lossTotal - a.lossTotal);
     if (needsSortBy === 'losspct') return [...needs].sort((a, b) => b.lossPercent - a.lossPercent);
     return needs;
-  }, [selectedSubRecipeIngredients, subRecipeMissingMeals, needsSortBy]);
+  }, [selectedSubRecipeIngredients, subRecipeMissingMeals, needsSortBy, selectedSubAncestorDivisor]);
 
   const ingredientYieldInfo = useMemo(() => {
+    const div = selectedSubAncestorDivisor > 0 ? selectedSubAncestorDivisor : 1;
     const map = new Map<string, { yieldSource: YieldSource; yieldMissing: boolean; effectiveYield: number }>();
     for (const ing of selectedSubRecipeIngredients) {
       const key = `${ing.ingredientId}__${ing.uom}`;
+      // sub-lokaler effektiver Yield (konsistent mit selectedSubRecipeNeeds)
+      const localEff = ing.hasOverride ? ing.effectiveYield : ing.effectiveYield / div;
       const existing = map.get(key);
-      if (!existing || ing.effectiveYield > existing.effectiveYield) {
-        map.set(key, { yieldSource: ing.yieldSource, yieldMissing: ing.yieldMissing, effectiveYield: ing.effectiveYield });
+      if (!existing || localEff > existing.effectiveYield) {
+        map.set(key, { yieldSource: ing.yieldSource, yieldMissing: ing.yieldMissing, effectiveYield: localEff });
       }
     }
     return map;
-  }, [selectedSubRecipeIngredients]);
+  }, [selectedSubRecipeIngredients, selectedSubAncestorDivisor]);
 
   const fullRecipeNeeds = useMemo(
     () => aggregateRecipeIngredientNeeds(allIngredients, targetPortions),
@@ -405,14 +416,19 @@ export function WhatIfView({
 
   const forwardTotals = useMemo(() => {
     const totalGross = forwardRows.reduce((s, r) => s + r.totalGross, 0);
-    const totalNet = forwardRows.reduce((s, r) => s + r.totalNet, 0);
+    // Netto = Σ MSKU-Plattiermenge je Top-Level-Sub (exakt), × Batch-Korrektur.
+    // Fallback auf Blätter-Summe wenn keine Aggregat-Struktur vorliegt.
+    const statedNetPerPortion = aggregateRoots.reduce((s, r) => s + r.subtreeNetPerPortion, 0);
+    const totalNet = statedNetPerPortion > 0
+      ? statedNetPerPortion * targetPortions * correctionMultiplier
+      : forwardRows.reduce((s, r) => s + r.totalNet, 0);
     return {
       totalGross,
       totalNet,
       lossGrams: totalGross - totalNet,
       lossPercent: totalGross > 0 ? ((totalGross - totalNet) / totalGross) * 100 : 0
     };
-  }, [forwardRows]);
+  }, [forwardRows, aggregateRoots, targetPortions, correctionMultiplier]);
 
   const reverseResult = useMemo(() => {
     if (!reverseIngredient || reverseIngredient.grossQty <= 0) return null;
@@ -863,7 +879,8 @@ export function WhatIfView({
             </h1>
             <p className="mt-1 text-sm text-slate-600">
               Daten-getrieben aus <code className="px-1 bg-white rounded text-xs">export-sub-recipes-by-recipe-detailed.csv</code> ·
-              Yield-% pro Zutat · Forward & Reverse · Persistente Overrides
+              Netto = MSKU-Plattiermenge je Sub-Rezept (verschachtelte Yields kompoundiert) ·
+              Forward &amp; Reverse · Persistente Overrides
             </p>
           </div>
           <div className="flex flex-col items-end gap-1 text-xs">
@@ -1000,19 +1017,68 @@ export function WhatIfView({
       {/* YIELD AUDIT PANEL */}
       {allIngredients.length > 0 && (() => {
         const auditItems = allIngredients.filter(i => i.yieldMissing || i.yieldSource === "computed");
-        if (auditItems.length === 0) return null;
+        const estimatedSubs = allSubs.filter(s => !s.statedFromMsku);
+        // MSKU-Gegenprobe: Σ Blätter-Endteller-Netto vs. Σ Top-Level-Plattiermenge
+        const sumStatedTop = aggregateRoots.reduce((s, r) => s + r.subtreeNetPerPortion, 0);
+        const sumLeafFinal = allIngredients.reduce((s, i) => s + i.grossQty * i.effectiveYield, 0);
+        const crossDeltaPct = sumStatedTop > 0 ? ((sumLeafFinal - sumStatedTop) / sumStatedTop) * 100 : 0;
+        const crossWarn = Math.abs(crossDeltaPct) > 3;
+        if (auditItems.length === 0 && estimatedSubs.length === 0 && !crossWarn) return null;
         return (
           <details className="card border-2 border-orange-200 bg-orange-50/50">
-            <summary className="p-4 cursor-pointer flex items-center gap-3">
+            <summary className="p-4 cursor-pointer flex items-center gap-3 flex-wrap">
               <span className="text-orange-600 font-bold">⚠ Yield-Audit</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-200 text-orange-800 font-bold">
-                {auditItems.length} Zutaten
-              </span>
+              {auditItems.length > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-orange-200 text-orange-800 font-bold">
+                  {auditItems.length} Zutaten ohne echten Yield
+                </span>
+              )}
+              {estimatedSubs.length > 0 && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-200 text-amber-800 font-bold">
+                  {estimatedSubs.length} Sub-Rezepte geschätzt (each)
+                </span>
+              )}
               <span className="text-xs text-slate-500 flex-1">
-                — mit fehlendem oder berechnetem Yield
+                — Netto/Portion je Sub-Rezept kommt sonst direkt aus MSKU
               </span>
             </summary>
-            <div className="px-4 pb-4">
+            <div className="px-4 pb-4 space-y-3">
+              {/* MSKU-Gegenprobe */}
+              <div className={`rounded-lg px-3 py-2 text-xs ring-1 ${crossWarn ? "bg-amber-50 ring-amber-300 text-amber-900" : "bg-emerald-50 ring-emerald-300 text-emerald-900"}`}>
+                <strong>MSKU-Gegenprobe:</strong>{" "}
+                Σ Zutaten-Endteller-Netto {fmtMass(sumLeafFinal)} vs. Σ MSKU-Plattiermenge {fmtMass(sumStatedTop)}{" "}
+                (Δ {crossDeltaPct >= 0 ? "+" : ""}{fmt(crossDeltaPct, 1)} %).{" "}
+                {crossWarn
+                  ? "Abweichung > 3 % — meist durch each-Sub-Rezepte oder MSKU-Inkonsistenz."
+                  : "Im Rahmen."}
+              </div>
+
+              {estimatedSubs.length > 0 && (
+                <div className="rounded-lg ring-1 ring-amber-200 bg-white overflow-auto max-h-40">
+                  <table className="min-w-full text-xs">
+                    <thead className="sticky top-0 bg-amber-100 text-[10px] uppercase tracking-wide text-amber-700">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Geschätztes Sub-Rezept (each)</th>
+                        <th className="px-3 py-2 text-right">Brutto/Meal</th>
+                        <th className="px-3 py-2 text-right">Netto/Meal (geschätzt)</th>
+                        <th className="px-3 py-2 text-right">Yield</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-amber-100">
+                      {estimatedSubs.map(s => (
+                        <tr key={s.subRecipeId}>
+                          <td className="px-3 py-2 font-medium">{s.name}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmtMass(s.subtreeGrossPerPortion)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{fmtMass(s.subtreeNetPerPortion)}</td>
+                          <td className="px-3 py-2 text-right font-mono">{s.avgYield ? `${(s.avgYield * 100).toFixed(1)}%` : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {auditItems.length > 0 && (
               <div className="max-h-60 overflow-auto rounded-lg ring-1 ring-orange-200 bg-white">
                 <table className="min-w-full text-xs">
                   <thead className="sticky top-0 bg-orange-100 text-[10px] uppercase tracking-wide text-orange-700">
@@ -1022,6 +1088,7 @@ export function WhatIfView({
                       <th className="px-3 py-2 text-right">Brutto</th>
                       <th className="px-3 py-2 text-right">Netto (Daten)</th>
                       <th className="px-3 py-2 text-center">Status</th>
+                      <th className="px-3 py-2 text-center">Kette</th>
                       <th className="px-3 py-2 text-center">Eff. Yield</th>
                       <th className="px-3 py-2 text-center">Aktion</th>
                     </tr>
@@ -1039,6 +1106,9 @@ export function WhatIfView({
                             : <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">Berechnet</span>
                           }
                         </td>
+                        <td className="px-3 py-2 text-center font-mono" title="Produkt der Eltern-Sub-Rezept-Yields">
+                          {ing.ancestorYieldFactor < 0.999 ? `×${(ing.ancestorYieldFactor * 100).toFixed(0)}%` : "—"}
+                        </td>
                         <td className="px-3 py-2 text-center font-mono">{(ing.effectiveYield * 100).toFixed(2)}%</td>
                         <td className="px-3 py-2 text-center">
                           {ing.yieldSource === "computed" && (
@@ -1055,6 +1125,7 @@ export function WhatIfView({
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           </details>
         );
