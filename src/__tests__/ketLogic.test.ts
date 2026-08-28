@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DataBundle } from "../core/types";
-import type { KetRow } from "../features/ket-plan/ketTypes";
-import { calcBatch, parseKetCsv, parseSortKey } from "../features/ket-plan/ketLogic";
+import type { BatchCalc, KetRow } from "../features/ket-plan/ketTypes";
+import { calcBatch, parseKetCsv, parseSortKey, rowInstructionStatus } from "../features/ket-plan/ketLogic";
 import { buildPdf } from "../features/ket-plan/ketPdf";
 import { buildWoInstructionContext, orderCookingMethods } from "../features/ket-plan/woInstructionBot";
 import { classify } from "../features/ket-plan/factorRules";
@@ -630,5 +630,41 @@ describe("GN-Blech-Berechnung (resolveGnTrays)", () => {
     const chicken = calc.ingredients.find((i) => i.name.includes("Chicken Breast"))!;
     expect(chicken.gnTrays).toBeNull();
     expect(chicken.gnType).toBeNull();
+  });
+});
+
+describe("rowInstructionStatus — Druck-Gate", () => {
+  const has = (keys: string[]) => (k: string) => keys.includes(k);
+  const composite = (...names: string[]) =>
+    ({ components: names.map((name) => ({ name })) } as unknown as BatchCalc);
+
+  it("einfache WO ohne Anweisung ist unvollständig", () => {
+    expect(rowInstructionStatus(row, { components: [] }, has([]))).toEqual({
+      total: 1, have: 0, complete: false, missing: ["ganze WO"],
+    });
+  });
+
+  it("einfache WO mit Anweisung ist vollständig", () => {
+    expect(rowInstructionStatus(row, { components: [] }, has([row.key]))).toEqual({
+      total: 1, have: 1, complete: true, missing: [],
+    });
+  });
+
+  it("ohne calc verhält sich wie eine einfache WO", () => {
+    expect(rowInstructionStatus(row, null, has([])).complete).toBe(false);
+    expect(rowInstructionStatus(row, undefined, has([row.key])).complete).toBe(true);
+  });
+
+  it("zusammengesetzte WO braucht jede eindeutige Komponente", () => {
+    const calc = composite("Fleisch", "Gemüse");
+    expect(rowInstructionStatus(row, calc, has([`${row.key}::Fleisch`])).missing).toEqual(["Gemüse"]);
+    expect(rowInstructionStatus(row, calc, has([`${row.key}::Fleisch`, `${row.key}::Gemüse`])).complete).toBe(true);
+  });
+
+  it("dedupliziert gleichnamige Komponenten", () => {
+    const calc = composite("Fleisch", "Fleisch", "Gemüse");
+    const st = rowInstructionStatus(row, calc, has([`${row.key}::Fleisch`, `${row.key}::Gemüse`]));
+    expect(st.total).toBe(2);
+    expect(st.complete).toBe(true);
   });
 });

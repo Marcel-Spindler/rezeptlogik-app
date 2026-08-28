@@ -8,7 +8,6 @@ import {
   fetchPlanningSheet,
   fetchWeekDropdownTabs,
   getCachedPlanningSheet,
-  PROD_DAYS,
   type PlanningSheetData,
   type SheetDay,
   type SheetTab,
@@ -126,7 +125,7 @@ export function FrischelisteV2Panel({ data, weekLabel }: Props) {
   }, [data, sheetData, sheetStatus, selectedWeek, catFilter, fallbackWeights]);
 
   const activeDays = useMemo<SheetDay[]>(
-    () => PROD_DAYS.filter(d => dayFilter.has(d)),
+    () => COOK_DAYS.filter(d => dayFilter.has(d)),
     [dayFilter],
   );
 
@@ -459,7 +458,7 @@ export function FrischelisteV2Panel({ data, weekLabel }: Props) {
             <div className="text-right">
               <div className="text-[13px] font-black text-slate-700">
                 {formatKg(filteredTotalKg)}
-                {activeDays.length < PROD_DAYS.length && (
+                {activeDays.length < COOK_DAYS.length && (
                   <span className="ml-1 text-[10px] font-medium text-indigo-500">
                     {activeDays.map(d => DAY_SHORT[d]).join("+")}
                   </span>

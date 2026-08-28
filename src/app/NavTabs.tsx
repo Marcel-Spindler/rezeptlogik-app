@@ -21,6 +21,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
   { label: "KET Plan / WO", views: ["wo"] },
   { label: "PET Plan / Plating", views: ["pet"] },
   { label: "WMS Übersicht", views: ["wms"] },
+  { label: "Lager Komplett", views: ["full-inventory"] },
   { label: "What-If Rechner", views: ["whatif"] },
   { label: "Rundmail", views: ["rundmail"] },
   { label: "CSV Import", views: ["import"] },

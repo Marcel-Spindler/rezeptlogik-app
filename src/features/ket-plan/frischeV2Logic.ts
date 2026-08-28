@@ -341,6 +341,16 @@ export function buildV2Data(
           totalKg: 0,
         };
         agg.set(rowKey, row);
+      } else {
+        // Spezifischere Station gewinnt: dieselbe Zutat+Submeal kann in mehreren Rezepten
+        // unterschiedliche Fallback-Stationen bekommen. Wir nehmen immer die höchstrangige
+        // (Braiser > Grill > Cup > Butter > Slice > Oven > Andere).
+        const newPriority = STATION_ORDER.indexOf(station);
+        const curPriority = STATION_ORDER.indexOf(row.station);
+        if (newPriority < curPriority) {
+          row.station = station;
+          row.stationGroup = STATION_GROUP_MAP[station];
+        }
       }
       row.daysKg = addDays(row.daysKg, daysKg);
       row.totalKg += totalKg;
@@ -529,7 +539,7 @@ const AREA_COLORS: Record<string, { header: string; sub: string }> = {
 // PDF-Export: pro Tag ein eigener Abschnitt mit Seitenumbruch.
 // activeDays = vom User gewählte Tage; null → alle PROD_DAYS mit Daten.
 export function v2ToPdfHtml(result: V2Result, week: string, includeSubmeal: boolean, activeDays?: SheetDay[]): string {
-  const days = (activeDays ?? PROD_DAYS).filter(d => result.daysKg[d] > 0);
+  const days = (activeDays ?? COOK_DAYS).filter(d => result.daysKg[d] > 0);
 
   const daySections = days.map((day, dayIdx) => {
     const dayTotal = result.allRows.reduce((s, r) => s + r.daysKg[day], 0);

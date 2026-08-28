@@ -2,9 +2,10 @@
 // Extrahiert aus WmsKwOverviewView, damit andere Views (z.B. der Rezept-Detail-
 // Meal-Trace) dieselbe Retry-/Fehlerlogik nutzen können, statt sie zu duplizieren.
 import type {
-  AllData, BasePayload, InboundPayload, PlhDetailPayload, SleevingPayload,
-  StoredPayload, StoredRow, WoDetailPayload, WorkordersPayload,
+  AllData, BasePayload, FullInventoryPayload, FullInventoryRow, InboundPayload, PlhDetailPayload, SleevingPayload,
+  StoredPayload, StoredRow, WmsSearchResult, WoDetailPayload, WorkordersPayload,
 } from "./wmsTypes";
+import { persistGet, persistSet, STORES } from "../../lib/persistentStore";
 
 export interface WmsStationsResult {
   data: AllData;
@@ -127,4 +128,64 @@ export async function fetchPlhDetail(
   };
 
   return attempt(0);
+}
+
+export async function fetchFullInventory(
+  opts: { whId?: string; limit?: number; maxRetries?: number; onRetry?: (attempt: number, message: string) => void } = {},
+): Promise<{ rows: FullInventoryRow[]; totalRows: number; generatedAt: string | null }> {
+  const { whId = "VF", limit = 100000, maxRetries = 3, onRetry } = opts;
+
+  type Result = { rows: FullInventoryRow[]; totalRows: number; generatedAt: string | null };
+  const cacheKey = `full-inv:${whId}:${limit}`;
+  const cached = await persistGet<Result>(STORES.wmsInventory, cacheKey);
+  if (cached) return cached.data;
+
+  const attempt = async (retryCount: number): Promise<{ rows: FullInventoryRow[]; totalRows: number; generatedAt: string | null }> => {
+    try {
+      const p = new URLSearchParams({ whId, limit: String(limit), ts: String(Date.now()) });
+      const res = await fetch(`/api/wms-full-inventory?${p}`, { cache: "no-store" });
+      const ct = res.headers.get("content-type") ?? "";
+      if (!ct.includes("json")) {
+        if (retryCount < maxRetries) {
+          onRetry?.(retryCount + 1, `Warte auf WMS-Server… (Versuch ${retryCount + 1}/${maxRetries})`);
+          await new Promise(r => setTimeout(r, 2500));
+          return attempt(retryCount + 1);
+        }
+        throw new Error(`WMS-Server nicht erreichbar (HTTP ${res.status}). Lokalen Server starten: npm run wms:server`);
+      }
+      const payload = await res.json() as FullInventoryPayload;
+      if (!payload.ok) throw new Error(payload.error ?? "Unbekannter Fehler");
+      const result: Result = { rows: payload.rows, totalRows: payload.totalRows ?? payload.rows.length, generatedAt: payload.generatedAt ?? null };
+      void persistSet(STORES.wmsInventory, cacheKey, result);
+      return result;
+    } catch (e) {
+      if (retryCount < maxRetries && e instanceof TypeError && e.message.includes("fetch")) {
+        onRetry?.(retryCount + 1, `Warte auf WMS-Server… (Versuch ${retryCount + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, 2500));
+        return attempt(retryCount + 1);
+      }
+      throw e;
+    }
+  };
+
+  return attempt(0);
+}
+
+export async function fetchWmsSearch(
+  query: string,
+  opts: { whId?: string } = {},
+): Promise<WmsSearchResult> {
+  const { whId = "VF" } = opts;
+  const cacheKey = `search:${whId}:${query.toUpperCase()}`;
+  const cached = await persistGet<WmsSearchResult>(STORES.wmsSearch, cacheKey);
+  if (cached) return cached.data;
+
+  const p = new URLSearchParams({ whId, q: query, ts: String(Date.now()) });
+  const res = await fetch(`/api/wms-search?${p}`, { cache: "no-store" });
+  const ct = res.headers.get("content-type") ?? "";
+  if (!ct.includes("json")) throw new Error(`WMS-Server nicht erreichbar (HTTP ${res.status}). Lokalen Server starten: npm run wms:server`);
+  const payload = await res.json() as WmsSearchResult;
+  if (!payload.ok) throw new Error(payload.error ?? "Unbekannter Fehler");
+  void persistSet(STORES.wmsSearch, cacheKey, payload);
+  return payload;
 }

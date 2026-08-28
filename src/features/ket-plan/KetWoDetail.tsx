@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { EQUIP_LABELS, type BatchCalc, type GnTraySummary, type KetRow, type ManualEquipmentOverride, type WoComponent, type WoInstruction } from "./ketTypes";
 import { catColor, fmtDateHeader, fmtKg, fmtNum, sortIngredients } from "./ketLogic";
 import { StatCard, StatusChip } from "./KetSharedUi";
+import { BiLabel, HelpButton } from "./KetHelp";
 import { orderCookingMethods, parseInstructionLines, splitInstructionKeywords } from "./woInstructionBot";
 
 const INSTRUCTION_VARIANTS = {
@@ -238,17 +239,20 @@ function ComponentSection({
       <div className="p-3 border-b border-slate-100">
         {error && <div className="mb-2 rounded-lg bg-rose-50 border border-rose-200 px-2.5 py-1.5 text-[10px] font-semibold text-rose-700">{error}</div>}
         <div className="flex items-center justify-between gap-2 mb-2">
-          <div className="text-[9px] font-black uppercase tracking-widest text-emerald-700">Kochanweisung</div>
+          <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-700">
+            <BiLabel de="Kochanweisung" en="Cooking instruction" />
+            <HelpButton section="instructions" align="left" className="text-emerald-600" />
+          </div>
           <div className="flex gap-1.5">
             {instruction && onEdit && !editing && (
               <button type="button" onClick={() => { setEnDraft(instruction.english); setDeDraft(instruction.german); setEditing(true); }}
                 className="rounded-lg bg-slate-200 px-2 py-1 text-[9px] font-bold text-slate-700 hover:bg-slate-300">
-                Bearbeiten
+                <BiLabel de="Bearbeiten" en="Edit" />
               </button>
             )}
             <button type="button" onClick={() => void generate()} disabled={busy}
               className="rounded-lg bg-emerald-700 px-2.5 py-1 text-[9px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
-              {busy ? "Erzeuge …" : instruction ? "Neu erzeugen" : "Erzeugen"}
+              {busy ? "Erzeuge … / Generating …" : instruction ? <BiLabel de="Neu erzeugen" en="Regenerate" /> : <BiLabel de="Erzeugen" en="Generate" />}
             </button>
           </div>
         </div>
@@ -321,6 +325,7 @@ export function WoDetail({
   onComponentInstructionEdit,
   onGenerateAllComponentInstructions,
   onDownload,
+  instructionMissing,
   manualEquipment,
   onManualEquipmentChange,
   componentManualEquipment,
@@ -330,6 +335,9 @@ export function WoDetail({
   calc: BatchCalc | null;
   onPrint: () => void;
   onCapChange: (equip: string, raw: string) => void;
+  // Fehlende Kochanweisung(en) dieser WO — leer = vollständig. Steuert das
+  // Druck-Gate im Kopf (Drucken/Speichern deaktiviert) plus den Notfall-Hinweis.
+  instructionMissing?: string[];
   instruction?: WoInstruction;
   onGenerateInstruction: () => Promise<void>;
   onInstructionEdit?: (updated: WoInstruction) => void;
@@ -404,6 +412,49 @@ export function WoDetail({
     }
   }
 
+  async function runDownload() {
+    setDownloadBusy(true);
+    setDownloadStatus(null);
+    try {
+      await onDownload();
+      setDownloadStatus({ ok: true, msg: "Gespeichert ✓ / Saved ✓" });
+      setTimeout(() => setDownloadStatus(null), 4000);
+    } catch (err) {
+      setDownloadStatus({ ok: false, msg: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setDownloadBusy(false);
+    }
+  }
+
+  // Druck-Gate: ohne vollständige Kochanweisung sind Drucken/Speichern im Kopf
+  // deaktiviert; darunter erscheint ein Notfall-Hinweis (siehe unten).
+  const gateBlocked = (instructionMissing?.length ?? 0) > 0;
+  const gateBanner = gateBlocked ? (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-300/40 bg-amber-400/10 px-3 py-2">
+      <span className="text-[11px] font-bold text-amber-100">
+        ⚠ <BiLabel de="Kochanweisung fehlt für" en="Cooking instruction missing for" />: {instructionMissing!.join(", ")}
+      </span>
+      <div className="ml-auto flex items-center gap-1.5">
+        <button
+          type="button"
+          disabled={instructionBusy || allComponentsBusy}
+          onClick={() => void (calc.components.length > 0 ? generateAllComponents() : generateInstruction())}
+          className="rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
+        >
+          <BiLabel de="Erzeugen" en="Generate" />
+        </button>
+        <button
+          type="button"
+          onClick={onPrint}
+          title="Ohne Kochanweisung drucken / Print without a cooking instruction"
+          className="rounded-lg bg-white/10 px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
+        >
+          <BiLabel de="Trotzdem drucken" en="Print anyway" />
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div>
       {/* Sticky header */}
@@ -414,29 +465,25 @@ export function WoDetail({
               <span className="text-2xl font-black text-white">WO {row.woNumber}</span>
               <span className="font-mono text-xs text-blue-300">{row.recipeCode}</span>
               <span className="text-xs text-blue-400">{fmtDateHeader(row.dateNeeded)}</span>
+              <HelpButton section="breakdown" align="left" className="text-blue-200" />
             </div>
             <div className="text-sm font-bold text-blue-100 truncate">{row.recipeName}</div>
             <div className="text-xs text-blue-300/80 mt-0.5 truncate">{row.subRecipeName}</div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden sm:inline text-[9px] font-black uppercase tracking-[0.12em] text-blue-300/70">
+              <BiLabel de="Einzeldruck" en="Single print" />
+            </span>
             <button
               type="button"
-              disabled={downloadBusy}
-              onClick={async () => {
-                setDownloadBusy(true);
-                setDownloadStatus(null);
-                try {
-                  await onDownload();
-                  setDownloadStatus({ ok: true, msg: "Gespeichert ✓" });
-                  setTimeout(() => setDownloadStatus(null), 4000);
-                } catch (err) {
-                  setDownloadStatus({ ok: false, msg: err instanceof Error ? err.message : String(err) });
-                } finally {
-                  setDownloadBusy(false);
-                }
-              }}
-              title={downloadStatus && !downloadStatus.ok ? downloadStatus.msg : "Als PDF-Datei speichern (ohne Druckdialog)"}
-              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl transition-colors border disabled:opacity-50 ${
+              disabled={downloadBusy || gateBlocked}
+              onClick={() => void runDownload()}
+              title={
+                gateBlocked
+                  ? "Erst Kochanweisung erzeugen / Generate the cooking instruction first"
+                  : downloadStatus && !downloadStatus.ok ? downloadStatus.msg : "Als PDF-Datei speichern (ohne Druckdialog) / Save as a PDF file"
+              }
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl transition-colors border disabled:opacity-40 disabled:cursor-not-allowed ${
                 downloadStatus?.ok
                   ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-200"
                   : downloadStatus && !downloadStatus.ok
@@ -449,18 +496,21 @@ export function WoDetail({
               ) : (
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
               )}
-              {downloadStatus ? downloadStatus.msg : "Speichern"}
+              {downloadStatus ? downloadStatus.msg : <BiLabel de="Speichern" en="Save" />}
             </button>
             <button
               type="button"
               onClick={onPrint}
-              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors border border-white/10"
+              disabled={gateBlocked}
+              title={gateBlocked ? "Erst Kochanweisung erzeugen / Generate the cooking instruction first" : "Druckdialog öffnen / Open the print dialog"}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors border border-white/10"
             >
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-              Drucken
+              <BiLabel de="Drucken" en="Print" />
             </button>
           </div>
         </div>
+        {gateBanner}
       </div>
 
       <div className="p-5 space-y-4">

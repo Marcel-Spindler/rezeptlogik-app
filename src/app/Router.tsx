@@ -28,6 +28,8 @@ import { BackfillsView } from "../features/backfills/BackfillsView";
 import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
 import { RedzoneLiveView } from "../features/redzone-live/RedzoneLiveView";
 import { ArtikelWocheView } from "../features/artikel-woche/ArtikelWocheView";
+import { FullInventoryView } from "../features/full-inventory/FullInventoryView";
+import { GlobalSearch } from "../features/global-search/GlobalSearch";
 import { resolveRecipeByCode } from "../lib/helpers";
 
 function MainPane({ view }: { view: AppView }) {
@@ -138,6 +140,9 @@ function MainPane({ view }: { view: AppView }) {
           upliftPercent={upliftPercent}
         />
       );
+
+    case "full-inventory":
+      return <FullInventoryView />;
   }
 }
 
@@ -170,13 +175,22 @@ function FullApp() {
     );
   }
 
+  // KET Plan / WO braucht die volle Bildschirmbreite (WO-Liste + Kochanweisungen
+  // + Breakdown nebeneinander) — breiterer Rahmen, schmalere Sidebar, und keine
+  // Rezept-Liste (die KET-Ansicht nutzt sie nicht und ihre Länge würde sonst die
+  // Grid-Zeile strecken → grauer Leerraum unter der Karte).
+  const woView = view === "wo";
+
   return (
-    <Shell>
+    <Shell wide={woView}>
       <DataHealthBanner data={data} />
       <CapacityWarningBanner data={data} week={selectedWeek} upliftPercent={upliftPercent} />
       <BackfillAlertBanner onOpen={() => setView("backfills")} />
-      <div className="grid grid-cols-12 gap-4">
-        <aside className="col-span-12 md:col-span-4 lg:col-span-3 space-y-3">
+      {/* Übergeordnete Suche (WO / Submeal / SKU / Meal → Flow-Verlauf). Nicht in
+          "KET Plan / WO" — dort hat die WO-Ansicht eine eigene Funktion. */}
+      {!woView && <div className="mb-4"><GlobalSearch /></div>}
+      <div className={`grid grid-cols-12 gap-4 ${woView ? "items-start" : ""}`}>
+        <aside className={`col-span-12 space-y-3 ${woView ? "md:col-span-4 lg:col-span-3 xl:col-span-2" : "md:col-span-4 lg:col-span-3"}`}>
           <NavTabs view={view} onChange={setView} />
 
           <WeekSelector
@@ -192,21 +206,23 @@ function FullApp() {
             weekDelta={weekDelta}
           />
 
-          <RecipeList
-            recipes={filteredRecipes}
-            allRecipesCount={recipesOfWeek.length}
-            recipesByCode={recipesByCode}
-            mealCatalog={data.mealCatalog}
-            activeCode={activeRecipe?.code}
-            selectedWeek={selectedWeek}
-            upliftPercent={upliftPercent}
-            searchText={searchText}
-            onSearchChange={setSearchText}
-            onSelect={code => { setSelectedRecipe(code); if (view !== "recipe") setView("recipe"); }}
-          />
+          {!woView && (
+            <RecipeList
+              recipes={filteredRecipes}
+              allRecipesCount={recipesOfWeek.length}
+              recipesByCode={recipesByCode}
+              mealCatalog={data.mealCatalog}
+              activeCode={activeRecipe?.code}
+              selectedWeek={selectedWeek}
+              upliftPercent={upliftPercent}
+              searchText={searchText}
+              onSearchChange={setSearchText}
+              onSelect={code => { setSelectedRecipe(code); if (view !== "recipe") setView("recipe"); }}
+            />
+          )}
         </aside>
 
-        <main className="col-span-12 min-w-0 md:col-span-8 lg:col-span-9">
+        <main className={`col-span-12 min-w-0 ${woView ? "md:col-span-8 lg:col-span-9 xl:col-span-10" : "md:col-span-8 lg:col-span-9"}`}>
           <GroupSubTabs view={view} onChange={setView} />
           <MainPane view={view} />
         </main>

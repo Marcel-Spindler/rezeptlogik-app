@@ -1,9 +1,12 @@
 // Header + Layout-Rahmen, den jede Oberfläche (voll, Kitchen Mode, Rundmail) teilt.
-export function Shell({ children }: { children: React.ReactNode }) {
+// `wide` (KET Plan / WO): sprengt den 1536px-Deckel, damit die drei Spalten
+// (WO-Liste + Kochanweisungen + Breakdown) auf großen Monitoren Platz haben.
+export function Shell({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
+  const container = wide ? "max-w-[1920px]" : "max-w-screen-2xl";
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30">
-        <div className="mx-auto max-w-screen-2xl px-4 py-3 flex items-center gap-3">
+        <div className={`mx-auto ${container} px-4 py-3 flex items-center gap-3`}>
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-verden-600 flex items-center justify-center">
               <span className="text-white text-xs font-bold">F</span>
@@ -15,7 +18,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <div className="mx-auto max-w-screen-2xl px-4 py-4">{children}</div>
+      <div className={`mx-auto ${container} px-4 py-4`}>{children}</div>
     </div>
   );
 }

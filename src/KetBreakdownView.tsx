@@ -9,13 +9,14 @@ import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "./features/wms-overvi
 import { LiveBadge } from "./features/redzone-live/LiveBadge";
 import { EQUIP_DEFAULTS, EQUIP_LABELS, LS_CAPS_KEY, type BatchCalc, type KetRow, type ManualEquipmentOverride, type WoComponent, type WoInstruction, type WoSortMode } from "./features/ket-plan/ketTypes";
 import {
-  calcBatch, classifyDeboxDepartment, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, statusColors,
+  calcBatch, classifyDeboxDepartment, fmtDateHeader, fmtKg, instructionCacheKey, parseKetCsv, parseSortKey, rowInstructionStatus, statusColors,
 } from "./features/ket-plan/ketLogic";
 import { useKetRowsData } from "./features/ket-plan/useKetRowsData";
 import { useGnHints } from "./features/ket-plan/useGnHints";
 import { useShopfloorProgress } from "./features/ket-plan/useShopfloorProgress";
 import { buildPdf } from "./features/ket-plan/ketPdf";
-import { EmptyState, KetErrorBoundary, KetWoOverview, MissingDataScreen } from "./features/ket-plan/KetSharedUi";
+import { EmptyState, KetErrorBoundary, KetWoOverview, MissingDataScreen, type SelectionInstructionSummary } from "./features/ket-plan/KetSharedUi";
+import { BiLabel, HelpButton, KetHelpProvider, KetManualDialog } from "./features/ket-plan/KetHelp";
 import { WoDetail } from "./features/ket-plan/KetWoDetail";
 import { generateWoInstruction, generateWoInstructionsBatch } from "./features/ket-plan/woInstructionBot";
 import { loadInstructionsFromFirestore, saveInstructionsBatchToFirestore } from "./features/ket-plan/useInstructionFirestore";
@@ -483,6 +484,14 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
 
   const [bulkDlError, setBulkDlError] = useState<string | null>(null);
 
+  // Handbuch (zweisprachige Hilfe) — von jedem HelpButton aus über den Context öffenbar.
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualSection, setManualSection] = useState<string | null>(null);
+  const openManual = useCallback((sectionId?: string) => {
+    setManualSection(sectionId ?? null);
+    setManualOpen(true);
+  }, []);
+
   const { ketRows, liveWmsRows, productionPlanHasLiveWeek, wmsDroppedWeeks } = useKetRowsData(data, selectedWeek, csvRows);
   // Nur abonnieren, solange der Shopfloor-Tab offen ist — sonst haelt jede
   // offene KetBreakdownView (auch Buero-Tabs, die den Tab nie oeffnen) einen
@@ -658,6 +667,31 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   );
   const selectedRow = ketRows.find((r) => r.key === selectedKey) ?? null;
   const selectedCalc = selectedKey ? (calcMap.get(selectedKey) ?? null) : null;
+
+  // ── Druck-Gate: eine WO ist druckbar, wenn sie eine vollständige Kochanweisung
+  // hat (einfache WO: eine Anweisung; zusammengesetzte WO: je Komponente eine).
+  const instructionStatusFor = useCallback(
+    (row: KetRow) => rowInstructionStatus(row, calcMap.get(row.key), (k) => !!woInstructions[k]),
+    [calcMap, woInstructions],
+  );
+  const rowReady = useCallback((row: KetRow) => instructionStatusFor(row).complete, [instructionStatusFor]);
+  const selectedInstruction = selectedRow ? instructionStatusFor(selectedRow) : null;
+
+  // Instruktions-Status der gesamten Checkbox-Auswahl (Tab „Alle WOs") — deckt
+  // ALLE selektierten WOs ab, nicht nur die gerade sichtbar gefilterten.
+  const selectionInstruction = useMemo<SelectionInstructionSummary>(() => {
+    const rows = ketRows.filter((r) => selectedWoKeys.has(r.key));
+    let ready = 0;
+    const missing: SelectionInstructionSummary["missing"] = [];
+    let missingTargets = 0;
+    for (const row of rows) {
+      const st = instructionStatusFor(row);
+      if (st.complete) { ready++; continue; }
+      missing.push({ woNumber: row.woNumber, label: row.subRecipeName || row.recipeName, missing: st.missing });
+      missingTargets += st.missing.length;
+    }
+    return { ready, missing, missingTargets };
+  }, [ketRows, selectedWoKeys, instructionStatusFor]);
 
   const handleFile = useCallback((file: File) => {
     setCsvFileName(file.name);
@@ -946,7 +980,11 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   // selectedWoKeys statt activeInstructionDays als Quelle der zu erzeugenden Zeilen.
   const generateInstructionsForSelection = useCallback(async () => {
     const rowsToGenerate = ketRows.filter((row) => selectedWoKeys.has(row.key));
-    const targetsToGenerate = targetsForRows(rowsToGenerate);
+    const allTargets = targetsForRows(rowsToGenerate);
+    // Delta: nur fehlende Anweisungen erzeugen; sind alle da, bewusst alle neu
+    // (gleiche Konvention wie onGenerateAllComponentInstructions).
+    const missingTargets = allTargets.filter((t) => !woInstructions[t.key]);
+    const targetsToGenerate = missingTargets.length > 0 ? missingTargets : allTargets;
     if (targetsToGenerate.length === 0) return;
     setBatchInstructionBusy(true);
     setBatchInstructionStatus(`Erzeuge ${targetsToGenerate.length} WO-Instructions für Auswahl …`);
@@ -970,19 +1008,58 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [ketRows, selectedWoKeys, targetsForRows, persistInstructions]);
+  }, [ketRows, selectedWoKeys, targetsForRows, woInstructions, persistInstructions]);
 
   // Drucken/Speichern für die per Checkbox ausgewählten WOs (Alle-WOs-Tab) —
   // dieselbe selectedWoKeys-Quelle wie generateInstructionsForSelection oben.
-  const printSelectedWos = useCallback(() => {
-    const rows = ketRows.filter((row) => selectedWoKeys.has(row.key));
+  // scope "ready" = nur WOs mit vollständiger Kochanweisung (Standard),
+  // "all" = Notfall-Override (alle, auch ohne Anweisung).
+  const printSelectedWos = useCallback((scope: "ready" | "all") => {
+    let rows = ketRows.filter((row) => selectedWoKeys.has(row.key));
+    if (scope === "ready") rows = rows.filter(rowReady);
     if (rows.length > 0) printPdf(rows);
-  }, [ketRows, selectedWoKeys, printPdf]);
+  }, [ketRows, selectedWoKeys, rowReady, printPdf]);
 
-  const saveSelectedWos = useCallback(() => {
-    const rows = ketRows.filter((row) => selectedWoKeys.has(row.key));
+  const saveSelectedWos = useCallback((scope: "ready" | "all") => {
+    let rows = ketRows.filter((row) => selectedWoKeys.has(row.key));
+    if (scope === "ready") rows = rows.filter(rowReady);
     void saveRowsAsIndividualPdfs(rows);
-  }, [ketRows, selectedWoKeys, saveRowsAsIndividualPdfs]);
+  }, [ketRows, selectedWoKeys, rowReady, saveRowsAsIndividualPdfs]);
+
+  // Kochanweisungen für einen beliebigen Satz WOs erzeugen (Einzel-WO im
+  // Seiten-Footer, oder alle noch unvollständigen WOs eines Massendrucks) —
+  // deckt einfache WOs UND zusammengesetzte (je Komponente ein Ziel) ab.
+  const generateInstructionsForRows = useCallback(async (rows: KetRow[]) => {
+    const allTargets = rows.flatMap((row) => {
+      const calc = calcMap.get(row.key);
+      return calc ? generationTargetsForRow(row, calc) : [];
+    });
+    const missing = allTargets.filter((t) => !woInstructions[t.key]);
+    const toGenerate = missing.length > 0 ? missing : allTargets;
+    if (toGenerate.length === 0) return;
+    setBatchInstructionBusy(true);
+    setBatchInstructionStatus(`Erzeuge ${toGenerate.length} Kochanweisung(en) …`);
+    setFailedInstructions([]);
+    try {
+      const result = await generateWoInstructionsBatch(toGenerate, (chunk, done, total) => {
+        persistInstructions(chunk.generated, toGenerate);
+        setBatchInstructionStatus(`${done} von ${total} Kochanweisungen verarbeitet …`);
+      });
+      persistInstructions(result.generated, toGenerate);
+      const genCount = Object.keys(result.generated).length;
+      if (result.failed.length > 0) {
+        setFailedInstructions(result.failed);
+        setBatchInstructionStatus(`${genCount} erzeugt · ${result.failed.length} fehlgeschlagen`);
+      } else {
+        setBatchInstructionStatus(`${genCount} Kochanweisung(en) erzeugt`);
+      }
+    } catch (error) {
+      console.error("[KetBreakdown] Row instruction generation failed:", error);
+      setBatchInstructionStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBatchInstructionBusy(false);
+    }
+  }, [calcMap, woInstructions, persistInstructions]);
 
   const retryFailedInstructions = useCallback(async () => {
     if (failedInstructions.length === 0) return;
@@ -1025,7 +1102,8 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
   }
 
   return (
-    <div className="flex min-h-[620px] h-[calc(100vh-64px)] min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+    <KetHelpProvider onOpen={openManual}>
+    <div className="flex min-h-[560px] h-[calc(100vh-56px)] min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
 
       {/* ════════════════════════════════════════════════════
           LEFT SIDEBAR
@@ -1033,20 +1111,19 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       <aside className="flex min-h-0 w-[300px] shrink-0 flex-col border-r border-slate-200 overflow-hidden">
 
         {/* Header */}
-        <div className="px-4 pt-4 pb-3 bg-gradient-to-b from-[#0f2240] to-[#1e3a5f]">
-          <div className="text-[9px] font-bold text-blue-300 uppercase tracking-[0.15em] mb-1">
-            KET Plan · WO Ausdruck
-          </div>
+        <div className="px-3 pt-2 pb-2 bg-gradient-to-b from-[#0f2240] to-[#1e3a5f]">
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-white tabular-nums">{weekFilteredRows.length}</span>
-            <span className="text-xs text-blue-300">WOs</span>
+            <span className="text-xl font-black text-white tabular-nums">{weekFilteredRows.length}</span>
+            <span className="text-[11px] text-blue-300">WOs</span>
             {totalBatches > 0 && (
               <>
                 <span className="text-blue-600">·</span>
-                <span className="text-lg font-black text-blue-200 tabular-nums">{totalBatches}</span>
-                <span className="text-xs text-blue-300">Batche</span>
+                <span className="text-base font-black text-blue-200 tabular-nums">{totalBatches}</span>
+                <span className="text-[11px] text-blue-300">Batche</span>
               </>
             )}
+            <span className="ml-auto text-[8px] font-bold text-blue-400 uppercase tracking-[0.12em]">KET · WO Ausdruck</span>
+            <HelpButton section="overview" className="text-blue-300" />
           </div>
           {liveWeekNum != null && (
             <button
@@ -1054,7 +1131,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               title={weekFilterEnabled
                 ? `Nur Work Orders mit "${liveWeekNum}-…"-Präfix zeigen (KW ${liveWeek})`
                 : "Ungefiltert: Work Orders aller Wochen zeigen"}
-              className={`mt-2 w-full rounded-lg px-2 py-1.5 text-[10px] font-bold transition-colors ${weekFilterEnabled ? "bg-blue-600 text-white" : "bg-white/10 text-blue-200 hover:bg-white/20"}`}
+              className={`mt-1.5 w-full rounded-lg px-2 py-1 text-[10px] font-bold transition-colors ${weekFilterEnabled ? "bg-blue-600 text-white" : "bg-white/10 text-blue-200 hover:bg-white/20"}`}
               onClick={() => setWeekFilterEnabled((v) => !v)}
             >
               {weekFilterEnabled
@@ -1102,8 +1179,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           )}
         </div>
 
-        {/* CSV Upload */}
-        <div className="px-3 py-2.5 border-b border-slate-100">
+        {/* CSV Upload — bei geladener CSV nur eine schmale Statuszeile (spart
+            Platz für die WO-Liste), sonst die volle Drop-Zone. */}
+        <div className="px-3 py-2 border-b border-slate-100">
           <input
             ref={fileInputRef}
             type="file"
@@ -1113,60 +1191,68 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
           />
-          <div
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onClick={() => fileInputRef.current?.click()}
-            className={`cursor-pointer rounded-xl border-2 border-dashed px-3 py-2.5 text-center transition-all select-none ${
-              dragOver
-                ? "border-blue-400 bg-blue-50 scale-[1.01]"
-                : csvRows
-                  ? "border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
+          {csvRows ? (
+            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[10px]">
+              <span className="font-bold text-emerald-700">✓</span>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="Andere KET CSV hochladen"
+                className="min-w-0 flex-1 truncate text-left font-semibold text-slate-600 hover:text-blue-700"
+              >
+                {csvFileName} · {csvRows.length} WOs
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCsvRows(null); setCsvFileName(""); setSelectedKey(null);
+                  setSelectedWoKeys(new Set());
+                  try { localStorage.removeItem("ket-csv-rows-v1"); } catch { /* */ }
+                  try { localStorage.removeItem("ket-csv-filename-v1"); } catch { /* */ }
+                }}
+                title="CSV entfernen (zurück zu Firestore)"
+                className="shrink-0 text-slate-400 hover:text-red-500"
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <div
+              onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f); }}
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onClick={() => fileInputRef.current?.click()}
+              className={`cursor-pointer rounded-xl border-2 border-dashed px-3 py-2 text-center transition-all select-none ${
+                dragOver
+                  ? "border-blue-400 bg-blue-50 scale-[1.01]"
                   : "border-slate-300 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/50"
-            }`}
-          >
-            <div className="text-xs font-bold text-slate-700">
-              {csvRows ? `✓ ${csvFileName}` : "KET CSV hochladen"}
-            </div>
-            <div className="text-[9px] text-slate-400 mt-0.5">
-              {csvRows
-                ? <span className="text-emerald-600">{csvRows.length} Work Orders geladen</span>
-                : "Klicken oder Datei ablegen · .csv"}
-            </div>
-          </div>
-          {csvRows && (
-            <button
-              type="button"
-              onClick={() => {
-                setCsvRows(null); setCsvFileName(""); setSelectedKey(null);
-                setSelectedWoKeys(new Set());
-                try { localStorage.removeItem("ket-csv-rows-v1"); } catch { /* */ }
-                try { localStorage.removeItem("ket-csv-filename-v1"); } catch { /* */ }
-              }}
-              className="mt-1 w-full text-[9px] text-slate-400 hover:text-red-500 transition-colors"
+              }`}
             >
-              × CSV entfernen (zurück zu Firestore)
-            </button>
+              <div className="text-xs font-bold text-slate-700">KET CSV hochladen</div>
+              <div className="text-[9px] text-slate-400 mt-0.5">Klicken oder Datei ablegen · .csv</div>
+            </div>
           )}
         </div>
 
         {/* Equipment capacities (collapsible) */}
         <div className="border-b border-slate-100">
-          <button
-            type="button"
-            onClick={() => setShowEquip(!showEquip)}
-            className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-              Equipment-Kapazitäten
-            </span>
-            <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showEquip ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-          </button>
+          <div className="flex items-center pr-2">
+            <button
+              type="button"
+              onClick={() => setShowEquip(!showEquip)}
+              className="flex-1 flex items-center justify-between px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                <BiLabel de="Equipment-Kapazitäten" en="Equipment capacities" />
+              </span>
+              <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${showEquip ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            <HelpButton section="equipment-caps" className="text-slate-400" />
+          </div>
           {showEquip && (
             <div className="px-3 pb-3 space-y-1">
-              <p className="text-[9px] text-slate-400 mb-2">Effektive Kapazität pro Batch. Bestimmt Anzahl Batche.</p>
+              <p className="text-[9px] text-slate-400 mb-2">Effektive Kapazität pro Batch. Bestimmt Anzahl Batche. / Effective capacity per batch. Drives the batch count.</p>
               {Object.entries(EQUIP_DEFAULTS).map(([equip]) => (
                 <div key={equip} className="flex items-center gap-2">
                   <span className="flex-1 text-[10px] font-semibold text-slate-600 truncate">{EQUIP_LABELS[equip] ?? equip}</span>
@@ -1188,8 +1274,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           )}
         </div>
 
-        {/* Search */}
-        <div className="px-3 py-2 border-b border-slate-100">
+        {/* Suche + Sortierung + Debox — kompakt in einem Block, damit mehr
+            WO-Karten in die Liste darunter passen. */}
+        <div className="px-3 py-2 border-b border-slate-100 space-y-1.5">
           <div className="relative">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="m21 21-4.35-4.35"/></svg>
             <input
@@ -1200,26 +1287,20 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               className="w-full pl-7 pr-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-400 focus:bg-white"
             />
           </div>
-        </div>
-
-        {/* WO Sort */}
-        <div className="px-3 py-1.5 border-b border-slate-100 flex flex-wrap gap-1">
-          {([ ["date","Datum"], ["wo","WO Nr"], ["recipe","Rezept"], ["status","Status"], ["batches","Batche↓"], ["kg","KG↓"] ] as [WoSortMode, string][]).map(([mode, label]) => (
-            <button key={mode} type="button" onClick={() => setWoSortMode(mode)}
-              className={`text-[9px] font-bold px-2 py-0.5 rounded-md border transition-colors ${
-                woSortMode === mode
-                  ? "bg-[#1e3a5f] text-white border-[#1e3a5f]"
-                  : "bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-700"
-              }`}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Debox-Filter: Protein / Veggie */}
-        <div className="px-3 py-1.5 border-b border-slate-100">
-          <div className="mb-1 text-[9px] font-black uppercase tracking-widest text-slate-500">Debox</div>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
+            {([ ["date","Datum"], ["wo","WO Nr"], ["recipe","Rezept"], ["status","Status"], ["batches","Batche↓"], ["kg","KG↓"] ] as [WoSortMode, string][]).map(([mode, label]) => (
+              <button key={mode} type="button" onClick={() => setWoSortMode(mode)}
+                className={`text-[9px] font-bold px-2 py-0.5 rounded-md border transition-colors ${
+                  woSortMode === mode
+                    ? "bg-[#1e3a5f] text-white border-[#1e3a5f]"
+                    : "bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-700"
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 shrink-0">Debox</span>
             {([ ["all","Alle"], ["protein","Protein"], ["veggie","Veggie"] ] as ["all"|"protein"|"veggie", string][]).map(([mode, label]) => (
               <button key={mode} type="button" onClick={() => setDeboxFilter(mode)}
                 className={`flex-1 text-[9px] font-bold px-2 py-1 rounded-md border transition-colors ${
@@ -1239,8 +1320,8 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
 
         {/* Tag-Filter für WO-Liste */}
         {groups.length > 1 && (
-          <div className="border-b border-slate-100 px-3 py-2">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
+          <div className="border-b border-slate-100 px-3 py-1.5">
+            <div className="mb-1 flex items-center justify-between gap-2">
               <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Tag-Filter</span>
               {selectedDayFilter && (
                 <button type="button" onClick={() => setSelectedDayFilter(null)} className="text-[9px] font-bold text-blue-600 hover:text-blue-800">Alle</button>
@@ -1282,22 +1363,25 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
         {/* Instruction-Tage (eingeklappt per Default — spart Platz für die
             eigentliche WO-Liste darunter; nur bei aktivem Bedarf geöffnet) */}
         <div className="border-b border-slate-100 bg-emerald-50/60">
-          <button
-            type="button"
-            onClick={() => setShowInstructionTools(!showInstructionTools)}
-            className="w-full flex items-center justify-between px-3 py-2 text-[9px] font-black uppercase tracking-widest text-emerald-800 hover:bg-emerald-100/60 transition-colors"
-          >
-            <span className="flex items-center gap-1.5">
-              Kochanweisungen (KI)
-              {batchInstructionBusy && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
-              {!showInstructionTools && failedInstructions.length > 0 && (
-                <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-700 normal-case tracking-normal">
-                  {failedInstructions.length} fehlgeschlagen
-                </span>
-              )}
-            </span>
-            <svg className={`w-3.5 h-3.5 text-emerald-700 transition-transform ${showInstructionTools ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-          </button>
+          <div className="flex items-center pr-2">
+            <button
+              type="button"
+              onClick={() => setShowInstructionTools(!showInstructionTools)}
+              className="flex-1 flex items-center justify-between px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-800 hover:bg-emerald-100/60 transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <BiLabel de="Kochanweisungen (KI)" en="Cooking instructions (AI)" />
+                {batchInstructionBusy && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+                {!showInstructionTools && failedInstructions.length > 0 && (
+                  <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-700 normal-case tracking-normal">
+                    {failedInstructions.length} fehlgeschlagen
+                  </span>
+                )}
+              </span>
+              <svg className={`w-3.5 h-3.5 text-emerald-700 transition-transform ${showInstructionTools ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+            </button>
+            <HelpButton section="instructions" className="text-emerald-700" />
+          </div>
         {showInstructionTools && (
         <div className="px-3 pb-2">
           <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -1500,71 +1584,112 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
           )}
         </div>
 
-        {/* Drucken + Speichern */}
-        <div className="px-3 py-2.5 border-t border-slate-100 space-y-1.5 bg-slate-50/50">
-          {/* Ausgewählte WO */}
+        {/* Drucken + Speichern — Einzeldruck und Massendruck bewusst getrennt
+            gekennzeichnet. Beide sind an das Kochanweisungs-Gate gebunden
+            (siehe rowReady), mit sichtbarem Notfall-Override. */}
+        <div className="px-3 py-2 border-t border-slate-100 space-y-1.5 bg-slate-50/50">
+
+          {/* ── EINZELDRUCK ──────────────────────────────────────── */}
+          <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-[0.12em] text-[#1e3a5f]">
+            <span aria-hidden>🖨</span>
+            <BiLabel de="Einzeldruck" en="Single print" />
+            <span className="font-semibold normal-case tracking-normal text-slate-400">· <BiLabel de="ausgewählte WO" en="selected WO" /></span>
+            <HelpButton section="printing" className="ml-auto text-slate-400" />
+          </div>
           <div className="grid grid-cols-2 gap-1.5">
             <button
               type="button"
               onClick={() => selectedRow && printPdf([selectedRow])}
-              disabled={!selectedRow}
-              title="Druckdialog öffnen"
-              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-[#1e3a5f] hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed text-white py-2 rounded-xl transition-colors"
+              disabled={!selectedRow || !selectedInstruction?.complete}
+              title="Druckdialog öffnen / Open print dialog"
+              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-[#1e3a5f] hover:bg-[#162d4a] disabled:opacity-30 disabled:cursor-not-allowed text-white py-1.5 rounded-xl transition-colors"
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-              Drucken
+              <BiLabel de="Drucken" en="Print" />
             </button>
             <button
               type="button"
-              disabled={!selectedRow}
-              title="Als PDF-Datei speichern (1 WO = 1 Seite)"
+              disabled={!selectedRow || !selectedInstruction?.complete}
+              title="Als PDF-Datei speichern (1 WO = 1 Seite) / Save as PDF file"
               onClick={() => {
                 if (!selectedRow) return;
                 void downloadPdf([selectedRow], woFilename(selectedRow));
               }}
-              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-700 hover:bg-emerald-800 disabled:opacity-30 disabled:cursor-not-allowed text-white py-2 rounded-xl transition-colors"
+              className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-700 hover:bg-emerald-800 disabled:opacity-30 disabled:cursor-not-allowed text-white py-1.5 rounded-xl transition-colors"
             >
               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-              Speichern
+              <BiLabel de="Speichern" en="Save" />
             </button>
           </div>
-          <div className="text-[8px] text-slate-400 text-center -mt-0.5">Ausgewählte WO</div>
+          {selectedRow && selectedInstruction && !selectedInstruction.complete && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 space-y-1">
+              <div className="text-[9px] font-bold text-amber-800">
+                ⚠ <BiLabel de="Kochanweisung fehlt" en="Cooking instruction missing" />: {selectedInstruction.missing.join(", ")}
+              </div>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  disabled={batchInstructionBusy}
+                  onClick={() => void generateInstructionsForRows([selectedRow])}
+                  className="flex-1 rounded-md bg-emerald-700 px-1.5 py-1 text-[9px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  <BiLabel de="Erzeugen" en="Generate" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => printPdf([selectedRow])}
+                  title="Ohne Kochanweisung drucken / Print without a cooking instruction"
+                  className="flex-1 rounded-md bg-white px-1.5 py-1 text-[9px] font-bold text-amber-700 border border-amber-300 hover:bg-amber-100"
+                >
+                  <BiLabel de="Trotzdem drucken" en="Print anyway" />
+                </button>
+              </div>
+            </div>
+          )}
 
-          {/* Alle / gefilterte WOs — bereits gedruckte/gespeicherte WOs werden
-              standardmäßig übersprungen (siehe markAsPrinted), damit ein
-              erneuter CSV-Upload (der immer alte + neue WOs gemischt enthält)
-              nicht versehentlich alles nochmal ausdruckt. Nur nach explizitem
-              Häkchen werden sie erneut mit eingeschlossen. */}
+          {/* ── MASSENDRUCK ──────────────────────────────────────── */}
           {(() => {
             const newBulkRows = bulkPrintRows.filter((r) => !printedWoNumbers[r.woNumber]);
             const alreadyPrintedCount = bulkPrintRows.length - newBulkRows.length;
             const effectiveBulkRows = includeAlreadyPrinted ? bulkPrintRows : newBulkRows;
+            const readyBulk = effectiveBulkRows.filter(rowReady);
+            const blockedBulk = effectiveBulkRows.filter((r) => !rowReady(r));
             return (
               <>
+                <div className="flex items-center gap-1.5 pt-1.5 mt-0.5 border-t border-dashed border-slate-200 text-[9px] font-black uppercase tracking-[0.12em] text-amber-700">
+                  <span aria-hidden>📦</span>
+                  <BiLabel de="Massendruck" en="Bulk print" />
+                  <span className="font-semibold normal-case tracking-normal text-slate-400">· <BiLabel de="alle sichtbaren WOs" en="all visible WOs" /></span>
+                  <HelpButton section="printing" className="ml-auto text-slate-400" />
+                </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
-                    onClick={() => printPdf(effectiveBulkRows)}
-                    disabled={effectiveBulkRows.length === 0}
-                    title="Druckdialog – alle sichtbaren, noch nicht gedruckten WOs (je WO eine Seite)"
-                    className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 py-2 rounded-xl transition-colors border border-slate-200"
+                    onClick={() => printPdf(readyBulk)}
+                    disabled={readyBulk.length === 0}
+                    title="Druckdialog – alle sichtbaren WOs mit Kochanweisung (je WO eine Seite) / Print dialog – all visible WOs with an instruction"
+                    className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-white hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-slate-600 py-1.5 rounded-xl transition-colors border border-slate-200"
                   >
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-                    Drucken
+                    {blockedBulk.length > 0
+                      ? <BiLabel de={`${readyBulk.length} drucken`} en={`Print ${readyBulk.length}`} />
+                      : <BiLabel de="Drucken" en="Print" />}
                   </button>
                   <button
                     type="button"
-                    disabled={effectiveBulkRows.length === 0 || bulkDlBusy}
-                    title="Jede sichtbare, noch nicht gedruckte WO als eigene PDF-Datei speichern"
-                    onClick={() => void saveRowsAsIndividualPdfs(effectiveBulkRows)}
-                    className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 disabled:opacity-30 disabled:cursor-not-allowed text-emerald-800 py-2 rounded-xl transition-colors border border-emerald-200"
+                    disabled={readyBulk.length === 0 || bulkDlBusy}
+                    title="Jede sichtbare WO mit Kochanweisung als eigene PDF-Datei speichern / Save each visible WO with an instruction as its own PDF"
+                    onClick={() => void saveRowsAsIndividualPdfs(readyBulk)}
+                    className="flex items-center justify-center gap-1.5 text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 disabled:opacity-30 disabled:cursor-not-allowed text-emerald-800 py-1.5 rounded-xl transition-colors border border-emerald-200"
                   >
                     {bulkDlBusy ? (
                       <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
                     ) : (
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
                     )}
-                    Speichern
+                    {blockedBulk.length > 0
+                      ? <BiLabel de={`${readyBulk.length} speichern`} en={`Save ${readyBulk.length}`} />
+                      : <BiLabel de="Speichern" en="Save" />}
                   </button>
                 </div>
                 <div className="text-[8px] text-slate-400 text-center -mt-0.5">
@@ -1572,6 +1697,44 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                     ? `${newBulkRows.length} neue WOs${includeAlreadyPrinted ? ` + ${alreadyPrintedCount} bereits gedruckte` : ""}`
                     : `Alle sichtbaren (${bulkPrintRows.length}) WOs`}
                 </div>
+
+                {blockedBulk.length > 0 && (
+                  <details className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
+                    <summary className="cursor-pointer text-[9px] font-bold text-amber-800">
+                      ⚠ {blockedBulk.length} <BiLabel de="ohne Kochanweisung — anzeigen" en="without an instruction — show" />
+                    </summary>
+                    <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-[8px] leading-relaxed text-amber-700">
+                      {blockedBulk.map((r) => {
+                        const st = instructionStatusFor(r);
+                        return (
+                          <li key={r.key}>
+                            <span className="font-bold">WO {r.woNumber}</span> · {r.subRecipeName || r.recipeName}
+                            <span className="opacity-70"> — {st.missing.join(", ")}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="mt-1 flex gap-1">
+                      <button
+                        type="button"
+                        disabled={batchInstructionBusy}
+                        onClick={() => void generateInstructionsForRows(blockedBulk)}
+                        className="flex-1 rounded-md bg-emerald-700 px-1.5 py-1 text-[9px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                      >
+                        <BiLabel de={`${blockedBulk.length} Anweisungen erzeugen`} en={`Generate ${blockedBulk.length} instructions`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => printPdf(effectiveBulkRows)}
+                        title="Alle sichtbaren WOs drucken, auch ohne Kochanweisung / Print all visible WOs, even without an instruction"
+                        className="flex-1 rounded-md bg-white px-1.5 py-1 text-[9px] font-bold text-amber-700 border border-amber-300 hover:bg-amber-100"
+                      >
+                        <BiLabel de="Trotzdem alle drucken" en="Print all anyway" />
+                      </button>
+                    </div>
+                  </details>
+                )}
+
                 {alreadyPrintedCount > 0 && (
                   <label className="flex items-center justify-center gap-1.5 text-[9px] font-semibold text-slate-500 cursor-pointer">
                     <input
@@ -1580,13 +1743,13 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                       onChange={(e) => setIncludeAlreadyPrinted(e.target.checked)}
                       className="h-3 w-3 rounded border-slate-300"
                     />
-                    {alreadyPrintedCount} bereits gedruckte auch einschließen
+                    <BiLabel de={`${alreadyPrintedCount} bereits gedruckte auch einschließen`} en={`Also include ${alreadyPrintedCount} already printed`} />
                   </label>
                 )}
                 {alreadyPrintedCount > 0 && (
                   <button type="button" onClick={clearPrintedWoCache}
                     className="w-full text-[8px] text-slate-300 hover:text-red-500 transition-colors">
-                    × Alle "gedruckt"-Markierungen zurücksetzen
+                    × <BiLabel de={'Alle „gedruckt"-Markierungen zurücksetzen'} en={'Reset all "printed" markers'} />
                   </button>
                 )}
               </>
@@ -1612,10 +1775,18 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
         {/* Detail / Alle WOs toggle — its own bar so it stays visible
             regardless of mode and survives selecting/deselecting a WO. */}
         <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-2 bg-gradient-to-r from-[#0f2240] via-[#1e3a5f] to-[#0f2240] border-b border-white/10">
+          <button
+            type="button"
+            onClick={() => openManual("overview")}
+            title="Zweisprachiges Handbuch öffnen / Open the bilingual manual"
+            className="mr-auto flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
+          >
+            <span aria-hidden>ℹ</span> <BiLabel de="Hilfe" en="Help" />
+          </button>
           <div className="flex gap-1 shrink-0">
             <button
               type="button"
-              title={`${filteredRows.length} WOs als Excel exportieren (2 Sheets: WO-Übersicht + Zutaten)`}
+              title={`${filteredRows.length} WOs als Excel exportieren (2 Sheets: WO-Übersicht + Zutaten) / Export as Excel`}
               onClick={() => exportWosToXlsx(filteredRows, calcMap, woInstructions, sanitizeFilename(`KET-WOs-${liveWeek || "export"}`))}
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-400 transition-colors"
             >
@@ -1623,7 +1794,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
             </button>
             <button
               type="button"
-              title={`${filteredRows.length} WOs als CSV exportieren (WO-Übersicht, alle Felder)`}
+              title={`${filteredRows.length} WOs als CSV exportieren (WO-Übersicht, alle Felder) / Export as CSV`}
               onClick={() => exportWosToCsv(filteredRows, calcMap, woInstructions, sanitizeFilename(`KET-WOs-${liveWeek || "export"}`))}
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-slate-600 text-white hover:bg-slate-500 transition-colors"
             >
@@ -1636,35 +1807,35 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               onClick={() => setMainViewMode("detail")}
               className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "detail" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
             >
-              Detail
+              <BiLabel de="Detail" en="Detail" />
             </button>
             <button
               type="button"
               onClick={() => setMainViewMode("list")}
               className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "list" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
             >
-              Alle WOs
+              <BiLabel de="Alle WOs" en="All WOs" />
             </button>
             <button
               type="button"
               onClick={() => setMainViewMode("equipment")}
               className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "equipment" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
             >
-              Equipment
+              <BiLabel de="Equipment" en="Equipment" />
             </button>
             <button
               type="button"
               onClick={() => setMainViewMode("shopfloor")}
               className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "shopfloor" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
             >
-              Shopfloor
+              <BiLabel de="Shopfloor" en="Shopfloor" />
             </button>
             <button
               type="button"
               onClick={() => setMainViewMode("frischeliste")}
               className={`text-[10px] font-bold px-3 py-2 transition-colors ${mainViewMode === "frischeliste" ? "bg-white/20 text-white" : "text-white/60 hover:text-white hover:bg-white/10"}`}
             >
-              Frischeliste
+              <BiLabel de="Frischeliste" en="Fresh list" />
             </button>
           </div>
         </div>
@@ -1711,6 +1882,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
               onPrintSelection={printSelectedWos}
               onSaveSelection={saveSelectedWos}
               onGenerateInstructions={() => void generateInstructionsForSelection()}
+              selectionInstruction={selectionInstruction}
               bulkBusy={bulkDlBusy || batchInstructionBusy}
               bulkStatus={bulkDlStatus ?? batchInstructionStatus}
               bulkError={bulkDlError}
@@ -1780,6 +1952,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                 if (!selectedRow) return;
                 await downloadPdf([selectedRow], woFilename(selectedRow));
               }}
+              instructionMissing={selectedInstruction ? selectedInstruction.missing : []}
               manualEquipment={manualEquipment[selectedRow.key]}
               onManualEquipmentChange={(override) => {
                 setManualEquipment((current) => {
@@ -1807,6 +1980,8 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
         </div>
       </main>
     </div>
+    <KetManualDialog open={manualOpen} initialSection={manualSection} onClose={() => setManualOpen(false)} />
+    </KetHelpProvider>
   );
 }
 

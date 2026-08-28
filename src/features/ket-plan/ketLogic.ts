@@ -1068,3 +1068,45 @@ export function instructionCacheKey(row: KetRow, componentName?: string): string
     ? `${row.recipeCode}::${row.subRecipeName}::${componentName}`
     : `${row.recipeCode}::${row.subRecipeName}`;
 }
+
+// ── Instruktions-Vollständigkeit einer WO ───────────────────────────────────
+// Eine einfache WO braucht genau eine Kochanweisung (Laufzeit-Key = row.key),
+// eine zusammengesetzte WO (calc.components) je EINDEUTIGEM Komponentennamen
+// eine eigene (Key = `${row.key}::${componentName}`) — dieselbe Ziel-Logik wie
+// generationTargetsForRow in KetBreakdownView, hier nur auf der Prüf-Seite.
+// `hasInstruction` entkoppelt von der Datenquelle (Record vs. Map).
+export interface RowInstructionStatus {
+  /** Benötigte Anweisungen: 1 bei einfacher WO, sonst je eindeutiger Komponente. */
+  total: number;
+  /** Wie viele davon vorhanden sind. */
+  have: number;
+  /** Alle vorhanden. */
+  complete: boolean;
+  /** Was fehlt — "ganze WO" bei einfacher WO, sonst die Komponentennamen. */
+  missing: string[];
+}
+
+export function rowInstructionStatus(
+  row: KetRow,
+  calc: Pick<BatchCalc, "components"> | null | undefined,
+  hasInstruction: (runtimeKey: string) => boolean,
+): RowInstructionStatus {
+  if (!calc || calc.components.length === 0) {
+    const have = hasInstruction(row.key) ? 1 : 0;
+    return { total: 1, have, complete: have === 1, missing: have === 1 ? [] : ["ganze WO"] };
+  }
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const component of calc.components) {
+    if (seen.has(component.name)) continue;
+    seen.add(component.name);
+    names.push(component.name);
+  }
+  const missing = names.filter((name) => !hasInstruction(`${row.key}::${name}`));
+  return {
+    total: names.length,
+    have: names.length - missing.length,
+    complete: missing.length === 0,
+    missing,
+  };
+}

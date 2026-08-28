@@ -219,6 +219,30 @@ async function fetchTransparencyTabRows(key: string): Promise<string[][]> {
 let cachedConn: snowflake.Connection | undefined;
 let connectingConn: Promise<snowflake.Connection> | undefined;
 
+const WMS_FULL_INVENTORY_SQL = `
+SELECT
+    LOCATION_ID,
+    ITEM_NUMBER,
+    ACTUAL_QTY,
+    UNAVAILABLE_QTY,
+    STATUS,
+    TYPE,
+    LOT_NUMBER,
+    HU_ID,
+    FIFO_DATE,
+    EXPIRATION_DATE,
+    RESERVED_FOR,
+    INSPECTION_CODE,
+    PUT_AWAY_LOCATION,
+    SHIPMENT_NUMBER,
+    DB_CHANGE_COMMIT_TIME,
+    WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
+WHERE WH_ID = ?
+  AND ACTUAL_QTY > 0
+ORDER BY LOCATION_ID, ITEM_NUMBER
+LIMIT ?`;
+
 const WMS_PLATING_SQL = `
 SELECT
     LOCATION_ID,
@@ -524,6 +548,25 @@ type WmsStagingRow = {
 type WmsDeboxRow = WmsStagingRow;
 type WmsPostblastRow = WmsStagingRow;
 
+type WmsFullInventoryRow = {
+  locationId: string;
+  itemNumber: string;
+  actualQty: number | null;
+  unavailableQty: number | null;
+  status: string;
+  type: number | null;
+  lotNumber: string;
+  huId: string;
+  fifoDate: string | null;
+  expirationDate: string | null;
+  reservedFor: string;
+  inspectionCode: string;
+  putAwayLocation: string;
+  shipmentNumber: string;
+  dbChangeCommitTime: string | null;
+  kw: number | null;
+};
+
 type WmsWorkordersRow = {
   woNumber: string;
   week: string;
@@ -659,6 +702,26 @@ function destroyConnection(conn: snowflake.Connection): Promise<void> {
       resolve();
     }
   });
+}
+
+// ─── In-Memory Query Cache mit TTL ──────────────────────────────────────────
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 Minuten
+const queryCache = new Map<string, { data: unknown; ts: number }>();
+
+function cacheGet<T>(key: string): T | undefined {
+  const entry = queryCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() - entry.ts > CACHE_TTL_MS) { queryCache.delete(key); return undefined; }
+  return entry.data as T;
+}
+
+function cacheSet(key: string, data: unknown): void {
+  queryCache.set(key, { data, ts: Date.now() });
+  // Cleanup: max 200 Einträge
+  if (queryCache.size > 200) {
+    const oldest = [...queryCache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+    for (let i = 0; i < 50; i++) queryCache.delete(oldest[i][0]);
+  }
 }
 
 function setCorsHeaders(res: ServerResponse): void {
@@ -801,6 +864,27 @@ function mapWmsPostblastRow(row: Record<string, unknown>): WmsPostblastRow {
   return mapWmsStagingRow(row);
 }
 
+function mapWmsFullInventoryRow(row: Record<string, unknown>): WmsFullInventoryRow {
+  return {
+    locationId: stringValue(row, "LOCATION_ID"),
+    itemNumber: stringValue(row, "ITEM_NUMBER"),
+    actualQty: numberValue(row, "ACTUAL_QTY"),
+    unavailableQty: numberValue(row, "UNAVAILABLE_QTY"),
+    status: stringValue(row, "STATUS"),
+    type: numberValue(row, "TYPE"),
+    lotNumber: stringValue(row, "LOT_NUMBER"),
+    huId: stringValue(row, "HU_ID"),
+    fifoDate: dateValue(row, "FIFO_DATE"),
+    expirationDate: dateValue(row, "EXPIRATION_DATE"),
+    reservedFor: stringValue(row, "RESERVED_FOR"),
+    inspectionCode: stringValue(row, "INSPECTION_CODE"),
+    putAwayLocation: stringValue(row, "PUT_AWAY_LOCATION"),
+    shipmentNumber: stringValue(row, "SHIPMENT_NUMBER"),
+    dbChangeCommitTime: dateValue(row, "DB_CHANGE_COMMIT_TIME"),
+    kw: numberValue(row, "KW"),
+  };
+}
+
 function mapWmsWorkordersRow(row: Record<string, unknown>): WmsWorkordersRow {
   return {
     woNumber: stringValue(row, "wo_number"),
@@ -849,6 +933,29 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+
+  // ─── Generischer Cache-Layer für alle WMS-Endpoints ───────────────────────
+  // Cacht GET-Responses für 5 Minuten, um Snowflake-Credits zu sparen.
+  // Endpoints die TTL überschreiben wollen, können ?nocache=1 anhängen.
+  const noCache = url.searchParams.get("nocache") === "1";
+  const urlCacheKey = `url:${url.pathname}?${[...url.searchParams.entries()].filter(([k]) => k !== "ts" && k !== "nocache").sort().map(([k, v]) => `${k}=${v}`).join("&")}`;
+  if (!noCache && req.method === "GET" && url.pathname.startsWith("/wms-")) {
+    const hit = cacheGet<{ status: number; body: unknown }>(urlCacheKey);
+    if (hit) {
+      console.log(`Cache-Hit: ${url.pathname} (${urlCacheKey.slice(0, 60)}…)`);
+      sendJson(res, hit.status, hit.body);
+      return;
+    }
+  }
+  // Wrapper: sendJson mit automatischem Cache-Write für erfolgreiche WMS-Responses
+  const origSendJson = sendJson;
+  const cachingSendJson = (r: ServerResponse, status: number, body: unknown) => {
+    if (!noCache && status === 200 && url.pathname.startsWith("/wms-")) {
+      cacheSet(urlCacheKey, { status, body });
+    }
+    origSendJson(r, status, body);
+  };
+  const send = cachingSendJson;
 
   if (url.pathname === "/health" && req.method === "GET") {
     sendJson(res, 200, {
@@ -1289,6 +1396,175 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  // ─── WMS Deep Search (Supersuche über alle Tabellen) ─────────────────────────
+  if (url.pathname === "/wms-search" && req.method === "GET") {
+    const whId = url.searchParams.get("whId")?.trim() || "VF";
+    const q = url.searchParams.get("q")?.trim() || "";
+    if (!q || q.length < 2) {
+      sendJson(res, 400, { ok: false, error: "Suchbegriff (q) muss mindestens 2 Zeichen haben" });
+      return;
+    }
+    const pattern = `%${q}%`;
+    const searchLimit = 500;
+
+    try {
+      const conn = await ensureConnection();
+      console.log(`WMS Search startet: WH_ID=${whId}, q="${q}" → Suche in 5 Tabellen parallel`);
+
+      const [storedRows, itemMasterRows, tranLogRows, receiptRows, workorderRows] = await Promise.all([
+        executeQuery(conn, `
+          SELECT si.LOCATION_ID, si.ITEM_NUMBER, im.DESCRIPTION, im.CLASS_ID, im.UOM,
+                 si.ACTUAL_QTY, si.UNAVAILABLE_QTY, si.STATUS, si.LOT_NUMBER, si.HU_ID,
+                 si.FIFO_DATE, si.EXPIRATION_DATE, si.RESERVED_FOR, si.SHIPMENT_NUMBER,
+                 si.DB_CHANGE_COMMIT_TIME
+          FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM si
+          LEFT JOIN US_OPS_ANALYTICS.HIGHJUMP.T_ITEM_MASTER im
+            ON si.ITEM_NUMBER = im.ITEM_NUMBER AND im.WH_ID = si.WH_ID
+          WHERE si.WH_ID = ?
+            AND si.ACTUAL_QTY > 0
+            AND (si.ITEM_NUMBER ILIKE ? OR im.DESCRIPTION ILIKE ? OR si.LOCATION_ID ILIKE ?
+                 OR si.LOT_NUMBER ILIKE ? OR si.HU_ID ILIKE ? OR si.SHIPMENT_NUMBER ILIKE ?
+                 OR si.RESERVED_FOR ILIKE ?)
+          ORDER BY si.LOCATION_ID, si.ITEM_NUMBER LIMIT ?
+        `, [whId, pattern, pattern, pattern, pattern, pattern, pattern, pattern, searchLimit]),
+
+        executeQuery(conn, `
+          SELECT ITEM_NUMBER, DESCRIPTION, CLASS_ID, UOM, SHELF_LIFE, INV_CAT, INV_CLASS,
+                 ITEM_STATUS, MEAL_NUMBER, ITEM_WEEK, ITEM_YEAR, UNIT_WEIGHT, KIT_SIZE,
+                 PICK_LOCATION, EXPIRATION_DATE_CONTROL, DISPLAY_ITEM_NUMBER
+          FROM US_OPS_ANALYTICS.HIGHJUMP.T_ITEM_MASTER
+          WHERE WH_ID = ?
+            AND (ITEM_NUMBER ILIKE ? OR DESCRIPTION ILIKE ? OR MEAL_NUMBER ILIKE ?
+                 OR DISPLAY_ITEM_NUMBER ILIKE ? OR CLASS_ID ILIKE ?)
+          ORDER BY ITEM_NUMBER LIMIT ?
+        `, [whId, pattern, pattern, pattern, pattern, pattern, searchLimit]),
+
+        executeQuery(conn, `
+          SELECT TRAN_TYPE, DESCRIPTION, ITEM_NUMBER, TRAN_QTY, LOT_NUMBER,
+                 LOCATION_ID, LOCATION_ID_2, HU_ID, CONTROL_NUMBER,
+                 COALESCE(END_TRAN_DATE, START_TRAN_DATE) AS TRAN_DATE, EMPLOYEE_ID
+          FROM US_OPS_ANALYTICS.HIGHJUMP.T_TRAN_LOG
+          WHERE WH_ID = ?
+            AND COALESCE(END_TRAN_DATE, START_TRAN_DATE) >= DATEADD(day, -30, CURRENT_TIMESTAMP())
+            AND (ITEM_NUMBER ILIKE ? OR LOCATION_ID ILIKE ? OR LOCATION_ID_2 ILIKE ?
+                 OR LOT_NUMBER ILIKE ? OR HU_ID ILIKE ? OR CONTROL_NUMBER ILIKE ?
+                 OR DESCRIPTION ILIKE ?)
+          ORDER BY TRAN_DATE DESC LIMIT ?
+        `, [whId, pattern, pattern, pattern, pattern, pattern, pattern, pattern, searchLimit]),
+
+        executeQuery(conn, `
+          SELECT PO_NUMBER, ITEM_NUMBER, QTY_RECEIVED, QTY_DAMAGED, RECEIPT_DATE,
+                 VENDOR_CODE, HU_ID, LOT_NUMBER, EXPIRATION_DATE, SHIPMENT_NUMBER,
+                 STATUS, TRAN_STATUS
+          FROM US_OPS_ANALYTICS.HIGHJUMP.T_RECEIPT
+          WHERE WH_ID = ?
+            AND RECEIPT_DATE >= DATEADD(day, -60, CURRENT_TIMESTAMP())
+            AND (ITEM_NUMBER ILIKE ? OR PO_NUMBER ILIKE ? OR LOT_NUMBER ILIKE ?
+                 OR HU_ID ILIKE ? OR SHIPMENT_NUMBER ILIKE ? OR VENDOR_CODE ILIKE ?)
+          ORDER BY RECEIPT_DATE DESC LIMIT ?
+        `, [whId, pattern, pattern, pattern, pattern, pattern, pattern, searchLimit]),
+
+        executeQuery(conn, `
+          SELECT "wo_number", "week", "submeal_item_number", "submeal_item_desctiption",
+                 "meal_item_number", "meal_item_descrption", "quantity", "uom", "plates",
+                 "status", "expiration_date", "production_time", "last_updated"
+          FROM US_OPS_ANALYTICS.HIGHJUMP_ANALYTICS.V_SUBMEAL_PRODUCTION
+          WHERE "wh_id" = ?
+            AND ("submeal_item_number" ILIKE ? OR "submeal_item_desctiption" ILIKE ?
+                 OR "meal_item_number" ILIKE ? OR "meal_item_descrption" ILIKE ?
+                 OR "wo_number" ILIKE ?)
+          ORDER BY "production_time" DESC NULLS LAST LIMIT ?
+        `, [whId, pattern, pattern, pattern, pattern, pattern, searchLimit]),
+      ]);
+
+      const searchPayload = {
+        ok: true, whId, query: q, generatedAt: new Date().toISOString(),
+        stored: { count: storedRows.length, rows: storedRows.map(r => ({
+          locationId: stringValue(r, "LOCATION_ID"), itemNumber: stringValue(r, "ITEM_NUMBER"),
+          description: stringValue(r, "DESCRIPTION"), classId: stringValue(r, "CLASS_ID"),
+          uom: stringValue(r, "UOM"), actualQty: numberValue(r, "ACTUAL_QTY"),
+          unavailableQty: numberValue(r, "UNAVAILABLE_QTY"), status: stringValue(r, "STATUS"),
+          lotNumber: stringValue(r, "LOT_NUMBER"), huId: stringValue(r, "HU_ID"),
+          fifoDate: dateValue(r, "FIFO_DATE"), expirationDate: dateValue(r, "EXPIRATION_DATE"),
+          reservedFor: stringValue(r, "RESERVED_FOR"), shipmentNumber: stringValue(r, "SHIPMENT_NUMBER"),
+          dbChangeCommitTime: dateValue(r, "DB_CHANGE_COMMIT_TIME"),
+        })) },
+        itemMaster: { count: itemMasterRows.length, rows: itemMasterRows.map(r => ({
+          itemNumber: stringValue(r, "ITEM_NUMBER"), description: stringValue(r, "DESCRIPTION"),
+          classId: stringValue(r, "CLASS_ID"), uom: stringValue(r, "UOM"),
+          shelfLife: numberValue(r, "SHELF_LIFE"), invCat: stringValue(r, "INV_CAT"),
+          invClass: stringValue(r, "INV_CLASS"), itemStatus: stringValue(r, "ITEM_STATUS"),
+          mealNumber: stringValue(r, "MEAL_NUMBER"), itemWeek: stringValue(r, "ITEM_WEEK"),
+          itemYear: stringValue(r, "ITEM_YEAR"), unitWeight: numberValue(r, "UNIT_WEIGHT"),
+          kitSize: stringValue(r, "KIT_SIZE"), pickLocation: stringValue(r, "PICK_LOCATION"),
+          expirationDateControl: stringValue(r, "EXPIRATION_DATE_CONTROL"),
+          displayItemNumber: stringValue(r, "DISPLAY_ITEM_NUMBER"),
+        })) },
+        transactions: { count: tranLogRows.length, rows: tranLogRows.map(r => ({
+          tranType: stringValue(r, "TRAN_TYPE"), description: stringValue(r, "DESCRIPTION"),
+          itemNumber: stringValue(r, "ITEM_NUMBER"), tranQty: numberValue(r, "TRAN_QTY"),
+          lotNumber: stringValue(r, "LOT_NUMBER"), locationId: stringValue(r, "LOCATION_ID"),
+          locationId2: stringValue(r, "LOCATION_ID_2"), huId: stringValue(r, "HU_ID"),
+          controlNumber: stringValue(r, "CONTROL_NUMBER"), tranDate: dateValue(r, "TRAN_DATE"),
+          employeeId: stringValue(r, "EMPLOYEE_ID"),
+        })) },
+        receipts: { count: receiptRows.length, rows: receiptRows.map(r => ({
+          poNumber: stringValue(r, "PO_NUMBER"), itemNumber: stringValue(r, "ITEM_NUMBER"),
+          qtyReceived: numberValue(r, "QTY_RECEIVED"), qtyDamaged: numberValue(r, "QTY_DAMAGED"),
+          receiptDate: dateValue(r, "RECEIPT_DATE"), vendorCode: stringValue(r, "VENDOR_CODE"),
+          huId: stringValue(r, "HU_ID"), lotNumber: stringValue(r, "LOT_NUMBER"),
+          expirationDate: dateValue(r, "EXPIRATION_DATE"), shipmentNumber: stringValue(r, "SHIPMENT_NUMBER"),
+          status: stringValue(r, "STATUS"), tranStatus: stringValue(r, "TRAN_STATUS"),
+        })) },
+        workorders: { count: workorderRows.length, rows: workorderRows.map(r => ({
+          woNumber: stringValue(r, "wo_number"), week: stringValue(r, "week"),
+          submealItemNumber: stringValue(r, "submeal_item_number"),
+          submealDescription: stringValue(r, "submeal_item_desctiption"),
+          mealItemNumber: stringValue(r, "meal_item_number"),
+          mealDescription: stringValue(r, "meal_item_descrption"),
+          quantity: numberValue(r, "quantity"), uom: stringValue(r, "uom"),
+          plates: numberValue(r, "plates"), status: stringValue(r, "status"),
+          expirationDate: dateValue(r, "expiration_date"),
+          productionTime: dateValue(r, "production_time"), lastUpdated: dateValue(r, "last_updated"),
+        })) },
+      };
+      sendJson(res, 200, searchPayload);
+    } catch (error) {
+      if (cachedConn) { void destroyConnection(cachedConn); cachedConn = undefined; }
+      connectingConn = undefined;
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
+  // ─── Full Inventory (kompletter T_STORED_ITEM Bestand, kein Location-Filter) ─
+  if (url.pathname === "/wms-full-inventory" && req.method === "GET") {
+    const whId = url.searchParams.get("whId")?.trim() || "VF";
+    const requestedLimit = Number(url.searchParams.get("limit") ?? 100000);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(200000, Math.max(1, Math.round(requestedLimit)))
+      : 100000;
+
+    try {
+      const conn = await ensureConnection();
+      console.log(`WMS Full Inventory Query startet: WH_ID=${whId}, LIMIT=${limit} (kein Location-Filter — gesamter Bestand)`);
+      const rows = await executeQuery(conn, WMS_FULL_INVENTORY_SQL, [whId, limit]);
+      const payload = {
+        ok: true, whId, limit, generatedAt: new Date().toISOString(),
+        totalRows: rows.length, rows: rows.map(mapWmsFullInventoryRow),
+      };
+      sendJson(res, 200, payload);
+    } catch (error) {
+      if (cachedConn) {
+        void destroyConnection(cachedConn);
+        cachedConn = undefined;
+      }
+      connectingConn = undefined;
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   // ─── Redzone Live Plating Status (Factor Verden) ──────────────────────────
   if (url.pathname === "/redzone-plating-status" && req.method === "GET") {
     const lookbackHours = Number(url.searchParams.get("hours") ?? 24);
@@ -1415,7 +1691,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   sendJson(res, 404, {
     ok: false,
     error: "query-not-configured",
-    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=..., /shorts-tracker",
+    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /wms-full-inventory, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=..., /shorts-tracker",
   });
 });
 

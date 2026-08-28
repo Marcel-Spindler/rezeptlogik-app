@@ -1,214 +1,149 @@
-# rezeptlogik-app — Kontext für neuen Chat (Stand 2026-05-27)
+# rezeptlogik-app — Kontext für neuen Chat (Stand 2026-08-27)
+
+Kurzfassung zum Reinkommen. Vollbild: [ARCHITECTURE.md](ARCHITECTURE.md).
+Datenquellen-Troubleshooting: [DATENQUELLEN.md](DATENQUELLEN.md). Setup: [README.md](README.md).
+
+---
 
 ## Was ist die App
 
-**Factor OPS Planner** — internes Planungstool für HelloFresh Verden (VF).  
-React 18 + TypeScript + Vite + Tailwind CSS 3, Firebase Firestore (europe-west3) + Cloud Functions.  
-Deployed auf Firebase Hosting. Daten kommen aus Firestore (realtime) + Google Sheets (Service Account).
+**Factor OPS Planner** — internes Planungstool für HelloFresh Verden (Site **VF**),
+Märkte **BENL** / **DK-SE** / **DE**. Alleinentwickler + Hauptnutzer: Marcel.
+Chat-Antworten auf **Deutsch**.
 
-Service Account: `planningmsku@hellofresh-de-problem-solve.iam.gserviceaccount.com`  
-**`secrets/service-account.json` ist NIEMALS in git** (in `.gitignore`).
+React 18 + TypeScript + Vite 5 + Tailwind 3. Firebase Firestore (`europe-west3`) +
+~25 Cloud Functions. Deploy auf Firebase Hosting (Site `rezeptlogik-verden-factor`,
+Projekt `hellofresh-de-problem-solve` — **geteilt mit Factory Hub**).
+
+**Nomenklatur:** `FV####` = Verden produziert selbst · `FE####` = zugeliefert.
+**KW-Konvention:** HF-KW = echte ISO-KW **+ 1** (`src/lib/hfWeek.ts`, überall load-bearing).
 
 ---
 
-## Architektur
+## Architektur (Ist-Stand nach Refactor)
 
-```
+Frühere Versionen dieses Dokuments beschrieben eine `App.tsx` mit „3 Tabs" und
+`types.ts`/`helpers.ts` im Root — **das ist überholt**. Aktuell:
+
+```text
 src/
-  App.tsx                         ~530 Zeilen, 3 Haupt-Tabs: Rezept | Planning OASE | Packing
-  types.ts                        Alle gemeinsamen Typen (WeekRecipe, Recipe, RecipeStructure …)
-  helpers.ts                      Shared Utilities (resolveStructureByCode, adjustedPortions …)
-  dataSource.ts                   Firestore-Subscriptions + GSheet-Refresh
-  runPlanning.ts                  runSplitForRecipeLike() — Run-Split-Formel
-  RecipeDetailView.tsx            ~1300 Zeilen, 8 Tabs:
-                                    overview | subrecipes | structure | ingredients |
-                                    engpass  | plating    | cook      | workflow
-  PackingScheduleView.tsx         Packing-Tab (Do/Fr/Sa Farbkodierung)
-  ManufacturingCalendarView.tsx   Küchenkalender (eine Woche voraus planen)
-  LinePlanningView.tsx            Plating-Linien Drag & Drop
-  RackV2View.tsx                  Fulfillment Rack
-  planning-oasis/
-    PlanningOasisView.tsx         Container: mfg / lines / rack / cockpit
-    PlanningOasisAgentForm.tsx
-  components/
-    WeekSelector.tsx
-    RecipeList.tsx
-    DataHealthBanner.tsx
-
-scripts/
-  import-sub-recipes.ts          CSV → Firestore (structures), Watch-Modus
-  import-gsheet.ts               6 GSheets → public/data/data.json
-  import-pfei.ts                 PFEI CSV → processSpecs in data.json
-  push-firestore.ts              data.json → Firestore pushen
-  discover-sheets.ts             Tab-Namen per GSheets API ermitteln
-  import-local.ts                Lokale CSVs importieren
-
-functions/
-  index.js                       Cloud Functions (refreshOperationalData u.a.)
+  main.tsx              ?share= → ShareDashboard, sonst <App/>
+  app/                  App, Router (View-Dispatch), Shell, AppContext, useAppData,
+                        useRecipeSelection, NavTabs, KitchenSurface, ShopfloorKioskSurface
+  core/                 types.ts (DataBundle & alle Typen), dataSource.ts, firebase.ts
+  lib/                  reine Logik: hfWeek, runPlanning, planner, equipment,
+                        planningOasisData, rack/rackV2, planExport, wmsCache, helpers, …
+  components/           WeekSelector, RecipeList, DataHealthBanner, CapacityWarningBanner
+  planning-oasis/       PlanningOasisView (Container)
+  features/<feature>/   ~30 Feature-Ordner: View + *Logic.ts + Hooks
+  <Root>.tsx            große Alt-Views, weiter genutzt: PlanningView, KetBreakdownView,
+                        WhatIfView, WmsKwOverviewView, RackV2View, LinePlanningView,
+                        BreakdownEquipmentView, RundmailView, PetPlanView, CsvImportView
+scripts/                Import-/Sync-/Server-Scripts
+functions/index.js      Cloud Functions (3876 Z., node_modules eingecheckt)
+public/data/            data.json-Fallback, meal-catalog.json, GSheet-Dumps, Seeds
 ```
 
----
+**Provider-Stack** (`app/App.tsx`): `RedzoneProvider` → `AppProvider` →
+`WoReconciliationProvider` → `BackfillsProvider` → `Router`.
 
-## Nomenklatur (wichtig!)
-
-- **FV-Codes** (FV0024A etc.) = Verden produziert diese Rezepte selbst
-- **FE-Codes** = werden zugeliefert (extern), Verden produziert sie nicht
-- **Märkte:** BENL = Belgien/Niederlande · DKSE = Dänemark/Schweden · DE = Deutschland
-
----
-
-## CSV-Import (scripts/import-sub-recipes.ts)
-
-Zwei Formate, beide in `imports/` ablegen — werden automatisch zusammengeführt.  
-**Watch-Modus:** `npm run dev` startet automatisch einen Watcher — neue CSV ablegen = automatischer Import ohne npm-Befehl.
-
-**Format A — `export-recipes*.csv`** (wöchentlich, bevorzugt)
-- Hat FV-Codes (z.B. `FV0024A`) + Markt-Marker `[BNL]` / `[DE]` / `[DKSE]`
-- Eine Ebene tief: Rezept → Sub-Recipes mit Koch-Methode + Menge
-- → StructureTab in RecipeDetailView
-- Firestore-Key = FV-Code
-
-**Format B — `export-sub-recipes-by-recipe-detailed*.csv`** (seltener, optional)
-- Kein FV-Code, kein Markt-Marker, plain Rezeptname
-- Bis zu 4 Sub-Recipe-Ebenen + Einzelzutaten mit Allergen & Yield%
-- → Engpass-Tab, Yield-Rechner, Ingredienten-Übersicht
-- Firestore-Key = normalisierter Rezeptname
-
-Aktuell in `imports/`:
-- `export-recipes W23.csv` + `export-recipes W24.csv`
-- `export-sub-recipes-by-recipe-detailed (1).csv` + `(7).csv`
-
-Letzter Import: **219 Strukturen** in Firestore (28 mit FV-Code + 219 detailliert).
+**Surfaces** (`?surface=`): `full` (Default) · `kitchen` (nur Breakdown-Rechner) ·
+`rundmail` · `redzone` (nur DEV) · `shopfloor` (`&dept=veggie|protein`, Debox-Kiosk).
+Dazu `?share=<week>` → read-only ShareDashboard.
 
 ---
 
-## Google Sheets — 6 Quellen
+## Views (Nav-Gruppen, `AppView` = 16 Werte)
 
-| Env-Var | Sheet-ID | Inhalt |
-|---------|----------|--------|
-| `GSHEET_ID` | `1IEi_CB9KylW2MgjNiGax5EIvhhAtkIzm57uO1sSESj8` | Ramp-Up Plan primär (Marcel pflegt) |
-| `GSHEET_IDS` | `1cQtoL4aYHfc_44mfQQty8-EFKPZoYPLBQ2ojmO8hgzg` | Ramp-Up Plan 2 |
-| `SHEET_WOCHENSTART` | `1YscgiuKYVI2pGcMJ3RcJwWGQEkG46RnVnji8q8a4AeE` | Wochenstart-Infos |
-| `SHEET_PRINT_ORDERS` | `1fpEHBWmd_zk74wbu78unPoTV_u860smNlxTuioEdq-4` | Print Orders Sleeven |
-| `SHEET_KITCHEN_PRIORITY` | `13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U` | Kitchen Priority |
-| `SHEET_FERTIGSTELLUNG` | `1BEaL3ggpHGS5TbncUM5OLMUbVgRx-ADKOtRr_Sc8xXY` | Fertigstellungszeitplan (Do/Fr/Sa) |
-
----
-
-## Firestore Collections (alle unter `apps/rezeptlogik/`)
-
-| Collection | Inhalt | Key |
+| Nav | Datei | Kurz |
 |---|---|---|
-| `weekRecipes` | Ramp-Up je Rezept und KW | `{hfWeek}__{code}__{i}` |
-| `recipes` | Rezept-Stammdaten + Zutaten | recipe code |
-| `structures` | Sub-Recipe-Strukturen aus CSV | FV-Code oder normalisierter Name |
-| `cookSchedules` | Cook-Methoden + Zeiten | cookMethod (sanitized) |
-| `processSpecs` | PFEI Prozess-Specs | subRecipeId |
-| `shelfLifeBySku` | Haltbarkeitsdaten | encodeURIComponent(skuCode) |
-| `productionPlan/{week}` | Fertigstellungszeitplan Sheet 6 | z.B. `2026-W23` |
-| `printOrders` | Print Orders Sleeven | `{week}__{code}__{msku}` |
-| `kitchenPriority/current` | Kitchen Priority Sheet 3 | `{ rows, updatedAt }` |
+| Rezept | `features/recipe-detail/RecipeDetailShell` | 7 Tabs: Übersicht, Sub-Rezepte, Struktur, Workflow&Equipment, Brutto-Zutaten, Plating, Cook-Schedule |
+| Meal Katalog | `features/meal-catalog/MealCatalogView` | Verden Meal Database: Suche/Filter, Bilder, XLSX |
+| Planning OASE | `planning-oasis/PlanningOasisView` | 3 Sections: Cockpit (`PlanningView`, Drag&Drop-Wochenboard), Linienplanung (`VorstellungsplanView`, GSheet-Spiegel + Firestore-Overlay), Rack (`RackV2View`) |
+| KET Plan / WO | `KetBreakdownView` + `features/ket-plan/*` | WO-Breakdown: Batch/Equipment, Factor-Regeln, Allergen→Chiller, KI-Anweisungen, Frischeliste V1+V2 (V2 WIP), PDF/Excel. Volle Breite. |
+| PET Plan / Plating | `PetPlanView` + `features/pet-plan/*` | KitchenOS-PET-CSV → Linienzuweisung, Staffing, PDF |
+| WMS Übersicht | `WmsKwOverviewView` + `features/wms-overview/*` | Snowflake-Live/Cache: Stationen Inbound→…→Plating, Funnel, Kettenbruch, Alerts |
+| What-If Rechner | `WhatIfView` + `features/whatif/*` | Yield-aware Rohware↔Portionen, Per-Zutat-Overrides |
+| Rundmail | `RundmailView` + `features/rundmail/*` | Küchen-Rundmail als Slack/HTML/PDF |
+| CSV Import | `CsvImportView` | CSV → Firestore-Push aus der App |
+| Artikel / KW | `features/artikel-woche/ArtikelWocheView` | Wochenbedarf aller Zutaten in kg, Braiser-Split, Tagessplit |
+| Bots | `features/blast-chiller/`, `features/allergen-plating/` | Allergen→Chiller-Zuteilung, Allergen-Matrix |
+| Monitoring | `features/gsheet-monitor/PostblastLiveView`, `features/backfills/BackfillsView`, `.../TransparencyPlanView` | Live-GSheet-Polling; Backfills = Postblast+Preblast+RTI+LinePlaiting+Redzone+WMS → Nachproduktions-Bedarf |
+| Redzone Live | `features/redzone-live/RedzoneLiveView` | **nur DEV** (Snowflake-SSO); Provider trotzdem app-weit |
 
 ---
 
-## Wichtige Typen (src/types.ts)
+## Datenfluss
 
-```typescript
-type Market = "BENL" | "DKSE" | "DE"
+```text
+Google Sheets ─┬─ Service-Account-Scripts ──► public/data/data.json ──► push:firestore ──► Firestore
+               └─ Browser (gviz CSV: Pre/Post-Blast, RTI, ET, LinePlaiting)
+Snowflake (WMS) ─┬─ Cloud Functions (JWT) ──► wmsCache/* (60-Min-Cron)
+                 └─ lokaler Server :3141 (Browser-SSO) ──► /api/wms-* Proxy
 
-interface RecipeStructure {
-  code: string          // FV-Code oder normalisierter Name
-  recipeId: string
-  name: string
-  markets: Partial<Record<Market, DetailedSubRecipe[]>>
-}
-
-interface DetailedSubRecipe {
-  id: string; name: string; categories: string
-  quantity?: number; uom?: string
-  subRecipes: DetailedSubRecipe[]
-  ingredients: DetailedIngredient[]
-}
-
-interface WeekRecipe {
-  hfWeek: string        // "2026-W23"
-  code: string          // Family code "FE4009A"
-  recipeName: string
-  verdenVolume: { BENL: number; DKSE: number; DE: number }
-  totalVerdenVolume: number
-}
-
-interface DataBundle {
-  generatedAt: string
-  weeks: string[]
-  weekRecipes: WeekRecipe[]
-  recipes: Record<string, Recipe>
-  cookSchedules: Record<string, CookSchedule>
-  processSpecs?: Record<string, ProcessSpec>
-  structures?: Record<string, RecipeStructure>
-  productionPlan?: ProductionPlan      // aus Sheet 6
-  printOrders?: PrintOrderRow[]
-  kitchenPriority?: KitchenPriorityRow[]
-}
+Frontend: core/dataSource.loadData()
+  VITE_DATA_SOURCE = firestore (Default) | local | local-db
+  Fallback: firestore → data.json ; dann meal-catalog.json drübergelegt
+  Live-Refresh: onSnapshot(rampUpHash) + 60s-Poll + rezeptlogik:*-saved Window-Events
 ```
 
+`DataBundle` (`core/types.ts`): `weeks, weekRecipes, recipes, mealCatalog,
+cookSchedules, processSpecs, shelfLifeBySku, structures, instructions,
+productionPlan, printOrders, kitchenPriority, kitchenPlanning, produktionsplanung,
+maitreRampup, equipmentBible, planningCalendar, weeklyYield, weightGoals`.
+
+Firestore alles unter `apps/rezeptlogik/*` — **`allow read, write: if true`**
+(kein Auth-Layer), deshalb direkte Client-Writes (rackV2PlanHistory,
+woReconciliationLog, shopfloorProgress, woInstructions, platingPlan,
+productionPlanOverrides, …).
+
 ---
 
-## Run-Split Formel (src/runPlanning.ts)
+## Lokale Dev-Server (`npm run dev` startet automatisch)
 
-`runSplitForRecipeLike(weekRecipe)`:
-- **Run 1 (Sonntag/Montag):** BENL×100% + DKSE×100% + DE×70%
-- **Run 2 (Dienstag/Mittwoch):** Rest = Total − Run 1
-- **Buffer:** `SECOND_RUN_TOTAL_FACTOR = 1.1` (+10% auf Gesamtvolumen)
-- Küche ist **Mo–Fr** offen (Sa/So zu)
+- **:3141** `scripts/wms-local-server.ts` — Snowflake über Browser-SSO
+- **:3142** `scripts/local-db-server.mjs` — SQLite + Gemini-Proxy (`/api/local-db/*`)
+- Vite-Middleware: `/api/import-local`, `/api/deploy`, `/api/meal-*`, `/api/start-wms-server`
 
 ---
 
-## npm Scripts
+## Wichtige npm-Scripts
 
 ```bash
-npm run dev                    # Vite dev server + CSV-Watcher (concurrently)
-npm run typecheck              # tsc -b
-npm run discover:sheets        # Tab-Namen aller 6 Sheets ausgeben
-npm run import:sub-recipes     # CSV → Firestore (structures) einmalig
-npm run import:gsheet          # GSheets → public/data/data.json
-npm run import:pfei            # PFEI CSV → processSpecs in data.json
-npm run push:firestore         # data.json → Firestore
-npm run sync:all               # import:gsheet + import:pfei + push:firestore
-npm run deploy:all             # build + firebase deploy hosting + functions
+npm run dev                 # Vite + CSV-Watcher (Ports 3141/3142 auto)
+npm run typecheck           # tsc -b
+npm run test                # vitest run
+npm run sync:all            # import:gsheet + import:local + import:rampup + import:weekly-planning + push:firestore
+npm run wms:sync-cache      # persönlicher SSO-Pull → wmsCache/*
+npm run discover:sheets     # Tab-Namen + GIDs aller Sheets
+npm run deploy              # build + firebase deploy --only hosting
+npm run deploy:all          # + functions
 ```
 
 ---
 
-## Setup (frisch oder nach Pause)
+## Fallstricke / Konventionen
 
-```bash
-# 1. secrets/service-account.json platzieren
-# 2. .env.local anlegen (Felder aus .env.example)
-npm run discover:sheets        # Tab-Namen prüfen (einmalig)
-npm run sync:all               # GSheets + CSVs → Firestore
-npm run dev                    # Dev-Server starten
-```
-
----
-
-## Was zuletzt gemacht wurde (2026-05-27)
-
-- `scripts/import-sub-recipes.ts` komplett neu geschrieben:
-  - Zwei klar dokumentierte Import-Funktionen: `loadFromRecipesCsv` (Format A) + `loadFromDetailedCsv` (Format B)
-  - Watch-Modus (`--watch`) via `fs.watch` mit 800ms Debounce, in `npm run dev` integriert
-  - `ignoreUndefinedProperties: true` in Firestore-Settings
-- `src/helpers.ts` — `resolveStructureByCode` mit Name-Fallback erweitert:
-  - Neue Signatur: `(structures, primaryCode, fallbackCode?, recipeName?)`
-- `src/RecipeDetailView.tsx` — übergibt jetzt `recipe?.baseName ?? wr.recipeName` als Name-Fallback
-- `package.json` — `dev`-Script nutzt `concurrently` für Vite + CSV-Watcher
-- Import durchgelaufen: 219 Strukturen in Firestore
+- **`git status` zuerst** — Auto-Commit-Anomalie: ein unklarer Mechanismus
+  committet/pusht manchmal von selbst.
+- **KW = ISO + 1.** Live-Küchendaten folgen `currentHfWeek()`, nicht der Planner-KW
+  (die GSheet-Pipeline kann hinterherhängen).
+- **Refactor-Technik:** aus großen Views nur reine Logik nach `*Logic.ts`, State/Hooks bleiben.
+- **Code-Matching** immer über Ziffern-Fallback (`resolveRecipeByCode` etc.).
+- **Firestore-Rules nicht beiläufig deployen** — geteiltes Projekt. npm-`deploy` ist
+  sicher (`--only hosting`); blankes `firebase deploy` würde jetzt auch Rules pushen.
+- **PDF:** `window.open+print()` bricht beim Speichern — Fix-Muster in `ketPdf.ts` u.a.
+- `secrets/service-account.json` niemals committen.
 
 ---
 
-## Offene Punkte
+## Aktueller Fokus
 
-- `SHEET_WOCHENSTART` wird erkannt aber noch nicht in der App geparst
-- `import-rampup.ts` fehlt noch (Typen vorhanden, Script nicht)
-- StructureTab / Engpass-Tab nach Import visuell im Browser prüfen
-- Wöchentlich neue `export-recipes W25.csv` etc. in `imports/` ablegen
+- **Priorität: KI auf den verknüpften Live-Daten** (RAG-artig, kein Fine-Tuning),
+  statt weiterer Standalone-Features.
+- **WIP im Working Tree:** Frischeliste 2.0 (`features/ket-plan/frischeV2Logic.ts`,
+  `FrischelisteV2Panel.tsx`, + Router/Shell/KetBreakdownView angepasst — uncommitted).
+- **Offener Wunsch:** globale WO-Suche (chronologischer Verlauf + Submeals), NICHT
+  in „KET Plan / WO".
+- **`.cortex/plans/`** enthält die jüngsten Implementierungs-Pläne (KET Equipment-Panel,
+  Backfills-KW-Fallback, WMS-PLH-Durchfluss, ketPdf-Layout, Instruction-Firestore-Cache).

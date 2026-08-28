@@ -115,7 +115,7 @@ function buildComponentsHtml(row: KetRow, calc: BatchCalc, woInstructions: Recor
             ${renderSteps(instruction.german)}
           </div>
         </div>`
-      : `<div style="padding:6px 10px;font-size:9px;color:#94a3b8;font-style:italic;">Keine Kochanweisung erzeugt.</div>`;
+      : `<div style="padding:6px 10px;font-size:9px;color:#b45309;font-weight:800;background:#fffbeb;border-top:1px solid #fcd34d;">⚠ Keine Kochanweisung erzeugt / No cooking instruction generated</div>`;
 
     // Factor-Produktionsregeln für DIESE Komponente (eigener Name) — siehe
     // Kommentar bei factorBadgeHtml oben.
@@ -282,6 +282,12 @@ export function buildPdf(
           </div>
         </div>`
       : "";
+    // Notfall-Druck ohne Kochanweisung (Gate-Override in der UI): die Seite wird
+    // trotzdem gedruckt, trägt aber einen deutlichen Hinweis. Nur für einfache
+    // WOs — zusammengesetzte zeigen den Hinweis je Komponente (buildComponentsHtml).
+    const noInstrHtml = calc.components.length === 0 && !generatedInstruction
+      ? `<div style="margin-top:8px;padding:5px 10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;font-size:9px;font-weight:900;color:#92400e;">⚠ Ohne Kochanweisung / Without cooking instruction</div>`
+      : "";
     const componentsHtml = buildComponentsHtml(row, calc, woInstructions);
 
     const unlockedEtaStr = row.unlockedEta
@@ -359,6 +365,7 @@ export function buildPdf(
   ${row.workOrderComment ? `<div class="comment warn">⚠ WO Kommentar: ${row.workOrderComment}</div>` : ""}
   ${row.stagingComment ? `<div class="comment info">💬 Staging: ${row.stagingComment}</div>` : ""}
   ${instrHtml}
+  ${noInstrHtml}
   </div>
 
   ${componentsHtml}

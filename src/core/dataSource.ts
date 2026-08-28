@@ -1,5 +1,6 @@
 import type { DataBundle, EquipBibleEntry } from "./types";
 import { getFirebase, doc, collection, getDoc, getDocs, onSnapshot } from "./firebase";
+import { persistGet, persistSet, STORES } from "../lib/persistentStore";
 
 const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "local-db" | "firestore";
 
@@ -86,40 +87,78 @@ export function subscribeRampUpHashChanges(onChanged: () => void): () => void {
 }
 
 export async function loadData(): Promise<DataBundle> {
+  // Stale-While-Revalidate: erst persistierte Daten aus IndexedDB, dann im Hintergrund aktualisieren
+  const cached = await persistGet<DataBundle>(STORES.dataBundle, "current");
+
   if (SOURCE === "local-db") {
     try {
       lastDataError = null;
-      return mergeMealCatalog(await loadFromLocalDb());
+      const bundle = await mergeMealCatalog(await loadFromLocalDb());
+      void persistSet(STORES.dataBundle, "current", bundle);
+      return bundle;
     } catch (e) {
       lastDataError = e instanceof Error ? e.message : String(e);
       logWarn("Lokale Datenbank nicht erreichbar, Fallback auf data.json", e);
-      return mergeMealCatalog(await loadFromJson());
+      const bundle = await mergeMealCatalog(await loadFromJson());
+      void persistSet(STORES.dataBundle, "current", bundle);
+      return bundle;
     }
   }
   if (SOURCE === "firestore") {
+    // Wenn wir persistierte Daten haben, sofort zurückgeben und im Hintergrund aktualisieren
+    if (cached) {
+      console.log(`[dataSource] IndexedDB-Hit: DataBundle vom ${new Date(cached.updatedAt).toLocaleString("de-DE")} — lade Firestore im Hintergrund…`);
+      void loadFreshFirestoreBundle();
+      return cached.data;
+    }
     try {
       const bundle = await loadFromFirestore();
       lastDataError = null;
-      return mergeMealCatalog(bundle);
+      const merged = await mergeMealCatalog(bundle);
+      void persistSet(STORES.dataBundle, "current", merged);
+      return merged;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       lastDataError = msg;
       logWarn("Firestore-Load fehlgeschlagen, Fallback auf data.json", e);
-      return mergeMealCatalog(await loadFromJson());
+      const bundle = await mergeMealCatalog(await loadFromJson());
+      void persistSet(STORES.dataBundle, "current", bundle);
+      return bundle;
     }
   }
-  return mergeMealCatalog(await loadFromJson());
+  const bundle = await mergeMealCatalog(await loadFromJson());
+  void persistSet(STORES.dataBundle, "current", bundle);
+  return bundle;
+}
+
+async function loadFreshFirestoreBundle(): Promise<void> {
+  try {
+    const bundle = await loadFromFirestore();
+    lastDataError = null;
+    const merged = await mergeMealCatalog(bundle);
+    await persistSet(STORES.dataBundle, "current", merged);
+    console.log("[dataSource] Firestore-Bundle im Hintergrund aktualisiert und persistiert.");
+  } catch (e) {
+    logWarn("Hintergrund-Firestore-Refresh fehlgeschlagen (non-fatal)", e);
+  }
 }
 
 async function mergeMealCatalog(bundle: DataBundle): Promise<DataBundle> {
   try {
     const response = await fetch(`/data/meal-catalog.json?ts=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) return bundle;
+    if (!response.ok) {
+      const cachedCat = await persistGet<DataBundle["mealCatalog"]>(STORES.mealCatalog, "current");
+      if (cachedCat?.data) return { ...bundle, mealCatalog: cachedCat.data };
+      return bundle;
+    }
     const payload = await response.json() as { mealCatalog?: DataBundle["mealCatalog"] };
     if (!payload.mealCatalog || Object.keys(payload.mealCatalog).length === 0) return bundle;
+    void persistSet(STORES.mealCatalog, "current", payload.mealCatalog);
     return { ...bundle, mealCatalog: payload.mealCatalog };
   } catch (error) {
     logWarn("Meal-Katalog nicht ladbar (optional)", error);
+    const cachedCat = await persistGet<DataBundle["mealCatalog"]>(STORES.mealCatalog, "current");
+    if (cachedCat?.data) return { ...bundle, mealCatalog: cachedCat.data };
     return bundle;
   }
 }

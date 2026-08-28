@@ -1,9 +1,19 @@
 // Kleinere, wiederverwendete Bausteine für KET Plan / WO: leere Zustände,
 // Datei-Upload-Bildschirm, die WO-Gesamtübersicht, Stat-/Status-Chips.
 import { useState, Component, type RefObject, type ReactNode } from "react";
-import { classifyDeboxDepartment, fmtDateHeader, fmtKg, fmtNum, statusColors } from "./ketLogic";
+import { classifyDeboxDepartment, fmtDateHeader, fmtKg, fmtNum, rowInstructionStatus, statusColors } from "./ketLogic";
 import type { BatchCalc, KetRow, WoInstruction } from "./ketTypes";
 import type { RunInfo } from "./ketRunLogic";
+import { BiLabel, HelpButton } from "./KetHelp";
+
+/** Instruktions-Status der aktuellen Massendruck-Auswahl (im Parent berechnet,
+ *  deckt ALLE selektierten WOs ab — nicht nur die gerade sichtbaren). */
+export interface SelectionInstructionSummary {
+  ready: number;
+  missing: { woNumber: string; label: string; missing: string[] }[];
+  /** Summe der fehlenden Einzel-Anweisungen (Komponenten zählen einzeln). */
+  missingTargets: number;
+}
 
 // Cook-Method-Label fürs Chip-UI, z.B. "BRAISER PAN" → "Braiser Pan". Leere
 // Segmente (Mehrfach-Leerzeichen in der Quelle) werden übersprungen statt
@@ -111,6 +121,7 @@ export function KetWoOverview({
   onPrintSelection,
   onSaveSelection,
   onGenerateInstructions,
+  selectionInstruction,
   bulkBusy,
   bulkStatus,
   bulkError,
@@ -129,15 +140,22 @@ export function KetWoOverview({
   onToggleWoSelection?: (key: string) => void;
   onToggleDaySelection?: (dayRows: KetRow[]) => void;
   onClearSelection?: () => void;
-  onPrintSelection?: () => void;
-  onSaveSelection?: () => void;
+  // scope "ready" = nur WOs mit vollständiger Kochanweisung, "all" = Notfall (alle).
+  onPrintSelection?: (scope: "ready" | "all") => void;
+  onSaveSelection?: (scope: "ready" | "all") => void;
   onGenerateInstructions?: () => void;
+  selectionInstruction?: SelectionInstructionSummary;
   bulkBusy?: boolean;
   bulkStatus?: string | null;
   bulkError?: string | null;
 }) {
   const totalRows = groups.reduce((s, [, rows]) => s + rows.length, 0);
   const selectionCount = selectedWoKeys?.size ?? 0;
+
+  const readyCount = selectionInstruction?.ready ?? selectionCount;
+  const missingRows = selectionInstruction?.missing ?? [];
+  const missingTargets = selectionInstruction?.missingTargets ?? 0;
+  const hasGate = !!selectionInstruction && missingRows.length > 0;
 
   if (totalRows === 0) {
     return (
@@ -150,43 +168,109 @@ export function KetWoOverview({
   return (
     <>
       {selectedWoKeys && selectionCount > 0 && (
-        <div className="sticky top-0 z-20 flex flex-wrap items-center gap-3 px-4 py-2.5 bg-[#1e3a5f] shadow-md">
-          <span className="text-xs font-black text-white">{selectionCount} WO{selectionCount !== 1 ? "s" : ""} ausgewählt</span>
-          <div className="flex items-center gap-2 ml-auto flex-wrap">
+        <div className="sticky top-0 z-20 space-y-2 px-4 py-2.5 bg-[#1e3a5f] shadow-md">
+          {/* Kopfzeile: klar als Massendruck gekennzeichnet */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400/15 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-amber-300">
+              📦 <BiLabel de="Massendruck" en="Bulk print" />
+            </span>
+            <HelpButton section="printing" align="left" className="text-amber-200" />
+            <span className="text-xs font-black text-white">
+              {selectionCount} <BiLabel de="WOs ausgewählt" en="WOs selected" />
+            </span>
+            {hasGate ? (
+              <span className="text-[10px] font-bold text-amber-200">
+                {readyCount} <BiLabel de="mit Anweisung" en="with instruction" /> · {missingRows.length} <BiLabel de="ohne" en="without" />
+              </span>
+            ) : selectionInstruction ? (
+              <span className="text-[10px] font-bold text-emerald-300">
+                <BiLabel de="alle mit Anweisung" en="all with instruction" /> ✓
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClearSelection}
+              className="ml-auto text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
+            >
+              <BiLabel de="Auswahl aufheben" en="Clear selection" />
+            </button>
+          </div>
+
+          {/* Was fehlt und wo */}
+          {hasGate && (
+            <details className="rounded-lg border border-amber-300/30 bg-amber-400/10 px-2.5 py-1.5">
+              <summary className="cursor-pointer text-[10px] font-bold text-amber-200">
+                ⚠ {missingRows.length} <BiLabel de="WOs ohne vollständige Kochanweisung — anzeigen" en="WOs without a complete cooking instruction — show" />
+              </summary>
+              <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto text-[9px] leading-relaxed text-amber-100/90">
+                {missingRows.map((m) => (
+                  <li key={m.woNumber}>
+                    <span className="font-bold">WO {m.woNumber}</span> · {m.label}
+                    <span className="text-amber-200/70"> — <BiLabel de="fehlt" en="missing" />: {m.missing.join(", ")}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          {/* Aktionen */}
+          <div className="flex flex-wrap items-center gap-2">
             {bulkStatus && <span className="text-[10px] font-semibold text-blue-200">{bulkStatus}</span>}
             <button
               type="button"
-              onClick={onPrintSelection}
-              disabled={bulkBusy}
+              onClick={() => onPrintSelection?.("ready")}
+              disabled={bulkBusy || readyCount === 0}
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white text-[#1e3a5f] hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              🖨 Drucken
+              🖨 {hasGate
+                ? <><BiLabel de={`${readyCount} mit Anweisung drucken`} en={`Print ${readyCount} with instruction`} /></>
+                : <BiLabel de="Drucken" en="Print" />}
             </button>
             <button
               type="button"
-              onClick={onSaveSelection}
-              disabled={bulkBusy}
+              onClick={() => onSaveSelection?.("ready")}
+              disabled={bulkBusy || readyCount === 0}
               className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              ⬇ Speichern
+              ⬇ {hasGate
+                ? <BiLabel de={`${readyCount} speichern`} en={`Save ${readyCount}`} />
+                : <BiLabel de="Speichern" en="Save" />}
             </button>
-            {onGenerateInstructions && (
+            {onGenerateInstructions && (!selectionInstruction || missingTargets > 0) && (
               <button
                 type="button"
                 onClick={onGenerateInstructions}
                 disabled={bulkBusy}
                 className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
-                ✎ Anweisungen erzeugen
+                ✎ {missingTargets > 0
+                  ? <BiLabel de={`${missingTargets} fehlende Anweisungen erzeugen`} en={`Generate ${missingTargets} missing instructions`} />
+                  : <BiLabel de="Anweisungen erzeugen" en="Generate instructions" />}
               </button>
             )}
-            <button
-              type="button"
-              onClick={onClearSelection}
-              className="text-[10px] font-bold px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
-            >
-              Auswahl aufheben
-            </button>
+            {hasGate && (
+              <span className="flex items-center gap-1.5 border-l border-white/20 pl-2.5 ml-1">
+                <span className="text-[9px] font-semibold text-blue-200/70"><BiLabel de="Notfall" en="Emergency" />:</span>
+                <button
+                  type="button"
+                  onClick={() => onPrintSelection?.("all")}
+                  disabled={bulkBusy}
+                  title="Alle ausgewählten WOs drucken, auch ohne Kochanweisung / Print all selected WOs, even without a cooking instruction"
+                  className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 disabled:opacity-40 transition-colors"
+                >
+                  <BiLabel de={`Trotzdem alle ${selectionCount} drucken`} en={`Print all ${selectionCount} anyway`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSaveSelection?.("all")}
+                  disabled={bulkBusy}
+                  title="Alle ausgewählten WOs speichern, auch ohne Kochanweisung / Save all selected WOs, even without a cooking instruction"
+                  className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 disabled:opacity-40 transition-colors"
+                >
+                  <BiLabel de="alle speichern" en="save all" />
+                </button>
+              </span>
+            )}
           </div>
           {bulkError && <div className="w-full text-[10px] font-semibold text-red-200">{bulkError}</div>}
         </div>
@@ -219,7 +303,7 @@ export function KetWoOverview({
               const sSc = statusColors(row.stagingStatus);
               const done = row.woCookedPortions ?? 0;
               const pct = row.targetPortions > 0 ? Math.round((done / row.targetPortions) * 100) : 0;
-              const hasInstruction = instructionCache?.has(row.key) ?? false;
+              const instr = rowInstructionStatus(row, calc, (k) => instructionCache?.has(k) ?? false);
               const methods = calc?.resolvedCookMethods ?? row.cookMethods;
               const deboxDept = calc ? classifyDeboxDepartment(calc) : null;
               const hasVeggieDebox = deboxDept === "veggie";
@@ -259,8 +343,24 @@ export function KetWoOverview({
                           {printedWoNumbers?.[row.woNumber] && (
                             <span className="text-[10px] font-black text-emerald-600" title={`Bereits gedruckt/gespeichert am ${new Date(printedWoNumbers[row.woNumber]).toLocaleString("de-DE")}`}>✓</span>
                           )}
-                          {hasInstruction && (
-                            <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-700">Anweisung</span>
+                          {instr.complete ? (
+                            <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-700" title="Kochanweisung vollständig / Cooking instruction complete">
+                              ✓ Anweisung
+                            </span>
+                          ) : instr.have > 0 ? (
+                            <span
+                              className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700"
+                              title={`Fehlt / missing: ${instr.missing.join(", ")}`}
+                            >
+                              Anweisung {instr.have}/{instr.total}
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[8px] font-bold px-1 py-0.5 rounded bg-slate-100 text-slate-500"
+                              title={`Fehlt / missing: ${instr.missing.join(", ")}`}
+                            >
+                              keine Anweisung
+                            </span>
                           )}
                           {runAssignments?.get(row.key) && (
                             <span

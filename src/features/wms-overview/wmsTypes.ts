@@ -45,6 +45,25 @@ export type InboundRow = {
   kw: number | null;
 };
 
+export type FullInventoryRow = {
+  locationId: string;
+  itemNumber: string;
+  actualQty: number | null;
+  unavailableQty: number | null;
+  status: string;
+  type: number | null;
+  lotNumber: string;
+  huId: string;
+  fifoDate: string | null;
+  expirationDate: string | null;
+  reservedFor: string;
+  inspectionCode: string;
+  putAwayLocation: string;
+  shipmentNumber: string;
+  dbChangeCommitTime: string | null;
+  kw: number | null;
+};
+
 export type WoTransactionRow = {
   woNumber: string;
   tranType: string;
@@ -151,6 +170,54 @@ export type SleevingPayload  = BasePayload & { rows: SleevingRow[] };
 export type InboundPayload   = BasePayload & { rows: InboundRow[] };
 export type WorkordersPayload = { ok: boolean; rows: WorkorderRow[]; error?: string };
 export type WoDetailPayload   = { ok: boolean; rows: WoTransactionRow[]; error?: string; source?: string; cachedAt?: string; week?: string; wmsWeek?: string; controlPattern?: string };
+export type FullInventoryPayload = { ok: boolean; rows: FullInventoryRow[]; totalRows?: number; generatedAt?: string; error?: string };
+
+// ─── Deep Search Types ──────────────────────────────────────────────────────
+
+export type SearchStoredRow = {
+  locationId: string; itemNumber: string; description: string; classId: string; uom: string;
+  actualQty: number | null; unavailableQty: number | null; status: string; lotNumber: string;
+  huId: string; fifoDate: string | null; expirationDate: string | null; reservedFor: string;
+  shipmentNumber: string; dbChangeCommitTime: string | null;
+};
+
+export type SearchItemMasterRow = {
+  itemNumber: string; description: string; classId: string; uom: string;
+  shelfLife: number | null; invCat: string; invClass: string; itemStatus: string;
+  mealNumber: string; itemWeek: string; itemYear: string; unitWeight: number | null;
+  kitSize: string; pickLocation: string; expirationDateControl: string; displayItemNumber: string;
+};
+
+export type SearchTransactionRow = {
+  tranType: string; description: string; itemNumber: string; tranQty: number | null;
+  lotNumber: string; locationId: string; locationId2: string; huId: string;
+  controlNumber: string; tranDate: string | null; employeeId: string;
+};
+
+export type SearchReceiptRow = {
+  poNumber: string; itemNumber: string; qtyReceived: number | null; qtyDamaged: number | null;
+  receiptDate: string | null; vendorCode: string; huId: string; lotNumber: string;
+  expirationDate: string | null; shipmentNumber: string; status: string; tranStatus: string;
+};
+
+export type SearchWorkorderRow = {
+  woNumber: string; week: string; submealItemNumber: string; submealDescription: string;
+  mealItemNumber: string; mealDescription: string; quantity: number | null; uom: string;
+  plates: number | null; status: string; expirationDate: string | null;
+  productionTime: string | null; lastUpdated: string | null;
+};
+
+export type WmsSearchResult = {
+  ok: boolean;
+  query: string;
+  generatedAt: string;
+  error?: string;
+  stored: { count: number; rows: SearchStoredRow[] };
+  itemMaster: { count: number; rows: SearchItemMasterRow[] };
+  transactions: { count: number; rows: SearchTransactionRow[] };
+  receipts: { count: number; rows: SearchReceiptRow[] };
+  workorders: { count: number; rows: SearchWorkorderRow[] };
+};
 
 // ─── PLH Detail Types ────────────────────────────────────────────────────────
 

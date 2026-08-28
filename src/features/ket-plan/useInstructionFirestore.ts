@@ -1,8 +1,10 @@
 // Firestore-Persistierung des Instruction-Cache: Instructions sind teuer
 // (Gemini-Token-Kosten) und sollen geräteübergreifend erhalten bleiben.
 // Ein Dokument pro cacheKey unter apps/rezeptlogik/woInstructions/{encodedKey}.
+// Zusätzlich: lokale IndexedDB-Persistierung für Offline-Zugriff und schnellen Start.
 import type { WoInstruction } from "./ketTypes";
 import { collection, doc, getDocs, getFirebase, setDoc, writeBatch } from "../../core/firebase";
+import { persistGet, persistSet, STORES } from "../../lib/persistentStore";
 
 const COLLECTION_PATH = "apps/rezeptlogik/woInstructions";
 
@@ -13,6 +15,17 @@ function encodeKey(cacheKey: string): string {
 export type InstructionCache = Record<string, WoInstruction>;
 
 export async function loadInstructionsFromFirestore(): Promise<InstructionCache> {
+  // Erst IndexedDB (instant), dann Firestore im Hintergrund
+  const local = await persistGet<InstructionCache>(STORES.geminiInstructions, "all");
+  if (local?.data && Object.keys(local.data).length > 0) {
+    console.log(`[instructions] IndexedDB-Hit: ${Object.keys(local.data).length} Instruktionen vom ${new Date(local.updatedAt).toLocaleString("de-DE")}`);
+    void refreshInstructionsFromFirestore();
+    return local.data;
+  }
+  return refreshInstructionsFromFirestore();
+}
+
+async function refreshInstructionsFromFirestore(): Promise<InstructionCache> {
   try {
     const { db } = getFirebase();
     const snap = await getDocs(collection(db, COLLECTION_PATH));
@@ -22,6 +35,7 @@ export async function loadInstructionsFromFirestore(): Promise<InstructionCache>
       const key = data.cacheKey ?? d.id;
       cache[key] = { english: data.english, german: data.german, status: data.status, generatedAt: data.generatedAt, model: data.model };
     });
+    void persistSet(STORES.geminiInstructions, "all", cache);
     return cache;
   } catch (error) {
     console.error("[useInstructionFirestore] Load failed:", error);
@@ -34,6 +48,10 @@ export async function saveInstructionToFirestore(cacheKey: string, instruction: 
     const { db } = getFirebase();
     const ref = doc(db, COLLECTION_PATH, encodeKey(cacheKey));
     await setDoc(ref, { ...instruction, cacheKey }, { merge: true });
+    // Auch lokal aktualisieren
+    const local = await persistGet<InstructionCache>(STORES.geminiInstructions, "all");
+    const updated = { ...(local?.data ?? {}), [cacheKey]: instruction };
+    void persistSet(STORES.geminiInstructions, "all", updated);
   } catch (error) {
     console.error("[useInstructionFirestore] Save failed for", cacheKey, error);
   }
