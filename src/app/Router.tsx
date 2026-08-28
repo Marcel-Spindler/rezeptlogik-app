@@ -142,7 +142,7 @@ function MainPane({ view }: { view: AppView }) {
       );
 
     case "full-inventory":
-      return <FullInventoryView />;
+      return <FullInventoryView data={data} week={selectedWeek} />;
   }
 }
 

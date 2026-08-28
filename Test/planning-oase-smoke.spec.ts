@@ -71,7 +71,9 @@ test("Planning OASE supports section deep links via URL", async ({ page }) => {
 test("Planning OASE cockpit renders on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}?view=planning&oase=cockpit`);
-  await expect(page.getByText("Planning OASE").first()).toBeVisible({ timeout: 30000 });
+  // On mobile the NavTabs category flyouts collapse (display:none until tapped),
+  // so scope to the OASE view's own heading rather than the first "Planning OASE" text.
+  await expect(page.getByRole("heading", { name: "Planning OASE" }).first()).toBeVisible({ timeout: 30000 });
   await expect(page.getByText("App Data: ok")).toBeVisible({ timeout: 30000 });
   await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
 });

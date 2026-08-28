@@ -7,6 +7,8 @@ const STALE_WARN_H = 2;   // >2h  → Warnung
 const STALE_ERROR_H = 6;  // >6h  → kritisch
 const MATCH_RATE_WARN_PCT = 60;
 
+const DISMISS_KEY = "dataHealthBanner.dismissedUntil";
+
 function dataAgeHours(generatedAt: string): number | null {
   if (!generatedAt) return null;
   const ts = new Date(generatedAt).getTime();
@@ -70,8 +72,16 @@ function collectHealthIssues(data: DataBundle): HealthIssue[] {
   return [...(freshness ? [freshness] : []), ...checkCompleteness(data)];
 }
 
+function readDismissed(): boolean {
+  try {
+    const until = Number(localStorage.getItem(DISMISS_KEY) ?? 0);
+    return until > Date.now();
+  } catch { return false; }
+}
+
 export function DataHealthBanner({ data }: { data: DataBundle }) {
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const [open, setOpen] = useState(false);
   // Tick jede Minute, damit der Alterscheck live aktualisiert wird
   const [, forceTick] = useState(0);
   useEffect(() => {
@@ -85,30 +95,64 @@ export function DataHealthBanner({ data }: { data: DataBundle }) {
   if (issues.length === 0) return null;
 
   const hasCritical = issues.some(i => i.severity === "stale");
-  const bannerCls = hasCritical ? "mb-4 rounded-xl bg-red-50 ring-1 ring-red-300 p-3" : "mb-4 rounded-xl bg-amber-50 ring-1 ring-amber-300 p-3";
-  const titleCls = hasCritical ? "text-red-800" : "text-amber-800";
-  const labelCls = hasCritical ? "text-red-900" : "text-amber-900";
-  const fixCls = hasCritical ? "text-red-700" : "text-amber-800";
-  const btnCls = hasCritical ? "text-red-400 hover:text-red-800" : "text-amber-500 hover:text-amber-800";
+  // Bewusst dezent: eine kleine Statuspille rechts oben statt eines großen Alarm-Banners.
+  // Details erst auf Klick. Für Außenstehende soll die App nicht "kaputt" wirken.
+  const dotCls = hasCritical ? "bg-red-500" : "bg-amber-400";
+  const chipCls = hasCritical
+    ? "text-red-600 hover:text-red-800"
+    : "text-slate-400 hover:text-slate-600";
+
+  const summary = issues.length === 1
+    ? issues[0].label
+    : `${issues.length} Datenhinweise`;
+
+  function dismissForToday() {
+    try {
+      const midnight = new Date();
+      midnight.setHours(24, 0, 0, 0);
+      localStorage.setItem(DISMISS_KEY, String(midnight.getTime()));
+    } catch { /* ignore */ }
+    setDismissed(true);
+  }
 
   return (
-    <div className={bannerCls}>
-      <div className="flex items-start justify-between gap-2">
-        <div className={`text-xs font-bold uppercase tracking-wide ${titleCls}`}>
-          ⚠ {issues.length} {hasCritical ? "Datenproblem" : "Datenlücke"}{issues.length > 1 ? "n" : ""} erkannt
-        </div>
-        <button type="button" onClick={() => setDismissed(true)} className={`text-xs font-semibold shrink-0 ${btnCls}`}>
-          ✕ ausblenden
+    <div className="mb-2 flex justify-end">
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className={`flex items-center gap-1.5 text-[11px] font-medium ${chipCls}`}
+          title="Daten-Status anzeigen"
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${dotCls}`} />
+          {summary}
         </button>
+
+        {open && (
+          <div className="absolute right-0 z-20 mt-1 w-80 rounded-lg bg-white p-3 text-left shadow-lg ring-1 ring-slate-200">
+            <div className="flex items-start justify-between gap-2">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                Daten-Status
+              </div>
+              <button
+                type="button"
+                onClick={dismissForToday}
+                className="shrink-0 text-[11px] font-semibold text-slate-400 hover:text-slate-700"
+              >
+                heute ausblenden
+              </button>
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {issues.map((issue, i) => (
+                <li key={i} className="text-[11px] text-slate-700">
+                  <span className="font-semibold">{issue.label}:</span>{" "}
+                  <span className="text-slate-500">{issue.fix}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
-      <ul className="mt-2 space-y-1.5">
-        {issues.map((issue, i) => (
-          <li key={i} className={`text-xs ${labelCls}`}>
-            <span className="font-semibold">{issue.label}:</span>{" "}
-            <span className={fixCls}>{issue.fix}</span>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

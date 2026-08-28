@@ -62,6 +62,11 @@ export type FullInventoryRow = {
   shipmentNumber: string;
   dbChangeCommitTime: string | null;
   kw: number | null;
+  // WMS-Artikelstamm (T_ITEM_MASTER, per LEFT JOIN) — optional, weil ältere
+  // Cache-Einträge diese Felder noch nicht haben.
+  description?: string;
+  mealNumber?: string;
+  classId?: string;
 };
 
 export type WoTransactionRow = {

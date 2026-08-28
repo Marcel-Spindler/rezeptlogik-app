@@ -8,23 +8,36 @@
 //   Oven                           → Andere           (überall vorhanden, kein eigener Bereich)
 // Priority bei mehreren aktiven Stationen: Braiser > Grill > Cup > Butter > Slice > Oven
 
-import type { DataBundle, Recipe } from "../../core/types";
+import type { DataBundle, Recipe, CookSchedule } from "../../core/types";
 import type { Market } from "../../core/types";
 import type { PlanningSheetData, PlanningRow, SheetDay } from "../../lib/planningSheetApi";
 import { PROD_DAYS } from "../../lib/planningSheetApi";
+import { resolveCookSchedule } from "../../lib/helpers";
+import { VF_COOK_SCHEDULES } from "../../data/cookSchedulesVF";
 
-// Sheet zeigt Plating-Tage; Kochtag = Plating-Tag − 1
-const SHEET_TO_COOK_DAY: Partial<Record<SheetDay, SheetDay>> = {
-  Monday:    "Sunday",
-  Tuesday:   "Monday",
-  Wednesday: "Tuesday",
-  Thursday:  "Wednesday",
-  Friday:    "Thursday",
-  Saturday:  "Friday",
-};
 
-// Angezeigte Tage in V2: Kochtage So–Fr (entspricht Plating Mo–Sa)
-export const COOK_DAYS: SheetDay[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+// ── Tages-Offset (Cook Schedule–aware) ───────────────────────────────────────
+
+const DAY_ORDER: SheetDay[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+// Verschiebt einen Wochentag um `offset` Tage zurück.
+// offsetDay("Monday", 1) → "Sunday"  |  offsetDay("Monday", 2) → "Saturday"
+function offsetDay(day: SheetDay, offset: number): SheetDay {
+  const idx = DAY_ORDER.indexOf(day);
+  return DAY_ORDER[((idx - offset) % 7 + 7) % 7];
+}
+
+// Rechnet Cook Shifts in Tage Vorlauf um.
+// +1 Tag: Anlieferung muss einen Tag VOR Staging-Start erfolgen.
+// Aktuell: 1 Schicht = 1 Tag (Tagschicht-Modell).
+// Bei Umstellung auf 2-Schicht-Betrieb: hier anpassen.
+function shiftsToDays(shifts: number): number {
+  return shifts + 1;
+}
+
+// Alle Tage die in der Ansicht auftauchen können (So–Sa), erweitert weil
+// Zutaten mit 2-3 Shifts auch auf Sa landen können.
+export const COOK_DAYS: SheetDay[] = ["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
 // ── Stationen (exakte Sheet-Spalten-Namen) ────────────────────────────────────
 
@@ -124,6 +137,8 @@ export interface V2Row {
   mealNames: Set<string>;
   daysKg: DaysKg;
   totalKg: number;
+  leadDays: number;        // Tatsächliche Vorlaufzeit in Tagen (shifts + 1, da Anlieferung vor Staging)
+  cookMethod: string;      // Matched Cook Method für Tooltip
 }
 
 export interface V2StationGroup {
@@ -217,6 +232,40 @@ function detectStation(
   return recipeToStation(planRow);
 }
 
+// Cook-Schedule Lookup: Wieviele Schichten vor Plating muss STAGING starten?
+// Primär: statische VF-Daten (246 Einträge aus Excel).
+// Fallback: Firestore cookSchedules.
+function detectCookShifts(
+  subRecipeName: string | undefined,
+  recipe: Recipe,
+  market: Market,
+  cookSchedules: Record<string, CookSchedule>,
+): { shifts: number; matchedMethod: string } {
+  if (subRecipeName) {
+    const mDetails =
+      recipe.markets[market] ??
+      recipe.markets["DE"] ??
+      recipe.markets["BENL"] ??
+      recipe.markets["DKSE"];
+    if (mDetails) {
+      const sub = mDetails.subRecipes.find(s => s.name === subRecipeName);
+      if (sub) {
+        // 1. Statische VF-Daten (primär)
+        const vfResolved = resolveCookSchedule(sub.category, VF_COOK_SCHEDULES);
+        if (vfResolved.schedule) {
+          return { shifts: vfResolved.schedule.cookShifts, matchedMethod: vfResolved.matchedMethod ?? sub.category };
+        }
+        // 2. Firestore (Fallback)
+        const fsResolved = resolveCookSchedule(sub.category, cookSchedules);
+        if (fsResolved.schedule) {
+          return { shifts: fsResolved.schedule.cookShifts, matchedMethod: fsResolved.matchedMethod ?? sub.category };
+        }
+      }
+    }
+  }
+  return { shifts: 1, matchedMethod: "" };
+}
+
 function addDays(a: DaysKg, b: DaysKg): DaysKg {
   return {
     Sunday:    a.Sunday    + b.Sunday,
@@ -286,6 +335,7 @@ export function buildV2Data(
     const deduped = new Map<string, {
       qty: number; submeal: string; station: StationType;
       category: string; name: string; id: string;
+      leadDays: number; cookMethod: string;
     }>();
 
     for (const ing of grossIngs) {
@@ -300,6 +350,7 @@ export function buildV2Data(
         existing.qty += ing.grossQuantityPerPortion;
       } else {
         const station = detectStation(ing.subRecipe1, recipe, "DE", planRow);
+        const { shifts, matchedMethod } = detectCookShifts(ing.subRecipe1, recipe, "DE", data.cookSchedules);
         deduped.set(rowKey, {
           qty: ing.grossQuantityPerPortion,
           submeal,
@@ -307,19 +358,21 @@ export function buildV2Data(
           category: ing.ingredientCategory ?? "",
           name: ing.ingredient,
           id: ingKey,
+          leadDays: shiftsToDays(shifts),
+          cookMethod: matchedMethod,
         });
       }
     }
 
-    for (const [rowKey, { qty, submeal, station, category, name, id }] of deduped) {
+    for (const [rowKey, { qty, submeal, station, category, name, id, leadDays, cookMethod }] of deduped) {
       const daysKg = emptyDays();
       let totalKg = 0;
       for (const platingDay of PROD_DAYS) {
         const portions = planRow.days[platingDay] ?? 0;
         if (portions <= 0) continue;
-        const cookDay = SHEET_TO_COOK_DAY[platingDay] ?? platingDay;
+        const deliveryDay = offsetDay(platingDay, leadDays);
         const kg = (portions * qty) / 1000;
-        daysKg[cookDay] += kg;
+        daysKg[deliveryDay] += kg;
         totalKg += kg;
       }
       if (totalKg <= 0) continue;
@@ -339,6 +392,8 @@ export function buildV2Data(
           mealNames: new Set(),
           daysKg: emptyDays(),
           totalKg: 0,
+          leadDays,
+          cookMethod,
         };
         agg.set(rowKey, row);
       } else {
@@ -368,6 +423,10 @@ export function buildV2Data(
     if (existing) {
       existing.daysKg = addDays(existing.daysKg, row.daysKg);
       existing.totalKg += row.totalKg;
+      if (row.leadDays > existing.leadDays) {
+        existing.leadDays = row.leadDays;
+        existing.cookMethod = row.cookMethod;
+      }
       for (const r of row.recipes) existing.recipes.add(r);
       for (const m of row.mealNames) existing.mealNames.add(m);
     } else {
@@ -458,15 +517,18 @@ const DAY_EXPORT_LABELS: Record<string, string> = {
   Thursday: "Do", Friday: "Fr", Saturday: "Sa",
 };
 
+const LEAD_LABEL: Record<number, string> = { 1: "1T", 2: "2T", 3: "3T", 4: "4T" };
+function leadLabel(n: number): string { return LEAD_LABEL[n] ?? `${n}T`; }
+
 export function v2ToCsv(rows: V2Row[], week: string, includeSubmeal: boolean): string {
   const dayLabels = COOK_DAYS.map(d => DAY_EXPORT_LABELS[d] ?? d);
   const header = [
-    "Bereich", "Station", "Kategorie", "Artikel", "SKU",
+    "Bereich", "Station", "Kategorie", "Artikel", "SKU", "Vorlauf",
     ...(includeSubmeal ? ["Submeal", "Mahlzeiten"] : []),
     ...dayLabels, "Gesamt (kg)",
   ].join(",");
 
-  const lines = [`# Frischeliste 2.0 – ${week}`, header];
+  const lines = [`# Frischeliste 2.0 – ${week}`, `# Tage = Anlieferungstag (Plating minus Vorlaufzeit)`, header];
   for (const r of rows) {
     const days = COOK_DAYS.map(d => r.daysKg[d].toFixed(2));
     const cols = [
@@ -475,6 +537,7 @@ export function v2ToCsv(rows: V2Row[], week: string, includeSubmeal: boolean): s
       `"${r.category}"`,
       `"${r.name.replace(/"/g, '""')}"`,
       `"${r.ingredientId}"`,
+      `"${leadLabel(r.leadDays)} vorher"`,
       ...(includeSubmeal
         ? [`"${r.submeal.replace(/"/g, '""')}"`, `"${[...r.mealNames].join("; ").replace(/"/g, '""')}"`]
         : []),
@@ -489,7 +552,7 @@ export function v2ToCsv(rows: V2Row[], week: string, includeSubmeal: boolean): s
 export function v2ToExcelRows(rows: V2Row[], includeSubmeal: boolean): (string | number)[][] {
   const dayLabels = COOK_DAYS.map(d => DAY_EXPORT_LABELS[d] ?? d);
   const header: (string | number)[] = [
-    "Bereich", "Station", "Kategorie", "Artikel", "SKU",
+    "Bereich", "Station", "Kategorie", "Artikel", "SKU", "Vorlauf",
     ...(includeSubmeal ? ["Submeal"] : []),
     ...dayLabels, "Gesamt (kg)",
   ];
@@ -497,20 +560,22 @@ export function v2ToExcelRows(rows: V2Row[], includeSubmeal: boolean): (string |
   for (const r of rows) {
     const row: (string | number)[] = [
       r.stationGroup, r.station, r.category, r.name, r.ingredientId,
+      `${leadLabel(r.leadDays)} vorher`,
       ...(includeSubmeal ? [r.submeal] : []),
       ...COOK_DAYS.map(d => parseFloat(r.daysKg[d].toFixed(2))),
       parseFloat(r.totalKg.toFixed(2)),
     ];
     data.push(row);
   }
-  return data;}
+  return data;
+}
 
 // Einkauf-Export: getrennt nach PHF und PTN, ohne Bereich/Station
 export function v2ToEinkaufExcelRows(phfRows: V2Row[], ptnRows: V2Row[]): (string | number)[][] {
   const dayLabels = COOK_DAYS.map(d => DAY_EXPORT_LABELS[d] ?? d);
-  const header: (string | number)[] = ["Artikel", "SKU", ...dayLabels, "Gesamt (kg)"];
+  const header: (string | number)[] = ["Artikel", "SKU", "Vorlauf", ...dayLabels, "Gesamt (kg)"];
   const toRow = (r: V2Row): (string | number)[] => [
-    r.name, r.ingredientId,
+    r.name, r.ingredientId, `${leadLabel(r.leadDays)} vorher`,
     ...COOK_DAYS.map(d => parseFloat(r.daysKg[d].toFixed(2))),
     parseFloat(r.totalKg.toFixed(2)),
   ];
@@ -555,13 +620,18 @@ export function v2ToPdfHtml(result: V2Result, week: string, includeSubmeal: bool
         const activeRows = sg.all.filter(r => r.daysKg[day] > 0)
           .sort((a, b) => b.daysKg[day] - a.daysKg[day]);
 
-        const rowsHtml = activeRows.map(r => `
+        const rowsHtml = activeRows.map(r => {
+          const leadBadge = r.leadDays > 2
+            ? `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;">${r.leadDays}T vorher</span>`
+            : "";
+          return `
           <tr>
-            <td style="padding:3px 6px;font-size:11px;">${r.name}</td>
+            <td style="padding:3px 6px;font-size:11px;">${r.name}${leadBadge}</td>
             <td style="padding:3px 6px;font-size:10px;color:#666;">${r.category}</td>
             ${includeSubmeal ? `<td style="padding:3px 6px;font-size:10px;color:#555;">${r.submeal}</td>` : ""}
             <td style="text-align:right;padding:3px 6px;font-size:11px;font-weight:700;">${r.daysKg[day].toFixed(1)} kg</td>
-          </tr>`).join("");
+          </tr>`;
+        }).join("");
 
         return `
           <div style="margin-bottom:8px;margin-left:16px;">
@@ -617,6 +687,7 @@ export function v2ToPdfHtml(result: V2Result, week: string, includeSubmeal: bool
 <body>
   <h1>Frischeliste 2.0 – ${week}</h1>
   <div class="meta">Gesamt: ${result.totalKg.toFixed(1)} kg · ${result.recipeCount} Rezepte · ${days.map(d => GER_DAYS[d] ?? d).join(", ")} · ${new Date().toLocaleString("de-DE")}</div>
+  <div class="meta" style="margin-top:2px;font-style:italic;">Tage = Anlieferungstag · Artikel mit <span style="background:#fef3c7;color:#92400e;padding:0 3px;border-radius:2px;font-weight:700;">3T+</span> müssen extra früh da sein (Cook Schedule)</div>
   ${daySections}
   <script>window.print();</script>
 </body>

@@ -240,18 +240,18 @@ export function FrischelisteV2Panel({ data, weekLabel }: Props) {
       const ptnRows = result.einkauf.filter(r => r.catType === "PTN");
       const einkaufRows = v2ToEinkaufExcelRows(phfRows, ptnRows);
       const ws = XLSX.utils.aoa_to_sheet(einkaufRows);
-      ws["!cols"] = [{ wch: 45 }, { wch: 18 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 14 }];
+      ws["!cols"] = [{ wch: 45 }, { wch: 18 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 14 }];
       XLSX.utils.book_append_sheet(wb, ws, "Einkauf PHF+PTN");
     } else {
       const sheetRows = v2ToExcelRows(result.allRows, true);
       const ws = XLSX.utils.aoa_to_sheet(sheetRows);
-      ws["!cols"] = [{ wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 45 }, { wch: 18 }, { wch: 35 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 14 }];
+      ws["!cols"] = [{ wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 45 }, { wch: 18 }, { wch: 10 }, { wch: 35 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 14 }];
       XLSX.utils.book_append_sheet(wb, ws, "Submeal");
 
       // Zweites Sheet: nach Gruppe + Station
       const stRows: (string | number)[][] = [
-        ["Gruppe", "Station", "Kategorie", "Artikel", "SKU", "Submeal",
-         "So", "Mo", "Di", "Mi", "Do", "Fr", "Gesamt (kg)"],
+        ["Gruppe", "Station", "Kategorie", "Artikel", "SKU", "Vorlauf", "Submeal",
+         "Sa", "So", "Mo", "Di", "Mi", "Do", "Fr", "Gesamt (kg)"],
       ];
       for (const pg of result.parents) {
         stRows.push([`══ ${pg.group} ══ (${pg.totalKg.toFixed(1)} kg)`]);
@@ -262,7 +262,7 @@ export function FrischelisteV2Panel({ data, weekLabel }: Props) {
         }
       }
       const ws2 = XLSX.utils.aoa_to_sheet(stRows);
-      ws2["!cols"] = [{ wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 45 }, { wch: 18 }, { wch: 35 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 14 }];
+      ws2["!cols"] = [{ wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 45 }, { wch: 18 }, { wch: 10 }, { wch: 35 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 14 }];
       XLSX.utils.book_append_sheet(wb, ws2, "Nach Station");
     }
 
@@ -346,6 +346,16 @@ export function FrischelisteV2Panel({ data, weekLabel }: Props) {
                   })}
                 </select>
               )}
+            </div>
+
+            {/* Cook Schedule Legende */}
+            <div className="flex items-center gap-2 text-[10px] text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+              <span className="font-black text-amber-700">Tage = Anlieferungstag</span>
+              <span className="text-slate-400">|</span>
+              <span>Berechnet aus Cook Schedule (Plating minus Vorlauf)</span>
+              <span className="text-slate-400">|</span>
+              <span className="inline-block px-1 py-0.5 text-[8px] font-black rounded bg-amber-100 text-amber-800 border border-amber-200">3T</span>
+              <span>= 3 Tage vorher anliefern</span>
             </div>
 
             {/* Kat + Ansicht */}
@@ -769,7 +779,15 @@ function EinkaufSection({
               idx % 2 === 0 ? "bg-white" : "bg-slate-50/40"
             }`}>
               <td className="px-3 py-1.5 text-slate-400 tabular-nums">{idx + 1}</td>
-              <td className="px-3 py-1.5 font-medium text-slate-800">{row.name}</td>
+              <td className="px-3 py-1.5 font-medium text-slate-800">
+                {row.name}
+                {row.leadDays > 2 && (
+                  <span className="ml-1.5 inline-block px-1 py-0.5 text-[8px] font-black rounded bg-amber-100 text-amber-800 border border-amber-200"
+                        title={`${row.leadDays} Tage vor Plating anliefern (${row.cookMethod})`}>
+                    {row.leadDays}T
+                  </span>
+                )}
+              </td>
               <td className="px-2 py-1.5 text-slate-400 font-mono text-[10px]">{row.ingredientId}</td>
               {activeDays.map(d => (
                 <td key={d} className={`px-2 py-1.5 text-right tabular-nums ${
@@ -814,7 +832,15 @@ function IngRow({ row, idx, activeDays }: { row: V2Row; idx: number; activeDays:
     <tr className={`border-b border-slate-100 hover:bg-white/80 transition-colors ${
       idx % 2 === 0 ? "bg-white" : "bg-slate-50/30"
     }`}>
-      <td className="px-4 py-1.5 font-medium text-slate-800">{row.name}</td>
+      <td className="px-4 py-1.5 font-medium text-slate-800">
+        {row.name}
+        {row.leadDays > 2 && (
+          <span className="ml-1.5 inline-block px-1 py-0.5 text-[8px] font-black rounded bg-amber-100 text-amber-800 border border-amber-200"
+                title={`${row.leadDays} Tage vor Plating anliefern (${row.cookMethod})`}>
+            {row.leadDays}T
+          </span>
+        )}
+      </td>
       <td className="px-2 py-1.5"><CatBadge cat={row.catType} label={row.category} /></td>
       <td className="px-2 py-1.5 text-slate-500 max-w-[140px] truncate text-[10px]" title={row.submeal}>
         {row.submeal}

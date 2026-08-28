@@ -22,17 +22,38 @@ const MARKETS: Market[] = ["BENL", "DKSE", "DE"];
 export const DEFAULT_SHIFT_MIN = 8 * 60;
 export const STATION_DEVICE_COUNT_STORAGE_KEY = "rezeptlogik-station-device-counts-v1";
 export const STATION_POOL_STORAGE_KEY = "rezeptlogik-station-pools-v1";
+
+// Verden produziert Mo–Fr (KITCHEN_OPEN_DAYS in planner.ts). Der Wochen-Kapazitäts-
+// Warner (CapacityWarningBanner) vergleicht die STATIONS-Last einer ganzen Woche
+// gegen dieses Fenster je Gerät — nicht mehr gegen eine einzelne 8-h-Schicht.
+export const WEEK_PRODUCTION_DAYS = 5;
+export const KITCHEN_SHIFTS_PER_DAY = 2;        // Küche: zweischichtig
+export const BLAST_CHILLER_SHIFTS_PER_DAY = 3;  // Blast Chiller läuft durch (24 h)
+export const WEEKLY_MINUTES_PER_DEVICE = WEEK_PRODUCTION_DAYS * KITCHEN_SHIFTS_PER_DAY * DEFAULT_SHIFT_MIN;               // 4 800
+export const BLAST_CHILLER_WEEKLY_MINUTES_PER_DEVICE = WEEK_PRODUCTION_DAYS * BLAST_CHILLER_SHIFTS_PER_DAY * DEFAULT_SHIFT_MIN; // 7 200
+
+// Blast Chiller wird über Rack-Durchsatz modelliert, NICHT über "Minuten je Koch-
+// Batch" — ein Chiller-Zyklus kühlt ein ganzes Rack (mehrere hundert kg,
+// allergenrein sortiert), nicht einen einzelnen 40–50-kg-Kochbatch.
+export const BLAST_CHILLER_RACK_KG = 200;
+export const BLAST_CHILLER_CYCLE_MIN = 90;
+
+// Thaw = Kühlraum-Kapazität (kg, die gleichzeitig auftauen können) — reines
+// kg-Modell, keine Geräte-Minuten.
+export const THAW_ROOM_CAPACITY_KG = 8000;
+
 export const DEFAULT_STATION_DEVICE_COUNTS: Record<Station, number> = {
-  // Baseline aus aktuellem Equipment-Sheet/Fotos (falls fuer eine Station nichts klar war: konservativ 1).
+  // Reale Geräteanzahl Verden (Marcel, 2026-08-28). Braiser/Blast Chiller etc.
+  // decken sich mit dem KET-Modell (DEFAULT_STATION_COUNT in ketEquipmentSummary.ts).
   "Staging": 3,
-  "Spice Portioning": 1,
+  "Spice Portioning": 3,
   "Debox": 1,
   "Thaw": 1,
   "Brine": 20,
   "Marinade": 20,
-  "Hand Marinade": 1,
-  "Immersion Blender": 15,
-  "Planetary Mixer": 6,
+  "Hand Marinade": 20,     // gemeinsamer Pool mit Marinade
+  "Immersion Blender": 3,   // Stabmixer (= Hand Mix, gemeinsamer Pool)
+  "Planetary Mixer": 3,
   "Horizontal Mixer": 1,
   "Patty Maker": 1,
   "Braiser": 6,
@@ -40,15 +61,28 @@ export const DEFAULT_STATION_DEVICE_COUNTS: Record<Station, number> = {
   "Crusted": 1,
   "Oven": 10,
   "Drain": 1,
-  "Hand Mix": 15,
+  "Hand Mix": 3,            // = Hand Mixer, gleiche Anzahl wie Stabmixer
   "Cold Shredder": 1,
   "Hot Shredder": 1,
   "Scooper": 20,
   "Butter Machine": 20,
   "Slicer": 1,
   "Cupping": 1,
-  "Blast Chiller": 1
+  "Blast Chiller": 6
 };
+
+// Stationen, die im Wochen-Kapazitäts-Warner NICHT als Engpass geführt werden
+// (kein Gerät im engeren Sinn / nie limitierend).
+export const CAPACITY_WARN_EXCLUDE: ReadonlySet<Station> = new Set<Station>(["Scooper"]);
+
+// Stationen, die in Verden dasselbe Gerät / denselben Pool sind und im
+// Wochen-Kapazitäts-Warner als EIN Eintrag geführt werden (Last summiert,
+// gemeinsame Geräteanzahl). Marcel, 2026-08-28.
+export const CAPACITY_STATION_GROUPS: ReadonlyArray<{ label: string; devices: number; members: Station[] }> = [
+  { label: "Marinade", devices: 20, members: ["Marinade", "Hand Marinade"] },
+  { label: "Stabmixer / Hand Mix", devices: 3, members: ["Immersion Blender", "Hand Mix"] },
+  { label: "Shredder", devices: 2, members: ["Hot Shredder", "Cold Shredder"] },
+];
 export const DEFAULT_STATION_POOLS: Record<Station, string> = Object.fromEntries(
   STATIONS.map(station => [station, station])
 ) as Record<Station, string>;
@@ -342,6 +376,109 @@ export function computeWeekLoad(data: DataBundle, week: string, options?: { port
   ) as Record<Station, { code: string; sub: string; minutes: number }[]>;
 
   return { week, recipes: recipeLoads, perStationMin, perStationDriversTop3, totalActiveMin: total };
+}
+
+// ── Wochen-Kapazitäts-Auslastung je Station ────────────────────────────────
+// Für den CapacityWarningBanner: nimmt die Stations-Last EINER WOCHE und stellt
+// sie dem realen Wochen-Fenster je Gerät gegenüber (WEEKLY_MINUTES_PER_DEVICE).
+// Zwei Stationen laufen NICHT über das Minuten-Modell:
+//   • Blast Chiller → Rack-Durchsatz (ceil(kg/Rack) × Zyklus, 24-h-Fenster)
+//   • Thaw          → Kühlraum-kg (gleichzeitige Belegung)
+
+export type StationCapacityModel = "minutes" | "chiller-racks" | "thaw-room";
+
+export interface WeeklyStationLoad {
+  /** Stabiler Schlüssel (Station-Name oder Gruppen-Label) für React/Dedup. */
+  key: string;
+  /** Anzeige-Label (Gruppen-Label bzw. Station-Name). */
+  label: string;
+  model: StationCapacityModel;
+  deviceCount: number;
+  utilizationPct: number;
+  /** Zusätzlich benötigte Geräte/Plätze, damit ≤ 100 % (0 = passt). */
+  extraDevicesNeeded: number;
+  /** Menschenlesbare Rechenbasis, z. B. "462 Racks à 200 kg · 90 min · 6 Chiller · 24 h". */
+  basis: string;
+}
+
+export function computeWeeklyStationLoads(
+  weekLoad: WeekLoad,
+  deviceCounts: Partial<Record<Station, number>> = DEFAULT_STATION_DEVICE_COUNTS,
+): WeeklyStationLoad[] {
+  const devOf = (s: Station) => Math.max(1, Math.floor(deviceCounts[s] ?? DEFAULT_STATION_DEVICE_COUNTS[s] ?? 1));
+
+  // kg-Summen für die Sondermodelle aus den Sub-Rezept-Lasten ziehen.
+  let chillerRackCount = 0;
+  let thawKg = 0;
+  for (const rl of weekLoad.recipes) {
+    for (const sl of rl.subs) {
+      if (sl.minutesPerStation["Blast Chiller"] && sl.totalKg > 0) {
+        chillerRackCount += Math.ceil(sl.totalKg / BLAST_CHILLER_RACK_KG);
+      }
+      if (sl.minutesPerStation["Thaw"] && sl.totalKg > 0) {
+        thawKg += sl.totalKg;
+      }
+    }
+  }
+
+  const minutesEntry = (key: string, label: string, totalMin: number, devices: number): WeeklyStationLoad => {
+    const utilizationPct = (totalMin / (devices * WEEKLY_MINUTES_PER_DEVICE)) * 100;
+    return {
+      key, label, model: "minutes", deviceCount: devices, utilizationPct,
+      extraDevicesNeeded: Math.max(0, Math.ceil(totalMin / WEEKLY_MINUTES_PER_DEVICE) - devices),
+      basis: `${Math.round(totalMin / 60).toLocaleString("de-DE")} h auf ${devices} Gerät${devices > 1 ? "e" : ""} · ${WEEK_PRODUCTION_DAYS} Tage × ${KITCHEN_SHIFTS_PER_DAY} Schichten`,
+    };
+  };
+
+  const groupOf = new Map<Station, typeof CAPACITY_STATION_GROUPS[number]>();
+  for (const g of CAPACITY_STATION_GROUPS) for (const m of g.members) groupOf.set(m, g);
+
+  const out: WeeklyStationLoad[] = [];
+  const emittedGroups = new Set<string>();
+
+  for (const station of STATIONS) {
+    if (CAPACITY_WARN_EXCLUDE.has(station)) continue;
+
+    if (station === "Blast Chiller") {
+      if (chillerRackCount === 0) continue;
+      const devices = devOf(station);
+      const neededMin = chillerRackCount * BLAST_CHILLER_CYCLE_MIN;
+      out.push({
+        key: station, label: station, model: "chiller-racks", deviceCount: devices,
+        utilizationPct: (neededMin / (devices * BLAST_CHILLER_WEEKLY_MINUTES_PER_DEVICE)) * 100,
+        extraDevicesNeeded: Math.max(0, Math.ceil(neededMin / BLAST_CHILLER_WEEKLY_MINUTES_PER_DEVICE) - devices),
+        basis: `${chillerRackCount} Racks à ${BLAST_CHILLER_RACK_KG} kg · ${BLAST_CHILLER_CYCLE_MIN} min/Zyklus · ${devices} Chiller · 24 h`,
+      });
+      continue;
+    }
+
+    if (station === "Thaw") {
+      if (thawKg === 0) continue;
+      out.push({
+        key: station, label: station, model: "thaw-room", deviceCount: 1,
+        utilizationPct: (thawKg / THAW_ROOM_CAPACITY_KG) * 100,
+        extraDevicesNeeded: 0,
+        basis: `${Math.round(thawKg).toLocaleString("de-DE")} kg / ${THAW_ROOM_CAPACITY_KG.toLocaleString("de-DE")} kg Kühlraum`,
+      });
+      continue;
+    }
+
+    const group = groupOf.get(station);
+    if (group) {
+      if (emittedGroups.has(group.label)) continue;
+      emittedGroups.add(group.label);
+      const totalMin = group.members.reduce((s, m) => s + (weekLoad.perStationMin[m] ?? 0), 0);
+      if (totalMin <= 0) continue;
+      out.push(minutesEntry(group.label, group.label, totalMin, group.devices));
+      continue;
+    }
+
+    const totalMin = weekLoad.perStationMin[station] ?? 0;
+    if (totalMin <= 0) continue;
+    out.push(minutesEntry(station, station, totalMin, devOf(station)));
+  }
+
+  return out.sort((a, b) => b.utilizationPct - a.utilizationPct);
 }
 
 /** Workflow-Schritte aus SubRecipe.category — als geordnete Liste mit Minuten-Hint. */

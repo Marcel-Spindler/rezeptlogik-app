@@ -219,28 +219,36 @@ async function fetchTransparencyTabRows(key: string): Promise<string[][]> {
 let cachedConn: snowflake.Connection | undefined;
 let connectingConn: Promise<snowflake.Connection> | undefined;
 
+// LEFT JOIN auf T_ITEM_MASTER, damit jede Bestandszeile die WMS-Bezeichnung
+// (DESCRIPTION), die Meal-Nummer und die Artikelklasse mitbringt — sonst steht
+// in "Lager Komplett" nur der nackte SKU-Code.
 const WMS_FULL_INVENTORY_SQL = `
 SELECT
-    LOCATION_ID,
-    ITEM_NUMBER,
-    ACTUAL_QTY,
-    UNAVAILABLE_QTY,
-    STATUS,
-    TYPE,
-    LOT_NUMBER,
-    HU_ID,
-    FIFO_DATE,
-    EXPIRATION_DATE,
-    RESERVED_FOR,
-    INSPECTION_CODE,
-    PUT_AWAY_LOCATION,
-    SHIPMENT_NUMBER,
-    DB_CHANGE_COMMIT_TIME,
-    WEEKOFYEAR(DB_CHANGE_COMMIT_TIME) AS KW
-FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM
-WHERE WH_ID = ?
-  AND ACTUAL_QTY > 0
-ORDER BY LOCATION_ID, ITEM_NUMBER
+    si.LOCATION_ID,
+    si.ITEM_NUMBER,
+    si.ACTUAL_QTY,
+    si.UNAVAILABLE_QTY,
+    si.STATUS,
+    si.TYPE,
+    si.LOT_NUMBER,
+    si.HU_ID,
+    si.FIFO_DATE,
+    si.EXPIRATION_DATE,
+    si.RESERVED_FOR,
+    si.INSPECTION_CODE,
+    si.PUT_AWAY_LOCATION,
+    si.SHIPMENT_NUMBER,
+    si.DB_CHANGE_COMMIT_TIME,
+    WEEKOFYEAR(si.DB_CHANGE_COMMIT_TIME) AS KW,
+    im.DESCRIPTION,
+    im.MEAL_NUMBER,
+    im.CLASS_ID
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM si
+LEFT JOIN US_OPS_ANALYTICS.HIGHJUMP.T_ITEM_MASTER im
+  ON si.ITEM_NUMBER = im.ITEM_NUMBER AND im.WH_ID = si.WH_ID
+WHERE si.WH_ID = ?
+  AND si.ACTUAL_QTY > 0
+ORDER BY si.LOCATION_ID, si.ITEM_NUMBER
 LIMIT ?`;
 
 const WMS_PLATING_SQL = `
@@ -565,6 +573,9 @@ type WmsFullInventoryRow = {
   shipmentNumber: string;
   dbChangeCommitTime: string | null;
   kw: number | null;
+  description: string;
+  mealNumber: string;
+  classId: string;
 };
 
 type WmsWorkordersRow = {
@@ -882,6 +893,9 @@ function mapWmsFullInventoryRow(row: Record<string, unknown>): WmsFullInventoryR
     shipmentNumber: stringValue(row, "SHIPMENT_NUMBER"),
     dbChangeCommitTime: dateValue(row, "DB_CHANGE_COMMIT_TIME"),
     kw: numberValue(row, "KW"),
+    description: stringValue(row, "DESCRIPTION"),
+    mealNumber: stringValue(row, "MEAL_NUMBER"),
+    classId: stringValue(row, "CLASS_ID"),
   };
 }
 

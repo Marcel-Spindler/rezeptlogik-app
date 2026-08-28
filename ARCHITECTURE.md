@@ -52,7 +52,7 @@ src/
     AppContext.tsx         Zentraler State (KW, Rezept, View, Uplift) + Surface-Auflösung
     useAppData.ts          Lädt DataBundle, Live-Refresh (rampUpHash-Snapshot + 60s-Poll)
     useRecipeSelection.ts  Ableitungen: Wochenliste, Summen, Vorwochen-Delta, aktives Rezept
-    NavTabs.tsx            Linkes Menü (Nav-Gruppen) + GroupSubTabs + "KET Plan hochladen"
+    NavTabs.tsx            Linkes Menü: Kategorien mit Hover/Tap-Flyout (NAV_CATEGORIES) + GroupSubTabs + "KET Plan hochladen"
     KitchenSurface.tsx     ?surface=kitchen → nur BreakdownEquipmentView
     ShopfloorKioskSurface  ?surface=shopfloor&dept=veggie|protein → Debox-Kiosk (KET-WO-Liste)
     AppFooter.tsx
@@ -111,7 +111,11 @@ Bots-Factor/, Work Order Bot/  Externe Bot-Artefakte (Chrome-Profile etc.) — n
 import · wms · blast-chiller · allergen-plating · postblast-live · backfills ·
 redzone-live · transparency-plan · artikel-woche`
 
-Nav-Gruppen bündeln teils mehrere Views mit interner Sub-Tab-Leiste (`GroupSubTabs`).
+Das linke Menü gruppiert alle Views in Kategorien (`NAV_CATEGORIES` in `NavTabs.tsx`):
+Rezepte & Meals · Wochenplanung · Produktion · Lager & WMS · Live-Monitoring · Bots ·
+Kommunikation. Beim Drüberfahren (Hover) bzw. Tippen klappt ein Flyout mit den
+Unterfunktionen der Kategorie auf; die Views einer Kategorie erscheinen zusätzlich
+als Sub-Tab-Leiste über dem Inhalt (`GroupSubTabs`).
 
 | Nav-Label | View(s) | Haupt-Datei(en) | Zweck |
 |---|---|---|---|

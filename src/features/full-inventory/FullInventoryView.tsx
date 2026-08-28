@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FullInventoryRow, WmsSearchResult } from "../wms-overview/wmsTypes";
 import { fetchFullInventory, fetchWmsSearch } from "../wms-overview/wmsFetch";
+import type { DataBundle } from "../../core/types";
+import { buildSkuInfoIndex, getSkuDisplayLabel, skuKey } from "../../lib/wmsSkuEnrichment";
 
 type SortKey = "locationId" | "itemNumber" | "actualQty" | "status" | "fifoDate" | "expirationDate" | "dbChangeCommitTime" | "lotNumber";
 type SortDir = "asc" | "desc";
@@ -56,9 +58,21 @@ function isExpired(row: FullInventoryRow): boolean {
   return new Date(row.expirationDate).getTime() < Date.now();
 }
 
+// WMS-Bezeichnung (T_ITEM_MASTER.DESCRIPTION) säubern und generische Platzhalter
+// ("SUBRECIPE SKU", der SKU-Code selbst, …) als "kein Name" behandeln.
+function cleanWmsDescription(desc: string | undefined, sku: string): string {
+  const v = String(desc ?? "").replace(/\s+/g, " ").trim();
+  if (!v) return "";
+  if (v.toUpperCase() === sku.toUpperCase()) return "";
+  if (/^(SUBRECIPE SKU|INGREDIENT SKU|PRIMARY PACKAGING|SECONDARY PACKAGING|FINISHED GOOD|UNKNOWN|N\/?A|-+)$/i.test(v)) return "";
+  return v;
+}
+
+type NameHit = { name: string; origin: "app" | "wms" };
+
 const PAGE_SIZE = 100;
 
-export function FullInventoryView() {
+export function FullInventoryView({ data, week }: { data: DataBundle; week: string }) {
   const [rows, setRows] = useState<FullInventoryRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +87,7 @@ export function FullInventoryView() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [showExpiredOnly, setShowExpiredOnly] = useState(false);
   const [showExpiringSoon, setShowExpiringSoon] = useState(false);
+  const [showUnnamedOnly, setShowUnnamedOnly] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -86,11 +101,11 @@ export function FullInventoryView() {
   const searchRef = useRef<HTMLInputElement>(null);
   const deepSearchRef = useRef<HTMLInputElement>(null);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchFullInventory({ limit: 200000 });
+      const result = await fetchFullInventory({ limit: 200000, force });
       setRows(result.rows);
       setTotalRows(result.totalRows);
       setGeneratedAt(result.generatedAt);
@@ -102,6 +117,30 @@ export function FullInventoryView() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // SKU → echter Name. Erst der App-Katalog (Rezeptnamen, Sub-Rezepte, Zutaten,
+  // Shelf-Life), dann als Fallback die WMS-Bezeichnung aus dem Artikelstamm.
+  const skuInfoIndex = useMemo(() => buildSkuInfoIndex(data, week), [data, week]);
+
+  const nameIndex = useMemo(() => {
+    const map = new Map<string, NameHit>();
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const key = skuKey(r.itemNumber);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const appLabel = getSkuDisplayLabel(r.itemNumber, skuInfoIndex);
+      if (appLabel && appLabel !== key && appLabel !== "–") {
+        map.set(key, { name: appLabel, origin: "app" });
+        continue;
+      }
+      const wms = cleanWmsDescription(r.description, key);
+      if (wms) map.set(key, { name: wms, origin: "wms" });
+    }
+    return map;
+  }, [rows, skuInfoIndex]);
+
+  const nameFor = useCallback((sku: string): NameHit | undefined => nameIndex.get(skuKey(sku)), [nameIndex]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -154,6 +193,9 @@ export function FullInventoryView() {
       result = result.filter(r =>
         r.locationId.toUpperCase().includes(needle) ||
         r.itemNumber.toUpperCase().includes(needle) ||
+        (nameFor(r.itemNumber)?.name ?? "").toUpperCase().includes(needle) ||
+        (r.description ?? "").toUpperCase().includes(needle) ||
+        (r.mealNumber ?? "").toUpperCase().includes(needle) ||
         (r.lotNumber ?? "").toUpperCase().includes(needle) ||
         (r.huId ?? "").toUpperCase().includes(needle) ||
         r.status.toUpperCase().includes(needle) ||
@@ -178,8 +220,12 @@ export function FullInventoryView() {
       result = result.filter(r => isExpiringSoon(r) || isExpired(r));
     }
 
+    if (showUnnamedOnly) {
+      result = result.filter(r => !nameFor(r.itemNumber));
+    }
+
     return result;
-  }, [rows, needle, zoneFilter, statusFilter, showExpiredOnly, showExpiringSoon]);
+  }, [rows, needle, zoneFilter, statusFilter, showExpiredOnly, showExpiringSoon, showUnnamedOnly, nameFor]);
 
   const sorted = useMemo(() => {
     const cmp = (a: FullInventoryRow, b: FullInventoryRow): number => {
@@ -202,13 +248,18 @@ export function FullInventoryView() {
 
   const stats = useMemo(() => {
     const totalQty = filtered.reduce((s, r) => s + (r.actualQty ?? 0), 0);
-    const uniqueSkus = new Set(filtered.map(r => r.itemNumber)).size;
+    const skuSet = new Set(filtered.map(r => skuKey(r.itemNumber)));
+    const uniqueSkus = skuSet.size;
     const uniqueLocations = new Set(filtered.map(r => r.locationId)).size;
     const expiredCount = filtered.filter(isExpired).length;
     const expiringSoonCount = filtered.filter(isExpiringSoon).length;
     const unavailableQty = filtered.reduce((s, r) => s + (r.unavailableQty ?? 0), 0);
-    return { totalQty, uniqueSkus, uniqueLocations, expiredCount, expiringSoonCount, unavailableQty };
-  }, [filtered]);
+    let namedSkus = 0;
+    for (const s of skuSet) if (nameIndex.has(s)) namedSkus++;
+    const unnamedSkus = uniqueSkus - namedSkus;
+    const namedPct = uniqueSkus ? Math.round((namedSkus / uniqueSkus) * 100) : 0;
+    return { totalQty, uniqueSkus, uniqueLocations, expiredCount, expiringSoonCount, unavailableQty, namedSkus, unnamedSkus, namedPct };
+  }, [filtered, nameIndex]);
 
   const zoneCounts = useMemo(() => {
     const map = new Map<string, { count: number; qty: number }>();
@@ -258,6 +309,7 @@ export function FullInventoryView() {
     setStatusFilter(null);
     setShowExpiredOnly(false);
     setShowExpiringSoon(false);
+    setShowUnnamedOnly(false);
     setGroupBy("none");
     setVisibleCount(PAGE_SIZE);
   };
@@ -277,15 +329,25 @@ export function FullInventoryView() {
     deepSearchRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const SkuCell = ({ sku }: { sku: string }) => (
-    <td className="px-2 py-1 text-xs font-mono font-semibold">
-      <button
-        className="text-left hover:text-verden-600 hover:underline underline-offset-2 transition-colors cursor-pointer"
-        onClick={() => triggerDeepSearch(sku)}
-        title={`"${sku}" in Snowflake suchen`}
-      >{sku}</button>
-    </td>
-  );
+  const SkuCell = ({ sku, withName = false }: { sku: string; withName?: boolean }) => {
+    const hit = withName ? nameFor(sku) : undefined;
+    return (
+      <td className="px-2 py-1 align-top">
+        <button
+          className="text-left text-xs font-mono font-semibold hover:text-verden-600 hover:underline underline-offset-2 transition-colors cursor-pointer"
+          onClick={() => triggerDeepSearch(sku)}
+          title={`"${sku}" in Snowflake suchen`}
+        >{sku}</button>
+        {withName && (
+          hit
+            ? <div className={`text-[10px] leading-tight max-w-[220px] truncate ${hit.origin === "wms" ? "text-slate-400" : "text-slate-600"}`} title={`${hit.name}${hit.origin === "wms" ? " (WMS-Bezeichnung)" : ""}`}>
+                {hit.name}
+              </div>
+            : <div className="text-[10px] leading-tight text-rose-300" title="Kein Name im App-Katalog oder WMS-Artikelstamm">ohne Namen</div>
+        )}
+      </td>
+    );
+  };
 
   const RowView = ({ r }: { r: FullInventoryRow }) => {
     const zone = classifyZone(r.locationId);
@@ -295,10 +357,10 @@ export function FullInventoryView() {
     return (
       <tr className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${rowBg}`}>
         <td className="px-2 py-1 text-xs font-mono">{r.locationId}</td>
-        <td className="px-1 py-1">
+        <td className="px-1 py-1 align-top">
           <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${zone.color}`}>{zone.label}</span>
         </td>
-        <SkuCell sku={r.itemNumber} />
+        <SkuCell sku={r.itemNumber} withName />
         <td className="px-2 py-1 text-xs text-right font-mono tabular-nums">{fmtQty(r.actualQty)}</td>
         <td className="px-2 py-1 text-xs text-right font-mono tabular-nums text-slate-400">{r.unavailableQty ? fmtQty(r.unavailableQty) : ""}</td>
         <td className="px-2 py-1">
@@ -336,14 +398,14 @@ export function FullInventoryView() {
         <input
           ref={searchRef}
           type="search"
-          placeholder="Ctrl+K  SKU / Ort / Los / HU / Lieferung…"
+          placeholder="Ctrl+K  SKU / Name / Ort / Los / HU / Lieferung…"
           className="rounded bg-slate-800 border border-slate-600 px-3 py-1.5 text-xs text-slate-200 w-80 placeholder:text-slate-500 focus:ring-2 focus:ring-verden-500 focus:border-transparent outline-none"
           value={search}
           onChange={e => { setSearch(e.target.value); setVisibleCount(PAGE_SIZE); }}
         />
 
         <button
-          onClick={loadData}
+          onClick={() => loadData(true)}
           disabled={loading}
           className="px-3 py-1.5 text-xs rounded bg-verden-600 hover:bg-verden-500 disabled:opacity-50 transition-colors font-medium"
         >
@@ -580,11 +642,12 @@ export function FullInventoryView() {
       </div>
 
       {/* KPI Tiles */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
         {[
           { label: "Positionen", value: filtered.length.toLocaleString("de-DE"), sub: `von ${totalRows.toLocaleString("de-DE")}`, icon: "#" },
           { label: "Gesamtmenge", value: fmtQty(stats.totalQty), sub: stats.unavailableQty > 0 ? `${fmtQty(stats.unavailableQty)} gesperrt` : "", icon: "S" },
           { label: "Artikel (SKU)", value: stats.uniqueSkus.toLocaleString("de-DE"), sub: "", icon: "A" },
+          { label: "Namen erkannt", value: `${stats.namedPct} %`, sub: stats.unnamedSkus > 0 ? `${stats.unnamedSkus.toLocaleString("de-DE")} ohne Namen` : "alle zugeordnet", icon: "N", color: stats.namedPct >= 90 ? "text-green-600" : stats.namedPct >= 70 ? "text-amber-600" : "text-rose-600" },
           { label: "Stellplätze", value: stats.uniqueLocations.toLocaleString("de-DE"), sub: "", icon: "L" },
           { label: "Abgelaufen", value: stats.expiredCount.toLocaleString("de-DE"), sub: "", icon: "!", color: stats.expiredCount > 0 ? "text-red-600" : "" },
           { label: "Läuft bald ab", value: stats.expiringSoonCount.toLocaleString("de-DE"), sub: "< 3 Tage", icon: "W", color: stats.expiringSoonCount > 0 ? "text-amber-600" : "" },
@@ -641,6 +704,10 @@ export function FullInventoryView() {
           className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${showExpiringSoon ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-600 hover:bg-amber-100"}`}
           onClick={() => { setShowExpiringSoon(!showExpiringSoon); setShowExpiredOnly(false); }}
         >Bald ablaufend ({stats.expiringSoonCount})</button>
+        <button
+          className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${showUnnamedOnly ? "bg-rose-600 text-white" : "bg-rose-50 text-rose-600 hover:bg-rose-100"}`}
+          onClick={() => setShowUnnamedOnly(!showUnnamedOnly)}
+        >Ohne Namen ({stats.unnamedSkus})</button>
 
         <span className="mx-2 h-4 border-l border-slate-200" />
 
@@ -655,7 +722,7 @@ export function FullInventoryView() {
           </button>
         ))}
 
-        {(search || zoneFilter || statusFilter || showExpiredOnly || showExpiringSoon || groupBy !== "none") && (
+        {(search || zoneFilter || statusFilter || showExpiredOnly || showExpiringSoon || showUnnamedOnly || groupBy !== "none") && (
           <>
             <span className="mx-2 h-4 border-l border-slate-200" />
             <button
@@ -698,6 +765,11 @@ export function FullInventoryView() {
                       {classifyZone(key).label}
                     </span>
                   )}
+                  {groupBy === "item" && (
+                    nameFor(key)
+                      ? <span className="text-[11px] font-normal text-slate-500 truncate max-w-[420px]">{nameFor(key)!.name}</span>
+                      : <span className="text-[10px] font-normal text-rose-400">ohne Namen</span>
+                  )}
                   <span className="text-[10px] text-slate-400 ml-auto">{gRows.length} Pos. / {fmtQty(gQty)} Stk.</span>
                 </button>
                 {!collapsed && (
@@ -707,7 +779,7 @@ export function FullInventoryView() {
                         <tr>
                           <SortHeader label="Stellplatz" k="locationId" />
                           <th className="sticky top-0 bg-slate-800 text-slate-300 text-[10px] uppercase tracking-wider px-1 py-1.5">Zone</th>
-                          <SortHeader label="Artikel" k="itemNumber" />
+                          <SortHeader label="Artikel / Name" k="itemNumber" />
                           <SortHeader label="Menge" k="actualQty" className="text-right" />
                           <th className="sticky top-0 bg-slate-800 text-slate-300 text-[10px] uppercase tracking-wider px-2 py-1.5 text-right">Gesperrt</th>
                           <SortHeader label="Status" k="status" />

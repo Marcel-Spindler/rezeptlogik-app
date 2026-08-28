@@ -130,15 +130,19 @@ export async function fetchPlhDetail(
   return attempt(0);
 }
 
+// Cache gilt 10 Min als frisch; danach (oder mit force) wird neu von Snowflake
+// geladen. Schlägt der Fetch fehl, fällt die Funktion auf den Cache zurück.
+const FULL_INV_TTL_MS = 10 * 60 * 1000;
+
 export async function fetchFullInventory(
-  opts: { whId?: string; limit?: number; maxRetries?: number; onRetry?: (attempt: number, message: string) => void } = {},
+  opts: { whId?: string; limit?: number; maxRetries?: number; force?: boolean; onRetry?: (attempt: number, message: string) => void } = {},
 ): Promise<{ rows: FullInventoryRow[]; totalRows: number; generatedAt: string | null }> {
-  const { whId = "VF", limit = 100000, maxRetries = 3, onRetry } = opts;
+  const { whId = "VF", limit = 100000, maxRetries = 3, force = false, onRetry } = opts;
 
   type Result = { rows: FullInventoryRow[]; totalRows: number; generatedAt: string | null };
   const cacheKey = `full-inv:${whId}:${limit}`;
   const cached = await persistGet<Result>(STORES.wmsInventory, cacheKey);
-  if (cached) return cached.data;
+  if (cached && !force && Date.now() - cached.updatedAt < FULL_INV_TTL_MS) return cached.data;
 
   const attempt = async (retryCount: number): Promise<{ rows: FullInventoryRow[]; totalRows: number; generatedAt: string | null }> => {
     try {
@@ -164,6 +168,9 @@ export async function fetchFullInventory(
         await new Promise(r => setTimeout(r, 2500));
         return attempt(retryCount + 1);
       }
+      // Server nicht erreichbar → lieber die (evtl. veralteten) Cache-Daten
+      // zeigen als eine leere Tabelle.
+      if (cached) return cached.data;
       throw e;
     }
   };
