@@ -47,8 +47,12 @@
       { "source": "/api/local-db/generate-pdf", "function": "generatePdf", "region": "europe-west3" },
       { "source": "**", "destination": "/index.html" }
     ]
-  },
-  "firestore": {
-    "rules": "firestore.rules"
   }
+  // HINWEIS: "firestore"-Block bewusst entfernt (Schutzgelaender).
+  // Das Projekt "hellofresh-de-problem-solve" wird von mehreren Apps geteilt.
+  // Firestore-Rules gelten projektweit und duerfen aus diesem App-Repo NICHT
+  // ausgerollt werden, weil sonst andere Apps im Shared-Projekt betroffen sind.
+  // Regeln fuer die Default-DB nur ueber den sicheren Master-Prozess
+  // (Console/REST bzw. dediziertes Master-Repo) aendern, nicht ueber dieses Repo.
+  // (2026-08-29 zurueckgesetzt — ea6c697 hatte den Block ungewollt wieder ergaenzt.)
 }
