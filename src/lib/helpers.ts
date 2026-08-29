@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useCallback, useState, type CSSProperties } from "react";
 import type { DataBundle, Market, WeekRecipe, Recipe, CookSchedule, ProcessSpec, ShelfLifeInfo, RecipeStructure } from "../core/types";
 import { marketToLocale } from "./i18n";
 import type { UiLocale } from "./i18n";
@@ -437,13 +437,15 @@ export function lsSet<T>(key: string, value: T): void {
 
 export function usePersistent<T>(key: string, defaultVal: T): [T, React.Dispatch<React.SetStateAction<T>>] {
   const [state, setState] = useState<T>(() => lsGet(key, defaultVal));
-  const wrapped: React.Dispatch<React.SetStateAction<T>> = (action) => {
+  // Stabile Setter-Identität (pro key) — sonst bekommt jedes Kind, das den Setter
+  // in Deps/Memo hält, bei jedem Render einen neuen Callback.
+  const wrapped = useCallback<React.Dispatch<React.SetStateAction<T>>>((action) => {
     setState(prev => {
       const next = typeof action === "function" ? (action as (p: T) => T)(prev) : action;
       lsSet(key, next);
       return next;
     });
-  };
+  }, [key]);
   return [state, wrapped];
 }
 

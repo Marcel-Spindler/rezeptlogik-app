@@ -1,38 +1,56 @@
 // View-Dispatch: liest State aus AppContext und rendert die passende Oberfläche.
 // Die 8 Fach-Views hängen unverändert dahinter — nur die Chrome drumherum ist neu.
+import { Suspense } from "react";
 import { useAppState, type AppView } from "./AppContext";
 import { Shell, LoadingCard, ErrorCard } from "./Shell";
 import { NavTabs, GroupSubTabs } from "./NavTabs";
 import { KitchenSurface } from "./KitchenSurface";
 import { AppFooter } from "./AppFooter";
 import { RecipeDetail } from "../features/recipe-detail/RecipeDetailShell";
-import { CsvImportView } from "../CsvImportView";
 import { PlanningOasisView } from "../planning-oasis/PlanningOasisView";
-import { KetBreakdownView } from "../KetBreakdownView";
 import { ShopfloorKioskSurface } from "./ShopfloorKioskSurface";
-import { PetPlanView } from "../PetPlanView";
-import { WhatIfView } from "../WhatIfView";
-import { RundmailView } from "../RundmailView";
-import { WmsKwOverviewView } from "../WmsKwOverviewView";
 import { WeekSelector } from "../components/WeekSelector";
 import { RecipeList } from "../components/RecipeList";
 import { DataHealthBanner } from "../components/DataHealthBanner";
 import { CapacityWarningBanner } from "../components/CapacityWarningBanner";
 import { MealCatalogView } from "../features/meal-catalog/MealCatalogView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { BlastChillerView } from "../features/blast-chiller/BlastChillerView";
-import { AllergenPlatingView } from "../features/allergen-plating/AllergenPlatingView";
-import { PostblastLiveView } from "../features/gsheet-monitor/PostblastLiveView";
-import { TransparencyPlanView } from "../features/gsheet-monitor/TransparencyPlanView";
-import { BackfillsView } from "../features/backfills/BackfillsView";
 import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
-import { RedzoneLiveView } from "../features/redzone-live/RedzoneLiveView";
-import { ArtikelWocheView } from "../features/artikel-woche/ArtikelWocheView";
-import { FullInventoryView } from "../features/full-inventory/FullInventoryView";
 import { GlobalSearch } from "../features/global-search/GlobalSearch";
 import { resolveRecipeByCode } from "../lib/helpers";
+import { lazyWithRetry } from "../lib/lazyWithRetry";
+
+// Schwergewichtige Fach-Views nur bei Bedarf laden — hält den Initial-Bundle
+// klein (wichtig für die Kiosk-Laptops). recipe/catalog bleiben eager, weil sie
+// die üblichen Landeansichten sind.
+const CsvImportView       = lazyWithRetry(() => import("../CsvImportView").then(m => ({ default: m.CsvImportView })), "csv-import");
+const KetBreakdownView    = lazyWithRetry(() => import("../KetBreakdownView").then(m => ({ default: m.KetBreakdownView })), "ket-breakdown");
+const PetPlanView         = lazyWithRetry(() => import("../PetPlanView").then(m => ({ default: m.PetPlanView })), "pet-plan");
+const WhatIfView          = lazyWithRetry(() => import("../WhatIfView").then(m => ({ default: m.WhatIfView })), "what-if");
+const RundmailView        = lazyWithRetry(() => import("../RundmailView").then(m => ({ default: m.RundmailView })), "rundmail");
+const WmsKwOverviewView   = lazyWithRetry(() => import("../WmsKwOverviewView").then(m => ({ default: m.WmsKwOverviewView })), "wms-kw");
+const BlastChillerView    = lazyWithRetry(() => import("../features/blast-chiller/BlastChillerView").then(m => ({ default: m.BlastChillerView })), "blast-chiller");
+const AllergenPlatingView = lazyWithRetry(() => import("../features/allergen-plating/AllergenPlatingView").then(m => ({ default: m.AllergenPlatingView })), "allergen-plating");
+const PostblastLiveView   = lazyWithRetry(() => import("../features/gsheet-monitor/PostblastLiveView").then(m => ({ default: m.PostblastLiveView })), "postblast-live");
+const TransparencyPlanView = lazyWithRetry(() => import("../features/gsheet-monitor/TransparencyPlanView").then(m => ({ default: m.TransparencyPlanView })), "transparency-plan");
+const BackfillsView       = lazyWithRetry(() => import("../features/backfills/BackfillsView").then(m => ({ default: m.BackfillsView })), "backfills");
+const ArtikelWocheView    = lazyWithRetry(() => import("../features/artikel-woche/ArtikelWocheView").then(m => ({ default: m.ArtikelWocheView })), "artikel-woche");
+const FullInventoryView   = lazyWithRetry(() => import("../features/full-inventory/FullInventoryView").then(m => ({ default: m.FullInventoryView })), "full-inventory");
+const RedzoneLiveView     = lazyWithRetry(() => import("../features/redzone-live/RedzoneLiveView").then(m => ({ default: m.RedzoneLiveView })), "redzone-live");
+
+function ViewLoading() {
+  return <div className="card p-8 text-center text-slate-400 text-sm">Lade Ansicht …</div>;
+}
 
 function MainPane({ view }: { view: AppView }) {
+  return (
+    <Suspense fallback={<ViewLoading />}>
+      <MainPaneSwitch view={view} />
+    </Suspense>
+  );
+}
+
+function MainPaneSwitch({ view }: { view: AppView }) {
   const {
     data, selectedWeek, selectedRecipe, upliftPercent,
     recipesByCode, recipesOfWeek, activeRecipe, setSelectedWeek, setSelectedRecipe, setView,
@@ -42,18 +60,16 @@ function MainPane({ view }: { view: AppView }) {
   switch (view) {
     case "catalog":
       return (
-        <ErrorBoundary>
-          <MealCatalogView
-            catalog={data.mealCatalog ?? {}}
-            data={data}
-            selectedWeek={selectedWeek}
-            upliftPercent={upliftPercent}
-            onSelectWeek={setSelectedWeek}
-            onOpenRecipe={code => { setSelectedRecipe(code); setView("recipe"); }}
-            onOpenPlanning={code => { setSelectedRecipe(code); setView("planning"); }}
-            onOpenWms={() => setView("wms")}
-          />
-        </ErrorBoundary>
+        <MealCatalogView
+          catalog={data.mealCatalog ?? {}}
+          data={data}
+          selectedWeek={selectedWeek}
+          upliftPercent={upliftPercent}
+          onSelectWeek={setSelectedWeek}
+          onOpenRecipe={code => { setSelectedRecipe(code); setView("recipe"); }}
+          onOpenPlanning={code => { setSelectedRecipe(code); setView("planning"); }}
+          onOpenWms={() => setView("wms")}
+        />
       );
 
     case "recipe":
@@ -168,7 +184,7 @@ function FullApp() {
           </div>
           <main className="flex-1 min-w-0">
             <GroupSubTabs view={view} onChange={setView} />
-            <MainPane view={view} />
+            <ErrorBoundary resetKey={view} label={view}><MainPane view={view} /></ErrorBoundary>
           </main>
         </div>
       </Shell>
@@ -183,12 +199,14 @@ function FullApp() {
 
   return (
     <Shell wide={woView}>
-      <DataHealthBanner data={data} />
-      <CapacityWarningBanner data={data} week={selectedWeek} upliftPercent={upliftPercent} />
-      <BackfillAlertBanner onOpen={() => setView("backfills")} />
-      {/* Übergeordnete Suche (WO / Submeal / SKU / Meal → Flow-Verlauf). Nicht in
-          "KET Plan / WO" — dort hat die WO-Ansicht eine eigene Funktion. */}
-      {!woView && <div className="mb-4"><GlobalSearch /></div>}
+      <ErrorBoundary label="banners" fallback={null}>
+        <DataHealthBanner data={data} />
+        <CapacityWarningBanner data={data} week={selectedWeek} upliftPercent={upliftPercent} />
+        <BackfillAlertBanner onOpen={() => setView("backfills")} />
+        {/* Übergeordnete Suche (WO / Submeal / SKU / Meal → Flow-Verlauf). Nicht in
+            "KET Plan / WO" — dort hat die WO-Ansicht eine eigene Funktion. */}
+        {!woView && <div className="mb-4"><GlobalSearch /></div>}
+      </ErrorBoundary>
       <div className={`grid grid-cols-12 gap-4 ${woView ? "items-start" : ""}`}>
         <aside className={`col-span-12 space-y-3 ${woView ? "md:col-span-4 lg:col-span-3 xl:col-span-2" : "md:col-span-4 lg:col-span-3"}`}>
           <NavTabs view={view} onChange={setView} />
@@ -207,28 +225,32 @@ function FullApp() {
           />
 
           {!woView && (
-            <RecipeList
-              recipes={filteredRecipes}
-              allRecipesCount={recipesOfWeek.length}
-              recipesByCode={recipesByCode}
-              mealCatalog={data.mealCatalog}
-              activeCode={activeRecipe?.code}
-              selectedWeek={selectedWeek}
-              upliftPercent={upliftPercent}
-              searchText={searchText}
-              onSearchChange={setSearchText}
-              onSelect={code => { setSelectedRecipe(code); if (view !== "recipe") setView("recipe"); }}
-            />
+            <ErrorBoundary label="recipe-list">
+              <RecipeList
+                recipes={filteredRecipes}
+                allRecipesCount={recipesOfWeek.length}
+                recipesByCode={recipesByCode}
+                mealCatalog={data.mealCatalog}
+                activeCode={activeRecipe?.code}
+                selectedWeek={selectedWeek}
+                upliftPercent={upliftPercent}
+                searchText={searchText}
+                onSearchChange={setSearchText}
+                onSelect={code => { setSelectedRecipe(code); if (view !== "recipe") setView("recipe"); }}
+              />
+            </ErrorBoundary>
           )}
         </aside>
 
         <main className={`col-span-12 min-w-0 ${woView ? "md:col-span-8 lg:col-span-9 xl:col-span-10" : "md:col-span-8 lg:col-span-9"}`}>
           <GroupSubTabs view={view} onChange={setView} />
-          <MainPane view={view} />
+          <ErrorBoundary resetKey={view} label={view}><MainPane view={view} /></ErrorBoundary>
         </main>
       </div>
 
-      <AppFooter data={data} selectedWeek={selectedWeek} upliftPercent={upliftPercent} />
+      <ErrorBoundary label="footer" fallback={null}>
+        <AppFooter data={data} selectedWeek={selectedWeek} upliftPercent={upliftPercent} />
+      </ErrorBoundary>
     </Shell>
   );
 }
@@ -256,7 +278,11 @@ export function Router() {
     }
     return (
       <Shell>
-        <RedzoneLiveView />
+        <ErrorBoundary label="redzone">
+          <Suspense fallback={<LoadingCard />}>
+            <RedzoneLiveView />
+          </Suspense>
+        </ErrorBoundary>
       </Shell>
     );
   }
@@ -267,28 +293,34 @@ export function Router() {
   if (rundmailMode) {
     return (
       <Shell>
-        <RundmailView data={data} />
+        <ErrorBoundary label="rundmail"><RundmailView data={data} /></ErrorBoundary>
       </Shell>
     );
   }
 
   if (kitchenMode) {
     return (
-      <KitchenSurface
-        data={data}
-        weeks={weeks}
-        weekRecipes={weekRecipes}
-        selectedWeek={selectedWeek}
-        onWeekChange={setSelectedWeek}
-        upliftPercent={upliftPercent}
-        kitchenLinkCopied={kitchenLinkCopied}
-        onLinkCopiedChange={setKitchenLinkCopied}
-      />
+      <ErrorBoundary label="kitchen">
+        <KitchenSurface
+          data={data}
+          weeks={weeks}
+          weekRecipes={weekRecipes}
+          selectedWeek={selectedWeek}
+          onWeekChange={setSelectedWeek}
+          upliftPercent={upliftPercent}
+          kitchenLinkCopied={kitchenLinkCopied}
+          onLinkCopiedChange={setKitchenLinkCopied}
+        />
+      </ErrorBoundary>
     );
   }
 
   if (surface === "shopfloor") {
-    return <ShopfloorKioskSurface data={data} selectedWeek={selectedWeek} />;
+    return (
+      <ErrorBoundary label="shopfloor">
+        <ShopfloorKioskSurface data={data} selectedWeek={selectedWeek} />
+      </ErrorBoundary>
+    );
   }
 
   return <FullApp />;

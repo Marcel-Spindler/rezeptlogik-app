@@ -3,7 +3,7 @@
 // WMS-intern und Agent-Formular wurden entfernt, die Rezept-Fokus-Kachelansicht
 // ebenfalls. Cockpit/Lines/Rack werden in eigenen Phasen komplett neu gebaut;
 // hier hängen sie noch unverändert an PlanningView/LinePlanningView/RackV2View.
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import type { DataBundle, WeekRecipe } from "../core/types";
 import { PlanningView } from "../PlanningView";
 import type { UiLocale } from "../lib/i18n";
@@ -13,9 +13,10 @@ import { refreshRampUpDataOnStart } from "../core/dataSource";
 import { recordRampUpSnapshot, type RampUpChangeEvent } from "../lib/rampUpHistory";
 import { useOasisSourceHealth, sourceHealthTone } from "./oasisSourceHealth";
 import { useGsheetRegistry, GsheetRegistryPanel } from "./GsheetRegistryPanel";
+import { lazyWithRetry } from "../lib/lazyWithRetry";
 
-const LinePlanningSection = lazy(() => import("../LinePlanningView").then(m => ({ default: m.LinePlanningView })));
-const RackSection = lazy(() => import("../RackV2View").then(m => ({ default: m.RackV2View })));
+const LinePlanningSection = lazyWithRetry(() => import("../LinePlanningView").then(m => ({ default: m.LinePlanningView })), "line-planning");
+const RackSection = lazyWithRetry(() => import("../RackV2View").then(m => ({ default: m.RackV2View })), "rack-v2");
 
 type OasisSection = "cockpit" | "lines" | "rack";
 const OASIS_SECTIONS: readonly OasisSection[] = ["cockpit", "lines", "rack"];
