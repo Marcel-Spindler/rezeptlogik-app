@@ -953,23 +953,25 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // Endpoints die TTL überschreiben wollen, können ?nocache=1 anhängen.
   const noCache = url.searchParams.get("nocache") === "1";
   const urlCacheKey = `url:${url.pathname}?${[...url.searchParams.entries()].filter(([k]) => k !== "ts" && k !== "nocache").sort().map(([k, v]) => `${k}=${v}`).join("&")}`;
-  if (!noCache && req.method === "GET" && url.pathname.startsWith("/wms-")) {
+  const isCacheableWms = !noCache && req.method === "GET" && url.pathname.startsWith("/wms-");
+  if (isCacheableWms) {
     const hit = cacheGet<{ status: number; body: unknown }>(urlCacheKey);
     if (hit) {
       console.log(`Cache-Hit: ${url.pathname} (${urlCacheKey.slice(0, 60)}…)`);
       sendJson(res, hit.status, hit.body);
       return;
     }
+    // Cache-Write: erfolgreiche Response abfangen (die Handler rufen alle das
+    // module-scope sendJson → res.end(JSON) auf, hier wird das mitgeschnitten).
+    const origEnd = res.end.bind(res);
+    res.end = ((chunk?: unknown, ...rest: unknown[]) => {
+      if (res.statusCode === 200 && typeof chunk === "string") {
+        try { cacheSet(urlCacheKey, { status: 200, body: JSON.parse(chunk) }); } catch { /* nicht-JSON, egal */ }
+      }
+      // @ts-expect-error – variadische end()-Überladungen
+      return origEnd(chunk, ...rest);
+    }) as typeof res.end;
   }
-  // Wrapper: sendJson mit automatischem Cache-Write für erfolgreiche WMS-Responses
-  const origSendJson = sendJson;
-  const cachingSendJson = (r: ServerResponse, status: number, body: unknown) => {
-    if (!noCache && status === 200 && url.pathname.startsWith("/wms-")) {
-      cacheSet(urlCacheKey, { status, body });
-    }
-    origSendJson(r, status, body);
-  };
-  const send = cachingSendJson;
 
   if (url.pathname === "/health" && req.method === "GET") {
     sendJson(res, 200, {

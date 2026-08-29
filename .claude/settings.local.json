@@ -42,7 +42,14 @@
       "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\inspect-weekly-sheet.ts\")",
       "Bash(Remove-Item -Force \"c:\\\\Users\\\\MarcelSpindler\\\\Documents\\\\GitHub\\\\rezeptlogik-app\\\\scripts\\\\list-drive-folder.ts\")",
       "Bash(npx ts-node *)",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(echo \"TSC EXIT: $?\")",
+      "Bash(echo \"TSC done: $?\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(echo \"TSC: $?\")",
+      "Bash(echo \"VITEST: $?\")",
+      "Bash(npx eslint *)",
+      "Bash(echo \"ESLINT: $?\")"
     ]
   }
 }

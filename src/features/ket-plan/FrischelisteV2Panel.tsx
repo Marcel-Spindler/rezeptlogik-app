@@ -110,7 +110,7 @@ export function FrischelisteV2Panel({ data, weekLabel }: Props) {
 
   useEffect(() => {
     fetchWeekDropdownTabs(weekLabel).then(setAvailableTabs).catch(() => {});
-  }, [weekLabel]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [weekLabel]);
 
   useEffect(() => {
     const cached = getCachedPlanningSheet(selectedWeek);
