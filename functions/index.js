@@ -40,6 +40,59 @@ function getSheetIds() {
 }
 const CHECK_COOLDOWN_MS = 60 * 1000;
 
+// ── Origin-Allowlist (Schutz B) ─────────────────────────────────────────────
+// Die App ruft alle Functions entweder same-origin ueber die Hosting-Rewrites
+// (/api/…) oder im Dev ueber den Vite-Proxy auf. Fremde Origins (eine andere
+// Webseite, die per fetch die Gemini-/PDF-/Agent-Endpoints missbrauchen will)
+// werden hier geblockt. Requests OHNE Origin-Header (curl, Server-zu-Server,
+// same-origin GET) kommen bewusst durch — das ist die Grenze dieser Massnahme
+// (fuer mehr braeuchte es echte Auth / App Check).
+// Custom-Domain? -> EXTRA_ALLOWED_ORIGINS="https://…,https://…" in functions/.env.
+const ALLOWED_ORIGINS = new Set([
+  "https://rezeptlogik-verden-factor.web.app",
+  "https://rezeptlogik-verden-factor.firebaseapp.com",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  ...String(process.env.EXTRA_ALLOWED_ORIGINS || "")
+    .split(",").map((s) => s.trim()).filter(Boolean),
+]);
+
+function originAllowed(origin) {
+  if (!origin) return true;
+  if (ALLOWED_ORIGINS.has(origin)) return true;
+  // Firebase-Hosting-Preview-Kanaele: <site>--<channel>-<hash>.web.app
+  if (/^https:\/\/rezeptlogik-verden-factor--[a-z0-9-]+\.web\.app$/.test(origin)) return true;
+  return false;
+}
+
+// Erste Zeile jedes onRequest-Handlers: setzt CORS-Header, beantwortet Preflight,
+// blockt fremde Origins. Rueckgabe false => es wurde bereits geantwortet, der
+// Handler muss sofort `return`.
+function guardRequest(req, res) {
+  const origin = req.get("origin");
+  if (!originAllowed(origin)) {
+    res.status(403).json({ ok: false, error: "Origin nicht erlaubt." });
+    return false;
+  }
+  if (origin) {
+    res.set("Access-Control-Allow-Origin", origin);
+    res.set("Vary", "Origin");
+    res.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+    res.set("Access-Control-Max-Age", "3600");
+  }
+  if (req.method === "OPTIONS") { res.status(204).end(); return false; }
+  return true;
+}
+
+// onRequest + Origin-Guard in einem. Ersetzt onRequest fuer alle HTTP-Endpoints.
+function onGuardedRequest(opts, handler) {
+  return onRequest(opts, async (req, res) => {
+    if (!guardRequest(req, res)) return;
+    return handler(req, res);
+  });
+}
+
 const DEFAULT_GITHUB_MODELS_ENDPOINT = "https://models.inference.ai.azure.com/chat/completions";
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
@@ -696,17 +749,28 @@ function hasAllowedRole(actorRole, allowedRoles) {
 }
 
 function authorizePipelineAction(schema, actorRole, accessToken, action) {
+  const backendToken = process.env.AGENT_PIPELINE_TOKEN;
+
+  // Sicherheits-Boden: `schema` und `actorRole` kommen aus dem (unsignierten)
+  // Request-Payload — ein Aufrufer koennte sonst schlicht {access:{mode:"none"}}
+  // oder actorRole:"admin" schicken und jede Pruefung abschalten. Sobald im
+  // Backend AGENT_PIPELINE_TOKEN gesetzt ist, MUSS jeder Pipeline-Aufruf ihn
+  // mitbringen — unabhaengig davon, was das Schema als access.mode deklariert.
+  if (backendToken && accessToken !== backendToken) {
+    return { ok: false, error: "Pipeline-Token fehlt oder ist ungueltig." };
+  }
+
   const mode = schema?.access?.mode || "role-based";
-  if (mode === "none") return { ok: true };
 
   if (mode === "token") {
-    const expectedToken = process.env.AGENT_PIPELINE_TOKEN;
-    if (!expectedToken) return { ok: false, error: "AGENT_PIPELINE_TOKEN fehlt im Backend." };
-    if (!accessToken || accessToken !== expectedToken) {
-      return { ok: false, error: "Token-Pruefung fehlgeschlagen." };
-    }
-    return { ok: true };
+    // Ohne Backend-Token laesst sich "token"-Modus nicht durchsetzen.
+    if (!backendToken) return { ok: false, error: "AGENT_PIPELINE_TOKEN fehlt im Backend." };
+    return { ok: true }; // oben bereits geprueft
   }
+
+  // mode === "none": kein Backend-Token gesetzt → Pipeline bewusst offen (Dev);
+  // Backend-Token gesetzt → oben schon geprueft, Aufrufer ist vertrauenswuerdig.
+  if (mode === "none") return { ok: true };
 
   const roleMap = {
     trigger: schema?.access?.canTrigger,
@@ -1647,7 +1711,7 @@ async function batchedSet(collRef, docs) {
   }
 }
 
-exports.refreshRampUp = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.refreshRampUp = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -1957,7 +2021,7 @@ async function readKitchenPlanningGSheet(sheets) {
   return { week, rows: result };
 }
 
-exports.refreshOperationalData = onRequest({ region: "europe-west3", timeoutSeconds: 120 }, async (req, res) => {
+exports.refreshOperationalData = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 120 }, async (req, res) => {
   if (req.method !== "POST") { res.status(405).json({ ok: false, error: "method-not-allowed" }); return; }
 
   try {
@@ -2011,7 +2075,7 @@ exports.refreshOperationalData = onRequest({ region: "europe-west3", timeoutSeco
   }
 });
 
-exports.agentRun = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.agentRun = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2205,7 +2269,7 @@ exports.agentRun = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, asy
   }
 });
 
-exports.agentApprove = onRequest({ region: "europe-west3", timeoutSeconds: 30 }, async (req, res) => {
+exports.agentApprove = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2251,7 +2315,7 @@ exports.agentApprove = onRequest({ region: "europe-west3", timeoutSeconds: 30 },
   res.json({ ok: true, proposalId, status: "approved", approvedAt });
 });
 
-exports.agentApply = onRequest({ region: "europe-west3", timeoutSeconds: 30 }, async (req, res) => {
+exports.agentApply = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 30 }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2383,7 +2447,7 @@ exports.agentApply = onRequest({ region: "europe-west3", timeoutSeconds: 30 }, a
   res.json({ ok: true, proposalId, applyId, writes, status: "applied", appliedAt });
 });
 
-exports.wmsPlating = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsPlating = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2391,7 +2455,7 @@ exports.wmsPlating = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, a
   await runWmsQuery(req, res, { name: "wms-plating", sql: WMS_PLATING_SQL, mapper: mapWmsPlatingRow });
 });
 
-exports.wmsPlatingHistory = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsPlatingHistory = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2399,7 +2463,7 @@ exports.wmsPlatingHistory = onRequest({ region: "europe-west3", timeoutSeconds: 
   await runWmsQuery(req, res, { name: "wms-plating-history", sql: WMS_PLATING_HISTORY_SQL, mapper: mapWmsSleevingRow, defaultLookbackDays: 90 });
 });
 
-exports.wmsSleeving = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsSleeving = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2407,7 +2471,7 @@ exports.wmsSleeving = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, 
   await runWmsQuery(req, res, { name: "wms-sleeving", sql: WMS_SLEEVING_SQL, mapper: mapWmsSleevingRow });
 });
 
-exports.wmsInbound = onRequest({
+exports.wmsInbound = onGuardedRequest({
   region: "europe-west3",
   timeoutSeconds: 60,
   serviceAccount: "wmsinbound-sa@hellofresh-de-problem-solve.iam.gserviceaccount.com",
@@ -2419,7 +2483,7 @@ exports.wmsInbound = onRequest({
   await runWmsQuery(req, res, { name: "wms-inbound", sql: WMS_INBOUND_SQL, mapper: mapWmsInboundRow });
 });
 
-exports.wmsStaging = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsStaging = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2427,7 +2491,7 @@ exports.wmsStaging = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, a
   await runWmsQuery(req, res, { name: "wms-staging", sql: WMS_STAGING_SQL, mapper: mapWmsPlatingRow });
 });
 
-exports.wmsDebox = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsDebox = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2435,7 +2499,7 @@ exports.wmsDebox = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, asy
   await runWmsQuery(req, res, { name: "wms-debox", sql: WMS_DEBOX_SQL, mapper: mapWmsPlatingRow });
 });
 
-exports.wmsPostblast = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsPostblast = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2443,7 +2507,7 @@ exports.wmsPostblast = onRequest({ region: "europe-west3", timeoutSeconds: 60 },
   await runWmsQuery(req, res, { name: "wms-postblast", sql: WMS_POSTBLAST_SQL, mapper: mapWmsPlatingRow });
 });
 
-exports.wmsPlatingHolding = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsPlatingHolding = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2451,7 +2515,7 @@ exports.wmsPlatingHolding = onRequest({ region: "europe-west3", timeoutSeconds: 
   await runWmsQuery(req, res, { name: "wms-plating-holding", sql: WMS_PLATING_HOLDING_SQL, mapper: mapWmsPlatingRow });
 });
 
-exports.wmsWorkorders = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsWorkorders = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2602,7 +2666,7 @@ function mapCachedWorkorderRowToWoDetailRow(row) {
   };
 }
 
-exports.wmsWoDetail = onRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
+exports.wmsWoDetail = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -2769,7 +2833,7 @@ async function driveReadFile(drive, folderId, filename) {
   return typeof content.data === "string" ? content.data : null;
 }
 
-exports.rackBoxfiles = onRequest({ region: "europe-west3", timeoutSeconds: 60, cors: true }, async (req, res) => {
+exports.rackBoxfiles = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") { res.status(405).json({ ok: false, error: "method-not-allowed" }); return; }
   const week = String(req.query.week || "").trim(); // z.B. "2026-W34"
   if (!week) { res.status(400).json({ ok: false, error: "week param required (z.B. 2026-W34)" }); return; }
@@ -2830,7 +2894,7 @@ function rackSortFromFlow(flowRackPosition) {
   return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER;
 }
 
-exports.rackInputs = onRequest({ region: "europe-west3", timeoutSeconds: 45, cors: true }, async (req, res) => {
+exports.rackInputs = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 45 }, async (req, res) => {
   if (req.method !== "GET") { res.status(405).json({ ok: false, error: "method-not-allowed" }); return; }
 
   const weekParam = String(req.query.week || "").trim();
@@ -3075,7 +3139,7 @@ function breakdownCalcSubmeal(row, processSpecs, equipmentBible) {
   };
 }
 
-exports.wmsBreakdown = onRequest({ region: "europe-west3", timeoutSeconds: 120, cors: true }, async (req, res) => {
+exports.wmsBreakdown = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 120 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -3251,7 +3315,7 @@ AND "startTime" >= DATEADD(hour, ?, CURRENT_TIMESTAMP())
 ORDER BY "startTime" DESC
 LIMIT 500`;
 
-exports.redzoneStatus = onRequest({ region: "europe-west3", timeoutSeconds: 60, cors: true }, async (req, res) => {
+exports.redzoneStatus = onGuardedRequest({ region: "europe-west3", timeoutSeconds: 60 }, async (req, res) => {
   if (req.method !== "GET") {
     res.status(405).json({ ok: false, error: "method-not-allowed" });
     return;
@@ -3491,7 +3555,7 @@ Return JSON: {"english":"...","german":"...","status":"needs_review"}` }] },
   };
 }
 
-exports.geminiInstruction = onRequest(
+exports.geminiInstruction = onGuardedRequest(
   { region: "europe-west3", timeoutSeconds: 60, secrets: [GEMINI_API_KEY_SECRET] },
   async (req, res) => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
@@ -3506,7 +3570,7 @@ exports.geminiInstruction = onRequest(
   },
 );
 
-exports.geminiInstructionsBatch = onRequest(
+exports.geminiInstructionsBatch = onGuardedRequest(
   { region: "europe-west3", timeoutSeconds: 540, memory: "512MiB", concurrency: 1, secrets: [GEMINI_API_KEY_SECRET] },
   async (req, res) => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
@@ -3535,7 +3599,7 @@ exports.geminiInstructionsBatch = onRequest(
 
 // ─── Gemini Planning Chat (Cockpit AI-Assistent) ─────────────────────────────
 
-exports.geminiPlanningChat = onRequest(
+exports.geminiPlanningChat = onGuardedRequest(
   { region: "europe-west3", timeoutSeconds: 60, secrets: [GEMINI_API_KEY_SECRET] },
   async (req, res) => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
@@ -3668,7 +3732,7 @@ exports.geminiPlanningChat = onRequest(
 
 // ─── Gemini Plating Chat (Plating-Linien-KI-Experte) ─────────────────────────
 
-exports.geminiPlatingChat = onRequest(
+exports.geminiPlatingChat = onGuardedRequest(
   { region: "europe-west3", timeoutSeconds: 60, secrets: [GEMINI_API_KEY_SECRET] },
   async (req, res) => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
@@ -3856,7 +3920,7 @@ async function htmlToPdfCloud(html) {
   }
 }
 
-exports.generatePdf = onRequest(
+exports.generatePdf = onGuardedRequest(
   { region: "europe-west3", timeoutSeconds: 120, memory: "2GiB" },
   async (req, res) => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
