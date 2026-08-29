@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useRedzone } from "./RedzoneContext";
+import { buildRedzoneCodeResolver } from "./redzoneResolve";
 import { useAppState } from "../../app/AppContext";
 import type { PlatingRunDisplay } from "./redzoneTypes";
 
@@ -48,29 +49,9 @@ function useRecipeEnrichment() {
     return m;
   }, [data]);
 
-  // Zweiter Index: Redzone liefert productTypeSKU oft als MSKU statt als
-  // Rezept-Code im Freitext — ohne diesen Fallback blieb "FV0024A" ohne Namen,
-  // sobald der Regex-Treffer aus productTypeName nicht 1:1 dem Rezept-Code entsprach.
-  const skuToCode = useMemo(() => {
-    const m = new Map<string, string>();
-    if (!data?.recipes) return m;
-    for (const [code, r] of Object.entries(data.recipes)) {
-      for (const market of ["DE", "BENL", "DKSE"] as const) {
-        const msku = r.markets?.[market]?.msku;
-        if (msku) m.set(norm(msku), norm(code));
-      }
-    }
-    return m;
-  }, [data]);
-
-  const resolveCode = useMemo(() => {
-    return (run: { mealCode: string | null; productTypeSKU: string }): string | null => {
-      if (run.mealCode && recipeMap.has(norm(run.mealCode))) return norm(run.mealCode);
-      const bySku = run.productTypeSKU ? skuToCode.get(norm(run.productTypeSKU)) : undefined;
-      if (bySku) return bySku;
-      return run.mealCode ? norm(run.mealCode) : null;
-    };
-  }, [recipeMap, skuToCode]);
+  // Redzone liefert productTypeSKU oft als MSKU statt als Rezept-Code im Freitext
+  // — der Resolver deckt Regex-Treffer + MSKU-Fallback ab (siehe redzoneResolve.ts).
+  const resolveCode = useMemo(() => buildRedzoneCodeResolver(data), [data]);
 
   const canNavigate = surface === "full";
   const openRecipe = (code: string) => {
@@ -1016,7 +997,7 @@ export function RedzoneLiveView() {
               <ThroughputSpark runs={platingDone} hours={rz.hours} />
               <select value={rz.hours} onChange={e => rz.setHours(Number(e.target.value))}
                 className="text-xs bg-white/10 border border-white/20 rounded-lg px-2.5 py-1.5 text-white appearance-none cursor-pointer">
-                {[8, 24, 48, 72].map(h => (
+                {[8, 24, 48, 72, 120].map(h => (
                   <option key={h} value={h} className="text-slate-900">{h}h</option>
                 ))}
               </select>

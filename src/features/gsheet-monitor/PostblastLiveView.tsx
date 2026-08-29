@@ -683,17 +683,19 @@ function MinimumNeedsPanel({
   const [expandedDay, setExpandedDay] = useState<"thu" | "fri" | "sat" | null>(() => todayCheckpoint());
 
   // Platierte Portionen je Rezept-Code aus abgeschlossenen Redzone-Runs (letzte 24h)
+  const platingDone = redzone?.platingDone;
+  const platingNow = redzone?.platingNow;
   const platedByCode = useMemo(() => {
     const map = new Map<string, number>();
-    for (const run of redzone?.platingDone ?? []) {
+    for (const run of platingDone ?? []) {
       if (run.mealCode) map.set(run.mealCode, (map.get(run.mealCode) ?? 0) + (run.outCount ?? 0));
     }
     // Aktive Runs miteinrechnen (outCount wird live aktualisiert)
-    for (const run of redzone ? [...redzone.platingNow.values()] : []) {
+    for (const run of platingNow ? [...platingNow.values()] : []) {
       if (run.mealCode && run.outCount) map.set(run.mealCode, (map.get(run.mealCode) ?? 0) + run.outCount);
     }
     return map;
-  }, [redzone?.platingDone, redzone?.platingNow]);
+  }, [platingDone, platingNow]);
 
   const byDay = useMemo(() => {
     const result = new Map<"thu" | "fri" | "sat", MinNeedsMealStatus[]>();
@@ -847,14 +849,14 @@ function MinimumNeedsPanel({
 function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
   const [expanded, setExpanded] = useState(true);
 
-  if (!redzone) return null;
-
-  const { activeLineCount, platingNow, platingDone, cookingNow, totalPlated, loading, error, lastUpdate, secondsUntilRefresh } = redzone;
+  // Hooks müssen vor jedem frühen return laufen (rules-of-hooks) — daher
+  // platingDone hier defensiv aus dem evtl. null-Wert ziehen.
+  const platingDone = redzone?.platingDone;
 
   // Abgeschlossene Runs nach mealCode gruppieren (letzte 24h)
   const doneTotals = useMemo(() => {
     const map = new Map<string, { mealCode: string; name: string; total: number }>();
-    for (const run of platingDone) {
+    for (const run of platingDone ?? []) {
       if (!run.mealCode) continue;
       const existing = map.get(run.mealCode);
       if (existing) existing.total += run.outCount ?? 0;
@@ -862,6 +864,10 @@ function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
     }
     return [...map.values()].sort((a, b) => b.total - a.total);
   }, [platingDone]);
+
+  if (!redzone) return null;
+
+  const { activeLineCount, platingNow, cookingNow, totalPlated, loading, error, lastUpdate, secondsUntilRefresh } = redzone;
 
   const activeRuns = [...platingNow.values()];
 

@@ -1,33 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { PlatingRunDisplay, RedzoneRun, RedzoneStatusResponse } from "./redzoneTypes";
+import type { PlatingRunDisplay, RedzoneStatusResponse } from "./redzoneTypes";
+import { enrichRun } from "./redzoneResolve";
 
 const POLL_MS = 60_000;
-
-function extractMealCode(name: string): string | null {
-  const match = name.match(/\b(F[A-Z]\d{4}[A-Z])\b/);
-  return match ? match[1] : null;
-}
-
-function durationMinutes(start: string | null, end: string | null): number | null {
-  if (!start || !end) return null;
-  const ms = new Date(end).getTime() - new Date(start).getTime();
-  return ms > 0 ? Math.round(ms / 60_000) : null;
-}
-
-function enrichRun(run: RedzoneRun): PlatingRunDisplay {
-  // Ovens/Braisers melden outCount praktisch nie (immer 0) — dort ist endTime
-  // das einzig verlässliche Signal. Für Plating zählt zusätzlich "noch kein
-  // Output", weil ein Run dort schon vor dem ersten gezählten Stück beginnt.
-  const isActive = run.areaName === "Plating"
-    ? run.endTime === null || run.outCount === 0 || run.outCount === null
-    : run.endTime === null;
-  return {
-    ...run,
-    status: isActive ? "active" : "completed",
-    mealCode: extractMealCode(run.productTypeName),
-    durationMin: durationMinutes(run.startTime, run.endTime),
-  };
-}
 
 export interface RedzoneState {
   runs: PlatingRunDisplay[];

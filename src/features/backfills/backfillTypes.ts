@@ -13,11 +13,17 @@
 // sichtbar wird. "plating-only" ist deshalb keine Unstimmigkeit, die eine
 // Bestätigung durch die Küche braucht, sondern ein für sich genommen
 // vollwertiger, eigenständiger Backfill-Bedarf (siehe combineBackfills.ts).
-export type BackfillConfidence = "confirmed" | "kitchen-only" | "plating-only";
+// "rti-only" = Bedarf allein aus dem RTI-Sheet (Planned Target vs. Actuals),
+// noch kein Küchen-Gewichts-/LinePlaiting-Signal dazu.
+export type BackfillConfidence = "confirmed" | "kitchen-only" | "plating-only" | "rti-only";
 export type BackfillPriority = "critical" | "behind" | "on-track";
 
 export interface CombinedBackfillNeed {
-  recipeCode: string;
+  recipeCode: string;         // Anzeige-Code (LinePlating > RTI > Küche)
+  // Alle rohen Code-Varianten, die für dieses Meal zusammengeführt wurden
+  // (z.B. FV4063A/FV4063B nach SKU-/Sleeve-Druckänderung — dieselbe 4-Ziffer,
+  // dasselbe Meal). Länge > 1 = die Quellen benutzen unterschiedliche Buchstaben.
+  codeVariants: string[];
   recipeName: string;
 
   // Küchen-Signal (aus postblastMatch.ts BackfillNeed[], je Meal aufsummiert)
@@ -26,21 +32,42 @@ export interface CombinedBackfillNeed {
   kitchenPriority: BackfillPriority | null; // null = keine Küchen-Meldung für dieses Meal
   kitchenSubRecipes: string[];
 
-  // Plating-Signal (LinePlaiting, Di-Do "shortage"-Phase)
+  // Plating-Signal (LinePlating-Tab, Di-Do "shortage"-Phase — Detail-Anzeige)
   platingPlannedPortions: number;   // Summe Planned über alle shortage-Zeilen (Referenz fürs Verhältnis)
   platingShortagePortions: number;  // Summe der Fehlmengen (nur negative Deltas)
   platingShortageReasons: string[]; // dedupliziert
   platingDaysAffected: string[];
 
-  // Freitag: von Hand berechneter Mindestbedarf ("Min Needs")
+  // LinePlating über die GANZE KW (alle Tage): Σ Planned − Σ Actual. Rohe
+  // Fehlmenge, tendenziell zu hoch (ein Teil war Puffer) — treibt den Bedarf
+  // nur, solange noch kein "{Tag} needs" eingetragen ist.
+  lpShortfallPortions: number;
+  lpWeek: string;                   // "W36" — aus dem LinePlating-Tab-Kopf
+  lpStatusText: string;             // "Ready" / "blocked" / "done" vom letzten Tag
+
+  // "{Tag} needs" des zuletzt befüllten Tages (Fr schlägt Do schlägt Di) — der
+  // vom Plating-Team gepflegte Restbedarf. Die maßgebliche Backfill-Zahl.
   minNeededPortions: number | null;
 
   // Samstag: Ergebnis der tatsächlich gefahrenen Backfill-Charge(n)
   backfillResultPortions: number | null;
   backfillResultComments: string[];
 
-  // RTI-Signal (Sheet, von Hand gepflegt)
+  // RTI Plating Holding — Fertigware-Puffer laut RTI-Sheet (Sub-Rezept-Summe).
   rtiHoldingKg: number;
+
+  // RTI Plating Tracker (gid=1486350915) — das Sheet, das den Backfill EXAKT
+  // errechnet: Meal-Block Planned Target vs. Actuals. Treibt jetzt
+  // recommendedBackfillPortions (source "rti"). rtiKitchenDone = alle echten
+  // Sub-Rezepte im Sheet auf "done"/"no" → der Rückstand ist final.
+  // null/false, wenn das Meal nicht im RTI-Sheet steht.
+  rtiPlannedTarget: number | null;
+  rtiActuals: number | null;
+  rtiShortfallPortions: number;      // max(0, plannedTarget − actuals)
+  rtiKitchenDone: boolean;
+  rtiHasOpenSubs: boolean;
+  rtiVetoed: boolean;                // alle echten Sub-Rezepte "no" → kein Backfill
+  rtiBackfillCandidateSubs: string[];
 
   // WMS live: tatsächlicher Warenbestand in Plating-Holding-Locations (PLH),
   // direkt aus Snowflake — der physische Puffer zwischen Post-Blast und
@@ -49,12 +76,9 @@ export interface CombinedBackfillNeed {
   // null = (noch) keine Daten / SKU nicht auflösbar, NICHT "Puffer ist leer".
   liveWmsHoldingKg: number | null;
 
-  // Redzone Live (Maschinen-Zählung an der Plating-Linie) — nur verfügbar,
-  // wenn der lokale WMS-Server läuft (Browser-SSO zu Snowflake, siehe
-  // RedzoneContext.tsx), online sonst leer. Rein informativ ("was zeigt die
-  // Linie GERADE JETZT"), fließt NICHT in recommendedBackfillPortions ein —
-  // andere Zeitbasis (heutiger Run) als der Wochen-Bedarf, und die Zahl darf
-  // nicht je nach Umgebung (lokal/online) unterschiedliche Ergebnisse liefern.
+  // Redzone Live (Maschinen-Zählung an der Plating-Linie, 24-h-Fenster) — nur
+  // wenn der lokale WMS-Server läuft, online sonst leer. Rein informativ
+  // ("was zeigt die Linie GERADE JETZT"), fließt NICHT in die Zahl ein.
   liveRedzonePortions: number | null;
   liveRedzoneStatus: "active" | "completed" | null;
 
@@ -65,17 +89,57 @@ export interface CombinedBackfillNeed {
   // Signal einen Bedarf zeigt.
   recommendedBackfillPortions: number;
   // Woher recommendedBackfillPortions kommt, priorisiert:
-  // 1) "min-needs"  — Freitags-Handrechnung (Mensch hat direkt am Plating-
-  //    Boden mit voller Wochenkenntnis gerechnet, am verlässlichsten)
-  // 2) "plating"    — tatsächliche Plating-Fehlmenge Di-Do (Meal-Portionen,
-  //    Planned-Actual, real gemessen statt geschätzt)
-  // 3) "kitchen"    — Küchen-Schätzung aus Pre-/Post-Blast-Gewichten (einzige
-  //    verfügbare Zahl, bevor überhaupt geplated wurde)
-  // "none"          — kein Signal, kein Backfill-Bedarf bekannt
-  recommendedSource: "min-needs" | "plating" | "kitchen" | "none";
+  // 1) "lineplating" — Kitchen-Priority "LinePlating W{XX}": "{Tag} needs" des
+  //    zuletzt befüllten Tages. Der vom Plating-Team gepflegte Restbedarf.
+  // 2) "plating"     — LinePlating Σ(Planned − Actual) über die KW, solange noch
+  //    kein "{Tag} needs" eingetragen ist (frühe Woche). Rohe Fehlmenge.
+  // 3) "rti"         — RTI-Wiegung (Weight-Tracking): Planned Target − Actuals.
+  //    Rückfall + bestätigt den Bedarf und schlüsselt ihn pro Sub-Rezept auf.
+  // 4) "kitchen"     — Küchen-Schätzung aus Pre-/Post-Blast-Gewichten
+  // "none"           — kein Signal, kein Backfill-Bedarf bekannt
+  recommendedSource: "lineplating" | "plating" | "rti" | "kitchen" | "none";
 
   confidence: BackfillConfidence;
   priority: BackfillPriority;
+}
+
+// ─── Bestandsprüfung Rohware ─────────────────────────────────────────────────
+// Ein Backfill wird IMMER aus Rohware nachgekocht (kein Umbuchen fertiger Ware).
+// Geprüft wird deshalb, ob die Brutto-Rohware der zu wenig produzierten Sub-
+// Rezepte für recommendedBackfillPortions im WMS-Vollbestand verfügbar ist
+// (Status "A", MHD nicht überschritten). Siehe backfillFeasibility.ts.
+
+export type BackfillFeasibilityVerdict = "feasible" | "partial" | "blocked" | "unknown";
+// "components" = nur die konkret gemeldeten Sub-Rezepte geprüft;
+// "full-meal"  = kein einzelnes Sub-Rezept bekannt, ganzes Meal angesetzt.
+export type BackfillFeasibilityScope = "components" | "full-meal";
+
+export interface BackfillFeasibilityIngredient {
+  ingredientId: string;
+  ingredientName: string;
+  subRecipeName: string;
+  uom: string;
+  grossPerPortion: number;   // Brutto-Rohware pro Endteller-Portion (aus der Rezeptstruktur)
+  neededTotal: number;       // grossPerPortion × neededPortions
+  availableQty: number;      // Σ actualQty, Status "A", MHD nicht überschritten
+  expiredQty: number;        // Σ actualQty, Status "A", aber MHD überschritten (nur Info)
+  notInWms: boolean;         // SKU taucht im Vollbestand gar nicht auf (ID-/Namens-Mismatch möglich)
+  maxPortions: number;       // floor(availableQty / grossPerPortion)
+  isBottleneck: boolean;
+}
+
+export interface BackfillFeasibility {
+  recipeCode: string;
+  verdict: BackfillFeasibilityVerdict;
+  scope: BackfillFeasibilityScope;
+  neededPortions: number;          // = recommendedBackfillPortions
+  maxProduciblePortions: number;   // min über alle Zutaten (0 = blockiert)
+  coveragePct: number;             // maxProduciblePortions / neededPortions
+  targetSubRecipes: string[];      // Namen der geprüften Sub-Rezepte
+  unmatchedComponents: string[];   // Küchen-Meldungen, die nicht in der Struktur gefunden wurden
+  bottleneck: BackfillFeasibilityIngredient[];
+  ingredients: BackfillFeasibilityIngredient[];
+  reason?: string;                 // bei verdict "unknown": warum nicht bewertbar
 }
 
 export type BackfillAlertSeverity = "critical" | "warning" | "info";

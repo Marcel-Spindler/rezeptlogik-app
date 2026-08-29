@@ -11,15 +11,18 @@ import {
   usePostblastMonitor,
   usePreblastMonitor,
   useRtiMonitor,
+  type LinePlaitingSource,
 } from "../gsheet-monitor/useGSheetMonitor";
 import { matchPostblastToWorkOrders, type BackfillNeed, type MealProgress } from "../gsheet-monitor/postblastMatch";
 import { useRedzoneOptional } from "../redzone-live/RedzoneContext";
 import { usePlatingHoldingMonitor } from "../wms-overview/usePlatingHoldingMonitor";
+import { useFullInventoryMonitor } from "../wms-overview/useFullInventoryMonitor";
 import { currentHfWeek } from "../../lib/hfWeek";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWeeks";
 import { buildSkuInfoIndex } from "../../lib/wmsSkuEnrichment";
 import { combineBackfillSignals, detectCrossSourceAlerts } from "./combineBackfills";
-import type { BackfillAlert, CombinedBackfillNeed } from "./backfillTypes";
+import { computeBackfillFeasibility } from "./backfillFeasibility";
+import type { BackfillAlert, BackfillFeasibility, CombinedBackfillNeed } from "./backfillTypes";
 
 export interface BackfillsState {
   meals: MealProgress[];
@@ -27,14 +30,26 @@ export interface BackfillsState {
   combined: CombinedBackfillNeed[];
   alerts: BackfillAlert[];
   criticalCount: number;
+  // Alerts, die zum Handeln auffordern (critical + warning) — speist das app-weite
+  // Banner/Badge. "Backfill nötig"-Meldungen (RTI-Rückstand, Küche durch) landen hier.
+  actionableAlertCount: number;
   totalRecommendedPortions: number;
+  // Rohware-Bestandsprüfung je Meal (recipeCode → Feasibility). Nur für Meals mit
+  // recommendedBackfillPortions > 0 befüllt; leer, wenn der WMS-Vollbestand nicht
+  // geladen ist (kein lokaler Server) — siehe backfillFeasibility.ts.
+  feasibilityByMeal: Map<string, BackfillFeasibility>;
+  fullInventoryConnected: boolean;
+  fullInventoryLastUpdate: number | null;
+  fullInventoryGeneratedAt: string | null;
   postblastConnected: boolean;
   preblastConnected: boolean;
   rtiConnected: boolean;
   linePlaitingConnected: boolean;
   wmsHoldingConnected: boolean;
-  linePlaitingGid: string;
-  setLinePlaitingGid: (input: string) => boolean;
+  linePlaitingSource: LinePlaitingSource;
+  linePlaitingActiveTab: string;      // "LinePlating W36" bzw. "gid=…" (Override)
+  linePlaitingWeek: string;           // aus den Sheet-Daten geparste KW ("W36")
+  linePlaitingStale: boolean;         // geladene KW ≠ erwartete KW → nicht verrechnet
   linePlaitingLastUpdate: number | null;
   linePlaitingForceRefresh: () => Promise<void>;
   selectedWeekNum: number | null;
@@ -60,10 +75,10 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
   const postblast = usePostblastMonitor();
   const preblast = usePreblastMonitor();
   const rti = useRtiMonitor();
-  const [linePlaitingGid, setLinePlaitingGid] = useLinePlaitingGid();
-  const linePlaiting = useLinePlaitingMonitor(linePlaitingGid);
+  const linePlaitingSource = useLinePlaitingGid();
   const redzone = useRedzoneOptional();
   const wmsHolding = usePlatingHoldingMonitor();
+  const fullInventory = useFullInventoryMonitor();
   const skuInfoIndex = useMemo(
     () => (data ? buildSkuInfoIndex(data, currentHfWeek()) : undefined),
     [data],
@@ -103,6 +118,22 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
     setUserSelectedWeekNum(wn);
   }, []);
 
+  // LinePlaiting-Tab automatisch aus der aufgelösten KW ("LinePlating W36") —
+  // der manuelle gid-Override (linePlaitingSource) schlägt das, wenn gesetzt.
+  const linePlaiting = useLinePlaitingMonitor(resolvedWeekNum ?? null, linePlaitingSource.gidOverride);
+
+  // Frisch angelegte "LinePlating W{N}"-Tabs sind oft noch eine unbenannte Kopie
+  // des Vorwochen-/Template-Tabs (KW im Kopf stimmt nicht). Solche Daten NICHT
+  // als aktuelle Woche verrechnen. Bei manuellem Override vertrauen wir dem User.
+  const expectedWeekLabel = resolvedWeekNum != null ? `W${String(resolvedWeekNum).padStart(2, "0")}` : "";
+  const linePlaitingStale =
+    !linePlaitingSource.gidOverride &&
+    !!linePlaiting.data &&
+    !!linePlaiting.data.week &&
+    !!expectedWeekLabel &&
+    linePlaiting.data.week !== expectedWeekLabel;
+  const linePlaitingData = linePlaitingStale ? null : linePlaiting.data;
+
   // Plan für die gewählte KW filtern
   const weekPlan = useMemo(() => {
     const rows = (data?.productionPlan?.rows ?? []).filter(r => weekPrefixFromWoNumber(r.workOrder) === resolvedWeekNum);
@@ -115,13 +146,22 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
   );
 
   const combined = useMemo(
-    () => combineBackfillSignals(kitchenBackfill, linePlaiting.data, rti.data, redzone?.runs, wmsHolding.rows ?? undefined, skuInfoIndex),
-    [kitchenBackfill, linePlaiting.data, rti.data, redzone?.runs, wmsHolding.rows, skuInfoIndex],
+    () => combineBackfillSignals(kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows ?? undefined, skuInfoIndex),
+    [kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows, skuInfoIndex],
   );
 
   const alerts = useMemo(() => detectCrossSourceAlerts(combined), [combined]);
   const criticalCount = useMemo(() => alerts.filter(a => a.severity === "critical").length, [alerts]);
+  const actionableAlertCount = useMemo(
+    () => alerts.filter(a => a.severity === "critical" || a.severity === "warning").length,
+    [alerts],
+  );
   const totalRecommendedPortions = useMemo(() => combined.reduce((s, c) => s + c.recommendedBackfillPortions, 0), [combined]);
+
+  const feasibilityByMeal = useMemo<Map<string, BackfillFeasibility>>(
+    () => (data ? computeBackfillFeasibility(combined, data, fullInventory.rows ?? undefined, skuInfoIndex) : new Map()),
+    [combined, data, fullInventory.rows, skuInfoIndex],
+  );
 
   const value: BackfillsState = {
     meals,
@@ -129,14 +169,21 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
     combined,
     alerts,
     criticalCount,
+    actionableAlertCount,
     totalRecommendedPortions,
+    feasibilityByMeal,
+    fullInventoryConnected: !!fullInventory.rows && fullInventory.rows.length > 0,
+    fullInventoryLastUpdate: fullInventory.lastUpdate,
+    fullInventoryGeneratedAt: fullInventory.generatedAt,
     postblastConnected: !!postblast.data,
     preblastConnected: !!preblast.data,
     rtiConnected: !!rti.data,
-    linePlaitingConnected: !!linePlaiting.data,
+    linePlaitingConnected: !!linePlaitingData,
     wmsHoldingConnected: !!wmsHolding.rows,
-    linePlaitingGid,
-    setLinePlaitingGid,
+    linePlaitingSource,
+    linePlaitingActiveTab: linePlaiting.activeTab,
+    linePlaitingWeek: linePlaiting.data?.week ?? "",
+    linePlaitingStale,
     linePlaitingLastUpdate: linePlaiting.lastUpdate,
     linePlaitingForceRefresh: linePlaiting.forceRefresh,
     selectedWeekNum: resolvedWeekNum,

@@ -83,8 +83,9 @@ export function parseRti(rows: string[][]): RtiData {
           const subDelta = subDeltaCol6 !== "" ? num(subDeltaCol6) : num(sr[5] ?? "");
           const subDeltaPct = pct(sr[7] ?? "");
           const statusRaw = (sr[9] ?? sr[8] ?? "").trim().toLowerCase();
+          // "Done?" (mit Fragezeichen) kommt im Sheet real vor und meint "fertig-ish".
           const status: RtiSubRecipeEntry["status"] =
-            statusRaw === "done" ? "done" :
+            /^done/.test(statusRaw) ? "done" :
             statusRaw === "no" ? "not-needed" :
             statusRaw ? "unknown" : "open";
           // Zweite (oder weitere) Zeile mit demselben Sub-Rezept im selben Meal-Block

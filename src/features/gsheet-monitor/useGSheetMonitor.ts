@@ -137,18 +137,15 @@ export function useEtMonitor(): GSheetMonitorState<EtData> {
   return useGSheetMonitor<EtData>("et");
 }
 
-// ─── LinePlaiting: eigene Datei, aber der Tab (gid) wechselt jede KW ────────
-// Anders als postblast/preblast/rti/et (feste ID+gid in GSHEET_REGISTRY) kann
-// das hier nicht statisch eingetragen werden — die Config wird zur Laufzeit
-// aus dem in localStorage gemerkten gid gebaut. Update-UI: Backfills-Ansicht.
+// ─── LinePlaiting: "Kitchen Priority List", Tab "LinePlating W{XX}" je KW ────
+// Der Tab wird automatisch aus der KW-Nummer gebaut ("LinePlating W36" — der
+// gviz-Export akzeptiert Tab-Namen, kein gid nötig). Ein manueller gid-Override
+// (localStorage) bleibt für Sonderfälle (Tab umbenannt, ältere KW ansehen).
+// Update-UI: Backfills-Ansicht.
 const LINEPLAITING_SHEET_ID = "13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U";
 const LINEPLAITING_GID_STORAGE_KEY = "lineplaiting_gid_v1";
-// W35 (2026-08-23) als Startwert, damit die App auch ohne manuelles Update
-// sofort Daten zeigt — jede neue KW braucht dann einen Klick auf "aktualisieren".
-const LINEPLAITING_DEFAULT_GID = "793909911";
 
-// Akzeptiert entweder eine komplette Sheet-URL (wie sie beim Kopieren aus dem
-// Browser rauskommt, inkl. "#gid=...") oder einfach die nackte gid-Zahl.
+// Akzeptiert eine komplette Sheet-URL (inkl. "#gid=...") oder die nackte gid-Zahl.
 export function extractGidFromInput(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -158,32 +155,60 @@ export function extractGidFromInput(input: string): string | null {
   return null;
 }
 
-export function useLinePlaitingGid(): readonly [string, (input: string) => boolean] {
-  const [gid, setGidState] = useState(() => {
-    try { return localStorage.getItem(LINEPLAITING_GID_STORAGE_KEY) || LINEPLAITING_DEFAULT_GID; }
-    catch { return LINEPLAITING_DEFAULT_GID; }
+export interface LinePlaitingSource {
+  /** Manueller gid-Override; "" = Automatik (Tab-Name aus der KW). */
+  gidOverride: string;
+  /** URL/gid übernehmen → true, wenn lesbar. */
+  setGidOverride: (input: string) => boolean;
+  /** Zurück auf Automatik. */
+  clearOverride: () => void;
+}
+
+export function useLinePlaitingGid(): LinePlaitingSource {
+  const [gidOverride, setState] = useState(() => {
+    try { return localStorage.getItem(LINEPLAITING_GID_STORAGE_KEY) || ""; }
+    catch { return ""; }
   });
 
-  const setGid = useCallback((input: string): boolean => {
+  const setGidOverride = useCallback((input: string): boolean => {
     const extracted = extractGidFromInput(input);
     if (!extracted) return false;
-    setGidState(extracted);
+    setState(extracted);
     try { localStorage.setItem(LINEPLAITING_GID_STORAGE_KEY, extracted); } catch { /* quota */ }
     return true;
   }, []);
 
-  return [gid, setGid] as const;
+  const clearOverride = useCallback(() => {
+    setState("");
+    try { localStorage.removeItem(LINEPLAITING_GID_STORAGE_KEY); } catch { /* quota */ }
+  }, []);
+
+  return { gidOverride, setGidOverride, clearOverride };
 }
 
-export function useLinePlaitingMonitor(gid: string): GSheetMonitorState<LinePlaitingData> {
-  const config = useMemo<GSheetConfig>(() => ({
-    id: LINEPLAITING_SHEET_ID,
-    name: `LinePlaiting (gid=${gid})`,
-    sheetTab: `gid=${gid}`,
-    pollIntervalMs: 30_000,
-    parser: "lineplaiting",
-  }), [gid]);
-  return useConfiguredGSheetMonitor<LinePlaitingData>(config, parseLinePlaiting, "Kein LinePlaiting-Tab konfiguriert");
+// weekNum = KW-Nummer (z.B. 36) → Tab "LinePlating W36". gidOverride schlägt das,
+// wenn gesetzt. null/leer → keine Config (Poller pausiert).
+export function useLinePlaitingMonitor(
+  weekNum: number | null,
+  gidOverride = "",
+): GSheetMonitorState<LinePlaitingData> & { activeTab: string } {
+  const activeTab = gidOverride
+    ? `gid=${gidOverride}`
+    : weekNum != null
+      ? `LinePlating W${weekNum}`
+      : "";
+  const config = useMemo<GSheetConfig | null>(() => {
+    if (!activeTab) return null;
+    return {
+      id: LINEPLAITING_SHEET_ID,
+      name: `LinePlaiting (${activeTab})`,
+      sheetTab: activeTab,
+      pollIntervalMs: 30_000,
+      parser: "lineplaiting",
+    };
+  }, [activeTab]);
+  const state = useConfiguredGSheetMonitor<LinePlaitingData>(config, parseLinePlaiting, "Keine KW für LinePlaiting bekannt");
+  return { ...state, activeTab };
 }
 
 // ─── Production Plan: eigenes Sheet, Tab (gid) wechselt jede KW ────────────

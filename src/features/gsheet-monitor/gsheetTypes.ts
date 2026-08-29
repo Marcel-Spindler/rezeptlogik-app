@@ -144,12 +144,17 @@ export interface EtData {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// LINEPLAITING — eigenes Wochen-Sheet (andere Datei als Postblast/RTI/ET),
-// gid ändert sich jede KW (neuer Tab, gleiche Datei — siehe useLinePlaitingGid
-// in useGSheetMonitor.ts). Zeitslot-Raster Mo-Sa: Di-Do reguläres Plating mit
-// Fehlmenge+Grund, Fr wird daraus der Mindest-Nachproduktionsbedarf ("Min
-// Needs") berechnet, Sa laufen die Backfill-Chargen und ihr Ergebnis wird
-// festgehalten. Siehe parseLinePlaiting.ts für die Block-Erkennung.
+// LINEPLAITING — "Kitchen Priority List" (Tab "LinePlating W{XX}", ein Tab je
+// KW, gleiche Datei — Auto-Wochenwahl bzw. useLinePlaitingGid in
+// useGSheetMonitor.ts). Zeitslot-Raster Mo-Sa mit rechtem Meal-Block je Tag:
+// Planned vs. Actual, Delta, "{Tag} needs" (Restbedarf laut Plating-Team) und
+// Shortage-Grund. Di-Do reguläres Plating, Fr Mindestbedarf, Sa weiterer
+// Plating-Tag / Ergebnis.
+//
+// WICHTIG: Die Spaltenpositionen wandern von KW zu KW (W34 ≠ W35 ≠ W36 — neue
+// Spalten Start/Stop/Run Time/Awaiting Del, "Backfills" → "{Tag} needs"). Der
+// Parser findet die Spalten deshalb pro Tagesblock über die Header-NAMEN, nicht
+// über feste Indizes. Siehe parseLinePlaiting.ts.
 // ════════════════════════════════════════════════════════════════════════════
 
 // "shortage" = Di-Do regulaeres Plating (Fehlmenge wird sichtbar), "min-needs"
@@ -158,6 +163,7 @@ export interface EtData {
 export type LinePlaitingPhase = "shortage" | "min-needs" | "result";
 
 export interface LinePlaitingRow {
+  week: string;               // "W36" — aus dem Tab-Kopf (leer, wenn nicht lesbar)
   day: string;               // "Tuesday" ... "Saturday" (Montag wird nicht erfasst, keine Plating-Daten)
   time: string;               // "06:00 - 06:30"
   phase: LinePlaitingPhase;
@@ -167,13 +173,20 @@ export interface LinePlaitingRow {
   actualPortions: number;
   deltaPortions: number;      // actual - planned, negativ = Fehlmenge
   comment: string;
-  // true = Spalte "Backfills" enthaelt woertlich "yes" (Di-Do-Flag: als
-  // Backfill gemeldet). false bei "Min Needs"/Ergebnis-Zeilen (Fr/Sa) sowie
-  // wenn schlicht keine Meldung vorliegt.
+  // true = Spalte "Backfills" enthaelt woertlich "yes" (Alt-Layout ≤ W35).
+  // Ab W36 gibt es diese Spalte nicht mehr -> immer false.
   backfillConfirmed: boolean;
-  // Zahl aus "Min: 1.400" (Fr) oder einer nackten Zahl in der Backfills-Spalte
-  // (Sa) -- null wenn nicht vorhanden/nicht parsbar.
+  // Fr-Mindestbedarf: gleich dayNeedPortions, aber nur auf der "min-needs"-Phase
+  // gesetzt (Abwärtskompatibilität für bestehende Konsumenten). null sonst.
   minNeededPortions: number | null;
+  // "{Tag} needs" / "Min Needs THU" — der vom Plating-Team eingetragene
+  // Restbedarf dieses Meals für den jeweiligen Tag. null, wenn leer oder als
+  // Status-Text ("done") statt Zahl eingetragen. Ersetzt ab W36 die alte
+  // "Backfills"/"Min Needs"-Spalte.
+  dayNeedPortions: number | null;
+  // Status-Text, der in manchen KW in der "Shortage in %"-Spalte am Fr/Sa steht
+  // ("Ready" / "blocked" / "blocked WO235" / "done") statt einer Prozentzahl.
+  statusText: string;
   shortageReason: string;     // Freitext-Grund, oft mit WO-Nummern/Handrechnung
   shortagePct: number | null; // -delta/planned*100, negativ = Ueberschuss
 }
@@ -188,6 +201,7 @@ export interface LinePlaitingDayTotal {
 }
 
 export interface LinePlaitingData {
+  week: string;               // "W36" — aus dem Tab-Kopf, "" wenn nicht lesbar
   rows: LinePlaitingRow[];
   byRecipeCode: Map<string, LinePlaitingRow[]>;
   dayTotals: LinePlaitingDayTotal[];
