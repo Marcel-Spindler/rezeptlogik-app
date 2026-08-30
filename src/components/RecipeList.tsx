@@ -12,6 +12,7 @@ import {
   resolveRecipeByCode, searchMatchReason,
 } from "../lib/helpers";
 import { getBaseVerdenVolume } from "../lib/equipment";
+import { useImageOverrides, resolveMealPhotoUrl } from "../features/meal-catalog/useImageOverrides";
 
 const FAVORITES_KEY = "rezeptlogik-favorites-v1";
 
@@ -106,10 +107,11 @@ function MismatchBadge({ code }: { code: string }) {
   );
 }
 
-function RecipeListItem({ wr, recipe, catalogEntry, isActive, week, upliftPercent, searchNeedle, isFavorite, onToggleFavorite, onClick }: {
+function RecipeListItem({ wr, recipe, catalogEntry, photoUrl, isActive, week, upliftPercent, searchNeedle, isFavorite, onToggleFavorite, onClick }: {
   wr: WeekRecipe;
   recipe: Recipe | undefined;
   catalogEntry: MealCatalogEntry | undefined;
+  photoUrl: string | undefined;
   isActive: boolean;
   week: string;
   upliftPercent: number;
@@ -123,7 +125,6 @@ function RecipeListItem({ wr, recipe, catalogEntry, isActive, week, upliftPercen
   const sparkValues = getRampUpHistory(week).map(s => s.volumes[wr.code] ?? 0).filter(v => v > 0);
   const matchReason = searchNeedle ? searchMatchReason(searchNeedle, wr, recipe) : null;
   const cup = catalogEntry?.sheets?.["Meal DB_Culinary"]?.["Cup"];
-  const photoUrl = catalogEntry?.photoUrl && (catalogEntry.photoUrl.startsWith("/data/meal-images/") || /\.(png|jpe?g|webp)(\?|$)/i.test(catalogEntry.photoUrl)) ? catalogEntry.photoUrl : undefined;
 
   return (
     <button
@@ -184,6 +185,10 @@ export function RecipeList({
   const searchNeedle = searchText.trim().toLowerCase();
   const parentRef = useRef<HTMLDivElement>(null);
   const { favorites, toggle: toggleFavorite } = useFavorites();
+  // Bildwahl aus dem Meal-Katalog (Picker / "Passt/Falsch") — damit die
+  // Rezeptliste exakt dasselbe Bild zeigt wie der Katalog und eine Aenderung
+  // dort sofort hier durchschlaegt.
+  const { getOverride } = useImageOverrides();
 
   const sortedRecipes = useMemo(() => {
     return [...recipes].sort((a, b) => {
@@ -231,6 +236,12 @@ export function RecipeList({
         <div style={{ height: virtualizer.getTotalSize(), width: "100%", position: "relative" }}>
           {virtualizer.getVirtualItems().map(virtualRow => {
             const r = sortedRecipes[virtualRow.index];
+            const catalogEntry = mealCatalog?.[r.code]
+              ?? (mealCatalog ? Object.values(mealCatalog).find(e => codeDigits(e.mealId) === codeDigits(r.code)) : undefined);
+            const photoUrl = resolveMealPhotoUrl(
+              catalogEntry,
+              catalogEntry ? getOverride(catalogEntry.mealId) : undefined,
+            );
             return (
               <div
                 key={r.code}
@@ -241,7 +252,8 @@ export function RecipeList({
                 <RecipeListItem
                   wr={r}
                   recipe={resolveRecipeByCode(recipesByCode, r.code)}
-                  catalogEntry={mealCatalog?.[r.code] ?? (mealCatalog ? Object.values(mealCatalog).find(e => codeDigits(e.mealId) === codeDigits(r.code)) : undefined)}
+                  catalogEntry={catalogEntry}
+                  photoUrl={photoUrl}
                   isActive={activeCode === r.code}
                   week={selectedWeek}
                   upliftPercent={upliftPercent}

@@ -3,7 +3,7 @@ import type { DataBundle, MealCatalogEntry, WeekRecipe } from "../../core/types"
 import { fmtNum, resolveRecipeByCode } from "../../lib/helpers";
 import { getBaseVerdenVolume } from "../../lib/equipment";
 import { field, label, localFields, metric, subtitleOf, tagsOf, titleOf, findWeekMatches, type Locale } from "./catalog-utils";
-import type { ImageOverride } from "./useImageOverrides";
+import { resolveMealPhotoUrl, type ImageOverride } from "./useImageOverrides";
 import { ImagePickerModal } from "./ImagePickerModal";
 
 const InfoBlock = memo(function InfoBlock({ title, fields }: { title: string; fields: Record<string, string> }) {
@@ -98,12 +98,11 @@ export function CatalogDetail({
   const isImageConfirmed = imageOverride && "url" in imageOverride;
   const overrideUrl = isImageConfirmed && imageOverride && "url" in imageOverride ? imageOverride.url : undefined;
 
+  // Fuer Picker-Vorbelegung + "Geaendert/Bestaetigt"-Badge: rohe Kombination.
   const effectivePhotoUrl = overrideUrl ?? selected.photoUrl;
-  const directImage = !imgError && !isImageRejected && effectivePhotoUrl &&
-    (effectivePhotoUrl.startsWith("/data/meal-images/") ||
-     effectivePhotoUrl.startsWith("/api/drive-image") ||
-     /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(effectivePhotoUrl))
-    ? effectivePhotoUrl : undefined;
+  // Fuers tatsaechlich angezeigte Bild: derselbe Resolver wie in der Rezeptliste.
+  const resolvedPhotoUrl = resolveMealPhotoUrl(selected, imageOverride);
+  const directImage = !imgError && resolvedPhotoUrl ? resolvedPhotoUrl : undefined;
 
   const metrics: [string, string, string][] = [
     ["Gewicht", metric(selected, "MEAL WEIGHT (g)"), "g"],
