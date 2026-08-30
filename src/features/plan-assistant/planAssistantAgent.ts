@@ -1,0 +1,159 @@
+// Agent-Schleife für „Frag den Plan". Läuft komplett im Client: baut den
+// Live-Kontext, schickt einen Gemini-Turn an den Relay-Endpunkt, führt die
+// zurückgegebenen (Lese-/Simulations-)Werkzeuge lokal gegen die App-Daten aus,
+// speist die Ergebnisse zurück und wiederholt, bis das Modell final antwortet
+// oder ein terminales Werkzeug (propose_plan_change / check_plan_issues) ruft.
+
+import type { DataBundle } from "../../core/types";
+import { buildPlanContext } from "./planAssistantContext";
+import { TOOL_DECLARATIONS, TERMINAL_TOOLS, executeClientTool, type ToolContext } from "./planAssistantTools";
+import type { PlanIssue, PlanProposal } from "./planAssistantTypes";
+
+const CHAT_URL = "/api/local-db/gemini-planning-chat";
+const MAX_STEPS = 6;
+
+type GeminiPart =
+  | { text: string }
+  | { functionCall: { name: string; args: Record<string, unknown> } }
+  | { functionResponse: { name: string; response: Record<string, unknown> } };
+export interface GeminiContent { role: "user" | "model"; parts: GeminiPart[] }
+
+interface RelayResponse {
+  text?: string;
+  functionCalls?: Array<{ name: string; args: Record<string, unknown> }>;
+  finishReason?: string | null;
+  model?: string;
+  error?: string;
+}
+
+export interface AgentStep {
+  tool: string;
+  args: Record<string, unknown>;
+  ok: boolean;
+  summary: string;
+}
+
+export interface AgentOutcome {
+  text: string;
+  issues?: PlanIssue[];
+  proposal?: PlanProposal;
+  steps: AgentStep[];
+  contents: GeminiContent[];
+  error?: string;
+}
+
+async function relay(body: {
+  context: string;
+  contents: GeminiContent[];
+  model: "flash" | "pro";
+}): Promise<RelayResponse> {
+  let res: Response;
+  try {
+    res = await fetch(CHAT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ context: body.context, contents: body.contents, tools: TOOL_DECLARATIONS, model: body.model }),
+    });
+  } catch (e) {
+    return { error: `Assistent nicht erreichbar: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  const payload = (await res.json().catch(() => ({}))) as RelayResponse;
+  if (!res.ok) return { error: payload.error || `HTTP ${res.status}` };
+  return payload;
+}
+
+function asResponseObject(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : { result: v };
+}
+
+function shortSummary(name: string, result: unknown): string {
+  const o = asResponseObject(result);
+  if (o.error) return String(o.error);
+  if (name === "simulate_plan_change") return String(o.verdict ?? "simuliert");
+  if (name === "suggest_assignments") return `${o.count ?? 0} Vorschläge`;
+  if (name === "get_recipe_detail") return String(o.name ?? o.code ?? "geladen");
+  return "ok";
+}
+
+export async function runPlanAgent(params: {
+  data: DataBundle;
+  week: string;
+  upliftPercent: number;
+  reconciliation: ToolContext["reconciliation"];
+  backfills: ToolContext["backfills"];
+  priorContents: GeminiContent[];
+  userMessage: string;
+  model: "flash" | "pro";
+  onStep?: (step: AgentStep | { tool: "__thinking__"; args: Record<string, unknown>; ok: true; summary: string }) => void;
+}): Promise<AgentOutcome> {
+  const toolCtx: ToolContext = {
+    data: params.data, week: params.week, upliftPercent: params.upliftPercent,
+    reconciliation: params.reconciliation, backfills: params.backfills,
+  };
+
+  let context = "";
+  try {
+    context = buildPlanContext({
+      data: params.data, week: params.week, upliftPercent: params.upliftPercent,
+      reconciliation: params.reconciliation, backfills: params.backfills,
+    });
+  } catch (e) {
+    context = `(Kontext-Aufbau fehlgeschlagen: ${e instanceof Error ? e.message : String(e)})`;
+  }
+
+  const contents: GeminiContent[] = [
+    ...params.priorContents,
+    { role: "user", parts: [{ text: params.userMessage }] },
+  ];
+  const steps: AgentStep[] = [];
+  let lastText = "";
+
+  for (let step = 0; step < MAX_STEPS; step++) {
+    const resp = await relay({ context, contents, model: params.model });
+    if (resp.error) return { text: "", steps, contents, error: resp.error };
+
+    lastText = resp.text?.trim() || lastText;
+    const calls = resp.functionCalls ?? [];
+
+    if (!calls.length) {
+      return { text: lastText || "(keine Antwort)", steps, contents };
+    }
+
+    // Modell-Turn protokollieren
+    contents.push({ role: "model", parts: calls.map(c => ({ functionCall: { name: c.name, args: c.args } })) });
+    if (resp.text?.trim()) params.onStep?.({ tool: "__thinking__", args: {}, ok: true, summary: resp.text.trim() });
+
+    // Terminale Werkzeuge → Schleife beenden, Payload rendern
+    const terminal = calls.find(c => TERMINAL_TOOLS.has(c.name));
+    if (terminal) {
+      if (terminal.name === "check_plan_issues") {
+        const issues = Array.isArray(terminal.args.issues) ? (terminal.args.issues as PlanIssue[]) : [];
+        return { text: lastText || "Analyse:", issues, steps, contents };
+      }
+      const changes = Array.isArray(terminal.args.changes) ? terminal.args.changes : [];
+      return {
+        text: lastText || "Vorschlag:",
+        proposal: { changes: changes as PlanProposal["changes"], summary: String(terminal.args.summary ?? "") },
+        steps, contents,
+      };
+    }
+
+    // Lese-/Simulations-Werkzeuge lokal ausführen und zurückspeisen
+    const responseParts: GeminiPart[] = [];
+    for (const call of calls) {
+      const result = executeClientTool(call.name, call.args, toolCtx);
+      const summary = shortSummary(call.name, result);
+      const stepEntry: AgentStep = { tool: call.name, args: call.args, ok: !asResponseObject(result).error, summary };
+      steps.push(stepEntry);
+      params.onStep?.(stepEntry);
+      responseParts.push({ functionResponse: { name: call.name, response: asResponseObject(result) } });
+    }
+    contents.push({ role: "user", parts: responseParts });
+  }
+
+  return {
+    text: lastText || "Abbruch: zu viele Werkzeug-Schritte ohne finale Antwort.",
+    steps, contents,
+    error: lastText ? undefined : "Schritt-Limit erreicht",
+  };
+}

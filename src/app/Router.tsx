@@ -17,6 +17,7 @@ import { MealCatalogView } from "../features/meal-catalog/MealCatalogView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
 import { GlobalSearch } from "../features/global-search/GlobalSearch";
+import { PlanAssistant } from "../features/plan-assistant/PlanAssistant";
 import { resolveRecipeByCode } from "../lib/helpers";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 
@@ -177,7 +178,7 @@ function FullApp() {
   // Bot-Views: nur NavTabs + vollbreiter Inhalt, kein WeekSelector/RecipeList
   if (BOT_VIEWS.has(view)) {
     return (
-      <Shell>
+      <Shell headerRight={<PlanAssistant />}>
         <div className="flex gap-4">
           <div className="w-48 shrink-0">
             <NavTabs view={view} onChange={setView} />
@@ -198,7 +199,7 @@ function FullApp() {
   const woView = view === "wo";
 
   return (
-    <Shell wide={woView}>
+    <Shell wide={woView} headerRight={<PlanAssistant />}>
       <ErrorBoundary label="banners" fallback={null}>
         <DataHealthBanner data={data} />
         <CapacityWarningBanner data={data} week={selectedWeek} upliftPercent={upliftPercent} />

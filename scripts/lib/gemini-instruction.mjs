@@ -1,18 +1,15 @@
-// WO-Kochanweisungen (EN/DE) via Gemini bzw. Claude — reine Logik, geteilt zwischen
-// dem lokalen Dev-Server (scripts/local-db-server.mjs) und dem WO-Publish-Skript
+// WO-Kochanweisungen (EN/DE) via Gemini — reine Logik, geteilt zwischen dem
+// lokalen Dev-Server (scripts/local-db-server.mjs) und dem WO-Publish-Skript
 // (scripts/ket-publish.ts). functions/index.js hält denselben Prompt als eigene
 // Kopie (generateGeminiInstructionCloud) — bei Prompt-Änderungen dort mitziehen.
-import Anthropic from "@anthropic-ai/sdk";
 
 const GEMINI_MAX_RETRIES = 3;
 const GEMINI_CONCURRENCY = 4;
 const GEMINI_DELAY_MS = 150;
-const CLAUDE_CONCURRENCY = 2;
-const CLAUDE_DELAY_MS = 300;
 
 // Systemprompt für den Gemini WO-Instruction-Bot.
 // Gehalten in Sync mit dem Prompt in functions/index.js (generateGeminiInstructionCloud) —
-// dieselbe Funktion, nur der lokale Dev-Server-Pfad (Gemini + Claude).
+// dieselbe Funktion, nur der lokale Dev-Server-Pfad.
 const GEMINI_INSTRUCTION_SYSTEM_PROMPT = `Production instruction bot — Factor Verden kitchen.
 Generate clear, bilingual cooking instructions (EN + DE) for kitchen staff who can
 cook but are not trained chefs — no professional shorthand or jargon.
@@ -269,47 +266,14 @@ async function generateGeminiInstructionBatch(items) {
   return runInstructionBatch(items, (context) => generateGeminiInstruction(context), GEMINI_CONCURRENCY, GEMINI_DELAY_MS);
 }
 
-async function generateClaudeInstruction(context) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY fehlt im lokalen Server");
-  const model = process.env.CLAUDE_MODEL || "claude-opus-5";
-  const client = new Anthropic({ apiKey, maxRetries: 3 });
-  const response = await client.messages.create({
-    model,
-    max_tokens: 1200,
-    thinking: { type: "disabled" },
-    output_config: { effort: "low" },
-    system: GEMINI_INSTRUCTION_SYSTEM_PROMPT,
-    messages: [{ role: "user", content: `WO context:\n${context}` }],
-  });
-  const text = response.content.find((b) => b.type === "text")?.text ?? "";
-  if (!text) throw new Error("Claude lieferte keine Instructions (leere Antwort)");
-  const instruction = extractInstructionJson(text, "Claude");
-  return {
-    english: instruction.english,
-    german: instruction.german,
-    status: instruction.status === "generated" ? "generated" : "needs_review",
-    generatedAt: new Date().toISOString(),
-    model,
-  };
-}
-
-async function generateClaudeInstructionBatch(items) {
-  return runInstructionBatch(items, (context) => generateClaudeInstruction(context), CLAUDE_CONCURRENCY, CLAUDE_DELAY_MS);
-}
-
 export {
   GEMINI_INSTRUCTION_SYSTEM_PROMPT,
   GEMINI_CONCURRENCY,
   GEMINI_DELAY_MS,
-  CLAUDE_CONCURRENCY,
-  CLAUDE_DELAY_MS,
   sleep,
   geminiCallWithRetry,
   extractInstructionJson,
   runInstructionBatch,
   generateGeminiInstruction,
   generateGeminiInstructionBatch,
-  generateClaudeInstruction,
-  generateClaudeInstructionBatch,
 };

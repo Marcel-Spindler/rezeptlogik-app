@@ -32,7 +32,7 @@ Codes tragen oft einen Markt-Marker im Namen: `FE1234A5 - Chicken Tikka [DE]`.
 | Daten | Firebase 11.0.2 (nur Firestore genutzt), Projekt `hellofresh-de-problem-solve` (geteilt mit Factory Hub), Hosting-Site `rezeptlogik-verden-factor` |
 | Backend | Firebase Cloud Functions v2, Region `europe-west3` (~25 Functions) |
 | Exporte | `xlsx` (Client), `exceljs` (Functions, eigener Vendor-Chunk) |
-| Sonstiges | `@tanstack/react-virtual`, `@anthropic-ai/sdk` (nur Scripts), `papaparse` |
+| Sonstiges | `@tanstack/react-virtual`, `papaparse` |
 | Tests | Vitest (`src/__tests__/**`), Playwright-Smoke (`Test/planning-oase-smoke.spec.ts`) |
 
 `firebase.ts` re-exportiert alle Firestore-Funktionen zentral — kein anderes Modul

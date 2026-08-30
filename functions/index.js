@@ -3599,107 +3599,48 @@ exports.geminiInstructionsBatch = onGuardedRequest(
 
 // ─── Gemini Planning Chat (Cockpit AI-Assistent) ─────────────────────────────
 
+// Generischer Gemini-Relay für „Frag den Plan". Der Client baut Kontext,
+// Tool-Deklarationen und den kompletten `contents`-Verlauf (inkl. functionCall/
+// functionResponse) und fährt die Agent-Schleife selbst; hier läuft nur EIN
+// Gemini-Turn. Muss zum lokalen Pfad in scripts/local-db-server.mjs
+// (generateGeminiPlanningChat) synchron bleiben.
 exports.geminiPlanningChat = onGuardedRequest(
   { region: "europe-west3", timeoutSeconds: 60, secrets: [GEMINI_API_KEY_SECRET] },
   async (req, res) => {
     if (req.method !== "POST") { res.status(405).json({ error: "Method not allowed" }); return; }
     try {
       const body = req.body || {};
-      const { context, history, message } = body;
-      if (!message) { res.status(400).json({ error: "message fehlt" }); return; }
+      const { context, contents, tools, model: modelPref } = body;
 
       const apiKey = GEMINI_API_KEY_SECRET.value();
       if (!apiKey) throw new Error("Firebase Secret GEMINI_API_KEY nicht gesetzt");
-      const model = "gemini-2.5-flash";
+      const model = modelPref === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash";
 
       const systemPrompt = [
-        "Du bist KI-Planungsassistent für die Verden-Wochenplanung bei HelloFresh.",
-        "Du kennst den aktuellen Plan und alle Regeln vollständig (sieh den Planstand unten).",
-        "Antworte immer auf Deutsch, direkt und präzise.",
-        "Du darfst Planänderungen vorschlagen (propose_plan_change) und Probleme melden (check_plan_issues).",
-        "Änderungen werden dem Nutzer zur Bestätigung angezeigt — du änderst NIE direkt.",
-        "Wenn der Nutzer keine Änderung braucht, antworte einfach mit Text.",
+        "Du bist der KI-Planungsassistent für die Wochenplanung bei HelloFresh Verden (Site VF).",
+        "Unten steht ein frischer Live-Snapshot des Plans. Zusätzlich hast du Werkzeuge, um gezielt Details nachzuladen (get_recipe_detail, get_backfill_detail, get_wo_trace, suggest_assignments) und Ideen risikofrei zu testen (simulate_plan_change).",
+        "Arbeitsweise: erst mit Werkzeugen Fakten holen bzw. eine Idee simulieren, dann antworten. Nie raten.",
+        "Planänderungen ausschließlich über propose_plan_change (der Nutzer bestätigt, du änderst nie direkt). Rufe vor jedem Vorschlag simulate_plan_change auf und nenne dessen Ergebnis im summary.",
+        "Risiko-/Statusübersichten über check_plan_issues.",
+        "Erfinde nie Rezept-Codes, Tage, Mengen oder Kennzahlen, die nicht aus Kontext oder Tool-Ergebnis stammen. Antworte final auf Deutsch, knapp, mit konkreten Codes/Tagen/Mengen.",
         "",
         context || "",
       ].join("\n");
 
-      const contents = [
-        ...(Array.isArray(history) ? history : []).map((m) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content || "(Planvorschlag / Analyse)" }],
-        })),
-        { role: "user", parts: [{ text: message }] },
-      ];
-
-      const tools = [{
-        functionDeclarations: [
-          {
-            name: "propose_plan_change",
-            description: "Schlägt Änderungen am Wochenplan vor. Der Nutzer sieht eine Vorschau und muss bestätigen.",
-            parameters: {
-              type: "OBJECT",
-              properties: {
-                changes: {
-                  type: "ARRAY",
-                  description: "Liste der vorgeschlagenen Assignments-Änderungen",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      recipeCode: { type: "STRING", description: "Rezept-Code, z.B. FE1234A" },
-                      subRecipeId: { type: "STRING", description: "Nur bei Sub-Rezepten: Sub-Rezept-ID" },
-                      day: { type: "STRING", description: "Produktionstag (Mo/Di/Mi/Do/Fr/Sa)" },
-                      shift: { type: "STRING", description: "S1=Frühschicht, S2=Spätschicht" },
-                      targetPortions: { type: "NUMBER", description: "Optional: Ziel-Portionszahl" },
-                      splitSpec: { type: "STRING", description: "Optional: Split-Spec, z.B. Do:400|Fr:1200|Sa:800" },
-                      reason: { type: "STRING", description: "Kurze Begründung für diese Änderung" },
-                    },
-                    required: ["recipeCode", "day", "shift", "reason"],
-                  },
-                },
-                summary: { type: "STRING", description: "Zusammenfassung: was wird geändert und warum" },
-              },
-              required: ["changes", "summary"],
-            },
-          },
-          {
-            name: "check_plan_issues",
-            description: "Meldet Probleme, Risiken oder Optimierungspotenziale im aktuellen Plan.",
-            parameters: {
-              type: "OBJECT",
-              properties: {
-                issues: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      severity: { type: "STRING", description: "critical, warning oder info" },
-                      description: { type: "STRING" },
-                      affectedRecipes: { type: "ARRAY", items: { type: "STRING" } },
-                      suggestion: { type: "STRING" },
-                    },
-                    required: ["severity", "description"],
-                  },
-                },
-              },
-              required: ["issues"],
-            },
-          },
-        ],
-      }];
-
-      const requestBody = JSON.stringify({
+      const requestBody = {
         systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents,
-        tools,
-        generationConfig: { maxOutputTokens: 4096 },
-      });
+        contents: Array.isArray(contents) ? contents : [],
+        generationConfig: { maxOutputTokens: 4096, temperature: 0.2 },
+      };
+      if (Array.isArray(tools) && tools.length) requestBody.tools = tools;
+      const requestBodyStr = JSON.stringify(requestBody);
 
       let response;
       let payload;
       for (let attempt = 0; attempt < 2; attempt++) {
         response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: requestBody }
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: requestBodyStr }
         );
         payload = await response.json().catch(() => ({}));
         if (response.ok) break;
@@ -3710,20 +3651,16 @@ exports.geminiPlanningChat = onGuardedRequest(
         throw new Error(payload?.error?.message || `Gemini HTTP ${response.status}`);
       }
 
-      const parts = payload?.candidates?.[0]?.content?.parts ?? [];
+      const cand = payload?.candidates?.[0];
+      const parts = cand?.content?.parts ?? [];
       let text = "";
-      let toolName = null;
-      let toolInput = null;
-
+      const functionCalls = [];
       for (const part of parts) {
         if (part.text) text += part.text;
-        if (part.functionCall) {
-          toolName = part.functionCall.name;
-          toolInput = part.functionCall.args;
-        }
+        if (part.functionCall) functionCalls.push({ name: part.functionCall.name, args: part.functionCall.args || {} });
       }
 
-      res.status(200).json({ text: text.trim(), toolName, toolInput });
+      res.status(200).json({ text: text.trim(), functionCalls, finishReason: cand?.finishReason || null, model });
     } catch (err) {
       res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
     }

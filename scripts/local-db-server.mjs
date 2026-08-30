@@ -7,8 +7,6 @@ import { config as loadEnv } from "dotenv";
 import {
   generateGeminiInstruction,
   generateGeminiInstructionBatch,
-  generateClaudeInstruction,
-  generateClaudeInstructionBatch,
   geminiCallWithRetry,
 } from "./lib/gemini-instruction.mjs";
 
@@ -42,109 +40,50 @@ async function readJsonBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
-async function generateGeminiPlanningChat(context, history, message) {
+// Generischer Gemini-Relay für „Frag den Plan". Der Client baut Kontext + Tool-
+// Deklarationen + den kompletten `contents`-Verlauf (inkl. functionCall/
+// functionResponse) und fährt die Agent-Schleife selbst — hier wird nur ein
+// einzelner Gemini-Turn ausgeführt und roh zurückgegeben.
+// System-Prompt bleibt serverseitig (Konsistenz mit der Cloud-Function).
+function planningChatSystemPrompt(context) {
+  return [
+    "Du bist der KI-Planungsassistent für die Wochenplanung bei HelloFresh Verden (Site VF).",
+    "Unten steht ein frischer Live-Snapshot des Plans. Zusätzlich hast du Werkzeuge, um gezielt Details nachzuladen (get_recipe_detail, get_backfill_detail, get_wo_trace, suggest_assignments) und Ideen risikofrei zu testen (simulate_plan_change).",
+    "Arbeitsweise: erst mit Werkzeugen Fakten holen bzw. eine Idee simulieren, dann antworten. Nie raten.",
+    "Planänderungen ausschließlich über propose_plan_change (der Nutzer bestätigt, du änderst nie direkt). Rufe vor jedem Vorschlag simulate_plan_change auf und nenne dessen Ergebnis im summary.",
+    "Risiko-/Statusübersichten über check_plan_issues.",
+    "Erfinde nie Rezept-Codes, Tage, Mengen oder Kennzahlen, die nicht aus Kontext oder Tool-Ergebnis stammen. Antworte final auf Deutsch, knapp, mit konkreten Codes/Tagen/Mengen.",
+    "",
+    context || "",
+  ].join("\n");
+}
+
+async function generateGeminiPlanningChat(body = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY fehlt im lokalen Server");
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const { context, contents, tools, model: modelPref } = body;
+  const model = modelPref === "pro"
+    ? (process.env.GEMINI_MODEL_PRO || "gemini-2.5-pro")
+    : (process.env.GEMINI_MODEL || "gemini-2.5-flash");
 
-  const systemPrompt = [
-    "Du bist KI-Planungsassistent für die Verden-Wochenplanung bei HelloFresh.",
-    "Du kennst den aktuellen Plan und alle Regeln vollständig (sieh den Planstand unten).",
-    "Antworte immer auf Deutsch, direkt und präzise.",
-    "Du darfst Planänderungen vorschlagen (propose_plan_change) und Probleme melden (check_plan_issues).",
-    "Änderungen werden dem Nutzer zur Bestätigung angezeigt — du änderst NIE direkt.",
-    "Wenn der Nutzer keine Änderung braucht, antworte einfach mit Text.",
-    "",
-    context,
-  ].join("\n");
+  const requestBody = {
+    systemInstruction: { parts: [{ text: planningChatSystemPrompt(context) }] },
+    contents: Array.isArray(contents) ? contents : [],
+    generationConfig: { maxOutputTokens: 4096, temperature: 0.2 },
+  };
+  if (Array.isArray(tools) && tools.length) requestBody.tools = tools;
 
-  const contents = [
-    ...(Array.isArray(history) ? history : []).map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content || "(Planvorschlag / Analyse)" }],
-    })),
-    { role: "user", parts: [{ text: message }] },
-  ];
-
-  const tools = [{
-    functionDeclarations: [
-      {
-        name: "propose_plan_change",
-        description: "Schlägt Änderungen am Wochenplan vor. Der Nutzer sieht eine Vorschau und muss bestätigen.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            changes: {
-              type: "ARRAY",
-              description: "Liste der vorgeschlagenen Assignments-Änderungen",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  recipeCode: { type: "STRING", description: "Rezept-Code, z.B. FE1234A" },
-                  subRecipeId: { type: "STRING", description: "Nur bei Sub-Rezepten: Sub-Rezept-ID" },
-                  day: { type: "STRING", description: "Produktionstag (Mo/Di/Mi/Do/Fr/Sa)" },
-                  shift: { type: "STRING", description: "S1=Frühschicht, S2=Spätschicht" },
-                  targetPortions: { type: "NUMBER", description: "Optional: Ziel-Portionszahl" },
-                  splitSpec: { type: "STRING", description: "Optional: Split-Spec, z.B. Do:400|Fr:1200|Sa:800" },
-                  reason: { type: "STRING", description: "Kurze Begründung für diese Änderung" },
-                },
-                required: ["recipeCode", "day", "shift", "reason"],
-              },
-            },
-            summary: { type: "STRING", description: "Zusammenfassung: was wird geändert und warum" },
-          },
-          required: ["changes", "summary"],
-        },
-      },
-      {
-        name: "check_plan_issues",
-        description: "Meldet Probleme, Risiken oder Optimierungspotenziale im aktuellen Plan.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            issues: {
-              type: "ARRAY",
-              items: {
-                type: "OBJECT",
-                properties: {
-                  severity: { type: "STRING", description: "critical, warning oder info" },
-                  description: { type: "STRING" },
-                  affectedRecipes: { type: "ARRAY", items: { type: "STRING" } },
-                  suggestion: { type: "STRING" },
-                },
-                required: ["severity", "description"],
-              },
-            },
-          },
-          required: ["issues"],
-        },
-      },
-    ],
-  }];
-
-  const requestBody = JSON.stringify({
-    systemInstruction: { parts: [{ text: systemPrompt }] },
-    contents,
-    tools,
-    generationConfig: { maxOutputTokens: 4096 },
-  });
-
-  const payload = await geminiCallWithRetry(requestBody, apiKey, model);
-  const parts = payload.candidates?.[0]?.content?.parts ?? [];
+  const payload = await geminiCallWithRetry(JSON.stringify(requestBody), apiKey, model);
+  const cand = payload.candidates?.[0];
+  const parts = cand?.content?.parts ?? [];
 
   let text = "";
-  let toolName = null;
-  let toolInput = null;
-
+  const functionCalls = [];
   for (const part of parts) {
     if (part.text) text += part.text;
-    if (part.functionCall) {
-      toolName = part.functionCall.name;
-      toolInput = part.functionCall.args;
-    }
+    if (part.functionCall) functionCalls.push({ name: part.functionCall.name, args: part.functionCall.args || {} });
   }
-
-  return { text: text.trim(), toolName, toolInput };
+  return { text: text.trim(), functionCalls, finishReason: cand?.finishReason || null, model };
 }
 
 async function generateGeminiVorplanung(currentWeek, prevWeek, gsheetUrl) {
@@ -485,23 +424,9 @@ const server = http.createServer((req, res) => {
       .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
     return;
   }
-  if (url.pathname === "/api/local-db/claude-instruction" && req.method === "POST") {
-    readJsonBody(req)
-      .then((body) => generateClaudeInstruction(body.context))
-      .then((instruction) => sendJson(res, 200, { instruction }))
-      .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
-    return;
-  }
-  if (url.pathname === "/api/local-db/claude-instructions-batch" && req.method === "POST") {
-    readJsonBody(req)
-      .then((body) => generateClaudeInstructionBatch(Array.isArray(body.items) ? body.items : []))
-      .then((results) => sendJson(res, 200, { results }))
-      .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
-    return;
-  }
   if (url.pathname === "/api/local-db/gemini-planning-chat" && req.method === "POST") {
     readJsonBody(req)
-      .then((body) => generateGeminiPlanningChat(body.context ?? "", body.history ?? [], body.message ?? ""))
+      .then((body) => generateGeminiPlanningChat(body))
       .then((result) => sendJson(res, 200, result))
       .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
     return;

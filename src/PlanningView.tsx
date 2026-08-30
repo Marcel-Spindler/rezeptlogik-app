@@ -164,6 +164,14 @@ export function PlanningView(
     savePlannerStorage(storage);
   }, [storage]);
 
+  // Externe Planner-Änderung (z. B. übernommener KI-Vorschlag aus „Frag den Plan")
+  // → localStorage neu einlesen, damit das Board sofort nachzieht.
+  useEffect(() => {
+    const reload = () => setStorage(loadPlannerStorage());
+    window.addEventListener("rezeptlogik:planner-changed", reload);
+    return () => window.removeEventListener("rezeptlogik:planner-changed", reload);
+  }, []);
+
   // Ramp-Up Snapshot bei Datenwechsel aufzeichnen
   useEffect(() => {
     if (!data.weekRecipes?.length) return;
