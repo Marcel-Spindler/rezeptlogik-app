@@ -43,12 +43,24 @@ export interface ChatStep {
   ok: boolean;
 }
 
+/** Vorschlag für den Wochen-Plating-Plan (First-Run%, Tag-Verschiebungen ggü.
+ *  der Auto-Generierung, Notizen). Angewandt = Plan generieren + Deltas + speichern. */
+export interface PlatingProposal {
+  firstRunPct?: number;
+  moves: Array<{ code: string; runIndex: number; day: string }>;
+  notes: Array<{ code: string; note: string }>;
+  summary: string;
+  applied?: boolean;
+  applyError?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
   issues?: PlanIssue[];
   proposal?: PlanProposal;
+  platingProposal?: PlatingProposal;
   steps?: ChatStep[];
   pending?: boolean;
 }

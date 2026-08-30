@@ -7,6 +7,7 @@ import {
   assignRecipe, createScenario, getActiveScenario, loadPlannerStorage, savePlannerStorage,
 } from "../../lib/planner";
 import { buildBoardNote, composeBoardNotes } from "../planning-oasis/cockpit/slotScheduling";
+import { PLATING_PLAN_CHANGED_EVENT, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
 import { normalizeDay, normalizeShift } from "./planAssistantTools";
 import { PLANNER_CHANGED_EVENT, type PlanChange } from "./planAssistantTypes";
 
@@ -86,5 +87,18 @@ export function undoPlanChanges(snapshot: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+// ─── Plating-Plan (Firestore) ──────────────────────────────────────────────
+
+export async function applyPlatingWeekPlan(plan: PlatingWeekPlan): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { savePlatingWeekPlan } = await import("../plating-plan/platingWeekPlanFirestore");
+    await savePlatingWeekPlan({ ...plan, source: "ai" });
+    try { window.dispatchEvent(new CustomEvent(PLATING_PLAN_CHANGED_EVENT)); } catch { /* ignore */ }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }

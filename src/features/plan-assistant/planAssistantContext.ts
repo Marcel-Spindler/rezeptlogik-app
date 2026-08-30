@@ -9,6 +9,8 @@ import { getBaseVerdenVolume, loadStationDeviceCounts, loadStationPools, DEFAULT
 import { analyzePlan, getActiveScenario, loadPlannerStorage, PLANNER_DAYS } from "../../lib/planner";
 import type { WoReconciliationState } from "../wo-reconciliation/WoReconciliationContext";
 import type { BackfillsState } from "../backfills/BackfillsContext";
+import type { PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
+import { summarizePlatingPlan } from "../plating-plan/platingPlanLogic";
 
 export interface PlanContextInput {
   data: DataBundle;
@@ -16,6 +18,7 @@ export interface PlanContextInput {
   upliftPercent: number;
   reconciliation: WoReconciliationState | null;
   backfills: BackfillsState | null;
+  platingPlan?: PlatingWeekPlan | null;
 }
 
 function section(title: string, body: string): string {
@@ -23,7 +26,7 @@ function section(title: string, body: string): string {
   return trimmed ? `\n### ${title}\n${trimmed}` : "";
 }
 
-export function buildPlanContext({ data, week, upliftPercent, reconciliation, backfills }: PlanContextInput): string {
+export function buildPlanContext({ data, week, upliftPercent, reconciliation, backfills, platingPlan }: PlanContextInput): string {
   const lines: string[] = [];
   const realWeek = currentHfWeek();
   const mult = 1 + (upliftPercent || 0) / 100;
@@ -156,7 +159,14 @@ export function buildPlanContext({ data, week, upliftPercent, reconciliation, ba
     lines.push(section("Gewichts-Ziele (Ist vs. Soll)", rows.join("\n")));
   }
 
-  lines.push(`\n(Tage: ${PLANNER_DAYS.join(" ")}. Nur Fakten aus diesem Kontext verwenden. Für Änderungen propose_plan_change nutzen, für Risiko-Übersichten check_plan_issues.)`);
+  // ── Wochen-Plating-Plan ──────────────────────────────────────────────────
+  if (platingPlan) {
+    lines.push(section(`Wochen-Plating-Plan (${platingPlan.source})`, summarizePlatingPlan(platingPlan)));
+  } else {
+    lines.push(section("Wochen-Plating-Plan", `Noch keiner für ${week}. generate_plating_plan erzeugt den Rohbau, propose_plating_plan legt ihn dem Nutzer vor.`));
+  }
+
+  lines.push(`\n(Tage: ${PLANNER_DAYS.join(" ")}. Nur Fakten aus diesem Kontext verwenden. Küchen-Wochenboard ändern: propose_plan_change. Wochen-Plating-Plan: generate_plating_plan → simulate_plating_change → propose_plating_plan. Risiko-Übersichten: check_plan_issues.)`);
 
   return lines.join("\n");
 }

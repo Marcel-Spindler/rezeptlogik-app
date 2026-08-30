@@ -15,6 +15,10 @@ import {
 import { buildBoardNote, composeBoardNotes } from "../planning-oasis/cockpit/slotScheduling";
 import type { WoReconciliationState } from "../wo-reconciliation/WoReconciliationContext";
 import type { BackfillsState } from "../backfills/BackfillsContext";
+import {
+  computeDayLoads, generatePlatingPlan, summarizePlatingPlan,
+} from "../plating-plan/platingPlanLogic";
+import { PLATING_DAYS, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
 import type { PlanChange } from "./planAssistantTypes";
 
 export interface ToolContext {
@@ -23,9 +27,32 @@ export interface ToolContext {
   upliftPercent: number;
   reconciliation: WoReconciliationState | null;
   backfills: BackfillsState | null;
+  platingPlan: PlatingWeekPlan | null;
 }
 
-export const TERMINAL_TOOLS = new Set(["propose_plan_change", "check_plan_issues"]);
+export const TERMINAL_TOOLS = new Set(["propose_plan_change", "check_plan_issues", "propose_plating_plan"]);
+
+/** Erzeugt einen Plating-Plan und wendet Move-/Notiz-Deltas an (für Sim + Apply). */
+export function buildPlatingPlanWithMoves(
+  data: DataBundle, week: string,
+  firstRunPct: number | undefined,
+  moves: Array<{ code: string; runIndex: number; day: string }>,
+  notes: Array<{ code: string; note: string }>,
+): PlatingWeekPlan {
+  const plan = generatePlatingPlan(data, week, { firstRunPct });
+  const dayOk = new Set(PLATING_DAYS as readonly string[]);
+  for (const mv of moves) {
+    const meal = plan.meals.find(m => codeDigits(m.code) === codeDigits(mv.code));
+    if (!meal || !dayOk.has(mv.day)) continue;
+    const run = meal.runs.find(r => r.runIndex === mv.runIndex);
+    if (run) run.day = mv.day as typeof PLATING_DAYS[number];
+  }
+  for (const nt of notes) {
+    const meal = plan.meals.find(m => codeDigits(m.code) === codeDigits(nt.code));
+    if (meal) meal.note = nt.note;
+  }
+  return { ...plan, updatedAt: new Date().toISOString() };
+}
 
 // ─── Gemini-Funktionsdeklarationen ─────────────────────────────────────────────
 const CHANGE_ITEM = {
@@ -89,6 +116,65 @@ export const TOOL_DECLARATIONS = [{
       name: "get_capacity_overview",
       description: "Auslastung je Station und Tag/Schicht im aktuellen Plan (auch unter 100%) — zeigt, wo noch Kapazität frei ist.",
       parameters: { type: "OBJECT", properties: {} },
+    },
+    {
+      name: "get_plating_plan",
+      description: "Der aktuell gespeicherte Wochen-Plating-Plan (Meals links, KW-Tage rechts, Runs). Zeigt auch ob schon ein (evtl. von Hand angepasster) Plan existiert.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    {
+      name: "generate_plating_plan",
+      description: "Erzeugt den Wochen-Plating-Plan aus dem Ramp-Up nach den Regeln (Demand=BENL+NORD+DE; ≤2250 → 1 Run +10%; >2250 → 2 Runs +5%, Run 1 = First-Run%; Seafood 1. Run ≥ Mi; bis Do jedes Meal 1×; Fr/Sa reduziert). Speichert NICHT — nur zur Ansicht/Bewertung.",
+      parameters: {
+        type: "OBJECT",
+        properties: { firstRunPct: { type: "NUMBER", description: "0.62–0.72; leer = KW-Default (meist 0.70)" } },
+      },
+    },
+    {
+      name: "simulate_plating_change",
+      description: "Generiert den Plating-Plan und wendet Run→Tag-Verschiebungen probeweise an; gibt die Tages-Auslastung (Portionen, Linien, Std, Über-Kapazität) zurück. Vor propose_plating_plan nutzen.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          firstRunPct: { type: "NUMBER" },
+          moves: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                code: { type: "STRING" },
+                runIndex: { type: "NUMBER", description: "1 oder 2" },
+                day: { type: "STRING", description: "Mo/Di/Mi/Do/Fr/Sa" },
+              },
+              required: ["code", "runIndex", "day"],
+            },
+          },
+        },
+      },
+    },
+    {
+      name: "propose_plating_plan",
+      description: "TERMINAL. Legt dem Nutzer den Wochen-Plating-Plan zur Bestätigung vor (First-Run%, Tag-Verschiebungen ggü. der Auto-Generierung, Notizen). Erst nach simulate_plating_change.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          firstRunPct: { type: "NUMBER" },
+          moves: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: { code: { type: "STRING" }, runIndex: { type: "NUMBER" }, day: { type: "STRING" } },
+              required: ["code", "runIndex", "day"],
+            },
+          },
+          notes: {
+            type: "ARRAY",
+            items: { type: "OBJECT", properties: { code: { type: "STRING" }, note: { type: "STRING" } }, required: ["code", "note"] },
+          },
+          summary: { type: "STRING", description: "Was wurde geplant + Simulations-Ergebnis (Tageslast/Engpässe)" },
+        },
+        required: ["summary"],
+      },
     },
     {
       name: "propose_plan_change",
@@ -320,6 +406,34 @@ export function normalizeShift(raw: string): PlannerShift | null {
   return (PLANNER_SHIFTS as readonly string[]).includes(s.toUpperCase()) ? (s.toUpperCase() as PlannerShift) : null;
 }
 
+function toolGetPlatingPlan(_args: Record<string, unknown>, ctx: ToolContext) {
+  if (!ctx.platingPlan) return { note: `Für ${ctx.week} ist noch kein Plating-Plan gespeichert. generate_plating_plan erzeugt den Rohbau.` };
+  return { exists: true, source: ctx.platingPlan.source, plan: summarizePlatingPlan(ctx.platingPlan) };
+}
+
+function toolGeneratePlating(args: Record<string, unknown>, ctx: ToolContext) {
+  const frp = typeof args.firstRunPct === "number" ? args.firstRunPct : undefined;
+  const plan = generatePlatingPlan(ctx.data, ctx.week, { firstRunPct: frp });
+  return {
+    warning: ctx.platingPlan ? "Es existiert bereits ein Plan — generieren würde ihn ersetzen." : undefined,
+    plan: summarizePlatingPlan(plan),
+  };
+}
+
+function toolSimulatePlating(args: Record<string, unknown>, ctx: ToolContext) {
+  const frp = typeof args.firstRunPct === "number" ? args.firstRunPct : undefined;
+  const moves = (Array.isArray(args.moves) ? args.moves : []) as Array<{ code: string; runIndex: number; day: string }>;
+  const plan = buildPlatingPlanWithMoves(ctx.data, ctx.week, frp, moves, []);
+  const loads = computeDayLoads(plan);
+  return {
+    appliedMoves: moves.length,
+    dayLoads: loads.filter(l => l.lines > 0 || l.portions > 0).map(l =>
+      `${l.day}: ${l.portions} P · ${l.meals} Runs · ${l.lines}L/${l.hours}h · ~${l.perHourPerLine}/h/L${l.overCapacity ? " ⚠ ÜBER" : ""}`),
+    overCapacityDays: loads.filter(l => l.overCapacity).map(l => l.day),
+    unassigned: plan.meals.filter(m => m.runs.some(r => !r.day && r.portions > 0)).map(m => m.code),
+  };
+}
+
 const EXECUTORS: Record<string, (args: Record<string, unknown>, ctx: ToolContext) => unknown> = {
   get_recipe_detail: toolGetRecipeDetail,
   get_backfill_detail: toolGetBackfillDetail,
@@ -327,6 +441,9 @@ const EXECUTORS: Record<string, (args: Record<string, unknown>, ctx: ToolContext
   simulate_plan_change: toolSimulate,
   suggest_assignments: toolSuggest,
   get_capacity_overview: toolCapacity,
+  get_plating_plan: toolGetPlatingPlan,
+  generate_plating_plan: toolGeneratePlating,
+  simulate_plating_change: toolSimulatePlating,
 };
 
 export function executeClientTool(name: string, args: Record<string, unknown>, ctx: ToolContext): unknown {

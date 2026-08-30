@@ -7,7 +7,7 @@
 import type { DataBundle } from "../../core/types";
 import { buildPlanContext } from "./planAssistantContext";
 import { TOOL_DECLARATIONS, TERMINAL_TOOLS, executeClientTool, type ToolContext } from "./planAssistantTools";
-import type { PlanIssue, PlanProposal } from "./planAssistantTypes";
+import type { PlanIssue, PlanProposal, PlatingProposal } from "./planAssistantTypes";
 
 const CHAT_URL = "/api/local-db/gemini-planning-chat";
 const MAX_STEPS = 6;
@@ -37,6 +37,7 @@ export interface AgentOutcome {
   text: string;
   issues?: PlanIssue[];
   proposal?: PlanProposal;
+  platingProposal?: PlatingProposal;
   steps: AgentStep[];
   contents: GeminiContent[];
   error?: string;
@@ -81,6 +82,7 @@ export async function runPlanAgent(params: {
   upliftPercent: number;
   reconciliation: ToolContext["reconciliation"];
   backfills: ToolContext["backfills"];
+  platingPlan: ToolContext["platingPlan"];
   priorContents: GeminiContent[];
   userMessage: string;
   model: "flash" | "pro";
@@ -89,6 +91,7 @@ export async function runPlanAgent(params: {
   const toolCtx: ToolContext = {
     data: params.data, week: params.week, upliftPercent: params.upliftPercent,
     reconciliation: params.reconciliation, backfills: params.backfills,
+    platingPlan: params.platingPlan,
   };
 
   let context = "";
@@ -96,6 +99,7 @@ export async function runPlanAgent(params: {
     context = buildPlanContext({
       data: params.data, week: params.week, upliftPercent: params.upliftPercent,
       reconciliation: params.reconciliation, backfills: params.backfills,
+      platingPlan: params.platingPlan,
     });
   } catch (e) {
     context = `(Kontext-Aufbau fehlgeschlagen: ${e instanceof Error ? e.message : String(e)})`;
@@ -129,6 +133,18 @@ export async function runPlanAgent(params: {
       if (terminal.name === "check_plan_issues") {
         const issues = Array.isArray(terminal.args.issues) ? (terminal.args.issues as PlanIssue[]) : [];
         return { text: lastText || "Analyse:", issues, steps, contents };
+      }
+      if (terminal.name === "propose_plating_plan") {
+        return {
+          text: lastText || "Plating-Plan-Vorschlag:",
+          platingProposal: {
+            firstRunPct: typeof terminal.args.firstRunPct === "number" ? terminal.args.firstRunPct : undefined,
+            moves: (Array.isArray(terminal.args.moves) ? terminal.args.moves : []) as PlatingProposal["moves"],
+            notes: (Array.isArray(terminal.args.notes) ? terminal.args.notes : []) as PlatingProposal["notes"],
+            summary: String(terminal.args.summary ?? ""),
+          },
+          steps, contents,
+        };
       }
       const changes = Array.isArray(terminal.args.changes) ? terminal.args.changes : [];
       return {

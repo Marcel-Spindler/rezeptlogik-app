@@ -3,17 +3,20 @@ import { useAppState } from "../../app/AppContext";
 import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
 import { useBackfillsOptional } from "../backfills/BackfillsContext";
 import { runPlanAgent, type AgentStep, type GeminiContent } from "./planAssistantAgent";
-import { applyPlanChanges, undoPlanChanges } from "./planAssistantApi";
-import type { ChatMessage, ChatStep, PlanIssue, PlanProposal } from "./planAssistantTypes";
+import { applyPlanChanges, applyPlatingWeekPlan, undoPlanChanges } from "./planAssistantApi";
+import { buildPlatingPlanWithMoves } from "./planAssistantTools";
+import { subscribePlatingWeekPlan } from "../plating-plan/platingWeekPlanFirestore";
+import type { PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
+import type { ChatMessage, ChatStep, PlanIssue, PlanProposal, PlatingProposal } from "./planAssistantTypes";
 
 const STORE_KEY = "rezeptlogik-plan-assistant-v1";
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `m${Date.now()}${Math.random()}`);
 
 const SUGGESTIONS = [
-  "Welche Meals sind diese KW noch ungeplant — und wo würdest du sie hinlegen?",
+  "Erstell den Wochen-Plating-Plan für diese KW.",
   "Prüf den Plan auf Risiken und Engpässe.",
+  "Welche Meals sind diese KW noch ungeplant — und wo würdest du sie hinlegen?",
   "Was muss nachproduziert werden und reicht die Rohware?",
-  "Verteil die ungeplanten Meals kapazitäts-schonend.",
 ];
 
 const SEV_STYLE: Record<PlanIssue["severity"], string> = {
@@ -29,6 +32,9 @@ const TOOL_LABEL: Record<string, string> = {
   simulate_plan_change: "Änderung simuliert",
   suggest_assignments: "Auto-Vorschlag",
   get_capacity_overview: "Kapazitäts-Check",
+  get_plating_plan: "Plating-Plan gelesen",
+  generate_plating_plan: "Plating-Plan generiert",
+  simulate_plating_change: "Plating simuliert",
   __thinking__: "Zwischenüberlegung",
 };
 
@@ -123,6 +129,32 @@ function ProposalCard({ proposal, onApply, onUndo }: {
   );
 }
 
+function PlatingProposalCard({ proposal, onApply }: { proposal: PlatingProposal; onApply: () => void }) {
+  return (
+    <div className="mt-2 rounded-lg border border-cyan-300 bg-cyan-50 p-2.5 text-[11px] text-cyan-900">
+      <div className="font-semibold">Wochen-Plating-Plan-Vorschlag</div>
+      <div className="mt-0.5">First Run {Math.round((proposal.firstRunPct ?? 0.7) * 100)}%{proposal.moves.length ? ` · ${proposal.moves.length} Tag-Anpassung(en)` : " · Auto-Verteilung"}</div>
+      {proposal.summary ? <div className="mt-0.5 whitespace-pre-wrap">{proposal.summary}</div> : null}
+      {proposal.moves.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {proposal.moves.map((mv, i) => (
+            <li key={i} className="font-mono">{mv.code} · R{mv.runIndex} → <strong>{mv.day}</strong></li>
+          ))}
+        </ul>
+      )}
+      {proposal.applied ? (
+        <div className="mt-1.5 font-semibold text-emerald-700">✓ Gespeichert — in „Plating-Plan" sichtbar.</div>
+      ) : proposal.applyError ? (
+        <div className="mt-1.5 font-semibold text-rose-700">{proposal.applyError}</div>
+      ) : (
+        <button type="button" onClick={onApply} className="mt-2 rounded-md bg-cyan-600 px-3 py-1 text-xs font-semibold text-white hover:bg-cyan-500">
+          Plating-Plan speichern
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
   const { data, selectedWeek, upliftPercent } = useAppState();
   const reconciliation = useWoReconciliation();
@@ -132,7 +164,10 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<"flash" | "pro">("flash");
+  const [platingPlan, setPlatingPlan] = useState<PlatingWeekPlan | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => subscribePlatingWeekPlan(selectedWeek, setPlatingPlan), [selectedWeek]);
 
   const setMessages = useCallback((fn: (m: ChatMessage[]) => ChatMessage[]) => {
     setState(prev => ({ ...prev, messages: fn(prev.messages) }));
@@ -170,7 +205,7 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
 
     const liveSteps: ChatStep[] = [];
     const outcome = await runPlanAgent({
-      data, week: selectedWeek, upliftPercent, reconciliation, backfills,
+      data, week: selectedWeek, upliftPercent, reconciliation, backfills, platingPlan,
       priorContents: contents, userMessage: q, model,
       onStep: (s: AgentStep | { tool: "__thinking__"; args: Record<string, unknown>; ok: true; summary: string }) => {
         liveSteps.push({ tool: s.tool, summary: s.summary, ok: s.ok });
@@ -187,10 +222,23 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
         steps: liveSteps,
         issues: outcome.issues,
         proposal: outcome.proposal,
+        platingProposal: outcome.platingProposal,
       } : m),
     }));
     setBusy(false);
-  }, [busy, data, selectedWeek, upliftPercent, reconciliation, backfills, contents, model, setMessages]);
+  }, [busy, data, selectedWeek, upliftPercent, reconciliation, backfills, platingPlan, contents, model, setMessages]);
+
+  const applyPlating = useCallback((msgId: string) => {
+    const msg = messages.find(m => m.id === msgId);
+    if (!data || !msg?.platingProposal) return;
+    const pp = msg.platingProposal;
+    const plan = buildPlatingPlanWithMoves(data, selectedWeek, pp.firstRunPct, pp.moves, pp.notes);
+    void applyPlatingWeekPlan(plan).then(res => {
+      setMessages(ms => ms.map(m => m.id === msgId && m.platingProposal
+        ? { ...m, platingProposal: { ...m.platingProposal, applied: res.ok, applyError: res.error } }
+        : m));
+    });
+  }, [messages, data, selectedWeek, setMessages]);
 
   const applyProposal = useCallback((msgId: string, newScenario: boolean) => {
     if (!data) return;
@@ -296,6 +344,9 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
                     onApply={(newScenario) => applyProposal(m.id, newScenario)}
                     onUndo={() => undoProposal(m.id)}
                   />
+                ) : null}
+                {m.platingProposal ? (
+                  <PlatingProposalCard proposal={m.platingProposal} onApply={() => applyPlating(m.id)} />
                 ) : null}
               </div>
             </div>
