@@ -484,8 +484,20 @@ function noopRefreshRampUpPlugin(): Plugin {
   };
 }
 
+// Vitest lädt diese Config ebenfalls und ruft `configureServer` auf. Die beiden
+// Auto-Start-Plugins würden dann die lokalen Server (3141 WMS/Snowflake, 3142
+// SQLite/Gemini) mit hochziehen; deren Kindprozesse halten anschließend den
+// Vitest-Prozess offen ("close timed out … something prevents Vite server from
+// exiting"). Im Testlauf deshalb weglassen — die Tests brauchen keinen Dev-Server.
+const underVitest = !!process.env.VITEST || process.env.NODE_ENV === "test";
+
 export default defineConfig({
-  plugins: [autoStartWmsPlugin(), autoStartLocalDbPlugin(), importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(), mealImageOverridePlugin(), mealImageListPlugin(), deployPlugin(), startWmsServerPlugin(), noopRefreshRampUpPlugin(), react()],
+  plugins: [
+    ...(underVitest ? [] : [autoStartWmsPlugin(), autoStartLocalDbPlugin()]),
+    importLocalPlugin(), mealFolderImagesPlugin(), driveImagePlugin(), saveMealImagePlugin(),
+    mealImageOverridePlugin(), mealImageListPlugin(), deployPlugin(), startWmsServerPlugin(),
+    noopRefreshRampUpPlugin(), react(),
+  ],
   server: {
     port: 5173,
     open: true,
