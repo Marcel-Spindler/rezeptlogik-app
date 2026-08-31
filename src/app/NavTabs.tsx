@@ -23,6 +23,12 @@ interface NavCategory {
 // Inhalt (siehe GroupSubTabs).
 const NAV_CATEGORIES: readonly NavCategory[] = [
   {
+    label: "Heute",
+    items: [
+      { view: "heute", label: "Heute" },
+    ],
+  },
+  {
     label: "Rezepte & Meals",
     items: [
       { view: "recipe", label: "Rezept" },
@@ -176,6 +182,27 @@ export function NavTabs({ view, onChange }: { view: AppView; onChange: (v: AppVi
       {categories.map((cat) => {
         const activeCat = cat.items.some((i) => i.view === view);
         const open = openCat === cat.label;
+
+        // Ein-Eintrag-Kategorie (z.B. „Heute") = direkter Nav-Button, kein Flyout.
+        if (cat.items.length === 1) {
+          const only = cat.items[0];
+          return (
+            <button
+              key={cat.label}
+              type="button"
+              onClick={() => { onChange(only.view); close(); }}
+              className={`w-full text-left px-3 py-2 text-sm rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                activeCat
+                  ? "bg-verden-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+              }`}
+            >
+              <span className="flex-1 truncate">{cat.label}</span>
+              <ViewBadge view={only.view} />
+            </button>
+          );
+        }
+
         return (
           <div
             key={cat.label}

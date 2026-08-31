@@ -7,6 +7,7 @@ import { NavTabs, GroupSubTabs } from "./NavTabs";
 import { KitchenSurface } from "./KitchenSurface";
 import { AppFooter } from "./AppFooter";
 import { RecipeDetail } from "../features/recipe-detail/RecipeDetailShell";
+import { TodayView } from "../features/today/TodayView";
 import { PlanningOasisView } from "../planning-oasis/PlanningOasisView";
 import { ShopfloorKioskSurface } from "./ShopfloorKioskSurface";
 import { WeekSelector } from "../components/WeekSelector";
@@ -61,6 +62,9 @@ function MainPaneSwitch({ view }: { view: AppView }) {
   if (!data) return null;
 
   switch (view) {
+    case "heute":
+      return <TodayView data={data} week={selectedWeek} />;
+
     case "catalog":
       return (
         <MealCatalogView

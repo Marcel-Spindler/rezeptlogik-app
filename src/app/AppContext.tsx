@@ -7,10 +7,10 @@ import { useAppData } from "./useAppData";
 import { useRecipeSelection, type RecipeSelection } from "./useRecipeSelection";
 import type { DataBundle } from "../core/types";
 
-export type AppView = "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live" | "backfills" | "redzone-live" | "transparency-plan" | "artikel-woche" | "full-inventory" | "plating-plan" | "plating-day";
+export type AppView = "heute" | "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live" | "backfills" | "redzone-live" | "transparency-plan" | "artikel-woche" | "full-inventory" | "plating-plan" | "plating-day";
 export type AppSurface = "full" | "kitchen" | "rundmail" | "redzone" | "shopfloor";
 
-export const ALL_VIEWS: readonly AppView[] = ["recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating", "postblast-live", "backfills", "redzone-live", "transparency-plan", "artikel-woche", "full-inventory", "plating-plan", "plating-day"];
+export const ALL_VIEWS: readonly AppView[] = ["heute", "recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating", "postblast-live", "backfills", "redzone-live", "transparency-plan", "artikel-woche", "full-inventory", "plating-plan", "plating-day"];
 
 export interface AppState extends RecipeSelection {
   surface: AppSurface;
@@ -64,6 +64,10 @@ function useUrlOverrides(
       setView("wo");
     } else if ((ALL_VIEWS as readonly string[]).includes(viewParam ?? "")) {
       setView(viewParam as AppView);
+    } else if (surface === "full" && !window.location.search) {
+      // Nackter Aufruf (kein Deep-Link) → immer die „Heute"-Startseite, egal
+      // welche View zuletzt im localStorage stand.
+      setView("heute");
     }
 
     if (weekParam) {
@@ -86,7 +90,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const [selectedWeek, setSelectedWeekRaw] = usePersistent<string>("week", "");
   const [selectedRecipe, setSelectedRecipe] = usePersistent<string | null>("recipe", null);
-  const [view, setView] = usePersistent<AppView>("view", "recipe");
+  const [view, setView] = usePersistent<AppView>("view", "heute");
   const [upliftPercent, setUpliftPercent] = usePersistent<number>("uplift", 0);
   const [searchText, setSearchText] = useState("");
   const [kitchenLinkCopied, setKitchenLinkCopied] = useState(false);
