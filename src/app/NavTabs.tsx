@@ -34,6 +34,7 @@ const NAV_CATEGORIES: readonly NavCategory[] = [
     items: [
       { view: "planning", label: "Planning OASE" },
       { view: "plating-plan", label: "Plating-Plan" },
+      { view: "plating-day", label: "Plating Tag" },
       { view: "artikel-woche", label: "Artikel / KW" },
       { view: "whatif", label: "What-If Rechner" },
     ],

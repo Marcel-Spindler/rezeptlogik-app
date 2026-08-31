@@ -21,6 +21,7 @@ export function normalizePlatingWeekPlan(raw: unknown, week: string): PlatingWee
   const dayCapacity = rawCap && typeof rawCap === "object" && Object.keys(rawCap).length
     ? rawCap : { ...DEFAULT_DAY_CAPACITY };
   const now = new Date().toISOString();
+  const rawDaily = r.dailyPlans as PlatingWeekPlan["dailyPlans"] | undefined;
   return {
     week: typeof r.week === "string" ? r.week : week,
     params,
@@ -28,6 +29,7 @@ export function normalizePlatingWeekPlan(raw: unknown, week: string): PlatingWee
     updatedAt: typeof r.updatedAt === "string" ? r.updatedAt : now,
     meals: Array.isArray(r.meals) ? (r.meals as PlatingWeekPlan["meals"]) : [],
     dayCapacity,
+    ...(rawDaily && typeof rawDaily === "object" ? { dailyPlans: rawDaily } : {}),
     source: (r.source === "edited" || r.source === "ai" || r.source === "generated") ? r.source : "generated",
   };
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DataBundle } from "../../core/types";
 import { buildDefaultParams, generatePlatingPlan } from "./platingPlanLogic";
+import { generateAllDayPlans } from "./platingDayLogic";
 import { savePlatingWeekPlan, subscribePlatingWeekPlan } from "./platingWeekPlanFirestore";
 import {
   PLATING_PLAN_CHANGED_EVENT,
@@ -73,5 +74,20 @@ export function usePlatingWeekPlan(data: DataBundle | null, week: string) {
     persist(fresh);
   }, [data, week, plan, persist]);
 
-  return { plan, loading, dirty, update, regenerate };
+  /** Phase 2: die täglichen Linienpläne aus dem aktuellen Wochenplan neu bauen. */
+  const regenerateDailyPlans = useCallback(() => {
+    setPlan(prev => {
+      if (!prev) return prev;
+      const next: PlatingWeekPlan = {
+        ...prev,
+        dailyPlans: generateAllDayPlans(prev),
+        updatedAt: new Date().toISOString(),
+      };
+      setDirty(true);
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+
+  return { plan, loading, dirty, update, regenerate, regenerateDailyPlans };
 }

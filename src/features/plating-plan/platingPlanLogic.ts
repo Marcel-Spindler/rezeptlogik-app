@@ -18,6 +18,7 @@ import {
   PLATING_DAYS, type PlatingDay, type PlatingDayCapacity, type PlatingMealPlan,
   type PlatingPlanParams, type PlatingRun, type PlatingWeekPlan,
 } from "./platingPlanTypes";
+import { describeDayPlan } from "./platingDayLogic";
 
 /** Default-Stellschrauben ohne den KW-abhängigen First-Run-Anteil. */
 export const DEFAULT_PLATING_PARAMS: Omit<PlatingPlanParams, "firstRunPct"> = {
@@ -25,6 +26,8 @@ export const DEFAULT_PLATING_PARAMS: Omit<PlatingPlanParams, "firstRunPct"> = {
   singleRunBuffer: 0.10,
   multiRunBuffer: 0.05,
   platingRatePerLineHour: 900,
+  changeoverAllergenMin: 30,
+  changeoverProteinMin: 60,
 };
 
 /** Bekannte First-Run-% pro KW aus dem Sheet; sonst 70 %. */
@@ -55,6 +58,8 @@ export function resolvePlatingParams(week: string, override?: Partial<PlatingPla
     singleRunBuffer: clampNum(p.singleRunBuffer, 0, 0.5, d.singleRunBuffer),
     multiRunBuffer: clampNum(p.multiRunBuffer, 0, 0.5, d.multiRunBuffer),
     platingRatePerLineHour: Math.round(clampNum(p.platingRatePerLineHour, 1, 1e5, d.platingRatePerLineHour)),
+    changeoverAllergenMin: Math.round(clampNum(p.changeoverAllergenMin, 0, 240, d.changeoverAllergenMin)),
+    changeoverProteinMin: Math.round(clampNum(p.changeoverProteinMin, 0, 240, d.changeoverProteinMin)),
   };
 }
 
@@ -348,6 +353,12 @@ export function summarizePlatingPlan(plan: PlatingWeekPlan): string {
     const runs = m.runs.filter(r => r.portions > 0).map(r => `${r.day ?? "?"}:${fmtNum(r.portions)}`).join(" + ");
     const cx = m.complexity != null ? ` · cx ${m.complexity.toFixed(2)}${m.complexity >= 1.15 ? " KOMPLEX" : m.complexity <= 0.80 ? " einfach" : ""}` : "";
     lines.push(`  ${m.code} ${m.name} · ${m.preference}${m.seafood ? " · SEAFOOD" : ""}${cx} · Demand ${fmtNum(m.totalDemand)} → ${runs}`);
+  }
+  const daily = plan.dailyPlans ?? {};
+  const days = PLATING_DAYS.filter(d => daily[d]);
+  if (days.length) {
+    lines.push("Tägliche Linienpläne (Phase 2):");
+    for (const d of days) lines.push(describeDayPlan(daily[d]!));
   }
   return lines.join("\n");
 }

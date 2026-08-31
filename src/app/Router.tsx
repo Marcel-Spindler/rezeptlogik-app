@@ -38,6 +38,7 @@ const BackfillsView       = lazyWithRetry(() => import("../features/backfills/Ba
 const ArtikelWocheView    = lazyWithRetry(() => import("../features/artikel-woche/ArtikelWocheView").then(m => ({ default: m.ArtikelWocheView })), "artikel-woche");
 const FullInventoryView   = lazyWithRetry(() => import("../features/full-inventory/FullInventoryView").then(m => ({ default: m.FullInventoryView })), "full-inventory");
 const PlatingPlanView     = lazyWithRetry(() => import("../features/plating-plan/PlatingPlanView").then(m => ({ default: m.PlatingPlanView })), "plating-plan");
+const PlatingDayView      = lazyWithRetry(() => import("../features/plating-plan/PlatingDayView").then(m => ({ default: m.PlatingDayView })), "plating-day");
 const RedzoneLiveView     = lazyWithRetry(() => import("../features/redzone-live/RedzoneLiveView").then(m => ({ default: m.RedzoneLiveView })), "redzone-live");
 
 function ViewLoading() {
@@ -164,6 +165,9 @@ function MainPaneSwitch({ view }: { view: AppView }) {
 
     case "plating-plan":
       return <PlatingPlanView data={data} week={selectedWeek} />;
+
+    case "plating-day":
+      return <PlatingDayView data={data} week={selectedWeek} />;
   }
 }
 
