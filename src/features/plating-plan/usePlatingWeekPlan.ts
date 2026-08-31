@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DataBundle } from "../../core/types";
-import { generatePlatingPlan } from "./platingPlanLogic";
+import { buildDefaultParams, generatePlatingPlan } from "./platingPlanLogic";
 import { savePlatingWeekPlan, subscribePlatingWeekPlan } from "./platingWeekPlanFirestore";
-import { PLATING_PLAN_CHANGED_EVENT, type PlatingWeekPlan } from "./platingPlanTypes";
+import {
+  PLATING_PLAN_CHANGED_EVENT,
+  type PlatingDay, type PlatingDayCapacity, type PlatingPlanParams, type PlatingWeekPlan,
+} from "./platingPlanTypes";
 
 /** Lädt den Wochen-Plating-Plan aus Firestore, hält lokale Edits und speichert
  *  (debounced). Der KI-Assistent schreibt über dieselbe Collection + feuert
@@ -52,16 +55,18 @@ export function usePlatingWeekPlan(data: DataBundle | null, week: string) {
     });
   }, [persist]);
 
-  const regenerate = useCallback((opts?: { firstRunPct?: number }) => {
+  const regenerate = useCallback((opts?: {
+    params?: Partial<PlatingPlanParams>;
+    dayCapacity?: Partial<Record<PlatingDay, PlatingDayCapacity>>;
+  }) => {
     if (!data) return;
-    const fresh = generatePlatingPlan(data, week, {
-      firstRunPct: opts?.firstRunPct ?? plan?.firstRunPct,
-    });
+    const base = plan?.params ?? buildDefaultParams(week);
+    const dayCapacity = opts?.dayCapacity ?? plan?.dayCapacity ?? undefined;
+    const fresh = generatePlatingPlan(data, week, { ...base, ...(opts?.params ?? {}) }, dayCapacity);
     // manuelle Notizen übernehmen
     if (plan) {
       const noteByCode = new Map(plan.meals.filter(m => m.note).map(m => [m.code, m.note]));
       for (const m of fresh.meals) if (noteByCode.has(m.code)) m.note = noteByCode.get(m.code);
-      fresh.dayCapacity = plan.dayCapacity;
     }
     setPlan(fresh);
     setDirty(true);

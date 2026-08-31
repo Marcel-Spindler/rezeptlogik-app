@@ -35,6 +35,7 @@
     "import:weekly-planning": "tsx scripts/read-weekly-planning.ts",
     "import:kitchen-bible": "tsx scripts/import-kitchen-bible.ts",
     "import:planning-calendar": "tsx scripts/import-planning-calendar.ts",
+    "import:recipe-profiles": "tsx scripts/import-recipe-profiles.ts",
     "import:weight-tracking": "tsx scripts/import-weight-tracking.ts",
     "wms:server": "tsx scripts/wms-local-server.ts",
     "wms:sync-cache": "tsx scripts/sync-wms-cache.ts",

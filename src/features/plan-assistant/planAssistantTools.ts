@@ -32,14 +32,21 @@ export interface ToolContext {
 
 export const TERMINAL_TOOLS = new Set(["propose_plan_change", "check_plan_issues", "propose_plating_plan"]);
 
-/** Erzeugt einen Plating-Plan und wendet Move-/Notiz-Deltas an (für Sim + Apply). */
+/** Erzeugt einen Plating-Plan und wendet Move-/Notiz-Deltas an (für Sim + Apply).
+ *  `basePlan` (falls vorhanden) liefert die gespeicherten Params + Tages-Kapazität,
+ *  damit von Hand gepflegte Stellschrauben nicht verloren gehen. */
 export function buildPlatingPlanWithMoves(
   data: DataBundle, week: string,
   firstRunPct: number | undefined,
   moves: Array<{ code: string; runIndex: number; day: string }>,
   notes: Array<{ code: string; note: string }>,
+  basePlan?: PlatingWeekPlan | null,
 ): PlatingWeekPlan {
-  const plan = generatePlatingPlan(data, week, { firstRunPct });
+  const paramsOverride = {
+    ...(basePlan?.params ?? {}),
+    ...(typeof firstRunPct === "number" ? { firstRunPct } : {}),
+  };
+  const plan = generatePlatingPlan(data, week, paramsOverride, basePlan?.dayCapacity);
   const dayOk = new Set(PLATING_DAYS as readonly string[]);
   for (const mv of moves) {
     const meal = plan.meals.find(m => codeDigits(m.code) === codeDigits(mv.code));
@@ -124,7 +131,7 @@ export const TOOL_DECLARATIONS = [{
     },
     {
       name: "generate_plating_plan",
-      description: "Erzeugt den Wochen-Plating-Plan aus dem Ramp-Up nach den Regeln (Demand=BENL+NORD+DE; ≤2250 → 1 Run +10%; >2250 → 2 Runs +5%, Run 1 = First-Run%; Seafood 1. Run ≥ Mi; bis Do jedes Meal 1×; Fr/Sa reduziert). Speichert NICHT — nur zur Ansicht/Bewertung.",
+      description: "Erzeugt den Wochen-Plating-Plan aus dem Ramp-Up nach den Regeln (Demand=BENL+NORD+DE; ≤2250 → 1 Run +10%; >2250 → 2 Runs +5%, Run 1 = First-Run%; Seafood 1. Run ≥ Mi; bis Do jedes Meal 1×; Fr/Sa reduziert; Complexity Score cx: komplex → 1. Run früh, einfach → flexibel/Montag). Speichert NICHT — nur zur Ansicht/Bewertung.",
       parameters: {
         type: "OBJECT",
         properties: { firstRunPct: { type: "NUMBER", description: "0.62–0.72; leer = KW-Default (meist 0.70)" } },
@@ -413,7 +420,11 @@ function toolGetPlatingPlan(_args: Record<string, unknown>, ctx: ToolContext) {
 
 function toolGeneratePlating(args: Record<string, unknown>, ctx: ToolContext) {
   const frp = typeof args.firstRunPct === "number" ? args.firstRunPct : undefined;
-  const plan = generatePlatingPlan(ctx.data, ctx.week, { firstRunPct: frp });
+  const paramsOverride = {
+    ...(ctx.platingPlan?.params ?? {}),
+    ...(frp != null ? { firstRunPct: frp } : {}),
+  };
+  const plan = generatePlatingPlan(ctx.data, ctx.week, paramsOverride, ctx.platingPlan?.dayCapacity);
   return {
     warning: ctx.platingPlan ? "Es existiert bereits ein Plan — generieren würde ihn ersetzen." : undefined,
     plan: summarizePlatingPlan(plan),
@@ -423,7 +434,7 @@ function toolGeneratePlating(args: Record<string, unknown>, ctx: ToolContext) {
 function toolSimulatePlating(args: Record<string, unknown>, ctx: ToolContext) {
   const frp = typeof args.firstRunPct === "number" ? args.firstRunPct : undefined;
   const moves = (Array.isArray(args.moves) ? args.moves : []) as Array<{ code: string; runIndex: number; day: string }>;
-  const plan = buildPlatingPlanWithMoves(ctx.data, ctx.week, frp, moves, []);
+  const plan = buildPlatingPlanWithMoves(ctx.data, ctx.week, frp, moves, [], ctx.platingPlan);
   const loads = computeDayLoads(plan);
   return {
     appliedMoves: moves.length,

@@ -93,13 +93,13 @@ export async function loadData(): Promise<DataBundle> {
   if (SOURCE === "local-db") {
     try {
       lastDataError = null;
-      const bundle = await mergeMealCatalog(await loadFromLocalDb());
+      const bundle = await enrich(await loadFromLocalDb());
       void persistSet(STORES.dataBundle, "current", bundle);
       return bundle;
     } catch (e) {
       lastDataError = e instanceof Error ? e.message : String(e);
       logWarn("Lokale Datenbank nicht erreichbar, Fallback auf data.json", e);
-      const bundle = await mergeMealCatalog(await loadFromJson());
+      const bundle = await enrich(await loadFromJson());
       void persistSet(STORES.dataBundle, "current", bundle);
       return bundle;
     }
@@ -114,19 +114,19 @@ export async function loadData(): Promise<DataBundle> {
     try {
       const bundle = await loadFromFirestore();
       lastDataError = null;
-      const merged = await mergeMealCatalog(bundle);
+      const merged = await enrich(bundle);
       void persistSet(STORES.dataBundle, "current", merged);
       return merged;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       lastDataError = msg;
       logWarn("Firestore-Load fehlgeschlagen, Fallback auf data.json", e);
-      const bundle = await mergeMealCatalog(await loadFromJson());
+      const bundle = await enrich(await loadFromJson());
       void persistSet(STORES.dataBundle, "current", bundle);
       return bundle;
     }
   }
-  const bundle = await mergeMealCatalog(await loadFromJson());
+  const bundle = await enrich(await loadFromJson());
   void persistSet(STORES.dataBundle, "current", bundle);
   return bundle;
 }
@@ -135,11 +135,30 @@ async function loadFreshFirestoreBundle(): Promise<void> {
   try {
     const bundle = await loadFromFirestore();
     lastDataError = null;
-    const merged = await mergeMealCatalog(bundle);
+    const merged = await enrich(bundle);
     await persistSet(STORES.dataBundle, "current", merged);
     console.log("[dataSource] Firestore-Bundle im Hintergrund aktualisiert und persistiert.");
   } catch (e) {
     logWarn("Hintergrund-Firestore-Refresh fehlgeschlagen (non-fatal)", e);
+  }
+}
+
+/** Meal-Katalog + Rezept-Profile (Complexity Score) anhaengen — beide liegen als
+ *  eigene JSON-Dateien neben data.json und werden bei jedem Load frisch geholt. */
+async function enrich(bundle: DataBundle): Promise<DataBundle> {
+  return mergeRecipeProfiles(await mergeMealCatalog(bundle));
+}
+
+async function mergeRecipeProfiles(bundle: DataBundle): Promise<DataBundle> {
+  try {
+    const response = await fetch(`/data/recipe-profiles.json?ts=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) return bundle;
+    const payload = await response.json() as { profiles?: DataBundle["recipeProfiles"] };
+    if (!payload.profiles || Object.keys(payload.profiles).length === 0) return bundle;
+    return { ...bundle, recipeProfiles: payload.profiles };
+  } catch (error) {
+    logWarn("Rezept-Profile nicht ladbar (optional)", error);
+    return bundle;
   }
 }
 

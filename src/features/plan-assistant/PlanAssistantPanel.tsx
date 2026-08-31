@@ -232,13 +232,13 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
     const msg = messages.find(m => m.id === msgId);
     if (!data || !msg?.platingProposal) return;
     const pp = msg.platingProposal;
-    const plan = buildPlatingPlanWithMoves(data, selectedWeek, pp.firstRunPct, pp.moves, pp.notes);
+    const plan = buildPlatingPlanWithMoves(data, selectedWeek, pp.firstRunPct, pp.moves, pp.notes, platingPlan);
     void applyPlatingWeekPlan(plan).then(res => {
       setMessages(ms => ms.map(m => m.id === msgId && m.platingProposal
         ? { ...m, platingProposal: { ...m.platingProposal, applied: res.ok, applyError: res.error } }
         : m));
     });
-  }, [messages, data, selectedWeek, setMessages]);
+  }, [messages, data, selectedWeek, platingPlan, setMessages]);
 
   const applyProposal = useCallback((msgId: string, newScenario: boolean) => {
     if (!data) return;

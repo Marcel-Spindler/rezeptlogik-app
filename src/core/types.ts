@@ -205,6 +205,37 @@ export interface RecipeStructure {
   markets: Partial<Record<Market, DetailedSubRecipe[]>>; // Top-Level-Sub-Rezepte je Markt
 }
 
+// === Recipe Profile / Complexity Score =======================================
+// Referenzdaten aus dem Tab "Recipe Profil" von Marcels Plating-Plan-GSheet
+// (siehe scripts/import-recipe-profiles.ts -> public/data/recipe-profiles.json).
+// Der "Complexity Score" (Spalte I im Plating-Sheet) steuert die Heuristik der
+// Tag-Zuweisung im Wochen-Plating-Plan: komplexe Meals -> 1. Run frueh, einfache
+// -> Montags-Fill-up.
+//
+// Formel (im Sheet verifiziert): raw = w_cycle*activeCookMin + w_stations*#stations
+//   + w_subs*#subs + w_batch*(1000/bottleneck); cx = raw / median(raw).
+export interface RecipeProfile {
+  code: string;
+  activeCookMin: number;                // aktive Kochminuten (ohne passive Holds)
+  numCookStations: number;              // Anzahl distinkter Kochstationen
+  numSubs: number;                      // Anzahl Sub-Rezepte
+  bottleneckPortionsPerBatch: number;   // kleinste Batch-Groesse im Prozess
+  complexityRaw: number;                // gewichtete Rohsumme
+  complexityCx: number;                 // raw / median(raw) — Median-Meal = 1.0
+  cookStations: string[];               // z. B. ["BLAST CHILLER","BRAISER","OVEN"]
+  allergens: string;                    // kommagetrennt
+  traces: string;                       // Spuren, kommagetrennt
+  passiveHoldMin: number;               // Thaw/Marinade/Brine-Minuten (nicht in raw)
+}
+
+export interface RecipeProfileBundle {
+  generatedAt: string;
+  sourceSheetId: string;
+  weights: { cycle: number; stations: number; subs: number; batch: number };
+  medianRaw: number;
+  profiles: Record<string, RecipeProfile>; // key = recipe code
+}
+
 // === Production Plan (Sheet 6: Fertigstellungszeitplan) ======================
 // Work Order structure — "W{XX} Transperancy Total Overview" tab.
 // Each row = one sub-recipe batch within a Work Order.
@@ -326,6 +357,7 @@ export interface DataBundle {
   processSpecs?: Record<string, ProcessSpec>;     // key = subRecipeId
   shelfLifeBySku?: Record<string, ShelfLifeInfo>; // key = ingredient / SKU code
   structures?: Record<string, RecipeStructure>;   // key = recipe code
+  recipeProfiles?: Record<string, RecipeProfile>; // key = recipe code — Complexity Score (Plating)
   instructions?: Record<string, SubRecipeInstruction>;
   productionPlan?: ProductionPlan;
   printOrders?: PrintOrderRow[];
