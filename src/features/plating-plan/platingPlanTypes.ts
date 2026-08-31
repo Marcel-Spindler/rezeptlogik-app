@@ -36,6 +36,9 @@ export interface PlatingMealPlan {
    *  Steuert die Tag-Heuristik (komplex → 1. Run früh, einfach → Montags-Fill-up).
    *  Fallback ohne Recipe-Profil: grobe Schätzung aus # Subs. null = unbekannt. */
   complexity: number | null;
+  /** Anzahl Sub-Meals (Komponenten am Plating). Treibt die Besetzung:
+   *  Personen auf der Linie = subMealCount + 1 (ein Helfer pro Linie). 0 = unbekannt. */
+  subMealCount: number;
   activeCookMin?: number;      // aktive Kochminuten (Recipe-Profil)
   passiveHoldMin?: number;     // Thaw/Marinade/Brine-Minuten (Recipe-Profil)
   /** Freitext-Notiz je Meal (wie die Kommentar-Spalte im Sheet). */
@@ -57,19 +60,16 @@ export interface PlatingPlanParams {
   platingRatePerLineHour: number; // Portionen/Linie/Stunde für die Kapazitätsrechnung
   changeoverEasyMin: number;      // Easy Changeover: nur Allergene ZUFÜGEN (milk → milk,sulphites), keine Reinigung (~10)
   changeoverAllergenMin: number;  // Volle Reinigung bei Allergen-WEGFALL (milk,sulphites → milk) (~30)
-  changeoverProteinMin: number;   // Full Changeover bei Protein-Typ-Wechsel (Phase 2, ~60)
 }
 
 // ── Phase 2/3: täglicher Linienplan ──────────────────────────────────────────
 
-export type ProteinType = "chicken" | "beef" | "pork" | "seafood" | "veggie" | "other";
-
-/** Art des Übergangs zwischen zwei aufeinanderfolgenden Slots:
- *  none  = identische Allergene + gleiches Protein → 0 min
+/** Art des Übergangs zwischen zwei aufeinanderfolgenden Slots (rein allergen-
+ *  getrieben — Ziel: Tempo + wenig Reinigung):
+ *  none  = identische Allergene → 0 min
  *  easy  = Allergene NUR zugefügt (milk → milk,sulphites) → kurze Rüstzeit, keine Reinigung
- *  allergen = Allergen weggefallen → volle Reinigung (= Saubermach-Aktion)
- *  protein  = Protein-Typ-Wechsel → Full Changeover (= Saubermach-Aktion) */
-export type ChangeoverKind = "none" | "easy" | "allergen" | "protein";
+ *  allergen = Allergen weggefallen → volle Reinigung (= Saubermach-Aktion) */
+export type ChangeoverKind = "none" | "easy" | "allergen";
 
 /** Ein Meal-Run auf einer Linie an einem Tag. */
 export interface PlatingSlot {
@@ -80,13 +80,15 @@ export interface PlatingSlot {
   seq: number;                    // Reihenfolge auf der Linie (0-basiert)
   startMin: number;               // Start ab Schichtbeginn (Minuten)
   endMin: number;
-  changeoverBeforeMin: number;    // Umrüstzeit vor diesem Slot (0 / easy / allergen / protein)
-  changeoverReason: "easy" | "allergen" | "protein" | null;
+  changeoverBeforeMin: number;    // Umrüstzeit vor diesem Slot (0 / easy / allergen)
+  changeoverReason: "easy" | "allergen" | null;
   changeoverKind?: ChangeoverKind;
   allergens: string;
-  proteinType: ProteinType;
   seafood: boolean;
   complexity: number | null;
+  /** Sub-Meals dieses Meals + Besetzung (subMeals + 1 Helfer je Linie). */
+  subMeals: number;
+  headcount: number;
   /** Portionen, die nicht mehr in die Schicht passten → Folgetag. */
   carryOver?: number;
 }
@@ -98,8 +100,11 @@ export interface PlatingLinePlan {
   platingMin: number;             // reine Plating-Zeit
   changeoverMin: number;          // Summe Umrüsten (easy + Reinigungen)
   availableMin: number;           // hours × 60
-  changeovers: number;            // Anzahl Saubermach-Aktionen (Allergen-Wegfall + Protein)
+  changeovers: number;            // Anzahl Saubermach-Aktionen (Allergen-Wegfall)
   easyChangeovers: number;        // Anzahl Easy Changeovers (nur zufügen)
+  /** Spitzenbesetzung der Linie (max Slot-headcount) + Personenminuten (Σ headcount × Dauer). */
+  peakHeadcount: number;
+  manMinutes: number;
   overCapacity: boolean;
 }
 

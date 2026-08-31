@@ -56,6 +56,17 @@ export interface PlatingProposal {
   applyError?: string;
 }
 
+/** Vorschlag, den täglichen Linienplan EINES Tages umzusortieren (Slots auf
+ *  andere Linien / Positionen), ohne die ganze Woche neu zu generieren.
+ *  Angewandt = applyDayPlanMoves auf dailyPlans[day] + speichern. */
+export interface DayPlatingProposal {
+  day: string;
+  moves: Array<{ code: string; runIndex?: number; toLine: number; toIndex?: number }>;
+  summary: string;
+  applied?: boolean;
+  applyError?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: ChatRole;
@@ -63,6 +74,7 @@ export interface ChatMessage {
   issues?: PlanIssue[];
   proposal?: PlanProposal;
   platingProposal?: PlatingProposal;
+  dayPlatingProposal?: DayPlatingProposal;
   steps?: ChatStep[];
   pending?: boolean;
 }

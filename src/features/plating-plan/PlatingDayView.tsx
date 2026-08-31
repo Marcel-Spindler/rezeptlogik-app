@@ -1,23 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DataBundle } from "../../core/types";
 import { fmtNum } from "../../lib/helpers";
 import { usePlatingWeekPlan } from "./usePlatingWeekPlan";
 import { summarizeDayPlan } from "./platingDayLogic";
 import {
   PLATING_DAYS,
-  type PlatingDay, type PlatingDayPlan, type PlatingLinePlan, type PlatingSlot, type ProteinType,
+  type PlatingDay, type PlatingDayPlan, type PlatingLinePlan, type PlatingSlot,
 } from "./platingPlanTypes";
 
 const PROD_DAYS: PlatingDay[] = ["Mo", "Di", "Mi", "Do", "Fr", "Sa"];
-
-const PROTEIN_TONE: Record<ProteinType, string> = {
-  chicken: "bg-amber-100 text-amber-800",
-  beef:    "bg-rose-100 text-rose-800",
-  pork:    "bg-pink-100 text-pink-800",
-  seafood: "bg-sky-100 text-sky-800",
-  veggie:  "bg-lime-100 text-lime-800",
-  other:   "bg-slate-100 text-slate-600",
-};
 
 const ROLE_LABEL: Record<PlatingLinePlan["role"], string> = {
   highrunner: "HIGHRUNNER", flex: "FLEX", overload: "OVERLOAD",
@@ -34,26 +25,48 @@ function fmtClock(min: number): string {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-interface SlotEdit {
-  lineCount: number;
-  isFirst: boolean;
-  isLast: boolean;
-  onMove: (dir: -1 | 1) => void;
-  onToLine: (line: number) => void;
-}
-
 const CHANGEOVER_LABEL: Record<string, string> = {
   easy: "Easy Changeover (nur Allergen zufügen)",
   allergen: "Reinigung — Allergen weggefallen",
-  protein: "Full Changeover — Protein-Wechsel",
 };
 
-/** Ein Slot als proportional breiter Block; davor ggf. der Changeover-Streifen. */
-function SlotBlock({ slot, pxPerMin, edit }: { slot: PlatingSlot; pxPerMin: number; edit?: SlotEdit }) {
-  const w = Math.max(edit ? 62 : 46, Math.round((slot.endMin - slot.startMin) * pxPerMin));
-  const easy = slot.changeoverReason === "easy";
+/** Drag-&-Drop-Kontext für den „✎ Sortieren"-Modus. */
+interface Dnd {
+  dragging: { line: number; seq: number } | null;
+  dropTarget: { line: number; index: number } | null;
+  onSlotDragStart: (line: number, seq: number) => void;
+  onSlotDragEnd: () => void;
+  onZoneOver: (line: number, index: number) => void;
+  onZoneDrop: (line: number, index: number) => void;
+}
+
+/** Schmale Ablauf-Zone zwischen zwei Slots (bzw. am Linien-Rand). Nimmt den Drop
+ *  an und fügt den gezogenen Slot an genau dieser Position ein. */
+function DropZone({ dnd, line, index, full }: { dnd: Dnd; line: number; index: number; full?: boolean }) {
+  const active = !!dnd.dragging;
+  const hot = active && dnd.dropTarget?.line === line && dnd.dropTarget?.index === index;
   return (
-    <div className="flex items-stretch">
+    <div
+      onDragOver={e => { if (active) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; dnd.onZoneOver(line, index); } }}
+      onDrop={e => { if (active) { e.preventDefault(); dnd.onZoneDrop(line, index); } }}
+      className={`shrink-0 self-stretch rounded transition-colors ${
+        full ? "flex-1 min-h-[42px]" : active ? "w-3" : "w-1"
+      } ${hot ? "bg-cyan-400" : active ? "bg-cyan-100" : ""}`}
+      aria-hidden
+    />
+  );
+}
+
+/** Ein Slot als proportional breiter Block; davor ggf. der Changeover-Streifen. */
+function SlotBlock({ slot, pxPerMin, dnd, line, seq }: {
+  slot: PlatingSlot; pxPerMin: number; dnd?: Dnd; line: number; seq: number;
+}) {
+  const w = Math.max(46, Math.round((slot.endMin - slot.startMin) * pxPerMin));
+  const easy = slot.changeoverReason === "easy";
+  const draggable = !!dnd;
+  const beingDragged = dnd?.dragging?.line === line && dnd.dragging?.seq === seq;
+  return (
+    <div className={`flex items-stretch ${beingDragged ? "opacity-40" : ""}`}>
       {slot.changeoverBeforeMin > 0 && (
         <div
           className={`flex items-center justify-center border-y text-[8px] font-bold ${
@@ -68,52 +81,40 @@ function SlotBlock({ slot, pxPerMin, edit }: { slot: PlatingSlot; pxPerMin: numb
         </div>
       )}
       <div
-        className={`rounded border px-1 py-0.5 text-[9px] leading-tight ${slot.carryOver ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white"}`}
+        draggable={draggable}
+        onDragStart={draggable ? e => {
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", slot.code); // Firefox startet sonst keinen Drag
+          dnd!.onSlotDragStart(line, seq);
+        } : undefined}
+        onDragEnd={draggable ? () => dnd!.onSlotDragEnd() : undefined}
+        className={`rounded border px-1 py-0.5 text-[9px] leading-tight ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${
+          slot.carryOver ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white"
+        }`}
         style={{ width: w }}
-        title={`${slot.code} ${slot.name}\n${fmtClock(slot.startMin)}–${fmtClock(slot.endMin)} · ${fmtNum(slot.portions)} P${slot.allergens ? `\nAllergene: ${slot.allergens}` : ""}`}
+        title={`${slot.code} ${slot.name}\n${fmtClock(slot.startMin)}–${fmtClock(slot.endMin)} · ${fmtNum(slot.portions)} P${slot.allergens ? `\nAllergene: ${slot.allergens}` : ""}${slot.subMeals ? `\n${slot.subMeals} Sub-Meals → ${slot.headcount} MA` : ""}${draggable ? "\n(ziehen zum Umsortieren)" : ""}`}
       >
         <div className="flex items-center gap-0.5">
+          {draggable && <span className="text-slate-300">⠿</span>}
           <span className="font-mono font-semibold text-slate-700">{slot.code}</span>
           {slot.seafood && <span>🐟</span>}
         </div>
         <div className="truncate text-slate-500">{slot.name}</div>
         <div className="flex items-center justify-between font-mono">
           <span className="font-semibold text-blue-800">{fmtNum(slot.portions)}</span>
-          <span className={`rounded px-0.5 ${PROTEIN_TONE[slot.proteinType]}`}>{slot.proteinType.slice(0, 4)}</span>
+          {slot.headcount > 0 && (
+            <span className="rounded bg-slate-100 px-0.5 text-slate-600" title={`${slot.subMeals} Sub-Meals + 1 Helfer`}>
+              {slot.headcount}👤
+            </span>
+          )}
         </div>
         {slot.carryOver ? <div className="font-semibold text-amber-700">→ {fmtNum(slot.carryOver)}</div> : null}
-        {edit && (
-          <div className="mt-0.5 flex items-center justify-between border-t border-slate-100 pt-0.5">
-            <button type="button" disabled={edit.isFirst} onClick={() => edit.onMove(-1)}
-              className="px-0.5 text-slate-400 hover:text-slate-700 disabled:opacity-20" title="nach vorne">◀</button>
-            {edit.lineCount > 1 && (
-              <select
-                value={""}
-                onChange={e => { const v = Number(e.target.value); if (v) edit.onToLine(v); }}
-                className="bg-transparent text-[8px] text-slate-400"
-                title="auf andere Linie"
-              >
-                <option value="">L…</option>
-                {Array.from({ length: edit.lineCount }, (_, i) => i + 1).map(n => (
-                  <option key={n} value={n}>→L{n}</option>
-                ))}
-              </select>
-            )}
-            <button type="button" disabled={edit.isLast} onClick={() => edit.onMove(1)}
-              className="px-0.5 text-slate-400 hover:text-slate-700 disabled:opacity-20" title="nach hinten">▶</button>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-function LineRow({ line, lineCount, onMoveSlot, onSlotToLine }: {
-  line: PlatingLinePlan;
-  lineCount: number;
-  onMoveSlot?: (seq: number, dir: -1 | 1) => void;
-  onSlotToLine?: (seq: number, toLine: number) => void;
-}) {
+function LineRow({ line, dnd }: { line: PlatingLinePlan; dnd?: Dnd }) {
   const usedMin = line.platingMin + line.changeoverMin;
   const pct = line.availableMin > 0 ? Math.round((usedMin / line.availableMin) * 100) : 0;
   const pxPerMin = 900 / Math.max(line.availableMin, usedMin, 60); // Zeitachse auf ~900px normieren
@@ -129,7 +130,7 @@ function LineRow({ line, lineCount, onMoveSlot, onSlotToLine }: {
             clean ? "bg-emerald-100 text-emerald-700"
               : line.changeovers > 0 ? "bg-rose-100 text-rose-700" : "text-slate-400"
           }`}
-          title="Saubermach-Aktionen: Allergen-Wegfall oder Protein-Wechsel"
+          title="Saubermach-Aktionen: Allergen-Wegfall"
         >
           {clean ? "0 Reinigungen" : `${line.changeovers} Reinigung${line.changeovers === 1 ? "" : "en"}`}
         </span>
@@ -139,6 +140,11 @@ function LineRow({ line, lineCount, onMoveSlot, onSlotToLine }: {
           </span>
         )}
         <span className="text-slate-400">{line.changeoverMin} min Rüsten</span>
+        {line.peakHeadcount > 0 && (
+          <span className="text-slate-500" title="Spitzenbesetzung der Linie (MA + 1 Helfer)">
+            👤 {line.peakHeadcount} MA
+          </span>
+        )}
         <span className={`ml-auto font-mono font-semibold ${line.overCapacity ? "text-rose-600" : pct > 90 ? "text-amber-600" : "text-slate-600"}`}>
           {fmtClock(usedMin)} / {fmtClock(line.availableMin)} ({pct}%){line.overCapacity ? " ⚠" : ""}
         </span>
@@ -146,17 +152,16 @@ function LineRow({ line, lineCount, onMoveSlot, onSlotToLine }: {
       {line.slots.length ? (
         <div className="flex items-stretch gap-0.5 overflow-x-auto pb-1">
           {line.slots.map((s, i) => (
-            <SlotBlock
-              key={`${s.code}-${s.runIndex}-${i}`}
-              slot={s}
-              pxPerMin={pxPerMin}
-              edit={onMoveSlot && onSlotToLine ? {
-                lineCount, isFirst: i === 0, isLast: i === line.slots.length - 1,
-                onMove: dir => onMoveSlot(i, dir),
-                onToLine: toLine => onSlotToLine(i, toLine),
-              } : undefined}
-            />
+            <div key={`${s.code}-${s.runIndex}-${i}`} className="flex items-stretch">
+              {dnd && <DropZone dnd={dnd} line={line.line} index={i} />}
+              <SlotBlock slot={s} pxPerMin={pxPerMin} dnd={dnd} line={line.line} seq={i} />
+            </div>
           ))}
+          {dnd && <DropZone dnd={dnd} line={line.line} index={line.slots.length} />}
+        </div>
+      ) : dnd ? (
+        <div className="flex min-h-[44px] items-stretch">
+          <DropZone dnd={dnd} line={line.line} index={0} full />
         </div>
       ) : (
         <div className="py-2 text-center text-[10px] text-slate-400">leer</div>
@@ -169,34 +174,49 @@ export function PlatingDayView({ data, week }: { data: DataBundle; week: string 
   const { plan, loading, dirty, regenerateDailyPlans, updateDayPlan } = usePlatingWeekPlan(data, week);
   const [day, setDay] = useState<PlatingDay>("Di");
   const [editMode, setEditMode] = useState(false);
+  const [dragging, setDragging] = useState<{ line: number; seq: number } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ line: number; index: number } | null>(null);
+  // Ref, damit onZoneDrop die Quelle auch dann kennt, wenn zwischen dragstart und
+  // drop noch kein Re-Render lag (synchrone Events, Tests).
+  const dragSrc = useRef<{ line: number; seq: number } | null>(null);
 
-  /** Slot innerhalb einer Linie um eine Position verschieben. */
-  const moveSlot = (lineNo: number, seq: number, dir: -1 | 1) => {
+  /** Slot an eine beliebige Position (Linie + Einfüge-Index) verschieben; danach
+   *  rechnet recomputeDayPlan Zeiten/Umrüsten/Carry-over neu. */
+  const moveSlotTo = (fromLine: number, fromSeq: number, toLine: number, toIndex: number) => {
     updateDayPlan(day, dp => {
-      const lines = dp.lines.map(l => {
-        if (l.line !== lineNo) return l;
+      const moved = dp.lines.find(l => l.line === fromLine)?.slots[fromSeq];
+      if (!moved) return dp;
+      let lines = dp.lines.map(l =>
+        l.line === fromLine ? { ...l, slots: l.slots.filter((_, i) => i !== fromSeq) } : l,
+      );
+      lines = lines.map(l => {
+        if (l.line !== toLine) return l;
+        let idx = toIndex;
+        if (fromLine === toLine && fromSeq < idx) idx -= 1;
+        idx = Math.max(0, Math.min(idx, l.slots.length));
         const slots = [...l.slots];
-        const j = seq + dir;
-        if (j < 0 || j >= slots.length) return l;
-        [slots[seq], slots[j]] = [slots[j], slots[seq]];
+        slots.splice(idx, 0, moved);
         return { ...l, slots };
       });
       return { ...dp, lines };
     });
   };
-  /** Slot auf eine andere Linie ans Ende verschieben. */
-  const slotToLine = (fromLine: number, seq: number, toLine: number) => {
-    if (fromLine === toLine) return;
-    updateDayPlan(day, dp => {
-      const moved = dp.lines.find(l => l.line === fromLine)?.slots[seq];
-      if (!moved) return dp;
-      const lines = dp.lines.map(l => {
-        if (l.line === fromLine) return { ...l, slots: l.slots.filter((_, i) => i !== seq) };
-        if (l.line === toLine) return { ...l, slots: [...l.slots, moved] };
-        return l;
-      });
-      return { ...dp, lines };
-    });
+
+  const dnd: Dnd = {
+    dragging, dropTarget,
+    onSlotDragStart: (line, seq) => { dragSrc.current = { line, seq }; setDragging({ line, seq }); },
+    onSlotDragEnd: () => { dragSrc.current = null; setDragging(null); setDropTarget(null); },
+    onZoneOver: (line, index) => setDropTarget({ line, index }),
+    onZoneDrop: (line, index) => {
+      const src = dragSrc.current ?? dragging;
+      if (src) {
+        const noop = src.line === line && (index === src.seq || index === src.seq + 1);
+        if (!noop) moveSlotTo(src.line, src.seq, line, index);
+      }
+      dragSrc.current = null;
+      setDragging(null);
+      setDropTarget(null);
+    },
   };
 
   const availableDays = useMemo(
@@ -251,11 +271,11 @@ export function PlatingDayView({ data, week }: { data: DataBundle; week: string 
 
       <p className="text-[11px] text-slate-500">
         Aus den im Wochenplan verplanten Runs: je Linie aufsteigend nach Allergenen sequenziert (kein Allergen → viele).
-        Allergen nur zufügen = <span className="text-amber-600">~ easy</span> ({plan?.params.changeoverEasyMin ?? 10} min);
-        Allergen weg = <span className="text-rose-600">🧽 Reinigung</span> ({plan?.params.changeoverAllergenMin ?? 30} min);
-        Protein-Wechsel = Full Changeover ({plan?.params.changeoverProteinMin ?? 60} min).
+        Changeover ist rein allergen-getrieben — Allergen nur zufügen = <span className="text-amber-600">~ easy</span> ({plan?.params.changeoverEasyMin ?? 10} min);
+        Allergen weg = <span className="text-rose-600">🧽 Reinigung</span> ({plan?.params.changeoverAllergenMin ?? 30} min).
         Linie 1 = Highrunner (größter sauberer Block, 0 Reinigungen), Linie 2 = Flex (nimmt die Reinigungen auf),
         Linie 3 = nur wenn L1+L2 das Volumen nicht fassen. Rest → Carry-over Folgetag (Seafood/komplex = ⚠ Deadline).
+        Besetzung <span className="text-slate-600">👤</span> = Sub-Meals + 1 Helfer je Linie.
         Sequenz/Params im Wochenplan-Tab ändern, dann neu generieren.
       </p>
 
@@ -321,18 +341,13 @@ export function PlatingDayView({ data, week }: { data: DataBundle; week: string 
               )}
               {editMode && (
                 <div className="text-[10px] text-cyan-700">
-                  Sortier-Modus: ◀ ▶ verschiebt einen Slot in der Linie, „→L…" auf eine andere Linie.
-                  Zeiten, Umrüsten und Carry-over rechnen sich neu. Für die Tag-zu-Tag-Weitergabe „Tagespläne neu generieren".
+                  Sortier-Modus: Slot per Drag &amp; Drop an eine andere Position oder Linie ziehen — die cyan Zonen
+                  zwischen den Blöcken sind die Ablage-Punkte. Zeiten, Umrüsten und Carry-over rechnen sich neu.
+                  Für die Tag-zu-Tag-Weitergabe „Tagespläne neu generieren".
                 </div>
               )}
               {dp.lines.map(l => (
-                <LineRow
-                  key={l.line}
-                  line={l}
-                  lineCount={dp.lines.length}
-                  onMoveSlot={editMode ? (seq, dir) => moveSlot(l.line, seq, dir) : undefined}
-                  onSlotToLine={editMode ? (seq, to) => slotToLine(l.line, seq, to) : undefined}
-                />
+                <LineRow key={l.line} line={l} dnd={editMode ? dnd : undefined} />
               ))}
 
               {dp.carryOutToNext.length > 0 && (() => {
@@ -367,6 +382,7 @@ function DaySummary({ dp }: { dp: PlatingDayPlan }) {
       {fmtNum(s.totalPortions)} Portionen · {s.slots} Slots · <span className={s.cleaningActions > 0 ? "font-semibold text-rose-600" : ""}>{s.cleaningActions} Reinigungen</span>
       {s.easyChangeovers > 0 && <span className="text-amber-600"> · +{s.easyChangeovers} easy</span>}
       {" "}· {s.changeoverMin} min Rüsten gesamt
+      {s.peakHeadcount > 0 && <span className="text-slate-600"> · 👤 ~{s.peakHeadcount} MA Spitze / {s.manHours} Pers.-h</span>}
       {s.linesOver > 0 && <span className="font-semibold text-rose-600"> · {s.linesOver} Linie(n) über Kapazität</span>}
       {s.carryOut > 0 && <span className="font-semibold text-amber-600"> · {fmtNum(s.carryOut)} P Carry-over</span>}
       {s.carryOutCritical > 0 && <span className="font-semibold text-rose-600"> ({fmtNum(s.carryOutCritical)} P kritisch)</span>}

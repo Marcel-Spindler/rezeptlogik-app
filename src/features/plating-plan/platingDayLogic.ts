@@ -1,12 +1,14 @@
 // Phase 3 — allergen-getriebener täglicher Linienplan.
 //
-// Ziel: die WENIGSTEN Saubermach-Aktionen. Zwei Übergangsklassen aus den
-// Allergenen:
-//   milk → milk,sulphites          = EASY CHANGEOVER (nur zufügen) → kurze
-//                                    Rüstzeit, KEINE Reinigung
-//   milk,sulphites → milk          = REINIGUNG (Allergen weg) = Saubermach-Aktion
-//   Chicken → Beef (gl. Allergen)  = REINIGUNG (Protein-Wechsel) = Saubermach-Aktion
+// Der Changeover zwischen zwei Meals ist REIN allergen-getrieben (Ziel: Tempo +
+// wenig Reinigung):
+//   milk → milk,sulphites   = EASY CHANGEOVER (nur zufügen) → kurze Rüstzeit, KEINE Reinigung
+//   milk,sulphites → milk   = REINIGUNG (Allergen weg) = Saubermach-Aktion
+//   milk → milk             = 0
 // Jede Linie wird aufsteigend sequenziert: möglichst kein Allergen → viele.
+//
+// Besetzung: pro Meal auf einer Linie = (# Sub-Meals) + 1 Helfer (einer je Linie).
+// Daraus Spitzenbesetzung je Linie/Tag + Personenminuten.
 //
 // Linien (der Tag hat laut Kapazität `lines` besetzt):
 //   L1 HIGHRUNNER = der größte „saubere Block" (Kette ohne Reinigung), bis die
@@ -14,32 +16,23 @@
 //   L2 FLEX       = der Rest, aufsteigend sequenziert — nimmt die Reinigungen auf.
 //   L3.. OVERLOAD = nur wenn L1 + L2 das Tagesvolumen NICHT fassen (und der Tag
 //                   ≥ 3 Linien besetzt hat).
-//   Danach die Restkapazität von L1 auffüllen (mit Reinigungen). Was dann noch
-//   übrig ist → Carry-over auf den Folgetag; Seafood / komplexe Meals dabei
-//   kritisch (harte Deadline aus dem Wochenplan).
+//   Danach die Restkapazität ALLER Linien auffüllen. Was dann noch übrig ist →
+//   Carry-over auf den Folgetag; Seafood / komplexe Meals dabei kritisch.
 //
 // Reine Logik, kein React.
 
 import { PLATING_DAYS, type ChangeoverKind, type PlatingCarryItem, type PlatingDay,
-  type PlatingDayPlan, type PlatingLinePlan, type PlatingPlanParams, type PlatingSlot,
-  type PlatingWeekPlan, type ProteinType,
+  type PlatingDayPlan, type PlatingLinePlan, type PlatingPlanParams,
+  type PlatingSlot, type PlatingWeekPlan,
 } from "./platingPlanTypes";
 
 /** cx ab hier gilt ein Meal als komplex → harte Deadline (siehe Wochenplan). */
 const COMPLEX_CX = 1.15;
 
-const PROTEIN_RE: [RegExp, ProteinType][] = [
-  [/\b(shrimp|prawn|salmon|barramundi|fish|tuna|seafood|cod|pollock|crab|scampi)\b/i, "seafood"],
-  [/\b(chicken|poultry|hähnchen|huhn|geflügel|turkey|pute)\b/i, "chicken"],
-  [/\b(beef|steak|rind|meatball|bulgogi|brisket)\b/i, "beef"],
-  [/\b(pork|schwein|bacon|ham|sausage|chorizo|pulled pork)\b/i, "pork"],
-  [/\b(veg|veggie|tofu|halloumi|chickpea|lentil|paneer|mushroom|bean|falafel)\b/i, "veggie"],
-];
-
-/** Grobe Protein-Typ-Klassifikation aus dem Meal-Namen (für Changeover-Kosten). */
-export function proteinTypeFromName(name: string): ProteinType {
-  for (const [re, t] of PROTEIN_RE) if (re.test(name)) return t;
-  return "other";
+/** Besetzung einer Linie für ein Meal: ein MA pro Sub-Meal + ein Helfer je Linie.
+ *  0 Sub-Meals (unbekannt) → 0 (keine Schätzung). */
+function headcountFor(subMeals: number): number {
+  return subMeals > 0 ? subMeals + 1 : 0;
 }
 
 /** Allergen-Menge (klein, getrimmt). */
@@ -58,6 +51,17 @@ function round(n: number): number {
   return Math.max(0, Math.round(n));
 }
 
+/** Spitzenbesetzung (max gleichzeitige MA auf der Linie) + Personenminuten
+ *  (Σ headcount × Slot-Dauer) aus den fertigen Slots einer Linie. */
+function lineStaffing(slots: PlatingSlot[]): { peakHeadcount: number; manMinutes: number } {
+  let peak = 0, manMin = 0;
+  for (const s of slots) {
+    if (s.headcount > peak) peak = s.headcount;
+    manMin += s.headcount * Math.max(0, s.endMin - s.startMin);
+  }
+  return { peakHeadcount: peak, manMinutes: round(manMin) };
+}
+
 interface Job {
   code: string;
   name: string;
@@ -65,46 +69,38 @@ interface Job {
   portions: number;
   allergens: string;              // Anzeige (Original-String)
   allergenSet: Set<string>;
-  proteinType: ProteinType;
   seafood: boolean;
   complexity: number | null;
+  subMeals: number;
   critical: boolean;              // Seafood oder cx ≥ COMPLEX_CX
 }
 
 interface CoParams {
   easyMin: number;
   allergenMin: number;
-  proteinMin: number;
 }
 
 function coParams(p: PlatingPlanParams): CoParams {
   return {
     easyMin: p.changeoverEasyMin ?? 10,
     allergenMin: p.changeoverAllergenMin ?? 30,
-    proteinMin: p.changeoverProteinMin ?? 60,
   };
 }
 
-const KIND_RANK: Record<ChangeoverKind, number> = { none: 0, easy: 1, allergen: 2, protein: 3 };
+const KIND_RANK: Record<ChangeoverKind, number> = { none: 0, easy: 1, allergen: 2 };
 
-/** Umrüst-Kosten + Klasse zwischen zwei aufeinanderfolgenden Jobs. */
+/** Umrüst-Kosten + Klasse zwischen zwei aufeinanderfolgenden Jobs — rein aus den
+ *  Allergenen: Allergen weg = Reinigung, Allergen nur dazu = easy, sonst 0. */
 function classifyChangeover(prev: Job | null, next: Job, co: CoParams): {
   min: number; reason: PlatingSlot["changeoverReason"]; kind: ChangeoverKind;
 } {
   if (!prev) return { min: 0, reason: null, kind: "none" };
-
-  const proteinChange = prev.proteinType !== next.proteinType
-    && prev.proteinType !== "other" && next.proteinType !== "other";
 
   let removed = false;
   for (const a of prev.allergenSet) if (!next.allergenSet.has(a)) { removed = true; break; }
   let added = false;
   for (const a of next.allergenSet) if (!prev.allergenSet.has(a)) { added = true; break; }
 
-  if (proteinChange) {
-    // Protein-Wechsel = volle Reinigung; bei zusätzlichem Allergen-Wegfall der höhere Wert
-    return { min: Math.max(co.proteinMin, removed ? co.allergenMin : 0), reason: "protein", kind: "protein" };
-  }
   if (removed) return { min: co.allergenMin, reason: "allergen", kind: "allergen" };
   if (added) return { min: co.easyMin, reason: "easy", kind: "easy" };
   return { min: 0, reason: null, kind: "none" };
@@ -112,7 +108,7 @@ function classifyChangeover(prev: Job | null, next: Job, co: CoParams): {
 
 /** true = dieser Übergang ist eine Saubermach-Aktion (bricht einen „sauberen Block"). */
 function isCleaning(kind: ChangeoverKind): boolean {
-  return kind === "allergen" || kind === "protein";
+  return kind === "allergen";
 }
 
 /** Alle Runs eines Tages + Carry-in als Job-Liste. */
@@ -122,19 +118,19 @@ function collectJobs(plan: PlatingWeekPlan, day: PlatingDay, carryIn: PlatingCar
 
   const mkJob = (
     code: string, name: string, runIndex: number, portions: number,
-    allergens: string, seafood: boolean, complexity: number | null, criticalHint = false,
+    allergens: string, seafood: boolean, complexity: number | null, subMeals: number, criticalHint = false,
   ): Job => ({
     code, name, runIndex, portions,
     allergens, allergenSet: allergenSet(allergens),
-    proteinType: proteinTypeFromName(`${name} ${allergens}`),
-    seafood, complexity,
+    seafood, complexity, subMeals: Math.max(0, subMeals || 0),
     critical: criticalHint || seafood || (complexity != null && complexity >= COMPLEX_CX),
   });
 
   for (const meal of plan.meals) {
     for (const run of meal.runs) {
       if (run.day !== day || run.portions <= 0) continue;
-      jobs.push(mkJob(meal.code, meal.name, run.runIndex, run.portions, meal.allergens, meal.seafood, meal.complexity));
+      jobs.push(mkJob(meal.code, meal.name, run.runIndex, run.portions,
+        meal.allergens, meal.seafood, meal.complexity, meal.subMealCount));
     }
   }
   for (const ci of carryIn) {
@@ -142,7 +138,8 @@ function collectJobs(plan: PlatingWeekPlan, day: PlatingDay, carryIn: PlatingCar
     const meal = byCode.get(ci.code);
     jobs.push(mkJob(
       ci.code, meal?.name ?? ci.name, 0, ci.portions,
-      meal?.allergens ?? "", meal?.seafood ?? false, meal?.complexity ?? null, ci.critical ?? false,
+      meal?.allergens ?? "", meal?.seafood ?? false, meal?.complexity ?? null,
+      meal?.subMealCount ?? 0, ci.critical ?? false,
     ));
   }
   return jobs;
@@ -172,7 +169,7 @@ function addedCount(prev: Job, next: Job): number {
 }
 
 /** Aufsteigende Sequenz: Start beim Job mit den wenigsten Allergenen, dann jeweils
- *  der Job mit dem billigsten Übergang (none < easy < allergen < protein).
+ *  der Job mit dem billigsten Übergang (none < easy < allergen).
  *  Unter „easy" den mit den WENIGSTEN neuen Allergenen (auf der Treppe bleiben),
  *  dann kritische Meals vorziehen (Deadline), dann größere Menge. */
 function sequenceAscending(jobs: Job[], co: CoParams): Job[] {
@@ -222,7 +219,8 @@ function splitCleanBlocks(seq: Job[], co: CoParams): CleanBlock[] {
 function slotBase(j: Job): Omit<PlatingSlot, "seq" | "startMin" | "endMin" | "changeoverBeforeMin" | "changeoverReason" | "changeoverKind"> {
   return {
     code: j.code, name: j.name, runIndex: j.runIndex, portions: j.portions,
-    allergens: j.allergens, proteinType: j.proteinType, seafood: j.seafood, complexity: j.complexity,
+    allergens: j.allergens, seafood: j.seafood, complexity: j.complexity,
+    subMeals: j.subMeals, headcount: headcountFor(j.subMeals),
   };
 }
 
@@ -292,6 +290,7 @@ function packLine(
       line, role, slots,
       platingMin: round(platingMin), changeoverMin: round(changeoverMin),
       availableMin: round(availableMin), changeovers: cleanActions, easyChangeovers: easy,
+      ...lineStaffing(slots),
       overCapacity: used > availableMin + 1,
     },
     leftover: queue,
@@ -371,22 +370,26 @@ export function generateDayPlan(
       n++;
     }
 
-    // Restkapazität von L1 auffüllen, bevor etwas auf den Folgetag wandert
-    if (pool.length) {
-      const l1 = lines[0];
-      const usedMin = l1.platingMin + l1.changeoverMin;
-      if (l1.availableMin - usedMin > 1) {
-        const prevLast = l1.slots.length ? jobFromSlot(l1.slots[l1.slots.length - 1]) : null;
-        const r = packLine(1, "highrunner", l1.availableMin, [...pool], minPerPortion, co,
-          { prev: prevLast, usedMin, seq: l1.slots.length });
-        l1.slots.push(...r.line.slots);
-        l1.platingMin += r.line.platingMin;
-        l1.changeoverMin += r.line.changeoverMin;
-        l1.changeovers += r.line.changeovers;
-        l1.easyChangeovers += r.line.easyChangeovers;
-        l1.overCapacity = (l1.platingMin + l1.changeoverMin) > l1.availableMin + 1;
-        pool = r.leftover;
-      }
+    // Restkapazität ALLER Linien auffüllen, bevor etwas auf den Folgetag wandert.
+    // Marcel: „lieber durchziehen" — beim Plating ist die Zeit gegen das Soll der
+    // Engpass, nicht die Reinigung (die Reinigungsfirma putzt am Schichtende eh
+    // alles). Also Volumen fertig machen > saubere Linie halten. L1 zuerst
+    // (Highrunner-Priorität), dann L2, L3 …
+    for (const l of lines) {
+      if (!pool.length) break;
+      const usedMin = l.platingMin + l.changeoverMin;
+      if (l.availableMin - usedMin <= 1) continue;
+      const prevLast = l.slots.length ? jobFromSlot(l.slots[l.slots.length - 1]) : null;
+      const r = packLine(l.line, l.role, l.availableMin, [...pool], minPerPortion, co,
+        { prev: prevLast, usedMin, seq: l.slots.length });
+      l.slots.push(...r.line.slots);
+      l.platingMin += r.line.platingMin;
+      l.changeoverMin += r.line.changeoverMin;
+      l.changeovers += r.line.changeovers;
+      l.easyChangeovers += r.line.easyChangeovers;
+      Object.assign(l, lineStaffing(l.slots));
+      l.overCapacity = (l.platingMin + l.changeoverMin) > l.availableMin + 1;
+      pool = r.leftover;
     }
   }
 
@@ -404,7 +407,7 @@ function jobFromSlot(s: PlatingSlot): Job {
   return {
     code: s.code, name: s.name, runIndex: s.runIndex, portions: s.portions,
     allergens: s.allergens, allergenSet: allergenSet(s.allergens),
-    proteinType: s.proteinType, seafood: s.seafood, complexity: s.complexity,
+    seafood: s.seafood, complexity: s.complexity, subMeals: s.subMeals ?? 0,
     critical: s.seafood || (s.complexity != null && s.complexity >= COMPLEX_CX),
   };
 }
@@ -467,6 +470,7 @@ export function recomputeDayPlan(dp: PlatingDayPlan, plan: PlatingWeekPlan): Pla
       ...line, slots,
       platingMin: round(platingMin), changeoverMin: round(changeoverMin),
       changeovers: cleanActions, easyChangeovers: easy,
+      ...lineStaffing(slots),
       overCapacity: used > line.availableMin + 1,
     };
   });
@@ -475,6 +479,83 @@ export function recomputeDayPlan(dp: PlatingDayPlan, plan: PlatingWeekPlan): Pla
     ...dp, lines, carryOutToNext: toCarryItems(carryOut),
     source: "edited", generatedAt: new Date().toISOString(),
   };
+}
+
+// ── Gezielte Umsortierung eines Tagesplans (Sortier-Modus + KI-Tools) ─────────
+
+/** Eine Slot-Verschiebung im Tagesplan: Meal `code` (ggf. Run `runIndex`) auf
+ *  Linie `toLine` an Position `toIndex` (0-basiert; fehlt = ans Ende). */
+export interface DayPlanMove {
+  code: string;
+  runIndex?: number;
+  toLine: number;
+  toIndex?: number;
+}
+
+const codeDigits = (s: string): string => String(s || "").replace(/\D/g, "");
+const codeNorm = (s: string): string => String(s || "").trim().toUpperCase();
+
+/** Matcht einen Slot-Code gegen die Angabe im Move: erst exakt, dann (nur wenn
+ *  vorhanden) über die Ziffern-Kennung — robuster als reines codeDigits, das bei
+ *  Codes ohne Ziffern kollidieren würde. */
+function slotCodeMatches(slotCode: string, wantCode: string): boolean {
+  if (codeNorm(slotCode) === codeNorm(wantCode)) return true;
+  const wd = codeDigits(wantCode);
+  return wd.length > 0 && codeDigits(slotCode) === wd;
+}
+
+/** Wendet eine Reihe von Slot-Verschiebungen auf einen Tagesplan an und rechnet
+ *  danach Zeiten/Umrüsten/Carry-over neu (via recomputeDayPlan). Die Slot-
+ *  Reihenfolge folgt exakt den Moves; Cross-Day-Carry wird NICHT neu gefädelt.
+ *  Genutzt vom „✎ Sortieren"-Modus und den KI-Tools. */
+export function applyDayPlanMoves(
+  dp: PlatingDayPlan, plan: PlatingWeekPlan, moves: DayPlanMove[],
+): { dayPlan: PlatingDayPlan; applied: string[]; skipped: string[] } {
+  const clone = structuredClone(dp);
+  const applied: string[] = [];
+  const skipped: string[] = [];
+  const cap = plan.dayCapacity[dp.day];
+  const maxLines = cap?.lines ?? clone.lines.length;
+  const hours = cap?.hours ?? 0;
+  const availableMin = hours > 0 ? hours * 60 : (clone.lines[0]?.availableMin ?? 0);
+
+  for (const mv of moves) {
+    let src: { line: PlatingLinePlan; idx: number } | null = null;
+    for (const line of clone.lines) {
+      const idx = line.slots.findIndex(s =>
+        slotCodeMatches(s.code, mv.code) && (mv.runIndex == null || s.runIndex === mv.runIndex));
+      if (idx >= 0) { src = { line, idx }; break; }
+    }
+    if (!src) { skipped.push(`${mv.code}: kein Slot im Tagesplan`); continue; }
+
+    let target = clone.lines.find(l => l.line === mv.toLine) ?? null;
+    if (!target) {
+      if (mv.toLine === clone.lines.length + 1 && clone.lines.length < maxLines && availableMin > 0) {
+        target = {
+          line: mv.toLine, role: "overload", slots: [],
+          platingMin: 0, changeoverMin: 0, availableMin,
+          changeovers: 0, easyChangeovers: 0, peakHeadcount: 0, manMinutes: 0, overCapacity: false,
+        };
+        clone.lines.push(target);
+      } else {
+        skipped.push(`${mv.code}: Linie ${mv.toLine} existiert nicht`);
+        continue;
+      }
+    }
+
+    const [slot] = src.line.slots.splice(src.idx, 1);
+    let insertAt = target.slots.length;
+    if (mv.toIndex != null && Number.isFinite(mv.toIndex)) {
+      insertAt = Math.max(0, Math.min(Math.trunc(mv.toIndex), target.slots.length));
+      if (src.line === target && src.idx < insertAt) insertAt -= 1;
+    }
+    target.slots.splice(insertAt, 0, slot);
+    applied.push(`${slot.code} → L${target.line}${mv.toIndex != null ? ` @${insertAt}` : ""}`);
+  }
+
+  while (clone.lines.length > 1 && clone.lines[clone.lines.length - 1].slots.length === 0) clone.lines.pop();
+
+  return { dayPlan: recomputeDayPlan(clone, plan), applied, skipped };
 }
 
 /** Linienpläne für alle Produktionstage — Carry-over wird von Tag zu Tag durchgereicht. */
@@ -503,16 +584,23 @@ export interface DayPlanSummary {
   linesOver: number;
   carryOut: number;
   carryOutCritical: number;
+  /** Besetzung: Spitze = Σ der Linien-Spitzenbesetzung (worst case gleichzeitig);
+   *  manHours = Σ Personenminuten / 60 (Plating-Arbeitsstunden über den Tag). */
+  peakHeadcount: number;
+  manHours: number;
 }
 
 export function summarizeDayPlan(dp: PlatingDayPlan): DayPlanSummary {
   let totalPortions = 0, slots = 0, cleaningActions = 0, easyChangeovers = 0, changeoverMin = 0, linesOver = 0;
+  let peakHeadcount = 0, manMinutes = 0;
   for (const l of dp.lines) {
     slots += l.slots.length;
     cleaningActions += l.changeovers;
     easyChangeovers += l.easyChangeovers ?? 0;
     changeoverMin += l.changeoverMin;
     if (l.overCapacity) linesOver++;
+    peakHeadcount += l.peakHeadcount ?? 0;
+    manMinutes += l.manMinutes ?? 0;
     for (const s of l.slots) totalPortions += s.portions;
   }
   return {
@@ -520,6 +608,7 @@ export function summarizeDayPlan(dp: PlatingDayPlan): DayPlanSummary {
     changeovers: cleaningActions, cleaningActions, easyChangeovers, changeoverMin, linesOver,
     carryOut: dp.carryOutToNext.reduce((s, c) => s + c.portions, 0),
     carryOutCritical: dp.carryOutToNext.filter(c => c.critical).reduce((s, c) => s + c.portions, 0),
+    peakHeadcount, manHours: Math.round(manMinutes / 6) / 10,
   };
 }
 
@@ -531,6 +620,7 @@ export function describeDayPlan(dp: PlatingDayPlan): string {
     `Plating-Tagesplan ${dp.day} · ${s.totalPortions} P · ${s.slots} Slots · ${s.cleaningActions} Reinigungen`
     + (s.easyChangeovers ? ` (+${s.easyChangeovers} easy)` : "")
     + ` · ${s.changeoverMin} min Rüsten`
+    + (s.peakHeadcount ? ` · Besetzung ~${s.peakHeadcount} MA / ${s.manHours} Pers.-h` : "")
     + (s.linesOver ? ` · ⚠ ${s.linesOver} Linie(n) über Kapazität` : ""),
   );
   if (dp.carryInFromPrev.length) out.push(`  Carry-in: ${dp.carryInFromPrev.map(c => `${c.code} ${c.portions}`).join(", ")}`);
@@ -538,7 +628,7 @@ export function describeDayPlan(dp: PlatingDayPlan): string {
     const seq = l.slots.map(sl =>
       `${sl.code}${sl.changeoverBeforeMin ? `·${sl.changeoverKind === "easy" ? "~" : "🧽"}${sl.changeoverBeforeMin}` : ""}:${sl.portions}${sl.carryOver ? `(→${sl.carryOver})` : ""}`,
     ).join(" → ");
-    out.push(`  L${l.line} ${l.role}: ${seq || "—"} [${l.platingMin + l.changeoverMin}/${l.availableMin} min · ${l.changeovers} Reinig.${l.overCapacity ? " ⚠" : ""}]`);
+    out.push(`  L${l.line} ${l.role}: ${seq || "—"} [${l.platingMin + l.changeoverMin}/${l.availableMin} min · ${l.changeovers} Reinig.${l.peakHeadcount ? ` · ${l.peakHeadcount} MA` : ""}${l.overCapacity ? " ⚠" : ""}]`);
   }
   if (dp.carryOutToNext.length) {
     out.push(`  Carry-out → Folgetag: ${dp.carryOutToNext.map(c => `${c.code} ${c.portions}${c.critical ? " ⚠KRITISCH" : ""}`).join(", ")}`);

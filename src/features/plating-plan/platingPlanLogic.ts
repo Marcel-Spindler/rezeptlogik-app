@@ -28,7 +28,6 @@ export const DEFAULT_PLATING_PARAMS: Omit<PlatingPlanParams, "firstRunPct"> = {
   platingRatePerLineHour: 900,
   changeoverEasyMin: 10,
   changeoverAllergenMin: 30,
-  changeoverProteinMin: 60,
 };
 
 /** Bekannte First-Run-% pro KW aus dem Sheet; sonst 70 %. */
@@ -61,7 +60,6 @@ export function resolvePlatingParams(week: string, override?: Partial<PlatingPla
     platingRatePerLineHour: Math.round(clampNum(p.platingRatePerLineHour, 1, 1e5, d.platingRatePerLineHour)),
     changeoverEasyMin: Math.round(clampNum(p.changeoverEasyMin, 0, 120, d.changeoverEasyMin)),
     changeoverAllergenMin: Math.round(clampNum(p.changeoverAllergenMin, 0, 240, d.changeoverAllergenMin)),
-    changeoverProteinMin: Math.round(clampNum(p.changeoverProteinMin, 0, 240, d.changeoverProteinMin)),
   };
 }
 
@@ -135,7 +133,7 @@ function mealRowFromWeekRecipe(
 
   const md = recipe ? Object.values(recipe.markets)[0] : undefined;
   const allergens = profile?.allergens || md?.allergens || "";
-  const subCount = md?.subRecipes?.length ?? null;
+  const subCount = md?.subRecipes?.length ?? (profile?.numSubs ?? null);
 
   let stations: string[];
   if (profile?.cookStations?.length) {
@@ -164,6 +162,7 @@ function mealRowFromWeekRecipe(
     seafood: SEAFOOD_RE.test(`${wr.recipeName} ${allergens}`),
     stations,
     complexity: profile?.complexityCx ?? fallbackComplexity(subCount),
+    subMealCount: Math.max(0, subCount ?? 0),
     ...(profile ? { activeCookMin: profile.activeCookMin, passiveHoldMin: profile.passiveHoldMin } : {}),
   };
 }

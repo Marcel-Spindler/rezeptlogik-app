@@ -3,11 +3,13 @@ import { useAppState } from "../../app/AppContext";
 import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
 import { useBackfillsOptional } from "../backfills/BackfillsContext";
 import { runPlanAgent, type AgentStep, type GeminiContent } from "./planAssistantAgent";
-import { applyPlanChanges, applyPlatingWeekPlan, undoPlanChanges } from "./planAssistantApi";
+import { applyDayPlatingMoves, applyPlanChanges, applyPlatingWeekPlan, undoPlanChanges } from "./planAssistantApi";
 import { buildPlatingPlanWithMoves } from "./planAssistantTools";
 import { subscribePlatingWeekPlan } from "../plating-plan/platingWeekPlanFirestore";
 import type { PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
-import type { ChatMessage, ChatStep, PlanIssue, PlanProposal, PlatingProposal } from "./planAssistantTypes";
+import type {
+  ChatMessage, ChatStep, DayPlatingProposal, PlanIssue, PlanProposal, PlatingProposal,
+} from "./planAssistantTypes";
 
 const STORE_KEY = "rezeptlogik-plan-assistant-v1";
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `m${Date.now()}${Math.random()}`);
@@ -35,6 +37,9 @@ const TOOL_LABEL: Record<string, string> = {
   get_plating_plan: "Plating-Plan gelesen",
   generate_plating_plan: "Plating-Plan generiert",
   simulate_plating_change: "Plating simuliert",
+  get_day_plating_plan: "Tages-Linienplan gelesen",
+  generate_day_plating_plan: "Tages-Linienpläne generiert",
+  simulate_day_plating_change: "Tagesplan-Umsortierung simuliert",
   __thinking__: "Zwischenüberlegung",
 };
 
@@ -155,6 +160,34 @@ function PlatingProposalCard({ proposal, onApply }: { proposal: PlatingProposal;
   );
 }
 
+function DayPlatingProposalCard({ proposal, onApply }: { proposal: DayPlatingProposal; onApply: () => void }) {
+  return (
+    <div className="mt-2 rounded-lg border border-cyan-300 bg-cyan-50 p-2.5 text-[11px] text-cyan-900">
+      <div className="font-semibold">Tages-Linienplan umsortieren · {proposal.day}</div>
+      {proposal.summary ? <div className="mt-0.5 whitespace-pre-wrap">{proposal.summary}</div> : null}
+      {proposal.moves.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {proposal.moves.map((mv, i) => (
+            <li key={i} className="font-mono">
+              {mv.code}{mv.runIndex ? ` R${mv.runIndex}` : ""} → <strong>L{mv.toLine}</strong>
+              {mv.toIndex != null ? ` @${mv.toIndex}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+      {proposal.applied ? (
+        <div className="mt-1.5 font-semibold text-emerald-700">✓ Gespeichert — in „Plating Tag" sichtbar.</div>
+      ) : proposal.applyError ? (
+        <div className="mt-1.5 font-semibold text-rose-700">{proposal.applyError}</div>
+      ) : (
+        <button type="button" onClick={onApply} className="mt-2 rounded-md bg-cyan-600 px-3 py-1 text-xs font-semibold text-white hover:bg-cyan-500">
+          Umsortierung speichern
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
   const { data, selectedWeek, upliftPercent } = useAppState();
   const reconciliation = useWoReconciliation();
@@ -223,6 +256,7 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
         issues: outcome.issues,
         proposal: outcome.proposal,
         platingProposal: outcome.platingProposal,
+        dayPlatingProposal: outcome.dayPlatingProposal,
       } : m),
     }));
     setBusy(false);
@@ -239,6 +273,17 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
         : m));
     });
   }, [messages, data, selectedWeek, platingPlan, setMessages]);
+
+  const applyDayPlating = useCallback((msgId: string) => {
+    const msg = messages.find(m => m.id === msgId);
+    if (!msg?.dayPlatingProposal || !platingPlan) return;
+    const dp = msg.dayPlatingProposal;
+    void applyDayPlatingMoves(platingPlan, dp.day, dp.moves).then(res => {
+      setMessages(ms => ms.map(m => m.id === msgId && m.dayPlatingProposal
+        ? { ...m, dayPlatingProposal: { ...m.dayPlatingProposal, applied: res.ok, applyError: res.error } }
+        : m));
+    });
+  }, [messages, platingPlan, setMessages]);
 
   const applyProposal = useCallback((msgId: string, newScenario: boolean) => {
     if (!data) return;
@@ -347,6 +392,9 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
                 ) : null}
                 {m.platingProposal ? (
                   <PlatingProposalCard proposal={m.platingProposal} onApply={() => applyPlating(m.id)} />
+                ) : null}
+                {m.dayPlatingProposal ? (
+                  <DayPlatingProposalCard proposal={m.dayPlatingProposal} onApply={() => applyDayPlating(m.id)} />
                 ) : null}
               </div>
             </div>

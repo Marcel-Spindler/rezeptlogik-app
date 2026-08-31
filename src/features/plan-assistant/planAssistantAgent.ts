@@ -7,7 +7,7 @@
 import type { DataBundle } from "../../core/types";
 import { buildPlanContext } from "./planAssistantContext";
 import { TOOL_DECLARATIONS, TERMINAL_TOOLS, executeClientTool, type ToolContext } from "./planAssistantTools";
-import type { PlanIssue, PlanProposal, PlatingProposal } from "./planAssistantTypes";
+import type { DayPlatingProposal, PlanIssue, PlanProposal, PlatingProposal } from "./planAssistantTypes";
 
 const CHAT_URL = "/api/local-db/gemini-planning-chat";
 const MAX_STEPS = 6;
@@ -38,6 +38,7 @@ export interface AgentOutcome {
   issues?: PlanIssue[];
   proposal?: PlanProposal;
   platingProposal?: PlatingProposal;
+  dayPlatingProposal?: DayPlatingProposal;
   steps: AgentStep[];
   contents: GeminiContent[];
   error?: string;
@@ -133,6 +134,17 @@ export async function runPlanAgent(params: {
       if (terminal.name === "check_plan_issues") {
         const issues = Array.isArray(terminal.args.issues) ? (terminal.args.issues as PlanIssue[]) : [];
         return { text: lastText || "Analyse:", issues, steps, contents };
+      }
+      if (terminal.name === "propose_day_plating_change") {
+        return {
+          text: lastText || "Tagesplan-Umsortierung:",
+          dayPlatingProposal: {
+            day: String(terminal.args.day ?? ""),
+            moves: (Array.isArray(terminal.args.moves) ? terminal.args.moves : []) as DayPlatingProposal["moves"],
+            summary: String(terminal.args.summary ?? ""),
+          },
+          steps, contents,
+        };
       }
       if (terminal.name === "propose_plating_plan") {
         return {

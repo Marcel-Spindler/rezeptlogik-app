@@ -18,7 +18,9 @@ import type { BackfillsState } from "../backfills/BackfillsContext";
 import {
   computeDayLoads, generatePlatingPlan, summarizePlatingPlan,
 } from "../plating-plan/platingPlanLogic";
-import { describeDayPlan, generateAllDayPlans, summarizeDayPlan } from "../plating-plan/platingDayLogic";
+import {
+  applyDayPlanMoves, describeDayPlan, generateAllDayPlans, summarizeDayPlan,
+} from "../plating-plan/platingDayLogic";
 import { PLATING_DAYS, type PlatingDay, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
 import type { PlanChange } from "./planAssistantTypes";
 
@@ -31,7 +33,9 @@ export interface ToolContext {
   platingPlan: PlatingWeekPlan | null;
 }
 
-export const TERMINAL_TOOLS = new Set(["propose_plan_change", "check_plan_issues", "propose_plating_plan"]);
+export const TERMINAL_TOOLS = new Set([
+  "propose_plan_change", "check_plan_issues", "propose_plating_plan", "propose_day_plating_change",
+]);
 
 /** Erzeugt einen Plating-Plan und wendet Move-/Notiz-Deltas an (für Sim + Apply).
  *  `basePlan` (falls vorhanden) liefert die gespeicherten Params + Tages-Kapazität,
@@ -78,6 +82,18 @@ const CHANGE_ITEM = {
     reason: { type: "STRING", description: "Kurze Begründung" },
   },
   required: ["recipeCode", "day", "shift", "reason"],
+} as const;
+
+const DAY_MOVE_DAY = { type: "STRING", description: "Produktionstag Mo/Di/Mi/Do/Fr/Sa" } as const;
+const DAY_MOVE_ITEM = {
+  type: "OBJECT",
+  properties: {
+    code: { type: "STRING", description: "Meal-Code des zu verschiebenden Slots, z. B. FV0035A" },
+    runIndex: { type: "NUMBER", description: "Optional: welcher Run (1/2), falls das Meal an dem Tag mehrfach läuft" },
+    toLine: { type: "NUMBER", description: "Ziel-Linie (1-basiert). (Linienzahl+1) = neue Overload-Linie, sofern die Tageskapazität weitere Linien zulässt." },
+    toIndex: { type: "NUMBER", description: "Optional: 0-basierte Einfüge-Position auf der Ziel-Linie; leer = ans Ende" },
+  },
+  required: ["code", "toLine"],
 } as const;
 
 export const TOOL_DECLARATIONS = [{
@@ -143,13 +159,35 @@ export const TOOL_DECLARATIONS = [{
     },
     {
       name: "get_day_plating_plan",
-      description: "Der tägliche Linienplan (Phase 3): Meals je Tag auf Plating-Linien aufsteigend nach Allergenen sequenziert (kein Allergen → viele). Zeigt Reinigungen (Allergen-Wegfall / Protein-Wechsel = Saubermach-Aktion), easy Changeovers (nur zufügen), Carry-over auf den Folgetag (Seafood/komplex = kritisch). Ohne Argument: alle Tage; mit `day`: nur dieser Tag.",
+      description: "Der tägliche Linienplan (Phase 3): Meals je Tag auf Plating-Linien aufsteigend nach Allergenen sequenziert (kein Allergen → viele). Zeigt Reinigungen (Allergen-Wegfall = Saubermach-Aktion), easy Changeovers (nur zufügen), Besetzung (Sub-Meals + 1 Helfer je Linie) und Carry-over auf den Folgetag (Seafood/komplex = kritisch). Ohne Argument: alle Tage; mit `day`: nur dieser Tag.",
       parameters: { type: "OBJECT", properties: { day: { type: "STRING", description: "Mo/Di/Mi/Do/Fr/Sa — leer = alle" } } },
     },
     {
       name: "generate_day_plating_plan",
       description: "Baut aus dem Wochen-Plating-Plan die täglichen Linienpläne: L1 Highrunner = größter sauberer Block (0 Reinigungen), L2 Flex nimmt die Reinigungen auf, L3 Overload nur wenn L1+L2 das Volumen nicht fassen. Gibt Reinigungen, easy Changeovers, Rüst-Minuten und (kritisches) Carry-over je Tag zurück. Speichert NICHT.",
       parameters: { type: "OBJECT", properties: {} },
+    },
+    {
+      name: "simulate_day_plating_change",
+      description: "Verschiebt einzelne Slots im täglichen Linienplan EINES Tages PROBEWEISE (auf eine andere Linie / Position) und rechnet Umrüsten, Reinigungen und Carry-over neu. Gibt vorher/nachher zurück (Reinigungen, easy, Rüst-min, Linien über Kapazität, Carry-over). Nutzt den gespeicherten Tagesplan als Basis — vorher ggf. generate_day_plating_plan. IMMER vor propose_day_plating_change.",
+      parameters: {
+        type: "OBJECT",
+        properties: { day: DAY_MOVE_DAY, moves: { type: "ARRAY", items: DAY_MOVE_ITEM } },
+        required: ["day", "moves"],
+      },
+    },
+    {
+      name: "propose_day_plating_change",
+      description: "TERMINAL. Legt dem Nutzer die Umsortierung des täglichen Linienplans eines Tages zur Bestätigung vor (verschobene Slots + Begründung). Ändert nur diesen einen Tag, nicht die ganze Woche. Erst nach simulate_day_plating_change.",
+      parameters: {
+        type: "OBJECT",
+        properties: {
+          day: DAY_MOVE_DAY,
+          moves: { type: "ARRAY", items: DAY_MOVE_ITEM },
+          summary: { type: "STRING", description: "Was wird umsortiert, warum, + Simulations-Ergebnis (Reinigungen/Carry-over vorher→nachher)" },
+        },
+        required: ["day", "moves", "summary"],
+      },
     },
     {
       name: "simulate_plating_change",
@@ -483,6 +521,37 @@ function toolSimulatePlating(args: Record<string, unknown>, ctx: ToolContext) {
   };
 }
 
+function toolSimulateDayPlating(args: Record<string, unknown>, ctx: ToolContext) {
+  const plan = ctx.platingPlan;
+  if (!plan?.dailyPlans || !Object.keys(plan.dailyPlans).length) {
+    return { error: "Noch keine täglichen Linienpläne. generate_day_plating_plan baut sie zuerst." };
+  }
+  const day = normalizeDay(String(args.day ?? ""));
+  if (!day || !plan.dailyPlans[day as PlatingDay]) {
+    return { error: `Kein Tagesplan für „${args.day}". Vorhanden: ${PLATING_DAYS.filter(d => plan.dailyPlans?.[d]).join(", ") || "—"}` };
+  }
+  const moves = (Array.isArray(args.moves) ? args.moves : []) as Array<{ code: string; runIndex?: number; toLine: number; toIndex?: number }>;
+  if (!moves.length) return { error: "Keine moves übergeben." };
+
+  const dpBefore = plan.dailyPlans[day as PlatingDay]!;
+  const before = summarizeDayPlan(dpBefore);
+  const { dayPlan, applied, skipped } = applyDayPlanMoves(dpBefore, plan, moves);
+  const after = summarizeDayPlan(dayPlan);
+  const brief = (s: typeof before) => ({
+    reinigungen: s.cleaningActions, easy: s.easyChangeovers, ruestMin: s.changeoverMin,
+    linienUeberKapazitaet: s.linesOver, carryOver: s.carryOut, carryOverKritisch: s.carryOutCritical,
+  });
+  return {
+    day, applied, skipped,
+    before: brief(before),
+    after: brief(after),
+    verdict: after.cleaningActions <= before.cleaningActions && after.carryOut <= before.carryOut + 1 && after.linesOver <= before.linesOver
+      ? "besser oder gleich"
+      : "verschlechtert mindestens eine Kennzahl — abwägen",
+    detail: describeDayPlan(dayPlan),
+  };
+}
+
 const EXECUTORS: Record<string, (args: Record<string, unknown>, ctx: ToolContext) => unknown> = {
   get_recipe_detail: toolGetRecipeDetail,
   get_backfill_detail: toolGetBackfillDetail,
@@ -495,6 +564,7 @@ const EXECUTORS: Record<string, (args: Record<string, unknown>, ctx: ToolContext
   get_day_plating_plan: toolGetDayPlating,
   generate_day_plating_plan: toolGenerateDayPlating,
   simulate_plating_change: toolSimulatePlating,
+  simulate_day_plating_change: toolSimulateDayPlating,
 };
 
 export function executeClientTool(name: string, args: Record<string, unknown>, ctx: ToolContext): unknown {

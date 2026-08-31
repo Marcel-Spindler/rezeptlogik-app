@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { generateDayPlan, generateAllDayPlans, summarizeDayPlan, recomputeDayPlan } from "../features/plating-plan/platingDayLogic";
+import {
+  applyDayPlanMoves, generateDayPlan, generateAllDayPlans, summarizeDayPlan, recomputeDayPlan,
+} from "../features/plating-plan/platingDayLogic";
 import { DEFAULT_PLATING_PARAMS } from "../features/plating-plan/platingPlanLogic";
 import type { PlatingMealPlan, PlatingWeekPlan } from "../features/plating-plan/platingPlanTypes";
 
@@ -8,13 +10,14 @@ const params = { ...DEFAULT_PLATING_PARAMS, firstRunPct: 0.7 };
 function meal(
   code: string, name: string, allergens: string,
   runs: { runIndex: number; portions: number; day: PlatingMealPlan["runs"][number]["day"] }[],
+  subMealCount = 3,
 ): PlatingMealPlan {
   const total = runs.reduce((s, r) => s + r.portions, 0);
   return {
     code, name, preference: "Keto",
     demand: { benl: total, nord: 0, de: 0 }, totalDemand: total, bufferedTotal: total,
     runCount: runs.length, runs, allergens, seafood: /fish|salmon|shrimp/i.test(name),
-    stations: [], complexity: 1,
+    stations: [], complexity: 1, subMealCount,
   };
 }
 
@@ -58,7 +61,7 @@ describe("generateDayPlan", () => {
     expect(changeoverSlots[0].changeoverBeforeMin).toBe(params.changeoverAllergenMin);
   });
 
-  it("Protein-Typ-Wechsel kostet mehr als ein Allergen-Wechsel", () => {
+  it("gleiche Allergene, anderes Protein → KEIN Changeover (rein allergen-getrieben)", () => {
     const plan = weekPlan(
       [
         meal("A", "Grilled Chicken", "milk", [{ runIndex: 1, portions: 1200, day: "Di" }]),
@@ -68,8 +71,26 @@ describe("generateDayPlan", () => {
     );
     const dp = generateDayPlan(plan, "Di");
     const co = dp.lines[0].slots.find(s => s.changeoverBeforeMin > 0);
-    expect(co?.changeoverReason).toBe("protein");
-    expect(co?.changeoverBeforeMin).toBe(params.changeoverProteinMin);
+    expect(co).toBeUndefined();
+    expect(dp.lines[0].changeovers).toBe(0);
+  });
+
+  it("Besetzung = Sub-Meals + 1 je Slot, Spitze/Pers.-h rollen hoch", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1800, day: "Di" }], 4),
+        meal("B", "Cream Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }], 2),
+      ],
+      { Di: { lines: 1, hours: 22 } },
+    );
+    const dp = generateDayPlan(plan, "Di");
+    const bySlot = Object.fromEntries(dp.lines[0].slots.map(s => [s.code, s.headcount]));
+    expect(bySlot.A).toBe(5); // 4 + 1
+    expect(bySlot.B).toBe(3); // 2 + 1
+    expect(dp.lines[0].peakHeadcount).toBe(5);
+    const s = summarizeDayPlan(dp);
+    expect(s.peakHeadcount).toBe(5);
+    expect(s.manHours).toBeGreaterThan(0);
   });
 
   it("zu wenig Kapazität → Carry-over auf den Folgetag, Portionen konserviert", () => {
@@ -260,6 +281,98 @@ describe("Phase 3 — Allergen-Reihenfolge & Linien", () => {
     const l1 = generateDayPlan(plan, "Di").lines[0];
     expect(l1.slots.map(s => s.code)).toEqual(["B", "C", "D", "A"]);
     expect(l1.changeovers).toBe(0); // reine Zufüge-Kette
+  });
+});
+
+describe("applyDayPlanMoves", () => {
+  const wp = () => weekPlan(
+    [
+      meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 3000, day: "Di" }]),
+      meal("B", "Cream Chicken", "milk,sulphites", [{ runIndex: 1, portions: 2500, day: "Di" }]),
+      meal("C", "Sesame Beef", "sesame,soya", [{ runIndex: 1, portions: 2000, day: "Di" }]),
+    ],
+    { Di: { lines: 3, hours: 22 } },
+  );
+
+  it("verschiebt einen Slot auf eine andere Linie und rechnet neu", () => {
+    const dp = generateDayPlan(wp(), "Di");
+    const l1codes = dp.lines[0].slots.map(s => s.code);
+    const moveCode = l1codes[l1codes.length - 1] ?? dp.lines[1]?.slots[0]?.code;
+    const target = dp.lines.length > 1 ? 2 : 1;
+    const { dayPlan, applied, skipped } = applyDayPlanMoves(dp, wp(), [
+      { code: moveCode, toLine: target },
+    ]);
+    expect(skipped).toHaveLength(0);
+    expect(applied).toHaveLength(1);
+    expect(dayPlan.source).toBe("edited");
+    const placedAfter = dayPlan.lines.flatMap(l => l.slots).reduce((s, sl) => s + sl.portions, 0)
+      + dayPlan.carryOutToNext.reduce((s, c) => s + c.portions, 0);
+    expect(placedAfter).toBe(7500);
+  });
+
+  it("ordnet innerhalb einer Linie um (toIndex)", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }]),
+        meal("B", "Plain Chicken", "", [{ runIndex: 1, portions: 1400, day: "Di" }]),
+        meal("C", "Milk Sulph Chicken", "milk,sulphites", [{ runIndex: 1, portions: 1300, day: "Di" }]),
+      ],
+      { Di: { lines: 1, hours: 22 } },
+    );
+    const dp = generateDayPlan(plan, "Di");
+    expect(dp.lines[0].slots.map(s => s.code)).toEqual(["B", "A", "C"]);
+    // C an den Anfang ziehen
+    const { dayPlan } = applyDayPlanMoves(dp, plan, [{ code: "C", toLine: 1, toIndex: 0 }]);
+    expect(dayPlan.lines[0].slots.map(s => s.code)).toEqual(["C", "B", "A"]);
+    expect(dayPlan.lines[0].slots[0].changeoverBeforeMin).toBe(0);
+  });
+
+  it("meldet unbekannte Codes / Linien als skipped", () => {
+    const dp = generateDayPlan(wp(), "Di");
+    const { skipped } = applyDayPlanMoves(dp, wp(), [
+      { code: "ZZ999", toLine: 1 },
+      { code: "A", toLine: 9 },
+    ]);
+    expect(skipped).toHaveLength(2);
+  });
+
+  it("kann eine neue Overload-Linie öffnen, wenn die Tageskapazität es zulässt", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 3000, day: "Di" }]),
+        meal("B", "Sesame Beef", "sesame", [{ runIndex: 1, portions: 2500, day: "Di" }]),
+      ],
+      { Di: { lines: 3, hours: 22 } },
+    );
+    const dp = generateDayPlan(plan, "Di");
+    expect(dp.lines.length).toBeLessThanOrEqual(2);
+    const { dayPlan, skipped } = applyDayPlanMoves(dp, plan, [
+      { code: "B", toLine: dp.lines.length + 1 },
+    ]);
+    expect(skipped).toHaveLength(0);
+    expect(dayPlan.lines.length).toBe(dp.lines.length + 1);
+    expect(dayPlan.lines[dayPlan.lines.length - 1].slots.map(s => s.code)).toEqual(["B"]);
+  });
+});
+
+describe("Restkapazität aller Linien (durchziehen statt Carry-over)", () => {
+  it("verplant so viel wie möglich, Portionen bleiben über Linien + Carry-over erhalten", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 6000, day: "Di" }]),
+        meal("B", "Cream Chicken", "milk", [{ runIndex: 1, portions: 5000, day: "Di" }]),
+        meal("C", "Butter Chicken", "milk", [{ runIndex: 1, portions: 4000, day: "Di" }]),
+      ],
+      { Di: { lines: 2, hours: 6 } }, // 2 × 6h × 900 = 10800 Kapazität, 15000 Bedarf
+    );
+    const dp = generateDayPlan(plan, "Di");
+    const placed = dp.lines.flatMap(l => l.slots).reduce((s, sl) => s + sl.portions, 0);
+    const carry = dp.carryOutToNext.reduce((s, c) => s + c.portions, 0);
+    expect(placed + carry).toBe(15000);
+    // beide Linien nahe Kapazität ausgereizt (kein "grundlos Carry-over")
+    for (const l of dp.lines) {
+      expect(l.platingMin + l.changeoverMin).toBeGreaterThan(l.availableMin * 0.9);
+    }
   });
 });
 
