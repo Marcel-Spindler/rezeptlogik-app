@@ -75,22 +75,49 @@ describe("generateDayPlan", () => {
     expect(dp.lines[0].changeovers).toBe(0);
   });
 
-  it("Besetzung = Sub-Meals + 1 je Slot, Spitze/Pers.-h rollen hoch", () => {
+  it("Besetzung = ceil(Sub-Meals × platerFactor) + Helfer je Slot, Spitze/Pers.-h rollen hoch", () => {
     const plan = weekPlan(
       [
-        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1800, day: "Di" }], 4),
-        meal("B", "Cream Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }], 2),
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1800, day: "Di" }], 6),
+        meal("B", "Cream Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }], 3),
       ],
       { Di: { lines: 1, hours: 22 } },
     );
-    const dp = generateDayPlan(plan, "Di");
+    const dp = generateDayPlan(plan, "Di"); // Default 0.7 / 2 Helfer
     const bySlot = Object.fromEntries(dp.lines[0].slots.map(s => [s.code, s.headcount]));
-    expect(bySlot.A).toBe(5); // 4 + 1
-    expect(bySlot.B).toBe(3); // 2 + 1
-    expect(dp.lines[0].peakHeadcount).toBe(5);
+    expect(bySlot.A).toBe(7); // ceil(6 × 0.7) + 2 = 5 + 2
+    expect(bySlot.B).toBe(5); // ceil(3 × 0.7) + 2 = 3 + 2
+    expect(dp.lines[0].peakHeadcount).toBe(7);
     const s = summarizeDayPlan(dp);
-    expect(s.peakHeadcount).toBe(5);
+    expect(s.peakHeadcount).toBe(7);
     expect(s.manHours).toBeGreaterThan(0);
+  });
+
+  it("platerFactor / platingHelpers steuern die Besetzung", () => {
+    const plan = weekPlan(
+      [meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }], 5)],
+      { Di: { lines: 1, hours: 22 } },
+      { ...params, platerFactor: 1, platingHelpers: 0 },
+    );
+    const dp = generateDayPlan(plan, "Di");
+    expect(dp.lines[0].slots[0].headcount).toBe(5); // ceil(5 × 1) + 0
+
+    const lean = weekPlan(
+      [meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }], 5)],
+      { Di: { lines: 1, hours: 22 } },
+      { ...params, platerFactor: 0.5, platingHelpers: 1 },
+    );
+    expect(generateDayPlan(lean, "Di").lines[0].slots[0].headcount).toBe(4); // ceil(2.5) + 1
+  });
+
+  it("Sub-Meals unbekannt (0) → Besetzung 0, keine Schätzung", () => {
+    const plan = weekPlan(
+      [meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }], 0)],
+      { Di: { lines: 1, hours: 22 } },
+    );
+    const dp = generateDayPlan(plan, "Di");
+    expect(dp.lines[0].slots[0].headcount).toBe(0);
+    expect(dp.lines[0].peakHeadcount).toBe(0);
   });
 
   it("zu wenig Kapazität → Carry-over auf den Folgetag, Portionen konserviert", () => {

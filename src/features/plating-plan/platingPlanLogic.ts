@@ -28,6 +28,8 @@ export const DEFAULT_PLATING_PARAMS: Omit<PlatingPlanParams, "firstRunPct"> = {
   platingRatePerLineHour: 900,
   changeoverEasyMin: 10,
   changeoverAllergenMin: 30,
+  platerFactor: 0.7,
+  platingHelpers: 2,
 };
 
 /** Bekannte First-Run-% pro KW aus dem Sheet; sonst 70 %. */
@@ -60,6 +62,8 @@ export function resolvePlatingParams(week: string, override?: Partial<PlatingPla
     platingRatePerLineHour: Math.round(clampNum(p.platingRatePerLineHour, 1, 1e5, d.platingRatePerLineHour)),
     changeoverEasyMin: Math.round(clampNum(p.changeoverEasyMin, 0, 120, d.changeoverEasyMin)),
     changeoverAllergenMin: Math.round(clampNum(p.changeoverAllergenMin, 0, 240, d.changeoverAllergenMin)),
+    platerFactor: clampNum(p.platerFactor, 0.1, 3, d.platerFactor),
+    platingHelpers: Math.round(clampNum(p.platingHelpers, 0, 20, d.platingHelpers)),
   };
 }
 

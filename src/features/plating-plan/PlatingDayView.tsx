@@ -103,7 +103,7 @@ function SlotBlock({ slot, pxPerMin, dnd, line, seq }: {
         <div className="flex items-center justify-between font-mono">
           <span className="font-semibold text-blue-800">{fmtNum(slot.portions)}</span>
           {slot.headcount > 0 && (
-            <span className="rounded bg-slate-100 px-0.5 text-slate-600" title={`${slot.subMeals} Sub-Meals + 1 Helfer`}>
+            <span className="rounded bg-slate-100 px-0.5 text-slate-600" title={`${slot.subMeals} Sub-Meals → ${slot.headcount} MA (inkl. Helfer je Linie)`}>
               {slot.headcount}👤
             </span>
           )}
@@ -141,7 +141,7 @@ function LineRow({ line, dnd }: { line: PlatingLinePlan; dnd?: Dnd }) {
         )}
         <span className="text-slate-400">{line.changeoverMin} min Rüsten</span>
         {line.peakHeadcount > 0 && (
-          <span className="text-slate-500" title="Spitzenbesetzung der Linie (MA + 1 Helfer)">
+          <span className="text-slate-500" title="Spitzenbesetzung der Linie (Plater je Sub-Meal + feste Helfer)">
             👤 {line.peakHeadcount} MA
           </span>
         )}
@@ -275,7 +275,7 @@ export function PlatingDayView({ data, week }: { data: DataBundle; week: string 
         Allergen weg = <span className="text-rose-600">🧽 Reinigung</span> ({plan?.params.changeoverAllergenMin ?? 30} min).
         Linie 1 = Highrunner (größter sauberer Block, 0 Reinigungen), Linie 2 = Flex (nimmt die Reinigungen auf),
         Linie 3 = nur wenn L1+L2 das Volumen nicht fassen. Rest → Carry-over Folgetag (Seafood/komplex = ⚠ Deadline).
-        Besetzung <span className="text-slate-600">👤</span> = Sub-Meals + 1 Helfer je Linie.
+        Besetzung <span className="text-slate-600">👤</span> = ⌈Sub-Meals × {plan?.params.platerFactor ?? 0.7}⌉ + {plan?.params.platingHelpers ?? 2} Helfer je Linie.
         Sequenz/Params im Wochenplan-Tab ändern, dann neu generieren.
       </p>
 

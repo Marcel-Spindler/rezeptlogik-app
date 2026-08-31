@@ -135,10 +135,17 @@ describe("resolvePlatingParams", () => {
     expect(p.singleRunMaxDemand).toBe(3000);   // Override greift
   });
   it("klemmt unsinnige Werte", () => {
-    const p = resolvePlatingParams("2026-W37", { singleRunBuffer: 9, firstRunPct: -1, platingRatePerLineHour: 0 });
+    const p = resolvePlatingParams("2026-W37", { singleRunBuffer: 9, firstRunPct: -1, platingRatePerLineHour: 0, platerFactor: 99, platingHelpers: -3 });
     expect(p.singleRunBuffer).toBeLessThanOrEqual(0.5);
     expect(p.firstRunPct).toBeGreaterThanOrEqual(0.4);
     expect(p.platingRatePerLineHour).toBeGreaterThanOrEqual(1);
+    expect(p.platerFactor).toBeLessThanOrEqual(3);
+    expect(p.platingHelpers).toBeGreaterThanOrEqual(0);
+  });
+  it("Besetzungs-Defaults sind gesetzt", () => {
+    const p = resolvePlatingParams("2026-W37");
+    expect(p.platerFactor).toBe(0.7);
+    expect(p.platingHelpers).toBe(2);
   });
 });
 

@@ -7,8 +7,9 @@
 //   milk → milk             = 0
 // Jede Linie wird aufsteigend sequenziert: möglichst kein Allergen → viele.
 //
-// Besetzung: pro Meal auf einer Linie = (# Sub-Meals) + 1 Helfer (einer je Linie).
-// Daraus Spitzenbesetzung je Linie/Tag + Personenminuten.
+// Besetzung: pro Meal auf einer Linie = ceil(#Sub-Meals × platerFactor) + feste
+// Helfer je Linie (beides KW-Parameter). Daraus Spitzenbesetzung je Linie/Tag +
+// Personenminuten.
 //
 // Linien (der Tag hat laut Kapazität `lines` besetzt):
 //   L1 HIGHRUNNER = der größte „saubere Block" (Kette ohne Reinigung), bis die
@@ -29,10 +30,11 @@ import { PLATING_DAYS, type ChangeoverKind, type PlatingCarryItem, type PlatingD
 /** cx ab hier gilt ein Meal als komplex → harte Deadline (siehe Wochenplan). */
 const COMPLEX_CX = 1.15;
 
-/** Besetzung einer Linie für ein Meal: ein MA pro Sub-Meal + ein Helfer je Linie.
- *  0 Sub-Meals (unbekannt) → 0 (keine Schätzung). */
-function headcountFor(subMeals: number): number {
-  return subMeals > 0 ? subMeals + 1 : 0;
+/** Besetzung einer Linie für ein Meal: ceil(#Sub-Meals × platerFactor) plus die
+ *  festen Helfer je Linie. 0 Sub-Meals (unbekannt) → 0 (keine Schätzung). */
+function headcountFor(subMeals: number, staff: { platerFactor: number; helpers: number }): number {
+  if (subMeals <= 0) return 0;
+  return Math.ceil(subMeals * staff.platerFactor) + staff.helpers;
 }
 
 /** Allergen-Menge (klein, getrimmt). */
@@ -75,15 +77,20 @@ interface Job {
   critical: boolean;              // Seafood oder cx ≥ COMPLEX_CX
 }
 
+/** Umrüst- + Besetzungs-Parameter, durch die Pack-Funktionen gereicht. */
 interface CoParams {
   easyMin: number;
   allergenMin: number;
+  platerFactor: number;
+  helpers: number;
 }
 
 function coParams(p: PlatingPlanParams): CoParams {
   return {
     easyMin: p.changeoverEasyMin ?? 10,
     allergenMin: p.changeoverAllergenMin ?? 30,
+    platerFactor: p.platerFactor ?? 0.7,
+    helpers: p.platingHelpers ?? 2,
   };
 }
 
@@ -216,11 +223,12 @@ function splitCleanBlocks(seq: Job[], co: CoParams): CleanBlock[] {
   return blocks;
 }
 
-function slotBase(j: Job): Omit<PlatingSlot, "seq" | "startMin" | "endMin" | "changeoverBeforeMin" | "changeoverReason" | "changeoverKind"> {
+function slotBase(j: Job, co: CoParams): Omit<PlatingSlot, "seq" | "startMin" | "endMin" | "changeoverBeforeMin" | "changeoverReason" | "changeoverKind"> {
   return {
     code: j.code, name: j.name, runIndex: j.runIndex, portions: j.portions,
     allergens: j.allergens, seafood: j.seafood, complexity: j.complexity,
-    subMeals: j.subMeals, headcount: headcountFor(j.subMeals),
+    subMeals: j.subMeals,
+    headcount: headcountFor(j.subMeals, { platerFactor: co.platerFactor, helpers: co.helpers }),
   };
 }
 
@@ -250,7 +258,7 @@ function packLine(
       queue.shift();
       const startAt = used + c.min;
       slots.push({
-        ...slotBase(next), seq: seqOffset + slots.length,
+        ...slotBase(next, co), seq: seqOffset + slots.length,
         startMin: round(startAt), endMin: round(startAt + jobMin),
         changeoverBeforeMin: c.min, changeoverReason: c.reason, changeoverKind: c.kind,
       });
@@ -271,7 +279,7 @@ function packLine(
       const startAt = used + c.min;
       const fitMin = fit * minPerPortion;
       slots.push({
-        ...slotBase(next), portions: fit, seq: seqOffset + slots.length,
+        ...slotBase(next, co), portions: fit, seq: seqOffset + slots.length,
         startMin: round(startAt), endMin: round(startAt + fitMin),
         changeoverBeforeMin: c.min, changeoverReason: c.reason, changeoverKind: c.kind,
       });
@@ -437,7 +445,7 @@ export function recomputeDayPlan(dp: PlatingDayPlan, plan: PlatingWeekPlan): Pla
       if (used + c.min + jobMin <= line.availableMin + 0.01) {
         const start = used + c.min;
         slots.push({
-          ...slotBase(job), portions: total, carryOver: undefined, seq: slots.length,
+          ...slotBase(job, co), portions: total, carryOver: undefined, seq: slots.length,
           startMin: round(start), endMin: round(start + jobMin),
           changeoverBeforeMin: c.min, changeoverReason: c.reason, changeoverKind: c.kind,
         });
@@ -452,7 +460,7 @@ export function recomputeDayPlan(dp: PlatingDayPlan, plan: PlatingWeekPlan): Pla
           const start = used + c.min;
           const fitMin = fit * minPerPortion;
           slots.push({
-            ...slotBase(job), portions: fit, carryOver: total - fit, seq: slots.length,
+            ...slotBase(job, co), portions: fit, carryOver: total - fit, seq: slots.length,
             startMin: round(start), endMin: round(start + fitMin),
             changeoverBeforeMin: c.min, changeoverReason: c.reason, changeoverKind: c.kind,
           });

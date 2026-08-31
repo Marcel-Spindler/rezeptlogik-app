@@ -167,6 +167,8 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
             <ParamNum label="Rate P/Linie/h" value={draftParams.platingRatePerLineHour} step={25} onCommit={v => setParam("platingRatePerLineHour", v)} />
             <ParamNum label="Easy Changeover (min)" value={draftParams.changeoverEasyMin} step={5} onCommit={v => setParam("changeoverEasyMin", v)} />
             <ParamNum label="Reinigung Allergen (min)" value={draftParams.changeoverAllergenMin} step={5} onCommit={v => setParam("changeoverAllergenMin", v)} />
+            <ParamNum label="Plater je Sub-Meal" value={draftParams.platerFactor} step={0.1} onCommit={v => setParam("platerFactor", v)} />
+            <ParamNum label="Helfer je Linie" value={draftParams.platingHelpers} step={1} onCommit={v => setParam("platingHelpers", v)} />
           </div>
           <div>
             <div className="mb-1 font-semibold text-slate-600">Kapazität je Tag (Linien · Stunden)</div>

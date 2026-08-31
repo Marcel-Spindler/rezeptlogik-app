@@ -60,6 +60,10 @@ export interface PlatingPlanParams {
   platingRatePerLineHour: number; // Portionen/Linie/Stunde für die Kapazitätsrechnung
   changeoverEasyMin: number;      // Easy Changeover: nur Allergene ZUFÜGEN (milk → milk,sulphites), keine Reinigung (~10)
   changeoverAllergenMin: number;  // Volle Reinigung bei Allergen-WEGFALL (milk,sulphites → milk) (~30)
+  /** Besetzung je Linie/Meal = ceil(subMealCount × platerFactor) + platingHelpers.
+   *  platerFactor < 1 = mehrere Komponenten teilen sich eine Station (~0.7). */
+  platerFactor: number;
+  platingHelpers: number;         // feste Helfer je Linie (Deckel/Etikett/QC am Bandende, ~2)
 }
 
 // ── Phase 2/3: täglicher Linienplan ──────────────────────────────────────────

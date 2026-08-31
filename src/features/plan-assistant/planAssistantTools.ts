@@ -159,7 +159,7 @@ export const TOOL_DECLARATIONS = [{
     },
     {
       name: "get_day_plating_plan",
-      description: "Der tägliche Linienplan (Phase 3): Meals je Tag auf Plating-Linien aufsteigend nach Allergenen sequenziert (kein Allergen → viele). Zeigt Reinigungen (Allergen-Wegfall = Saubermach-Aktion), easy Changeovers (nur zufügen), Besetzung (Sub-Meals + 1 Helfer je Linie) und Carry-over auf den Folgetag (Seafood/komplex = kritisch). Ohne Argument: alle Tage; mit `day`: nur dieser Tag.",
+      description: "Der tägliche Linienplan (Phase 3): Meals je Tag auf Plating-Linien aufsteigend nach Allergenen sequenziert (kein Allergen → viele). Zeigt Reinigungen (Allergen-Wegfall = Saubermach-Aktion), easy Changeovers (nur zufügen), Besetzung (⌈Sub-Meals × platerFactor⌉ + feste Helfer je Linie, beides KW-Parameter) und Carry-over auf den Folgetag (Seafood/komplex = kritisch). Ohne Argument: alle Tage; mit `day`: nur dieser Tag.",
       parameters: { type: "OBJECT", properties: { day: { type: "STRING", description: "Mo/Di/Mi/Do/Fr/Sa — leer = alle" } } },
     },
     {
