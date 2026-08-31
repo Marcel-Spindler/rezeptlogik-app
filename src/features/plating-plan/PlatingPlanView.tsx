@@ -165,8 +165,9 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
             <ParamNum label="Puffer 1 Run %" value={Math.round(draftParams.singleRunBuffer * 100)} step={1} onCommit={v => setParam("singleRunBuffer", v / 100)} />
             <ParamNum label="Puffer 2 Runs %" value={Math.round(draftParams.multiRunBuffer * 100)} step={1} onCommit={v => setParam("multiRunBuffer", v / 100)} />
             <ParamNum label="Rate P/Linie/h" value={draftParams.platingRatePerLineHour} step={25} onCommit={v => setParam("platingRatePerLineHour", v)} />
-            <ParamNum label="Umrüsten Allergen (min)" value={draftParams.changeoverAllergenMin} step={5} onCommit={v => setParam("changeoverAllergenMin", v)} />
-            <ParamNum label="Umrüsten Protein (min)" value={draftParams.changeoverProteinMin} step={5} onCommit={v => setParam("changeoverProteinMin", v)} />
+            <ParamNum label="Easy Changeover (min)" value={draftParams.changeoverEasyMin} step={5} onCommit={v => setParam("changeoverEasyMin", v)} />
+            <ParamNum label="Reinigung Allergen (min)" value={draftParams.changeoverAllergenMin} step={5} onCommit={v => setParam("changeoverAllergenMin", v)} />
+            <ParamNum label="Full Changeover Protein (min)" value={draftParams.changeoverProteinMin} step={5} onCommit={v => setParam("changeoverProteinMin", v)} />
           </div>
           <div>
             <div className="mb-1 font-semibold text-slate-600">Kapazität je Tag (Linien · Stunden)</div>

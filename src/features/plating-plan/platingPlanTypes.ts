@@ -55,13 +55,21 @@ export interface PlatingPlanParams {
   singleRunBuffer: number;        // +Puffer bei 1 Run  (Sheet-Formel, ~0.10)
   multiRunBuffer: number;         // +Puffer bei 2 Runs (Sheet „Buffer Assumption", ~0.05)
   platingRatePerLineHour: number; // Portionen/Linie/Stunde für die Kapazitätsrechnung
-  changeoverAllergenMin: number;  // Reinigung bei Allergen-Wechsel (Phase 2, ~30)
+  changeoverEasyMin: number;      // Easy Changeover: nur Allergene ZUFÜGEN (milk → milk,sulphites), keine Reinigung (~10)
+  changeoverAllergenMin: number;  // Volle Reinigung bei Allergen-WEGFALL (milk,sulphites → milk) (~30)
   changeoverProteinMin: number;   // Full Changeover bei Protein-Typ-Wechsel (Phase 2, ~60)
 }
 
-// ── Phase 2: täglicher Linienplan ────────────────────────────────────────────
+// ── Phase 2/3: täglicher Linienplan ──────────────────────────────────────────
 
 export type ProteinType = "chicken" | "beef" | "pork" | "seafood" | "veggie" | "other";
+
+/** Art des Übergangs zwischen zwei aufeinanderfolgenden Slots:
+ *  none  = identische Allergene + gleiches Protein → 0 min
+ *  easy  = Allergene NUR zugefügt (milk → milk,sulphites) → kurze Rüstzeit, keine Reinigung
+ *  allergen = Allergen weggefallen → volle Reinigung (= Saubermach-Aktion)
+ *  protein  = Protein-Typ-Wechsel → Full Changeover (= Saubermach-Aktion) */
+export type ChangeoverKind = "none" | "easy" | "allergen" | "protein";
 
 /** Ein Meal-Run auf einer Linie an einem Tag. */
 export interface PlatingSlot {
@@ -72,8 +80,9 @@ export interface PlatingSlot {
   seq: number;                    // Reihenfolge auf der Linie (0-basiert)
   startMin: number;               // Start ab Schichtbeginn (Minuten)
   endMin: number;
-  changeoverBeforeMin: number;    // Umrüstzeit vor diesem Slot (0 / 30 / 60)
-  changeoverReason: "allergen" | "protein" | null;
+  changeoverBeforeMin: number;    // Umrüstzeit vor diesem Slot (0 / easy / allergen / protein)
+  changeoverReason: "easy" | "allergen" | "protein" | null;
+  changeoverKind?: ChangeoverKind;
   allergens: string;
   proteinType: ProteinType;
   seafood: boolean;
@@ -87,9 +96,10 @@ export interface PlatingLinePlan {
   role: "highrunner" | "flex" | "overload";
   slots: PlatingSlot[];
   platingMin: number;             // reine Plating-Zeit
-  changeoverMin: number;          // Summe Umrüsten
+  changeoverMin: number;          // Summe Umrüsten (easy + Reinigungen)
   availableMin: number;           // hours × 60
-  changeovers: number;
+  changeovers: number;            // Anzahl Saubermach-Aktionen (Allergen-Wegfall + Protein)
+  easyChangeovers: number;        // Anzahl Easy Changeovers (nur zufügen)
   overCapacity: boolean;
 }
 
@@ -97,6 +107,8 @@ export interface PlatingCarryItem {
   code: string;
   name: string;
   portions: number;
+  /** Seafood oder komplexes Meal → harte Deadline, Carry-over ist kritisch. */
+  critical?: boolean;
 }
 
 export interface PlatingDayPlan {

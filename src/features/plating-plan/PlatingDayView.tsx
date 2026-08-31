@@ -42,18 +42,29 @@ interface SlotEdit {
   onToLine: (line: number) => void;
 }
 
+const CHANGEOVER_LABEL: Record<string, string> = {
+  easy: "Easy Changeover (nur Allergen zufügen)",
+  allergen: "Reinigung — Allergen weggefallen",
+  protein: "Full Changeover — Protein-Wechsel",
+};
+
 /** Ein Slot als proportional breiter Block; davor ggf. der Changeover-Streifen. */
 function SlotBlock({ slot, pxPerMin, edit }: { slot: PlatingSlot; pxPerMin: number; edit?: SlotEdit }) {
   const w = Math.max(edit ? 62 : 46, Math.round((slot.endMin - slot.startMin) * pxPerMin));
+  const easy = slot.changeoverReason === "easy";
   return (
     <div className="flex items-stretch">
       {slot.changeoverBeforeMin > 0 && (
         <div
-          className="flex items-center justify-center border-y border-dashed border-slate-300 bg-[repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9_4px,#e2e8f0_4px,#e2e8f0_8px)] text-[8px] font-bold text-slate-500"
-          style={{ width: Math.max(18, Math.round(slot.changeoverBeforeMin * pxPerMin)) }}
-          title={`${slot.changeoverReason === "protein" ? "Protein-Wechsel" : "Allergen-Wechsel"} — ${slot.changeoverBeforeMin} min`}
+          className={`flex items-center justify-center border-y text-[8px] font-bold ${
+            easy
+              ? "border-dashed border-amber-300 bg-amber-50 text-amber-600"
+              : "border-rose-300 bg-[repeating-linear-gradient(45deg,#fee2e2,#fee2e2_4px,#fecaca_4px,#fecaca_8px)] text-rose-700"
+          }`}
+          style={{ width: Math.max(easy ? 14 : 20, Math.round(slot.changeoverBeforeMin * pxPerMin)) }}
+          title={`${CHANGEOVER_LABEL[slot.changeoverReason ?? ""] ?? "Umrüsten"} — ${slot.changeoverBeforeMin} min`}
         >
-          +{slot.changeoverBeforeMin}
+          {easy ? "~" : "🧽"}{slot.changeoverBeforeMin}
         </div>
       )}
       <div
@@ -106,14 +117,28 @@ function LineRow({ line, lineCount, onMoveSlot, onSlotToLine }: {
   const usedMin = line.platingMin + line.changeoverMin;
   const pct = line.availableMin > 0 ? Math.round((usedMin / line.availableMin) * 100) : 0;
   const pxPerMin = 900 / Math.max(line.availableMin, usedMin, 60); // Zeitachse auf ~900px normieren
+  const clean = line.changeovers === 0 && line.slots.length > 0;
   return (
     <div className={`rounded-lg border p-2 ${line.overCapacity ? "border-rose-300 bg-rose-50/40" : "border-slate-200 bg-white"}`}>
       <div className="mb-1 flex flex-wrap items-center gap-2 text-[10px]">
         <span className="font-bold text-slate-700">Linie {line.line}</span>
         <span className={`rounded px-1 py-0.5 font-semibold ${ROLE_TONE[line.role]}`}>{ROLE_LABEL[line.role]}</span>
-        <span className="text-slate-500">
-          {line.slots.length} Meals · {line.changeovers} Wechsel ({line.changeoverMin} min)
+        <span className="text-slate-500">{line.slots.length} Meals</span>
+        <span
+          className={`rounded px-1 py-0.5 font-semibold ${
+            clean ? "bg-emerald-100 text-emerald-700"
+              : line.changeovers > 0 ? "bg-rose-100 text-rose-700" : "text-slate-400"
+          }`}
+          title="Saubermach-Aktionen: Allergen-Wegfall oder Protein-Wechsel"
+        >
+          {clean ? "0 Reinigungen" : `${line.changeovers} Reinigung${line.changeovers === 1 ? "" : "en"}`}
         </span>
+        {line.easyChangeovers > 0 && (
+          <span className="text-amber-600" title="Easy Changeover — nur Allergene zugefügt">
+            +{line.easyChangeovers} easy
+          </span>
+        )}
+        <span className="text-slate-400">{line.changeoverMin} min Rüsten</span>
         <span className={`ml-auto font-mono font-semibold ${line.overCapacity ? "text-rose-600" : pct > 90 ? "text-amber-600" : "text-slate-600"}`}>
           {fmtClock(usedMin)} / {fmtClock(line.availableMin)} ({pct}%){line.overCapacity ? " ⚠" : ""}
         </span>
@@ -225,10 +250,13 @@ export function PlatingDayView({ data, week }: { data: DataBundle; week: string 
       </div>
 
       <p className="text-[11px] text-slate-500">
-        Aus den im Wochenplan verplanten Runs: je Tag auf die Plating-Linien sequenziert, Umrüsten minimiert
-        (Allergen {plan?.params.changeoverAllergenMin ?? 30} min · Protein-Typ {plan?.params.changeoverProteinMin ?? 60} min).
-        Linie 1 = Highrunner (Volumen zuerst), Linie 2 = Flex, Linie 3 = nur bei Overload. Was nicht in die
-        Schicht passt, wandert als Carry-over auf den Folgetag. Sequenz/Params im Wochenplan-Tab ändern, dann neu generieren.
+        Aus den im Wochenplan verplanten Runs: je Linie aufsteigend nach Allergenen sequenziert (kein Allergen → viele).
+        Allergen nur zufügen = <span className="text-amber-600">~ easy</span> ({plan?.params.changeoverEasyMin ?? 10} min);
+        Allergen weg = <span className="text-rose-600">🧽 Reinigung</span> ({plan?.params.changeoverAllergenMin ?? 30} min);
+        Protein-Wechsel = Full Changeover ({plan?.params.changeoverProteinMin ?? 60} min).
+        Linie 1 = Highrunner (größter sauberer Block, 0 Reinigungen), Linie 2 = Flex (nimmt die Reinigungen auf),
+        Linie 3 = nur wenn L1+L2 das Volumen nicht fassen. Rest → Carry-over Folgetag (Seafood/komplex = ⚠ Deadline).
+        Sequenz/Params im Wochenplan-Tab ändern, dann neu generieren.
       </p>
 
       {loading && <div className="card p-8 text-center text-slate-400">Lädt…</div>}
@@ -307,16 +335,21 @@ export function PlatingDayView({ data, week }: { data: DataBundle; week: string 
                 />
               ))}
 
-              {dp.carryOutToNext.length > 0 && (
-                <div className={`rounded-lg border p-2 text-[11px] ${
-                  day === "Sa" ? "border-rose-300 bg-rose-50 text-rose-800" : "border-amber-300 bg-amber-50 text-amber-800"
-                }`}>
-                  <span className="font-semibold">
-                    {day === "Sa" ? "⚠ Carry-over am Samstag — kein Folgetag:" : "Carry-over → Folgetag:"}
-                  </span>{" "}
-                  {dp.carryOutToNext.map(c => `${c.code} ${fmtNum(c.portions)} P`).join(" · ")}
-                </div>
-              )}
+              {dp.carryOutToNext.length > 0 && (() => {
+                const anyCritical = dp.carryOutToNext.some(c => c.critical);
+                return (
+                  <div className={`rounded-lg border p-2 text-[11px] ${
+                    day === "Sa" || anyCritical ? "border-rose-300 bg-rose-50 text-rose-800" : "border-amber-300 bg-amber-50 text-amber-800"
+                  }`}>
+                    <span className="font-semibold">
+                      {day === "Sa" ? "⚠ Carry-over am Samstag — kein Folgetag:"
+                        : anyCritical ? "⚠ Carry-over → Folgetag (Deadline-kritisch!):"
+                        : "Carry-over → Folgetag:"}
+                    </span>{" "}
+                    {dp.carryOutToNext.map(c => `${c.code} ${fmtNum(c.portions)} P${c.critical ? " 🐟/komplex" : ""}`).join(" · ")}
+                  </div>
+                );
+              })()}
 
               <DaySummary dp={dp} />
             </div>
@@ -331,9 +364,12 @@ function DaySummary({ dp }: { dp: PlatingDayPlan }) {
   const s = summarizeDayPlan(dp);
   return (
     <div className="rounded-lg bg-slate-50 p-2 text-[10px] text-slate-500">
-      {fmtNum(s.totalPortions)} Portionen · {s.slots} Slots · {s.changeovers} Umrüstungen ({s.changeoverMin} min gesamt)
+      {fmtNum(s.totalPortions)} Portionen · {s.slots} Slots · <span className={s.cleaningActions > 0 ? "font-semibold text-rose-600" : ""}>{s.cleaningActions} Reinigungen</span>
+      {s.easyChangeovers > 0 && <span className="text-amber-600"> · +{s.easyChangeovers} easy</span>}
+      {" "}· {s.changeoverMin} min Rüsten gesamt
       {s.linesOver > 0 && <span className="font-semibold text-rose-600"> · {s.linesOver} Linie(n) über Kapazität</span>}
       {s.carryOut > 0 && <span className="font-semibold text-amber-600"> · {fmtNum(s.carryOut)} P Carry-over</span>}
+      {s.carryOutCritical > 0 && <span className="font-semibold text-rose-600"> ({fmtNum(s.carryOutCritical)} P kritisch)</span>}
     </div>
   );
 }

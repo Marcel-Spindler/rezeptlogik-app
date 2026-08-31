@@ -26,6 +26,7 @@ export const DEFAULT_PLATING_PARAMS: Omit<PlatingPlanParams, "firstRunPct"> = {
   singleRunBuffer: 0.10,
   multiRunBuffer: 0.05,
   platingRatePerLineHour: 900,
+  changeoverEasyMin: 10,
   changeoverAllergenMin: 30,
   changeoverProteinMin: 60,
 };
@@ -58,6 +59,7 @@ export function resolvePlatingParams(week: string, override?: Partial<PlatingPla
     singleRunBuffer: clampNum(p.singleRunBuffer, 0, 0.5, d.singleRunBuffer),
     multiRunBuffer: clampNum(p.multiRunBuffer, 0, 0.5, d.multiRunBuffer),
     platingRatePerLineHour: Math.round(clampNum(p.platingRatePerLineHour, 1, 1e5, d.platingRatePerLineHour)),
+    changeoverEasyMin: Math.round(clampNum(p.changeoverEasyMin, 0, 120, d.changeoverEasyMin)),
     changeoverAllergenMin: Math.round(clampNum(p.changeoverAllergenMin, 0, 240, d.changeoverAllergenMin)),
     changeoverProteinMin: Math.round(clampNum(p.changeoverProteinMin, 0, 240, d.changeoverProteinMin)),
   };

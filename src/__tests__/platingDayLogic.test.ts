@@ -158,6 +158,111 @@ describe("recomputeDayPlan", () => {
   });
 });
 
+describe("Phase 3 — Allergen-Reihenfolge & Linien", () => {
+  it("Allergen nur zufügen (milk → milk,sulphites) = easy changeover, keine Reinigung", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }]),
+        meal("B", "Cream Chicken", "milk,sulphites", [{ runIndex: 1, portions: 1400, day: "Di" }]),
+      ],
+      { Di: { lines: 1, hours: 22 } },
+    );
+    const l1 = generateDayPlan(plan, "Di").lines[0];
+    expect(l1.slots.map(s => s.code)).toEqual(["A", "B"]); // wenig → viel Allergene
+    expect(l1.slots[1].changeoverReason).toBe("easy");
+    expect(l1.slots[1].changeoverBeforeMin).toBe(params.changeoverEasyMin);
+    expect(l1.changeovers).toBe(0);        // keine Saubermach-Aktion
+    expect(l1.easyChangeovers).toBe(1);
+  });
+
+  it("Allergen wegnehmen (milk,sulphites → milk) = volle Reinigung", () => {
+    const wp = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 1400, day: "Di" }]),
+        meal("B", "Cream Chicken", "milk,sulphites", [{ runIndex: 1, portions: 1500, day: "Di" }]),
+      ],
+      { Di: { lines: 1, hours: 22 } },
+    );
+    const dp = generateDayPlan(wp, "Di");
+    // Reihenfolge erzwingen: B vor A → Wegfall von sulphites
+    const flipped = { ...dp, lines: dp.lines.map(l => ({ ...l, slots: [...l.slots].reverse() })) };
+    const re = recomputeDayPlan(flipped, wp);
+    const aSlot = re.lines[0].slots[1];
+    expect(aSlot.code).toBe("A");
+    expect(aSlot.changeoverReason).toBe("allergen");
+    expect(aSlot.changeoverBeforeMin).toBe(params.changeoverAllergenMin);
+    expect(re.lines[0].changeovers).toBe(1);
+  });
+
+  it("L1 Highrunner = größter sauberer Block mit 0 Reinigungen, L2 nimmt die Reinigungen", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 4000, day: "Di" }]),
+        meal("B", "Cream Chicken", "milk,sulphites", [{ runIndex: 1, portions: 3500, day: "Di" }]),
+        meal("C", "Sesame Chicken", "sesame,soya", [{ runIndex: 1, portions: 3000, day: "Di" }]),
+        meal("D", "Peanut Chicken", "peanuts", [{ runIndex: 1, portions: 2500, day: "Di" }]),
+      ],
+      { Di: { lines: 3, hours: 22 } },
+    );
+    const dp = generateDayPlan(plan, "Di");
+    expect(dp.lines[0].role).toBe("highrunner");
+    expect(dp.lines[0].changeovers).toBe(0);
+    expect(dp.lines[0].slots.map(s => s.code).sort()).toEqual(["A", "B"]); // milk-Kette
+    expect(dp.lines[1].slots.map(s => s.code).sort()).toEqual(["C", "D"]);
+  });
+
+  it("nutzt nur 2 Linien, auch wenn 3 besetzt sind (L3 erst bei Überlauf)", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 3000, day: "Di" }]),
+        meal("B", "Sesame Chicken", "sesame", [{ runIndex: 1, portions: 2500, day: "Di" }]),
+      ],
+      { Di: { lines: 3, hours: 22 } },
+    );
+    const dp = generateDayPlan(plan, "Di");
+    expect(dp.lines.length).toBeLessThanOrEqual(2);
+    expect(dp.lines.every(l => l.role !== "overload")).toBe(true);
+  });
+
+  it("öffnet L3 (Overload) wenn L1+L2 das Volumen nicht fassen", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Herb Chicken", "milk", [{ runIndex: 1, portions: 30000, day: "Di" }]),
+        meal("B", "Sesame Chicken", "sesame", [{ runIndex: 1, portions: 25000, day: "Di" }]),
+        meal("C", "Peanut Beef", "peanuts", [{ runIndex: 1, portions: 20000, day: "Di" }]),
+      ],
+      { Di: { lines: 3, hours: 22 } },
+    );
+    const dp = generateDayPlan(plan, "Di");
+    expect(dp.lines.length).toBe(3);
+    expect(dp.lines[2].role).toBe("overload");
+  });
+
+  it("Seafood-Carry-over wird als kritisch markiert (harte Deadline)", () => {
+    const plan = weekPlan(
+      [meal("F", "Sticky Salmon", "fish", [{ runIndex: 1, portions: 30000, day: "Do" }])],
+      { Do: { lines: 1, hours: 4 } },
+    );
+    const dp = generateDayPlan(plan, "Do");
+    expect(dp.carryOutToNext[0]?.critical).toBe(true);
+  });
+
+  it("sequenziert eine Linie aufsteigend nach Allergen-Anzahl", () => {
+    const plan = weekPlan(
+      [
+        meal("A", "Chicken Trio", "milk,sulphites,celery", [{ runIndex: 1, portions: 1000, day: "Di" }]),
+        meal("B", "Plain Chicken", "", [{ runIndex: 1, portions: 1200, day: "Di" }]),
+        meal("C", "Milk Chicken", "milk", [{ runIndex: 1, portions: 1100, day: "Di" }]),
+        meal("D", "Milk Sulph Chicken", "milk,sulphites", [{ runIndex: 1, portions: 900, day: "Di" }]),
+      ],
+      { Di: { lines: 1, hours: 22 } },
+    );
+    const l1 = generateDayPlan(plan, "Di").lines[0];
+    expect(l1.slots.map(s => s.code)).toEqual(["B", "C", "D", "A"]);
+    expect(l1.changeovers).toBe(0); // reine Zufüge-Kette
+  });
+});
+
 describe("summarizeDayPlan", () => {
   it("zählt Slots, Wechsel und Carry-over", () => {
     const plan = weekPlan(

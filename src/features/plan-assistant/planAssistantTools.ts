@@ -143,12 +143,12 @@ export const TOOL_DECLARATIONS = [{
     },
     {
       name: "get_day_plating_plan",
-      description: "Der tägliche Linienplan (Phase 2): Meals je Tag auf Plating-Linien sequenziert, Umrüst-Zeiten (Allergen/Protein), Carry-over auf den Folgetag. Ohne Argument: alle Tage; mit `day`: nur dieser Tag.",
+      description: "Der tägliche Linienplan (Phase 3): Meals je Tag auf Plating-Linien aufsteigend nach Allergenen sequenziert (kein Allergen → viele). Zeigt Reinigungen (Allergen-Wegfall / Protein-Wechsel = Saubermach-Aktion), easy Changeovers (nur zufügen), Carry-over auf den Folgetag (Seafood/komplex = kritisch). Ohne Argument: alle Tage; mit `day`: nur dieser Tag.",
       parameters: { type: "OBJECT", properties: { day: { type: "STRING", description: "Mo/Di/Mi/Do/Fr/Sa — leer = alle" } } },
     },
     {
       name: "generate_day_plating_plan",
-      description: "Baut aus dem aktuellen Wochen-Plating-Plan die täglichen Linienpläne (Linie 1 Highrunner / 2 Flex / 3 Overload, Nearest-Neighbour-Sequenz, Carry-over tagesübergreifend) und gibt Wechsel-Anzahl, Umrüst-Minuten und Carry-over je Tag zurück. Speichert NICHT.",
+      description: "Baut aus dem Wochen-Plating-Plan die täglichen Linienpläne: L1 Highrunner = größter sauberer Block (0 Reinigungen), L2 Flex nimmt die Reinigungen auf, L3 Overload nur wenn L1+L2 das Volumen nicht fassen. Gibt Reinigungen, easy Changeovers, Rüst-Minuten und (kritisches) Carry-over je Tag zurück. Speichert NICHT.",
       parameters: { type: "OBJECT", properties: {} },
     },
     {
@@ -463,7 +463,7 @@ function toolGenerateDayPlating(_args: Record<string, unknown>, ctx: ToolContext
     warning: ctx.platingPlan?.dailyPlans ? "Es gibt bereits Tagespläne — generieren würde sie ersetzen." : undefined,
     perDay: days.map(d => {
       const s = summarizeDayPlan(daily[d]!);
-      return `${d}: ${s.totalPortions} P · ${s.slots} Slots · ${s.changeovers} Wechsel (${s.changeoverMin} min)${s.linesOver ? ` · ⚠ ${s.linesOver} Linie(n) über Kapazität` : ""}${s.carryOut ? ` · Carry-over ${s.carryOut} P` : ""}`;
+      return `${d}: ${s.totalPortions} P · ${s.slots} Slots · ${s.cleaningActions} Reinigungen${s.easyChangeovers ? ` (+${s.easyChangeovers} easy)` : ""} (${s.changeoverMin} min)${s.linesOver ? ` · ⚠ ${s.linesOver} Linie(n) über Kapazität` : ""}${s.carryOut ? ` · Carry-over ${s.carryOut} P${s.carryOutCritical ? ` (${s.carryOutCritical} kritisch)` : ""}` : ""}`;
     }),
     detail: days.map(d => describeDayPlan(daily[d]!)),
   };
