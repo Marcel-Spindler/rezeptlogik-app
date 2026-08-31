@@ -16,7 +16,7 @@ import { CapacityWarningBanner } from "../components/CapacityWarningBanner";
 import { MealCatalogView } from "../features/meal-catalog/MealCatalogView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
-import { GlobalSearch } from "../features/global-search/GlobalSearch";
+import { CommandPalette } from "../features/command-palette/CommandPalette";
 import { PlanAssistant } from "../features/plan-assistant/PlanAssistant";
 import { resolveRecipeByCode } from "../lib/helpers";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
@@ -186,7 +186,7 @@ function FullApp() {
   // Bot-Views: nur NavTabs + vollbreiter Inhalt, kein WeekSelector/RecipeList
   if (BOT_VIEWS.has(view)) {
     return (
-      <Shell headerRight={<PlanAssistant />}>
+      <Shell headerRight={<><CommandPalette /><PlanAssistant /></>}>
         <div className="flex gap-4">
           <div className="w-48 shrink-0">
             <NavTabs view={view} onChange={setView} />
@@ -207,14 +207,11 @@ function FullApp() {
   const woView = view === "wo";
 
   return (
-    <Shell wide={woView} headerRight={<PlanAssistant />}>
+    <Shell wide={woView} headerRight={<><CommandPalette /><PlanAssistant /></>}>
       <ErrorBoundary label="banners" fallback={null}>
         <DataHealthBanner data={data} />
         <CapacityWarningBanner data={data} week={selectedWeek} upliftPercent={upliftPercent} />
         <BackfillAlertBanner onOpen={() => setView("backfills")} />
-        {/* Übergeordnete Suche (WO / Submeal / SKU / Meal → Flow-Verlauf). Nicht in
-            "KET Plan / WO" — dort hat die WO-Ansicht eine eigene Funktion. */}
-        {!woView && <div className="mb-4"><GlobalSearch /></div>}
       </ErrorBoundary>
       <div className={`grid grid-cols-12 gap-4 ${woView ? "items-start" : ""}`}>
         <aside className={`col-span-12 space-y-3 ${woView ? "md:col-span-4 lg:col-span-3 xl:col-span-2" : "md:col-span-4 lg:col-span-3"}`}>

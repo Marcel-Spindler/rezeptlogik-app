@@ -133,15 +133,23 @@ als Sub-Tab-Leiste über dem Inhalt (`GroupSubTabs`).
 | **Monitoring** | `postblast-live`, `backfills`, `transparency-plan` | `features/gsheet-monitor/*`, `features/backfills/*` | `PostblastLiveView` (2666 Z.): Live-GSheet-Polling, PlatingNow ↔ Redzone ↔ MinimumNeeds als 3-Panel-System, Shortage-Alerts. `BackfillsView`: kombiniert Postblast + Preblast + RTI + LinePlaiting + Redzone + WMS-Holding zu Nachproduktions-Empfehlung je Meal (`combineBackfills.ts`), KW-Auswahl mit Stale-Week-Warnung, LinePlaiting-gid in-app aktualisierbar. `TransparencyPlanView`: eigenes „Transparency"-GSheet mit vielen Sub-Parsern (`parsers/transparency/*`). |
 | **Redzone Live** | `redzone-live` | `features/redzone-live/RedzoneLiveView.tsx` | **Nur DEV** (braucht Snowflake-SSO über lokalen Server; Cloud-Function ohne gültigen Key & ohne Cache-Fallback). Live-Plating/Cooking-Runs. `RedzoneProvider` ist trotzdem app-weit → `useRedzoneOptional()`. |
 
-**Übergreifend (keine eigene View):** `features/global-search/` — app-weite Suche
-(`GlobalSearch.tsx`), gerendert in `FullApp` als Suchleiste über dem Grid,
-ausgeblendet bei `view === "wo"`. `Cmd/Ctrl+K` fokussiert. Autocomplete über
-WO-Nummer / Submeal (Name + SKU/ID) / Ingredient-SKU / Mealcode / Rezeptname
-(`globalSearchIndex.ts`). Treffer → Overlay mit grafischer Stufen-Schiene
-(angelegt → Staging → Küche → Blast → Plating → fertig, `woFlow.ts` +
-`WoFlowCard.tsx`), Status je Stufe heuristisch aus Produktionsplan-Statusfeldern
-+ kg-Signalen + `WoReconciliation` + Redzone. Submeal-Tabelle mit Chiller/Allergen.
-v2 offen: echter Verlauf aus `woReconciliationLog`, `wmsWoDetail`-Live-Anreicherung.
+**Übergreifend (keine eigene View):** `features/command-palette/` — Command-Palette
+(`CommandPalette.tsx` eager Launcher im Shell-Header + globaler `⌘K`/`Strg+K`-Hotkey;
+`CommandPaletteModal.tsx` lazy). EIN Einstieg für: Ansicht anspringen (alle
+Nav-Views inkl. Aliase), Rezept öffnen, Kalenderwoche wechseln, App-Kommandos
+(`paletteCommands.ts`: Uplift ±5 %, Küchen-Link, Ansicht-Link, Reload — bewusst
+client-seitig, **kein** Deploy/Sync) und die bestehende WO/Submeal/SKU-Suche.
+Item-Index + Ranking in
+`paletteSource.ts` (`buildViewItems`/`buildWeekItems`/`buildRecipeItems`/
+`buildSearchEntryItems` + `matchScore`/`rankPaletteItems`).
+`features/global-search/` liefert weiter den Suchindex (`globalSearchIndex.ts`:
+WO-Nummer / Submeal Name+SKU / Ingredient-SKU) und das Flow-Overlay: WO/Submeal/SKU-
+Treffer öffnen `WoFlowOverlay.tsx` — grafische Stufen-Schiene (angelegt → Staging →
+Küche → Blast → Plating → fertig, `woFlow.ts` + `WoFlowCard.tsx`), Status je Stufe
+heuristisch aus Produktionsplan-Statusfeldern + kg-Signalen + `WoReconciliation` +
+Redzone, Submeal-Tabelle mit Chiller/Allergen. v2 offen: echter Verlauf aus
+`woReconciliationLog`, `wmsWoDetail`-Live-Anreicherung; Meal → Flow (v1: Meal öffnet
+direkt die Rezept-Ansicht).
 
 **Ältere Root-View-Dateien, weiter aktiv** (nicht in `features/`): `RundmailView`,
 `BreakdownEquipmentView` (Kitchen-/Shopfloor-Surface), `ShareDashboard`,

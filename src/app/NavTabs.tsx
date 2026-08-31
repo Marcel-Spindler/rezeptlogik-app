@@ -94,6 +94,21 @@ export const VIEW_LABELS: Partial<Record<AppView, string>> = Object.fromEntries(
   NAV_CATEGORIES.flatMap((c) => c.items.map((i) => [i.view, i.label] as const)),
 );
 
+export interface NavViewInfo {
+  view: AppView;
+  label: string;
+  /** Menü-Kategorie, unter der die View hängt. */
+  category: string;
+  localOnly: boolean;
+}
+
+/** Flache Liste aller Views mit Label + Kategorie — für die Command-Palette. */
+export function allNavViews(): NavViewInfo[] {
+  return NAV_CATEGORIES.flatMap((c) =>
+    c.items.map((i) => ({ view: i.view, label: i.label, category: c.label, localOnly: !!i.localOnly })),
+  );
+}
+
 /** Alle Views derselben Kategorie wie `view` (nur `view` selbst, wenn sie allein steht). */
 export function siblingViews(view: AppView): readonly AppView[] {
   const cat = NAV_CATEGORIES.find((c) => c.items.some((i) => i.view === view));

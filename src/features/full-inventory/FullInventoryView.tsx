@@ -144,10 +144,7 @@ export function FullInventoryView({ data, week }: { data: DataBundle; week: stri
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
+      // ⌘K/Strg+K gehört jetzt global der Command-Palette (features/command-palette/).
       if ((e.ctrlKey || e.metaKey) && e.key === "j") {
         e.preventDefault();
         deepSearchRef.current?.focus();
