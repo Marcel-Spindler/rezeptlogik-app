@@ -36,11 +36,14 @@ export function normalizePlatingWeekPlan(raw: unknown, week: string): PlatingWee
 
 export async function savePlatingWeekPlan(plan: PlatingWeekPlan): Promise<void> {
   const { db } = getFirebase();
-  await setDoc(doc(db, COLLECTION, plan.week), {
+  // Firestore lehnt `undefined`-Feldwerte ab (z. B. optionale Slot-Felder wie
+  // carryOver). Der JSON-Roundtrip entfernt sie — der Plan ist reines JSON.
+  const clean = JSON.parse(JSON.stringify({
     ...plan,
     firstRunPct: plan.params.firstRunPct, // Deprecated-Spiegel für Alt-Leser
     updatedAt: new Date().toISOString(),
-  });
+  }));
+  await setDoc(doc(db, COLLECTION, plan.week), clean);
 }
 
 export function subscribePlatingWeekPlan(
