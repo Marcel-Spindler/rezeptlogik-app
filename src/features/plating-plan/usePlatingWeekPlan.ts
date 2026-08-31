@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DataBundle } from "../../core/types";
 import { buildDefaultParams, generatePlatingPlan } from "./platingPlanLogic";
-import { generateAllDayPlans } from "./platingDayLogic";
+import { generateAllDayPlans, recomputeDayPlan } from "./platingDayLogic";
 import { savePlatingWeekPlan, subscribePlatingWeekPlan } from "./platingWeekPlanFirestore";
 import {
   PLATING_PLAN_CHANGED_EVENT,
-  type PlatingDay, type PlatingDayCapacity, type PlatingPlanParams, type PlatingWeekPlan,
+  type PlatingDay, type PlatingDayCapacity, type PlatingDayPlan,
+  type PlatingPlanParams, type PlatingWeekPlan,
 } from "./platingPlanTypes";
 
 /** Lädt den Wochen-Plating-Plan aus Firestore, hält lokale Edits und speichert
@@ -89,5 +90,23 @@ export function usePlatingWeekPlan(data: DataBundle | null, week: string) {
     });
   }, [persist]);
 
-  return { plan, loading, dirty, update, regenerate, regenerateDailyPlans };
+  /** Phase 2.5: den Tagesplan eines Tages ändern (Slots umsortieren / Linie wechseln)
+   *  und Zeiten/Umrüsten/Carry-over neu berechnen. */
+  const updateDayPlan = useCallback((day: PlatingDay, mutate: (dp: PlatingDayPlan) => PlatingDayPlan) => {
+    setPlan(prev => {
+      if (!prev?.dailyPlans?.[day]) return prev;
+      const edited = recomputeDayPlan(mutate(structuredClone(prev.dailyPlans[day]!)), prev);
+      const next: PlatingWeekPlan = {
+        ...prev,
+        dailyPlans: { ...prev.dailyPlans, [day]: edited },
+        updatedAt: new Date().toISOString(),
+        source: "edited",
+      };
+      setDirty(true);
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+
+  return { plan, loading, dirty, update, regenerate, regenerateDailyPlans, updateDayPlan };
 }

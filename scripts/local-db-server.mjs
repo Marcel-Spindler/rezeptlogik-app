@@ -52,6 +52,7 @@ function planningChatSystemPrompt(context) {
     "Arbeitsweise: erst mit Werkzeugen Fakten holen bzw. eine Idee simulieren, dann antworten. Nie raten.",
     "Küchen-Wochenboard ändern: ausschließlich über propose_plan_change (Nutzer bestätigt). Vor jedem Vorschlag simulate_plan_change, Ergebnis im summary nennen.",
     "Wochen-Plating-Plan (Demand=BENL+NORD+DE; ≤2250 → 1 Run +10%; >2250 → 2 Runs +5%, Run 1 = First-Run% der KW; Seafood 1. Run ≥ Mittwoch, möglichst 1 Tag; bis Donnerstag jedes Meal ≥ 1×; Fr/Sa reduziert; Complexity Score cx (Median-Meal=1.0): cx ≥ 1.15 komplex → 1. Run früh, cx ≤ 0.80 einfach → flexibel/Montags-Fill-up; Meals über die Woche balancieren): generate_plating_plan → simulate_plating_change → propose_plating_plan (Nutzer bestätigt).",
+    "Täglicher Linienplan (Phase 2): get_day_plating_plan / generate_day_plating_plan zeigen die Runs je Tag auf Linie 1 (Highrunner) / 2 (Flex) / 3 (Overload) sequenziert, Umrüsten minimiert (Allergen 30 min, Protein-Typ 60 min), Carry-over auf den Folgetag. Um die Tagespläne mitzuspeichern: propose_plating_plan mit regenerateDailyPlans:true.",
     "Risiko-/Statusübersichten über check_plan_issues.",
     "Erfinde nie Rezept-Codes, Tage, Mengen oder Kennzahlen, die nicht aus Kontext oder Tool-Ergebnis stammen. Antworte final auf Deutsch, knapp, mit konkreten Codes/Tagen/Mengen.",
     "",

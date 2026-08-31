@@ -18,7 +18,8 @@ import type { BackfillsState } from "../backfills/BackfillsContext";
 import {
   computeDayLoads, generatePlatingPlan, summarizePlatingPlan,
 } from "../plating-plan/platingPlanLogic";
-import { PLATING_DAYS, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
+import { describeDayPlan, generateAllDayPlans, summarizeDayPlan } from "../plating-plan/platingDayLogic";
+import { PLATING_DAYS, type PlatingDay, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
 import type { PlanChange } from "./planAssistantTypes";
 
 export interface ToolContext {
@@ -41,6 +42,7 @@ export function buildPlatingPlanWithMoves(
   moves: Array<{ code: string; runIndex: number; day: string }>,
   notes: Array<{ code: string; note: string }>,
   basePlan?: PlatingWeekPlan | null,
+  withDailyPlans = false,
 ): PlatingWeekPlan {
   const paramsOverride = {
     ...(basePlan?.params ?? {}),
@@ -58,7 +60,9 @@ export function buildPlatingPlanWithMoves(
     const meal = plan.meals.find(m => codeDigits(m.code) === codeDigits(nt.code));
     if (meal) meal.note = nt.note;
   }
-  return { ...plan, updatedAt: new Date().toISOString() };
+  const out: PlatingWeekPlan = { ...plan, updatedAt: new Date().toISOString() };
+  if (withDailyPlans || basePlan?.dailyPlans) out.dailyPlans = generateAllDayPlans(out);
+  return out;
 }
 
 // ─── Gemini-Funktionsdeklarationen ─────────────────────────────────────────────
@@ -138,6 +142,16 @@ export const TOOL_DECLARATIONS = [{
       },
     },
     {
+      name: "get_day_plating_plan",
+      description: "Der tägliche Linienplan (Phase 2): Meals je Tag auf Plating-Linien sequenziert, Umrüst-Zeiten (Allergen/Protein), Carry-over auf den Folgetag. Ohne Argument: alle Tage; mit `day`: nur dieser Tag.",
+      parameters: { type: "OBJECT", properties: { day: { type: "STRING", description: "Mo/Di/Mi/Do/Fr/Sa — leer = alle" } } },
+    },
+    {
+      name: "generate_day_plating_plan",
+      description: "Baut aus dem aktuellen Wochen-Plating-Plan die täglichen Linienpläne (Linie 1 Highrunner / 2 Flex / 3 Overload, Nearest-Neighbour-Sequenz, Carry-over tagesübergreifend) und gibt Wechsel-Anzahl, Umrüst-Minuten und Carry-over je Tag zurück. Speichert NICHT.",
+      parameters: { type: "OBJECT", properties: {} },
+    },
+    {
       name: "simulate_plating_change",
       description: "Generiert den Plating-Plan und wendet Run→Tag-Verschiebungen probeweise an; gibt die Tages-Auslastung (Portionen, Linien, Std, Über-Kapazität) zurück. Vor propose_plating_plan nutzen.",
       parameters: {
@@ -178,6 +192,7 @@ export const TOOL_DECLARATIONS = [{
             type: "ARRAY",
             items: { type: "OBJECT", properties: { code: { type: "STRING" }, note: { type: "STRING" } }, required: ["code", "note"] },
           },
+          regenerateDailyPlans: { type: "BOOLEAN", description: "true = zusätzlich die täglichen Linienpläne (Phase 2) neu bauen" },
           summary: { type: "STRING", description: "Was wurde geplant + Simulations-Ergebnis (Tageslast/Engpässe)" },
         },
         required: ["summary"],
@@ -431,6 +446,29 @@ function toolGeneratePlating(args: Record<string, unknown>, ctx: ToolContext) {
   };
 }
 
+function toolGetDayPlating(args: Record<string, unknown>, ctx: ToolContext) {
+  const daily = ctx.platingPlan?.dailyPlans ?? {};
+  const days = PLATING_DAYS.filter(d => daily[d]);
+  if (!days.length) return { note: "Noch keine täglichen Linienpläne. generate_day_plating_plan baut sie." };
+  const want = typeof args.day === "string" ? normalizeDay(args.day) : null;
+  const pick = want && daily[want as PlatingDay] ? [want as PlatingDay] : days;
+  return { days: pick.map(d => describeDayPlan(daily[d]!)) };
+}
+
+function toolGenerateDayPlating(_args: Record<string, unknown>, ctx: ToolContext) {
+  const base = ctx.platingPlan ?? generatePlatingPlan(ctx.data, ctx.week);
+  const daily = generateAllDayPlans(base);
+  const days = PLATING_DAYS.filter(d => daily[d]);
+  return {
+    warning: ctx.platingPlan?.dailyPlans ? "Es gibt bereits Tagespläne — generieren würde sie ersetzen." : undefined,
+    perDay: days.map(d => {
+      const s = summarizeDayPlan(daily[d]!);
+      return `${d}: ${s.totalPortions} P · ${s.slots} Slots · ${s.changeovers} Wechsel (${s.changeoverMin} min)${s.linesOver ? ` · ⚠ ${s.linesOver} Linie(n) über Kapazität` : ""}${s.carryOut ? ` · Carry-over ${s.carryOut} P` : ""}`;
+    }),
+    detail: days.map(d => describeDayPlan(daily[d]!)),
+  };
+}
+
 function toolSimulatePlating(args: Record<string, unknown>, ctx: ToolContext) {
   const frp = typeof args.firstRunPct === "number" ? args.firstRunPct : undefined;
   const moves = (Array.isArray(args.moves) ? args.moves : []) as Array<{ code: string; runIndex: number; day: string }>;
@@ -454,6 +492,8 @@ const EXECUTORS: Record<string, (args: Record<string, unknown>, ctx: ToolContext
   get_capacity_overview: toolCapacity,
   get_plating_plan: toolGetPlatingPlan,
   generate_plating_plan: toolGeneratePlating,
+  get_day_plating_plan: toolGetDayPlating,
+  generate_day_plating_plan: toolGenerateDayPlating,
   simulate_plating_change: toolSimulatePlating,
 };
 

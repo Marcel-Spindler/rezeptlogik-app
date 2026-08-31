@@ -49,6 +49,8 @@ export interface PlatingProposal {
   firstRunPct?: number;
   moves: Array<{ code: string; runIndex: number; day: string }>;
   notes: Array<{ code: string; note: string }>;
+  /** true = zusätzlich die täglichen Linienpläne (Phase 2) neu bauen. */
+  regenerateDailyPlans?: boolean;
   summary: string;
   applied?: boolean;
   applyError?: string;

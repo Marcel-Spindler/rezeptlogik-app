@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generateDayPlan, generateAllDayPlans, summarizeDayPlan } from "../features/plating-plan/platingDayLogic";
+import { generateDayPlan, generateAllDayPlans, summarizeDayPlan, recomputeDayPlan } from "../features/plating-plan/platingDayLogic";
 import { DEFAULT_PLATING_PARAMS } from "../features/plating-plan/platingPlanLogic";
 import type { PlatingMealPlan, PlatingWeekPlan } from "../features/plating-plan/platingPlanTypes";
 
@@ -108,6 +108,53 @@ describe("generateAllDayPlans", () => {
     expect(all.Mi?.carryInFromPrev.length).toBeGreaterThan(0);
     const miPlaced = all.Mi!.lines.flatMap(l => l.slots).reduce((s, sl) => s + sl.portions, 0);
     expect(miPlaced).toBeGreaterThan(0);
+  });
+});
+
+describe("recomputeDayPlan", () => {
+  it("rechnet Umrüsten nach manueller Umsortierung neu", () => {
+    const wp = weekPlan(
+      [
+        meal("A", "Grilled Chicken", "milk", [{ runIndex: 1, portions: 1500, day: "Di" }]),
+        meal("B", "Sesame Chicken", "sesame", [{ runIndex: 1, portions: 1400, day: "Di" }]),
+        meal("C", "Cream Chicken", "milk", [{ runIndex: 1, portions: 1300, day: "Di" }]),
+      ],
+      { Di: { lines: 1, hours: 22 } },
+    );
+    const dp = generateDayPlan(wp, "Di");
+    // Sequenz umdrehen → Umrüst-Zeiten müssen sich neu berechnen
+    const flipped = { ...dp, lines: dp.lines.map(l => ({ ...l, slots: [...l.slots].reverse() })) };
+    const re = recomputeDayPlan(flipped, wp);
+    expect(re.source).toBe("edited");
+    expect(re.lines[0].slots[0].changeoverBeforeMin).toBe(0); // erster Slot nie Umrüsten
+    const total = re.lines[0].slots.reduce((s, sl) => s + sl.portions, 0)
+      + re.carryOutToNext.reduce((s, c) => s + c.portions, 0);
+    expect(total).toBe(4200);
+  });
+
+  it("Slot auf eine andere (volle) Linie → Carry-over", () => {
+    const wp = weekPlan(
+      [
+        meal("A", "Chicken", "milk", [{ runIndex: 1, portions: 3000, day: "Di" }]),
+        meal("B", "Beef", "milk", [{ runIndex: 1, portions: 2000, day: "Di" }]),
+      ],
+      { Di: { lines: 2, hours: 3 } }, // je Linie 3h*900 = 2700
+    );
+    const dp = generateDayPlan(wp, "Di");
+    // alles auf Linie 1 schieben
+    const l1slots = dp.lines.flatMap(l => l.slots);
+    const jammed = {
+      ...dp,
+      lines: [
+        { ...dp.lines[0], slots: l1slots },
+        { ...dp.lines[1], slots: [] },
+      ],
+    };
+    const re = recomputeDayPlan(jammed, wp);
+    const placed = re.lines.flatMap(l => l.slots).reduce((s, sl) => s + sl.portions, 0);
+    const carry = re.carryOutToNext.reduce((s, c) => s + c.portions, 0);
+    expect(carry).toBeGreaterThan(0);
+    expect(placed + carry).toBe(5000);
   });
 });
 

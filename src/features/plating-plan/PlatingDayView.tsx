@@ -34,9 +34,17 @@ function fmtClock(min: number): string {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
+interface SlotEdit {
+  lineCount: number;
+  isFirst: boolean;
+  isLast: boolean;
+  onMove: (dir: -1 | 1) => void;
+  onToLine: (line: number) => void;
+}
+
 /** Ein Slot als proportional breiter Block; davor ggf. der Changeover-Streifen. */
-function SlotBlock({ slot, pxPerMin }: { slot: PlatingSlot; pxPerMin: number }) {
-  const w = Math.max(46, Math.round((slot.endMin - slot.startMin) * pxPerMin));
+function SlotBlock({ slot, pxPerMin, edit }: { slot: PlatingSlot; pxPerMin: number; edit?: SlotEdit }) {
+  const w = Math.max(edit ? 62 : 46, Math.round((slot.endMin - slot.startMin) * pxPerMin));
   return (
     <div className="flex items-stretch">
       {slot.changeoverBeforeMin > 0 && (
@@ -63,12 +71,38 @@ function SlotBlock({ slot, pxPerMin }: { slot: PlatingSlot; pxPerMin: number }) 
           <span className={`rounded px-0.5 ${PROTEIN_TONE[slot.proteinType]}`}>{slot.proteinType.slice(0, 4)}</span>
         </div>
         {slot.carryOver ? <div className="font-semibold text-amber-700">→ {fmtNum(slot.carryOver)}</div> : null}
+        {edit && (
+          <div className="mt-0.5 flex items-center justify-between border-t border-slate-100 pt-0.5">
+            <button type="button" disabled={edit.isFirst} onClick={() => edit.onMove(-1)}
+              className="px-0.5 text-slate-400 hover:text-slate-700 disabled:opacity-20" title="nach vorne">◀</button>
+            {edit.lineCount > 1 && (
+              <select
+                value={""}
+                onChange={e => { const v = Number(e.target.value); if (v) edit.onToLine(v); }}
+                className="bg-transparent text-[8px] text-slate-400"
+                title="auf andere Linie"
+              >
+                <option value="">L…</option>
+                {Array.from({ length: edit.lineCount }, (_, i) => i + 1).map(n => (
+                  <option key={n} value={n}>→L{n}</option>
+                ))}
+              </select>
+            )}
+            <button type="button" disabled={edit.isLast} onClick={() => edit.onMove(1)}
+              className="px-0.5 text-slate-400 hover:text-slate-700 disabled:opacity-20" title="nach hinten">▶</button>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function LineRow({ line }: { line: PlatingLinePlan }) {
+function LineRow({ line, lineCount, onMoveSlot, onSlotToLine }: {
+  line: PlatingLinePlan;
+  lineCount: number;
+  onMoveSlot?: (seq: number, dir: -1 | 1) => void;
+  onSlotToLine?: (seq: number, toLine: number) => void;
+}) {
   const usedMin = line.platingMin + line.changeoverMin;
   const pct = line.availableMin > 0 ? Math.round((usedMin / line.availableMin) * 100) : 0;
   const pxPerMin = 900 / Math.max(line.availableMin, usedMin, 60); // Zeitachse auf ~900px normieren
@@ -86,7 +120,18 @@ function LineRow({ line }: { line: PlatingLinePlan }) {
       </div>
       {line.slots.length ? (
         <div className="flex items-stretch gap-0.5 overflow-x-auto pb-1">
-          {line.slots.map(s => <SlotBlock key={`${s.code}-${s.runIndex}-${s.seq}`} slot={s} pxPerMin={pxPerMin} />)}
+          {line.slots.map((s, i) => (
+            <SlotBlock
+              key={`${s.code}-${s.runIndex}-${i}`}
+              slot={s}
+              pxPerMin={pxPerMin}
+              edit={onMoveSlot && onSlotToLine ? {
+                lineCount, isFirst: i === 0, isLast: i === line.slots.length - 1,
+                onMove: dir => onMoveSlot(i, dir),
+                onToLine: toLine => onSlotToLine(i, toLine),
+              } : undefined}
+            />
+          ))}
         </div>
       ) : (
         <div className="py-2 text-center text-[10px] text-slate-400">leer</div>
@@ -96,8 +141,38 @@ function LineRow({ line }: { line: PlatingLinePlan }) {
 }
 
 export function PlatingDayView({ data, week }: { data: DataBundle; week: string }) {
-  const { plan, loading, dirty, regenerateDailyPlans } = usePlatingWeekPlan(data, week);
+  const { plan, loading, dirty, regenerateDailyPlans, updateDayPlan } = usePlatingWeekPlan(data, week);
   const [day, setDay] = useState<PlatingDay>("Di");
+  const [editMode, setEditMode] = useState(false);
+
+  /** Slot innerhalb einer Linie um eine Position verschieben. */
+  const moveSlot = (lineNo: number, seq: number, dir: -1 | 1) => {
+    updateDayPlan(day, dp => {
+      const lines = dp.lines.map(l => {
+        if (l.line !== lineNo) return l;
+        const slots = [...l.slots];
+        const j = seq + dir;
+        if (j < 0 || j >= slots.length) return l;
+        [slots[seq], slots[j]] = [slots[j], slots[seq]];
+        return { ...l, slots };
+      });
+      return { ...dp, lines };
+    });
+  };
+  /** Slot auf eine andere Linie ans Ende verschieben. */
+  const slotToLine = (fromLine: number, seq: number, toLine: number) => {
+    if (fromLine === toLine) return;
+    updateDayPlan(day, dp => {
+      const moved = dp.lines.find(l => l.line === fromLine)?.slots[seq];
+      if (!moved) return dp;
+      const lines = dp.lines.map(l => {
+        if (l.line === fromLine) return { ...l, slots: l.slots.filter((_, i) => i !== seq) };
+        if (l.line === toLine) return { ...l, slots: [...l.slots, moved] };
+        return l;
+      });
+      return { ...dp, lines };
+    });
+  };
 
   const availableDays = useMemo(
     () => PROD_DAYS.filter(d => (plan?.dayCapacity[d]?.lines ?? 0) > 0 || plan?.dailyPlans?.[d]),
@@ -129,6 +204,15 @@ export function PlatingDayView({ data, week }: { data: DataBundle; week: string 
         </div>
         <div className="ml-auto flex items-center gap-2 text-xs">
           {dirty && <span className="text-amber-600">speichert…</span>}
+          {hasAnyDaily && (
+            <button
+              type="button"
+              onClick={() => setEditMode(e => !e)}
+              className={`rounded-lg border px-2 py-1.5 font-semibold ${editMode ? "border-cyan-400 bg-cyan-50 text-cyan-800" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}
+            >
+              {editMode ? "✓ Sortieren" : "✎ Sortieren"}
+            </button>
+          )}
           <button
             type="button"
             onClick={regenerateDailyPlans}
@@ -207,7 +291,21 @@ export function PlatingDayView({ data, week }: { data: DataBundle; week: string 
               {dp.lines.length === 0 && (
                 <div className="card p-6 text-center text-slate-400">Keine Linien-Kapazität an diesem Tag.</div>
               )}
-              {dp.lines.map(l => <LineRow key={l.line} line={l} />)}
+              {editMode && (
+                <div className="text-[10px] text-cyan-700">
+                  Sortier-Modus: ◀ ▶ verschiebt einen Slot in der Linie, „→L…" auf eine andere Linie.
+                  Zeiten, Umrüsten und Carry-over rechnen sich neu. Für die Tag-zu-Tag-Weitergabe „Tagespläne neu generieren".
+                </div>
+              )}
+              {dp.lines.map(l => (
+                <LineRow
+                  key={l.line}
+                  line={l}
+                  lineCount={dp.lines.length}
+                  onMoveSlot={editMode ? (seq, dir) => moveSlot(l.line, seq, dir) : undefined}
+                  onSlotToLine={editMode ? (seq, to) => slotToLine(l.line, seq, to) : undefined}
+                />
+              ))}
 
               {dp.carryOutToNext.length > 0 && (
                 <div className={`rounded-lg border p-2 text-[11px] ${

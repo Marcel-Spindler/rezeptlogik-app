@@ -141,6 +141,7 @@ export async function runPlanAgent(params: {
             firstRunPct: typeof terminal.args.firstRunPct === "number" ? terminal.args.firstRunPct : undefined,
             moves: (Array.isArray(terminal.args.moves) ? terminal.args.moves : []) as PlatingProposal["moves"],
             notes: (Array.isArray(terminal.args.notes) ? terminal.args.notes : []) as PlatingProposal["notes"],
+            regenerateDailyPlans: terminal.args.regenerateDailyPlans === true,
             summary: String(terminal.args.summary ?? ""),
           },
           steps, contents,

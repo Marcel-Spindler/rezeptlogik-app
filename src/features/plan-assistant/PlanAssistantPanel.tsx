@@ -133,7 +133,7 @@ function PlatingProposalCard({ proposal, onApply }: { proposal: PlatingProposal;
   return (
     <div className="mt-2 rounded-lg border border-cyan-300 bg-cyan-50 p-2.5 text-[11px] text-cyan-900">
       <div className="font-semibold">Wochen-Plating-Plan-Vorschlag</div>
-      <div className="mt-0.5">First Run {Math.round((proposal.firstRunPct ?? 0.7) * 100)}%{proposal.moves.length ? ` · ${proposal.moves.length} Tag-Anpassung(en)` : " · Auto-Verteilung"}</div>
+      <div className="mt-0.5">First Run {Math.round((proposal.firstRunPct ?? 0.7) * 100)}%{proposal.moves.length ? ` · ${proposal.moves.length} Tag-Anpassung(en)` : " · Auto-Verteilung"}{proposal.regenerateDailyPlans ? " · + tägliche Linienpläne" : ""}</div>
       {proposal.summary ? <div className="mt-0.5 whitespace-pre-wrap">{proposal.summary}</div> : null}
       {proposal.moves.length > 0 && (
         <ul className="mt-1.5 space-y-0.5">
@@ -232,7 +232,7 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
     const msg = messages.find(m => m.id === msgId);
     if (!data || !msg?.platingProposal) return;
     const pp = msg.platingProposal;
-    const plan = buildPlatingPlanWithMoves(data, selectedWeek, pp.firstRunPct, pp.moves, pp.notes, platingPlan);
+    const plan = buildPlatingPlanWithMoves(data, selectedWeek, pp.firstRunPct, pp.moves, pp.notes, platingPlan, pp.regenerateDailyPlans);
     void applyPlatingWeekPlan(plan).then(res => {
       setMessages(ms => ms.map(m => m.id === msgId && m.platingProposal
         ? { ...m, platingProposal: { ...m.platingProposal, applied: res.ok, applyError: res.error } }

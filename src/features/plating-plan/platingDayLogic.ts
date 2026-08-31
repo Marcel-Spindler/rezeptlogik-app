@@ -233,6 +233,73 @@ export function generateDayPlan(
   };
 }
 
+/** Nach einer manuellen Umsortierung (Slots neu geordnet / Linie gewechselt) die
+ *  Zeiten, Umrüstungen und Carry-over einer Linie neu berechnen. Die Slot-Reihen-
+ *  folge + Linien-Zuordnung bleiben wie übergeben; nur die Ableitungen werden frisch.
+ *  Cross-Day-Carry wird NICHT neu gefädelt — dafür „Tagespläne neu generieren". */
+export function recomputeDayPlan(dp: PlatingDayPlan, plan: PlatingWeekPlan): PlatingDayPlan {
+  const rate = plan.params.platingRatePerLineHour || 900;
+  const minPerPortion = 60 / rate;
+  const aMin = plan.params.changeoverAllergenMin ?? 30;
+  const pMin = plan.params.changeoverProteinMin ?? 60;
+  const carryOut: Job[] = [];
+
+  const lines: PlatingLinePlan[] = dp.lines.map(line => {
+    const slots: PlatingSlot[] = [];
+    let used = 0, platingMin = 0, changeoverMin = 0, changeovers = 0;
+    let prev: Job | null = null;
+    let lineFull = false;
+    for (const s of line.slots) {
+      const total = s.portions + (s.carryOver ?? 0);
+      const job: Job = {
+        code: s.code, name: s.name, runIndex: s.runIndex, portions: total,
+        allergens: s.allergens, allergenSig: allergenSig(s.allergens),
+        proteinType: s.proteinType, seafood: s.seafood, complexity: s.complexity,
+      };
+      if (lineFull) { carryOut.push(job); continue; }
+      const co = changeover(prev, job, aMin, pMin);
+      const jobPlating = total * minPerPortion;
+      if (used + co.min + jobPlating <= line.availableMin + 0.01) {
+        const start = used + co.min;
+        slots.push({
+          ...s, portions: total, carryOver: undefined, seq: slots.length,
+          startMin: Math.round(start), endMin: Math.round(start + jobPlating),
+          changeoverBeforeMin: co.min, changeoverReason: co.reason,
+        });
+        used = start + jobPlating; platingMin += jobPlating; changeoverMin += co.min;
+        if (co.min > 0) changeovers++;
+        prev = job;
+      } else {
+        const roomMin = line.availableMin - used - co.min;
+        const fit = Math.floor(roomMin / minPerPortion);
+        if (fit >= 50) {
+          const start = used + co.min;
+          const fitMin = fit * minPerPortion;
+          slots.push({
+            ...s, portions: fit, carryOver: total - fit, seq: slots.length,
+            startMin: Math.round(start), endMin: Math.round(start + fitMin),
+            changeoverBeforeMin: co.min, changeoverReason: co.reason,
+          });
+          used = start + fitMin; platingMin += fitMin; changeoverMin += co.min;
+          if (co.min > 0) changeovers++;
+          carryOut.push({ ...job, portions: total - fit });
+        } else {
+          carryOut.push(job);
+        }
+        lineFull = true;
+      }
+    }
+    return {
+      ...line, slots,
+      platingMin: Math.round(platingMin), changeoverMin: Math.round(changeoverMin),
+      changeovers, overCapacity: used > line.availableMin + 1,
+    };
+  });
+
+  return { ...dp, lines, carryOutToNext: toCarryItems(carryOut), source: "edited",
+    generatedAt: new Date().toISOString() };
+}
+
 /** Linienpläne für alle Produktionstage — Carry-over wird von Tag zu Tag durchgereicht. */
 export function generateAllDayPlans(plan: PlatingWeekPlan): Partial<Record<PlatingDay, PlatingDayPlan>> {
   const out: Partial<Record<PlatingDay, PlatingDayPlan>> = {};
