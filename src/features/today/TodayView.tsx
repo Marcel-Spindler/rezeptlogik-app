@@ -2,7 +2,7 @@
 // WO-Abgleich, Backfills und Lager in eine glanceable Liste. Jede Zeile
 // springt ins Detail; nicht verbundene Quellen (nur lokaler Server) werden
 // als „offline" markiert statt verschwiegen.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DataBundle } from "../../core/types";
 import { useAppState } from "../../app/AppContext";
 import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
@@ -29,6 +29,11 @@ import {
   type DigestSection,
   type DigestSeverity,
 } from "./todayDigest";
+import { buildOperationsTasks, buildTaskEscalations, type OperationsTask, type OperationsTaskState } from "./operationsTasks";
+import { buildTodayTrust } from "./todayTrust";
+import { useOperationsTaskState } from "./useOperationsTaskState";
+
+type TaskState = Record<string, OperationsTaskState>;
 
 const SEV_DOT: Record<DigestSeverity, string> = {
   critical: "bg-rose-500",
@@ -64,10 +69,11 @@ function usePlanSignals(data: DataBundle | null, week: string, upliftPercent: nu
 }
 
 export function TodayView({ data, week }: { data: DataBundle; week: string }) {
-  const { upliftPercent, setView, setSelectedRecipe } = useAppState();
+  const { upliftPercent, setView, setSelectedRecipe, source } = useAppState();
   const recon = useWoReconciliation();
   const backfills = useBackfillsOptional();
   const shorts = useShortsTrackerMonitor();
+  const { taskState, updateTask, syncError, teamSynced } = useOperationsTaskState();
 
   const { analysis, loads } = usePlanSignals(data, week, upliftPercent);
   const now = new Date();
@@ -90,6 +96,20 @@ export function TodayView({ data, week }: { data: DataBundle; week: string }) {
   }, [analysis, loads, recon?.bySeverityRecipe, backfills, shorts.data]);
 
   const summary = useMemo(() => summarizeDigest(sections), [sections]);
+  const tasks = useMemo(
+    () => buildOperationsTasks(backfills?.combined ?? [], backfills?.feasibilityByMeal ?? new Map(), recon?.rows ?? []),
+    [backfills?.combined, backfills?.feasibilityByMeal, recon?.rows],
+  );
+  const trust = useMemo(
+    () => buildTodayTrust(source, {
+      postblast: backfills?.postblastConnected ?? false,
+      preblast: backfills?.preblastConnected ?? false,
+      rti: backfills?.rtiConnected ?? false,
+      linePlating: backfills?.linePlaitingConnected ?? false,
+      wmsHolding: backfills?.wmsHoldingConnected ?? false,
+    }),
+    [source, backfills?.postblastConnected, backfills?.preblastConnected, backfills?.rtiConnected, backfills?.linePlaitingConnected, backfills?.wmsHoldingConnected],
+  );
   const realWeek = currentHfWeek();
 
   const openRecipe = (code: string) => { setSelectedRecipe(code); setView("recipe"); };
@@ -114,8 +134,21 @@ export function TodayView({ data, week }: { data: DataBundle; week: string }) {
                 Uplift {upliftPercent > 0 ? "+" : ""}{upliftPercent}%
               </span>
             )}
+            <span
+              title={trust.detail}
+              className={`rounded px-2 py-1 font-semibold ${
+                trust.level === "trusted"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : trust.level === "limited"
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-rose-50 text-rose-700"
+              }`}
+            >
+              {trust.level === "trusted" ? "●" : trust.level === "limited" ? "●" : "○"} {trust.label}
+            </span>
           </div>
         </div>
+        <div className="mt-2 text-[11px] text-slate-500">{trust.detail}</div>
 
         <div className="mt-3">
           {summary.allClear ? (
@@ -138,10 +171,112 @@ export function TodayView({ data, week }: { data: DataBundle; week: string }) {
         </div>
       </div>
 
+      <OperationsBoard
+        tasks={tasks}
+        taskState={taskState}
+        onChange={(task, patch) => void updateTask(task.id, patch)}
+        onOpenRecipe={openRecipe}
+        teamSynced={teamSynced}
+        syncError={syncError}
+      />
+
       {sections.map((s) => (
         <SectionCard key={s.key} section={s} onOpenView={() => setView(s.view)} onOpenRecipe={openRecipe} />
       ))}
     </div>
+  );
+}
+
+function OperationsBoard({
+  tasks,
+  taskState,
+  onChange,
+  onOpenRecipe,
+  teamSynced,
+  syncError,
+}: {
+  tasks: OperationsTask[];
+  taskState: TaskState;
+  onChange: (task: OperationsTask, patch: Partial<TaskState[string]>) => void;
+  onOpenRecipe: (code: string) => void;
+  teamSynced: boolean;
+  syncError: string | null;
+}) {
+  const [showDone, setShowDone] = useState(false);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const visibleTasks = tasks.filter((task) => showDone || taskState[task.id]?.status !== "done");
+  const openCount = tasks.filter((task) => taskState[task.id]?.status !== "done").length;
+  const escalations = useMemo(() => buildTaskEscalations(tasks, taskState, now), [tasks, taskState, now]);
+
+  return (
+    <section className="card p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-base" aria-hidden>⚑</span>
+          <h2 className="text-sm font-bold text-slate-800">Operative Vorgänge</h2>
+          {openCount > 0 && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700">{openCount} offen</span>}
+          <span className={`text-[10px] font-semibold ${teamSynced && !syncError ? "text-emerald-700" : "text-slate-400"}`} title={syncError ?? undefined}>
+            {teamSynced && !syncError ? "● Team-sync" : "○ Lokal"}
+          </span>
+        </div>
+        <button type="button" onClick={() => setShowDone((value) => !value)} className="text-[11px] font-semibold text-slate-500 hover:text-slate-800">
+          {showDone ? "Erledigte ausblenden" : "Erledigte zeigen"}
+        </button>
+      </div>
+
+      {escalations.length > 0 && (
+        <div className="mt-3 border-l-4 border-rose-500 bg-rose-50 p-3">
+          <div className="text-xs font-bold text-rose-800">Eskalation erforderlich: {escalations.length}</div>
+          <div className="mt-1 space-y-1">
+            {escalations.slice(0, 4).map((escalation) => (
+              <div key={escalation.taskId} className="text-[11px] text-rose-700">
+                <span className="font-semibold">{escalation.title}</span> · {escalation.detail}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {visibleTasks.length === 0 ? (
+        <div className="mt-2 text-xs text-emerald-700">✓ Keine offenen Vorgänge</div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {visibleTasks.map((task) => {
+            const state = taskState[task.id] ?? { status: "open", owner: "" };
+            const tone = task.severity === "critical" ? "border-rose-200 bg-rose-50" : "border-amber-200 bg-amber-50";
+            return (
+              <div key={task.id} className={`grid gap-2 border-l-4 p-3 sm:grid-cols-[minmax(0,1fr)_9rem_8rem] sm:items-center ${tone}`}>
+                <button type="button" onClick={() => onOpenRecipe(task.recipeCode)} className="min-w-0 text-left">
+                  <div className="text-xs font-semibold text-slate-800">{task.title}</div>
+                  <div className="mt-0.5 truncate text-[11px] text-slate-600">{task.detail}</div>
+                </button>
+                <input
+                  value={state.owner}
+                  onChange={(event) => onChange(task, { owner: event.target.value })}
+                  placeholder="Verantwortlich"
+                  aria-label={`Verantwortlich für ${task.title}`}
+                  className="w-full border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-verden-600 focus:ring-2 focus:ring-verden-100"
+                />
+                <select
+                  value={state.status}
+                  onChange={(event) => onChange(task, { status: event.target.value as OperationsTaskState["status"] })}
+                  aria-label={`Status für ${task.title}`}
+                  className="w-full border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:border-verden-600 focus:ring-2 focus:ring-verden-100"
+                >
+                  <option value="open">Offen</option>
+                  <option value="in-progress">In Arbeit</option>
+                  <option value="done">Erledigt</option>
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 

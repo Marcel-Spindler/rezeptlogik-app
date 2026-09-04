@@ -5,6 +5,9 @@
 
 export type ChatRole = "user" | "assistant";
 
+import type { PlanAssistantSource } from "./planAssistantSources";
+import type { PlanAssistantFeedbackScore } from "./planAssistantFeedback";
+
 export interface PlanIssue {
   severity: "critical" | "warning" | "info";
   description: string;
@@ -71,10 +74,13 @@ export interface ChatMessage {
   id: string;
   role: ChatRole;
   content: string;
+  question?: string;
   issues?: PlanIssue[];
   proposal?: PlanProposal;
   platingProposal?: PlatingProposal;
   dayPlatingProposal?: DayPlatingProposal;
+  sources?: PlanAssistantSource[];
+  feedback?: PlanAssistantFeedbackScore;
   steps?: ChatStep[];
   pending?: boolean;
 }

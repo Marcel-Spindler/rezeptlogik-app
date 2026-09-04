@@ -13,7 +13,8 @@ import { parseExportRecipesCsv, type RecipeWeightLookup } from "../gsheet-monito
 import type { WorkorderRow } from "../wms-overview/wmsTypes";
 import { reconcileWorkOrders, severityByRecipe } from "./reconcileWorkOrders";
 import type { ReconcileSource, WoReconciliationRow } from "./woReconcileTypes";
-import { addDoc, collection, getFirebase } from "../../core/firebase";
+import { addDoc, collection, doc, getFirebase, serverTimestamp, writeBatch } from "../../core/firebase";
+import { woHistoryDocId } from "../global-search/woHistory";
 
 // Gleiche Storage-Keys wie die Upload-Stellen selbst (PostblastLiveView /
 // KetBreakdownView / PetPlanView) — bewusst identisch, damit ein dort einmal
@@ -31,6 +32,39 @@ export const PET_CSV_STORAGE_KEY = "pet-csv-rows-v1";
 
 const LAST_SNAPSHOT_KEY = "wo_reconcile_last_snapshot_v1";
 const SNAPSHOT_INTERVAL_MS = 15 * 60_000;
+const HISTORY_BATCH_SIZE = 400;
+
+async function persistWoHistorySnapshots(
+  rows: WoReconciliationRow[],
+  capturedAt: string,
+  sourcesAvailable: ReconcileSource[],
+) {
+  const rowsByWorkOrder = new Map<string, WoReconciliationRow[]>();
+  for (const row of rows) {
+    if (!row.workOrder) continue;
+    const entries = rowsByWorkOrder.get(row.workOrder) ?? [];
+    entries.push(row);
+    rowsByWorkOrder.set(row.workOrder, entries);
+  }
+  const entries = [...rowsByWorkOrder.entries()];
+  if (!entries.length) return;
+
+  const { db } = getFirebase();
+  for (let start = 0; start < entries.length; start += HISTORY_BATCH_SIZE) {
+    const batch = writeBatch(db);
+    for (const [workOrder, workOrderRows] of entries.slice(start, start + HISTORY_BATCH_SIZE)) {
+      batch.set(doc(
+        db, "apps", "rezeptlogik", "woReconciliationHistory", woHistoryDocId(workOrder), "snapshots", capturedAt,
+      ), {
+        capturedAt,
+        sourcesAvailable,
+        rows: workOrderRows,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+}
 
 function useLocalStorageSource<T>(key: string, deserialize: (raw: string) => T): T | null {
   const read = () => {
@@ -155,15 +189,17 @@ export function WoReconciliationProvider({ children }: { children: ReactNode }) 
     void (async () => {
       try {
         const { db } = getFirebase();
+        const capturedAt = new Date().toISOString();
         await addDoc(collection(db, "apps", "rezeptlogik", "woReconciliationLog"), {
-          capturedAt: new Date().toISOString(),
+          capturedAt,
           sourcesAvailable,
           rowCount: rows.length,
           criticalCount: rows.filter(r => r.severity === "critical").length,
           warnCount: rows.filter(r => r.severity === "warn").length,
           rows,
         });
-        localStorage.setItem(LAST_SNAPSHOT_KEY, new Date().toISOString());
+        await persistWoHistorySnapshots(rows, capturedAt, sourcesAvailable);
+        localStorage.setItem(LAST_SNAPSHOT_KEY, capturedAt);
       } catch {
         // Snapshot ist optional — die Live-Ansicht bleibt die Hauptquelle.
       } finally {

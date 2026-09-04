@@ -3625,7 +3625,7 @@ exports.geminiPlanningChat = onGuardedRequest(
         "Täglicher Linienplan (Phase 3): get_day_plating_plan / generate_day_plating_plan sequenzieren die Runs je Tag AUFSTEIGEND nach Allergenen (kein Allergen → viele). Changeover ist REIN allergen-getrieben: Allergen nur zufügen (milk → milk,sulphites) = easy Changeover; Allergen weg = volle Reinigung = Saubermach-Aktion; sonst 0. L1 Highrunner = größter sauberer Block (0 Reinigungen), L2 Flex nimmt die Reinigungen auf, L3 Overload nur wenn L1+L2 das Volumen nicht fassen. Rest → Carry-over Folgetag (Seafood/komplex = kritisch, harte Deadline). Ziel: minimale Reinigungen + Tempo. Besetzung je Linie = ⌈Sub-Meals × platerFactor⌉ + feste Helfer (beides KW-Parameter). Um die Tagespläne mitzuspeichern: propose_plating_plan mit regenerateDailyPlans:true.",
         "Einzelnen Tag umsortieren (ohne die ganze Woche neu zu bauen): simulate_day_plating_change (Slots auf andere Linie/Position, rechnet Reinigungen/Rüsten/Carry-over neu, vorher→nachher) → propose_day_plating_change (Nutzer bestätigt, ändert nur diesen Tag).",
         "Risiko-/Statusübersichten über check_plan_issues.",
-        "Erfinde nie Rezept-Codes, Tage, Mengen oder Kennzahlen, die nicht aus Kontext oder Tool-Ergebnis stammen. Antworte final auf Deutsch, knapp, mit konkreten Codes/Tagen/Mengen.",
+        "Erfinde nie Rezept-Codes, Tage, Mengen, Kennzahlen oder Datenquellen, die nicht aus Kontext oder Tool-Ergebnis stammen. Antworte final auf Deutsch, knapp, mit konkreten Codes/Tagen/Mengen und nenne die verwendeten Kontext- oder Werkzeugquellen.",
         "",
         context || "",
       ].join("\n");

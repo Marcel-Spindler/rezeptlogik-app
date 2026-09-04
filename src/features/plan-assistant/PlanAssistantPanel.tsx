@@ -10,6 +10,8 @@ import type { PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
 import type {
   ChatMessage, ChatStep, DayPlatingProposal, PlanIssue, PlanProposal, PlatingProposal,
 } from "./planAssistantTypes";
+import type { PlanAssistantSource } from "./planAssistantSources";
+import { savePlanAssistantFeedback, type PlanAssistantFeedbackScore } from "./planAssistantFeedback";
 
 const STORE_KEY = "rezeptlogik-plan-assistant-v1";
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `m${Date.now()}${Math.random()}`);
@@ -62,6 +64,49 @@ function StepList({ steps }: { steps: ChatStep[] }) {
           <span><span className="font-semibold">{TOOL_LABEL[s.tool] ?? s.tool}</span>{s.summary ? ` · ${s.summary}` : ""}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SourceList({ sources }: { sources: PlanAssistantSource[] }) {
+  if (!sources.length) return null;
+  return (
+    <div className="mt-2 border-t border-slate-200 pt-1.5">
+      <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Datenbasis</div>
+      <div className="mt-1 flex flex-wrap gap-1">
+        {sources.map((source) => (
+          <span key={source.key} title={source.detail} className="rounded bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200">
+            {source.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FeedbackControls({
+  submitted,
+  onSubmit,
+}: {
+  submitted?: PlanAssistantFeedbackScore;
+  onSubmit: (score: PlanAssistantFeedbackScore, correction?: string) => void;
+}) {
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [correction, setCorrection] = useState("");
+  if (submitted) return <div className="mt-2 text-[10px] text-emerald-700">Feedback gespeichert</div>;
+  if (showCorrection) {
+    return (
+      <div className="mt-2">
+        <textarea value={correction} onChange={(event) => setCorrection(event.target.value)} rows={2} placeholder="Was ist fachlich falsch oder fehlt?" className="w-full resize-none border border-slate-300 bg-white px-2 py-1 text-[11px] outline-none focus:border-rose-400" />
+        <button type="button" onClick={() => onSubmit("down", correction)} className="mt-1 text-[11px] font-semibold text-rose-700 hover:text-rose-900">Korrektur speichern</button>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 flex items-center gap-2 text-[10px] text-slate-400">
+      <span>Fachlich korrekt?</span>
+      <button type="button" onClick={() => onSubmit("up")} title="Antwort als fachlich korrekt bewerten" className="font-semibold text-emerald-700 hover:text-emerald-900">Ja</button>
+      <button type="button" onClick={() => setShowCorrection(true)} title="Fachliche Korrektur erfassen" className="font-semibold text-rose-700 hover:text-rose-900">Korrektur</button>
     </div>
   );
 }
@@ -257,10 +302,28 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
         proposal: outcome.proposal,
         platingProposal: outcome.platingProposal,
         dayPlatingProposal: outcome.dayPlatingProposal,
+        sources: outcome.sources,
+        question: q,
       } : m),
     }));
     setBusy(false);
   }, [busy, data, selectedWeek, upliftPercent, reconciliation, backfills, platingPlan, contents, model, setMessages]);
+
+  const submitFeedback = useCallback((messageId: string, score: PlanAssistantFeedbackScore, correction?: string) => {
+    const message = messages.find((entry) => entry.id === messageId);
+    if (!message?.question || !message.content) return;
+    void savePlanAssistantFeedback({
+      question: message.question,
+      answer: message.content,
+      week: selectedWeek,
+      model,
+      score,
+      correction,
+      sources: message.sources ?? [],
+    }).then(() => {
+      setMessages((entries) => entries.map((entry) => entry.id === messageId ? { ...entry, feedback: score } : entry));
+    });
+  }, [messages, selectedWeek, model, setMessages]);
 
   const applyPlating = useCallback((msgId: string) => {
     const msg = messages.find(m => m.id === msgId);
@@ -383,6 +446,8 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
                   <div className="whitespace-pre-wrap">{m.content}</div>
                 )}
                 {m.issues ? <IssueList issues={m.issues} /> : null}
+                {m.role === "assistant" && !m.pending && m.sources ? <SourceList sources={m.sources} /> : null}
+                {m.role === "assistant" && !m.pending ? <FeedbackControls submitted={m.feedback} onSubmit={(score, correction) => submitFeedback(m.id, score, correction)} /> : null}
                 {m.proposal ? (
                   <ProposalCard
                     proposal={m.proposal}

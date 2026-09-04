@@ -3,12 +3,14 @@
 //
 // Früher inline in GlobalSearch.tsx; ausgelagert, damit die Command-Palette
 // (features/command-palette/) dieselbe Ansicht wiederverwenden kann.
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DataBundle, WorkOrderEntry } from "../../core/types";
+import { collection, getDocs, getFirebase, limit, orderBy, query } from "../../core/firebase";
 import type { WoReconciliationRow } from "../wo-reconciliation/woReconcileTypes";
 import { buildWoFlow } from "./woFlow";
 import { WoFlowCard } from "./WoFlowCard";
 import type { SearchEntry } from "./searchTypes";
+import { buildWoHistory, type WoHistoryPoint, woHistoryDocId } from "./woHistory";
 
 export const KIND_LABEL: Record<SearchEntry["kind"], string> = {
   wo: "Work Orders",
@@ -38,6 +40,7 @@ export function WoFlowOverlay({
   onClose: () => void;
   onOpenRecipe: (recipeCode: string) => void;
 }) {
+  const [historyByWo, setHistoryByWo] = useState<Map<string, WoHistoryPoint[]> | null>(null);
   const flows = useMemo(
     () =>
       woNumbers.slice(0, MAX_FLOW_CARDS).map((wo) => {
@@ -52,6 +55,52 @@ export function WoFlowOverlay({
       }),
     [woNumbers, planRows, reconByWo, data, redzoneFor, entry.recipeCode],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    setHistoryByWo(null);
+    void (async () => {
+      try {
+        const { db } = getFirebase();
+        const history = new Map<string, WoHistoryPoint[]>();
+        const histories = await Promise.all(woNumbers.map(async (woNumber) => {
+          const snapshots = (await getDocs(query(
+            collection(db, "apps", "rezeptlogik", "woReconciliationHistory", woHistoryDocId(woNumber), "snapshots"),
+            orderBy("capturedAt", "desc"),
+            limit(48),
+          ))).docs.map((doc) => doc.data() as { capturedAt?: string; rows?: WoReconciliationRow[] });
+          return { woNumber, snapshots };
+        }));
+        for (const { woNumber, snapshots } of histories) {
+          const validSnapshots = snapshots
+            .filter((snapshot) => typeof snapshot.capturedAt === "string" && Array.isArray(snapshot.rows))
+            .map((snapshot) => ({ capturedAt: snapshot.capturedAt!, rows: snapshot.rows! }));
+          history.set(woNumber, buildWoHistory(woNumber, validSnapshots as Parameters<typeof buildWoHistory>[1]));
+        }
+        if ([...history.values()].some((points) => points.length > 0)) {
+          if (!cancelled) setHistoryByWo(history);
+          return;
+        }
+
+        const snapshots = (await getDocs(query(
+          collection(db, "apps", "rezeptlogik", "woReconciliationLog"),
+          orderBy("capturedAt", "desc"),
+          limit(96),
+        ))).docs.map((doc) => doc.data() as { capturedAt?: string; rows?: WoReconciliationRow[] });
+        if (cancelled) return;
+        for (const woNumber of woNumbers) {
+          const validSnapshots = snapshots
+            .filter((snapshot) => typeof snapshot.capturedAt === "string" && Array.isArray(snapshot.rows))
+            .map((snapshot) => ({ capturedAt: snapshot.capturedAt!, rows: snapshot.rows! }));
+          history.set(woNumber, buildWoHistory(woNumber, validSnapshots as Parameters<typeof buildWoHistory>[1]));
+        }
+        setHistoryByWo(history);
+      } catch {
+        if (!cancelled) setHistoryByWo(new Map());
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [woNumbers]);
 
   const allDone = flows.length > 0 && flows.every((f) => f.stages[f.stages.length - 1]?.status === "done");
 
@@ -104,7 +153,7 @@ export function WoFlowOverlay({
               </div>
             )}
             {flows.map((flow) => (
-              <WoFlowCard key={flow.woNumber} flow={flow} onOpenRecipe={onOpenRecipe} />
+              <WoFlowCard key={flow.woNumber} flow={flow} history={historyByWo?.get(flow.woNumber)} onOpenRecipe={onOpenRecipe} />
             ))}
           </>
         )}

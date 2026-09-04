@@ -273,13 +273,13 @@ service cloud.firestore {
     // ========================================================================
     // REZEPTLOGIK (additiv, beruehrt ausschliesslich apps/rezeptlogik/**)
     // ------------------------------------------------------------------------
-    // Interner Planer, MVP. Lesen offen (kein Auth-Layer in der App), Schreiben
-    // aktuell teils direkt aus dem Client.
+    // Minimaler Schutz: Firebase Anonymous Authentication liefert jeder
+    // Browser-Instanz eine Identitaet. Diese Regel erst ueber den Master-Prozess
+    // ausrollen, nachdem im Firebase-Portal der Provider "Anonymous" aktiv ist.
     // Greift NICHT in factoryHub_*-Collections ein.
     // ========================================================================
     match /apps/rezeptlogik/{path=**} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if signedIn();
     }
 
     // ========================================================================

@@ -1,6 +1,7 @@
 import React, { Suspense } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./app/App";
+import { AuthGate } from "./app/AuthGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { lazyWithRetry } from "./lib/lazyWithRetry";
 import "./index.css";
@@ -14,7 +15,8 @@ const shareWeek = new URLSearchParams(window.location.search).get("share");
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    {shareWeek ? (
+    <AuthGate>
+      {shareWeek ? (
       <ErrorBoundary label="share-dashboard">
         <Suspense
           fallback={
@@ -34,6 +36,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       </ErrorBoundary>
     ) : (
       <App />
-    )}
+      )}
+    </AuthGate>
   </React.StrictMode>
 );

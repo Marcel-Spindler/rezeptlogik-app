@@ -2,6 +2,7 @@
 // Alle Firestore-Funktionen werden hier zentral re-exportiert, damit kein
 // anderes Modul `import("firebase/firestore")` dynamisch laden muss.
 import { initializeApp, type FirebaseApp } from "firebase/app";
+import { getAuth, type Auth } from "firebase/auth";
 import {
   getFirestore,
   type Firestore,
@@ -16,12 +17,16 @@ import {
   onSnapshot,
   addDoc,
   serverTimestamp,
+  limit,
+  orderBy,
+  query,
 } from "firebase/firestore";
 
-export { doc, collection, writeBatch, setDoc, updateDoc, deleteField, getDoc, getDocs, onSnapshot, addDoc, serverTimestamp };
+export { doc, collection, writeBatch, setDoc, updateDoc, deleteField, getDoc, getDocs, onSnapshot, addDoc, serverTimestamp, limit, orderBy, query };
 
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
+let auth: Auth | null = null;
 
 export function getFirebase() {
   if (app) return { app, db: db! };
@@ -36,5 +41,11 @@ export function getFirebase() {
   if (!cfg.projectId) throw new Error("Firebase config fehlt (.env.local).");
   app = initializeApp(cfg as any);
   db = getFirestore(app);
+  auth = getAuth(app);
   return { app, db };
+}
+
+export function getFirebaseAuth(): Auth {
+  getFirebase();
+  return auth!;
 }

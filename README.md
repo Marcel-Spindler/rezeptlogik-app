@@ -138,6 +138,15 @@ Firestore-Hinweis: Keine Rules-Deploys aus diesem Repo. Die Datei
 [firestore.rules](firestore.rules) ist hier nur Referenz-/Arbeitsstand fuer den
 Rezeptlogik-Pfad im Shared-Projekt und darf andere Apps nicht ueberfahren.
 
+## 6. Minimaler Zugriffsschutz
+
+Die App nutzt Firebase Anonymous Authentication: kein Login-Dialog, aber jede
+Browser-Instanz erhaelt eine Firebase-Identitaet. Vor dem Rules-Rollout im
+Master-Projekt unter **Firebase Console → Authentication → Sign-in method** den
+Provider **Anonymous** aktivieren. Danach darf der Rezeptlogik-Regelblock auf
+`allow read, write: if signedIn();` gesetzt werden. Das ist ein Basisschutz
+gegen unauthentifizierte Zugriffe, aber noch kein Rollenmodell.
+
 ---
 
 ## Datenfluss (Kurzfassung)

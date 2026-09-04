@@ -2,6 +2,7 @@
 // aufklappbares Stufen-Detail, Submeal-Aufschlüsselung, verknüpfte Datenpunkte.
 import { useMemo, useState } from "react";
 import type { WoFlow, WoStageStatus } from "./searchTypes";
+import type { WoHistoryPoint } from "./woHistory";
 
 const STATUS_TONE: Record<WoStageStatus, { node: string; ring: string; line: string; dot: string; label: string }> = {
   done:    { node: "bg-emerald-500 text-white",   ring: "ring-emerald-200", line: "bg-emerald-400", dot: "bg-emerald-500",  label: "erledigt" },
@@ -24,9 +25,11 @@ function fmtKg(n: number): string {
 
 export function WoFlowCard({
   flow,
+  history,
   onOpenRecipe,
 }: {
   flow: WoFlow;
+  history?: WoHistoryPoint[];
   onOpenRecipe?: (recipeCode: string) => void;
 }) {
   const defaultStage = useMemo(() => {
@@ -151,6 +154,25 @@ export function WoFlowCard({
       {flow.submeals.length > 0 && (
         <div>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {history && history.length > 0 && (
+          <div className="border-t border-slate-100 pt-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Abgleichsverlauf</div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {history.map((point) => (
+                <div key={point.capturedAt} className="min-w-32 border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]">
+                  <div className="font-semibold text-slate-700">
+                    {new Date(point.capturedAt).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                  </div>
+                  <div className={point.severity === "critical" ? "text-rose-700" : point.severity === "warn" ? "text-amber-700" : "text-emerald-700"}>
+                    {point.severity === "critical" ? "kritisch" : point.severity === "warn" ? "Warnung" : "ok"} · {point.progressPct ?? 0}%
+                  </div>
+                  <div className="text-slate-500">{point.weighingCount} Wiegungen{point.complete ? " · fertig" : ""}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
             Submeals ({flow.submeals.length})
           </div>
           <div className="overflow-x-auto">

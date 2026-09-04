@@ -8,6 +8,7 @@ import type { DataBundle } from "../../core/types";
 import { buildPlanContext } from "./planAssistantContext";
 import { TOOL_DECLARATIONS, TERMINAL_TOOLS, executeClientTool, type ToolContext } from "./planAssistantTools";
 import type { DayPlatingProposal, PlanIssue, PlanProposal, PlatingProposal } from "./planAssistantTypes";
+import { buildPlanAssistantSources, type PlanAssistantSource } from "./planAssistantSources";
 
 const CHAT_URL = "/api/local-db/gemini-planning-chat";
 const MAX_STEPS = 6;
@@ -41,6 +42,7 @@ export interface AgentOutcome {
   dayPlatingProposal?: DayPlatingProposal;
   steps: AgentStep[];
   contents: GeminiContent[];
+  sources: PlanAssistantSource[];
   error?: string;
 }
 
@@ -112,16 +114,24 @@ export async function runPlanAgent(params: {
   ];
   const steps: AgentStep[] = [];
   let lastText = "";
+  const sources = () => buildPlanAssistantSources({
+    week: params.week,
+    dataGeneratedAt: params.data.generatedAt,
+    hasReconciliation: !!params.reconciliation?.bySeverityRecipe.size,
+    hasBackfills: !!params.backfills?.combined.length,
+    hasPlatingPlan: !!params.platingPlan,
+    steps,
+  });
 
   for (let step = 0; step < MAX_STEPS; step++) {
     const resp = await relay({ context, contents, model: params.model });
-    if (resp.error) return { text: "", steps, contents, error: resp.error };
+    if (resp.error) return { text: "", steps, contents, sources: sources(), error: resp.error };
 
     lastText = resp.text?.trim() || lastText;
     const calls = resp.functionCalls ?? [];
 
     if (!calls.length) {
-      return { text: lastText || "(keine Antwort)", steps, contents };
+      return { text: lastText || "(keine Antwort)", steps, contents, sources: sources() };
     }
 
     // Modell-Turn protokollieren
@@ -133,7 +143,7 @@ export async function runPlanAgent(params: {
     if (terminal) {
       if (terminal.name === "check_plan_issues") {
         const issues = Array.isArray(terminal.args.issues) ? (terminal.args.issues as PlanIssue[]) : [];
-        return { text: lastText || "Analyse:", issues, steps, contents };
+        return { text: lastText || "Analyse:", issues, steps, contents, sources: sources() };
       }
       if (terminal.name === "propose_day_plating_change") {
         return {
@@ -143,7 +153,7 @@ export async function runPlanAgent(params: {
             moves: (Array.isArray(terminal.args.moves) ? terminal.args.moves : []) as DayPlatingProposal["moves"],
             summary: String(terminal.args.summary ?? ""),
           },
-          steps, contents,
+          steps, contents, sources: sources(),
         };
       }
       if (terminal.name === "propose_plating_plan") {
@@ -156,14 +166,14 @@ export async function runPlanAgent(params: {
             regenerateDailyPlans: terminal.args.regenerateDailyPlans === true,
             summary: String(terminal.args.summary ?? ""),
           },
-          steps, contents,
+          steps, contents, sources: sources(),
         };
       }
       const changes = Array.isArray(terminal.args.changes) ? terminal.args.changes : [];
       return {
         text: lastText || "Vorschlag:",
         proposal: { changes: changes as PlanProposal["changes"], summary: String(terminal.args.summary ?? "") },
-        steps, contents,
+        steps, contents, sources: sources(),
       };
     }
 
@@ -182,7 +192,7 @@ export async function runPlanAgent(params: {
 
   return {
     text: lastText || "Abbruch: zu viele Werkzeug-Schritte ohne finale Antwort.",
-    steps, contents,
+    steps, contents, sources: sources(),
     error: lastText ? undefined : "Schritt-Limit erreicht",
   };
 }
