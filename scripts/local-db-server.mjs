@@ -333,6 +333,70 @@ async function generateGeminiVorplanung(currentWeek, prevWeek, gsheetUrl) {
   return text.trim();
 }
 
+// Freitags-Ist-Planung: zweite Planungsmail, Freitags final -- zeigt geloggte
+// Ist-Zahlen des ersten Laufs (aus dem KET-Plan) statt Vorab-Schätzungen.
+// `rows` kommt bereits sortiert vom Client (istPlanungText.ts): Veggie/Protein-
+// Departement, dann nach dem tatsächlich BERECHNETEN Muss-Start-Termin je WO
+// (aus Cook Schedule / Date Needed, siehe mustStartDate je Zeile) -- kein
+// fester Kochmethoden-Rang, damit die Küche die Mail direkt als
+// Abarbeitungsreihenfolge lesen kann.
+async function generateGeminiIstPlanung(week, rows, gsheetUrl) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY fehlt im lokalen Server");
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+
+  const systemPrompt = [
+    "Du bist Marcel's KI-Planungsassistent für die Freitags-Ist-Planung bei HelloFresh Verden.",
+    "Diese Mail geht Freitags raus, WENN der erste Lauf der Woche final feststeht -- sie zeigt",
+    "die tatsächlich im System geloggten Ist-Zahlen je Work Order, nicht mehr die Vorab-Schätzung.",
+    "Du schreibst locker, direkt und auf den Punkt — wie ein erfahrener Planer der die Zahlen kennt.",
+    "",
+    "Du bekommst eine Liste von Work Orders, JE WO bereits fertig sortiert:",
+    "zuerst nach Departement (Veggie Debox vor Protein Debox), innerhalb eines",
+    "Departements nach 'mustStartDate' -- dem für DIESE WO individuell aus ihrer",
+    "Kochkette (Cook Schedule) und ihrem eigenen Fälligkeitsdatum berechneten",
+    "Termin, ab dem sie starten muss. Das ist KEIN fester Kochmethoden-Rang --",
+    "eine WO mit 'THAW' steht NICHT automatisch zuerst, nur wenn ihr berechnetes",
+    "mustStartDate das früheste ist. Behalte GENAU diese Reihenfolge bei, sortiere",
+    "NICHT selbst um.",
+    "",
+    "Erstelle den Bericht ZUERST AUF ENGLISCH, dann die deutsche Übersetzung darunter.",
+    "Trenne beide Versionen mit einer Leerzeile und '--- DE ---'.",
+    "",
+    "PFLICHT-INHALTE (in dieser Reihenfolge):",
+    "1. Überschrift: 📅 Friday Actuals KW{week} — Run 1 Results",
+    "2. 📊 Gesamt-KPI: Ist-Portionen / Soll-Portionen gesamt + Prozent erreicht.",
+    "3. Je Departement (🥦 Veggie Debox, 🥩 Protein Debox) eine Liste ALLER WOs in der",
+    "   gegebenen Reihenfolge: WO-Nummer, Sub-Rezept (+ Rezeptname), mustStartDate,",
+    "   Ist/Soll-Portionen, Delta, Kochmethoden-Kette.",
+    "4. ⚠️ Kurzer Hinweis auf WOs mit großem Minus-Delta (Ist deutlich unter Soll).",
+    "5. Abschluss: '🔗 Plan: {gsheetUrl}' (nur falls vorhanden), dann 'Best regards' / 'Viele Grüße'.",
+    "",
+    "FORMAT RULES:",
+    "- Plain text, KEIN Markdown (kein **, kein ```, kein #)",
+    "- Tausendertrennzeichen bei Zahlen",
+    "- Erfinde NIE WO-Nummern, Mengen, Termine oder Kochmethoden, die nicht in den Daten stehen.",
+    "",
+    gsheetUrl ? `GSHEET-LINK: ${gsheetUrl}` : "GSHEET-LINK: nicht verfügbar",
+    "",
+    `WOCHE: ${week}`,
+    "",
+    "WORK ORDERS (bereits sortiert, Reihenfolge beibehalten):",
+    JSON.stringify(rows, null, 0),
+  ].join("\n");
+
+  const requestBody = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: "user", parts: [{ text: `Erstelle die Freitags-Ist-Mail für KW${week}.` }] }],
+    generationConfig: { maxOutputTokens: 8192, temperature: 0.4, thinkingConfig: { thinkingBudget: 2048 } },
+  });
+
+  const payload = await geminiCallWithRetry(requestBody, apiKey, model);
+  const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+  if (!text) throw new Error("Gemini lieferte keinen Freitags-Ist-Text");
+  return text.trim();
+}
+
 // Rendert HTML-String mit Playwright (Chromium) zu einem PDF-Buffer.
 // Gibt null zurück wenn Playwright-Browser-Binaries fehlen (graceful fallback).
 async function htmlToPdf(html) {
@@ -437,6 +501,13 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/api/local-db/gemini-vorplanung" && req.method === "POST") {
     readJsonBody(req)
       .then((body) => generateGeminiVorplanung(body.currentWeek, body.prevWeek, body.gsheetUrl))
+      .then((result) => sendJson(res, 200, { ok: true, text: result }))
+      .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
+    return;
+  }
+  if (url.pathname === "/api/local-db/gemini-ist-planung" && req.method === "POST") {
+    readJsonBody(req)
+      .then((body) => generateGeminiIstPlanung(body.week, Array.isArray(body.rows) ? body.rows : [], body.gsheetUrl))
       .then((result) => sendJson(res, 200, { ok: true, text: result }))
       .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
     return;

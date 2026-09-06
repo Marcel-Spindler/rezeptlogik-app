@@ -159,7 +159,7 @@ export function buildWoFlow({ woNumber, planRows, recon, data, redzone }: BuildW
   // Für die WO-Flow-Ansicht liegt aktuell noch kein verlässliches Sleeving-
   // Signal pro Work Order vor. Die Stufe bleibt deshalb sichtbar ausstehend,
   // statt einen Abschluss aus dem Plating-Status abzuleiten.
-  let sleevingStatusKey: WoStageStatus = "pending";
+  const sleevingStatusKey: WoStageStatus = "pending";
 
   const doneStatusKey = deriveDoneStatus(sleevingStatusKey, reconComplete, anyPost);
 

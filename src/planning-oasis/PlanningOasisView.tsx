@@ -1,4 +1,7 @@
-// Planning-OASE-Cockpit: Wochenplanung, Linienplanung und Rack in einem Bereich.
+// Planning-OASE-Cockpit: Wochenplanung, Plating Linien Planung und Rack in einem
+// Bereich. "Plating Linien Planung" (vormals "Linienplanung") ist die Mail-
+// Vorbereitung fuer die Kueche/Boss-Runde: Vorstellungsplan-Spiegel + Vor-Vor-
+// Planung-Mail (vorab) + Freitags-Ist-Mail (Run-1-Ist-Zahlen aus dem KET-Plan).
 // Reduziert auf 3 Sections (cockpit/lines/rack) — Mfg-Kalender, Breakdown-intern,
 // WMS-intern und Agent-Formular wurden entfernt, die Rezept-Fokus-Kachelansicht
 // ebenfalls. Cockpit/Lines/Rack werden in eigenen Phasen komplett neu gebaut;
@@ -22,7 +25,7 @@ type OasisSection = "cockpit" | "lines" | "rack";
 const OASIS_SECTIONS: readonly OasisSection[] = ["cockpit", "lines", "rack"];
 const OASIS_TABS: ReadonlyArray<[OasisSection, string]> = [
   ["cockpit", "Cockpit"],
-  ["lines", "Linienplanung"],
+  ["lines", "Plating Linien Planung"],
   ["rack", "Rack"],
 ];
 
@@ -147,7 +150,7 @@ function OasisHeader({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-2xl font-black tracking-tight text-slate-900">Planning OASE</h2>
-          <p className="mt-1 text-sm text-slate-600">Wochenplaner, Linienplanung und Spreadsheet-Realität in einem Cockpit.</p>
+          <p className="mt-1 text-sm text-slate-600">Wochenplaner, Plating Linien Planung (Vor-Vor-Planung + Freitags-Ist-Mail) und Spreadsheet-Realität in einem Cockpit.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
           <span className="rounded-full bg-white px-3 py-1 ring-1 ring-amber-300 font-semibold">KW {week}</span>
@@ -258,8 +261,8 @@ export function PlanningOasisView({
       )}
 
       {section === "lines" && (
-        <Suspense fallback={<div className="card p-6 text-slate-500">Linienplanung wird geladen …</div>}>
-          <LinePlanningSection week={week} locale={locale} upliftPercent={upliftPercent} />
+        <Suspense fallback={<div className="card p-6 text-slate-500">Plating Linien Planung wird geladen …</div>}>
+          <LinePlanningSection week={week} data={data} locale={locale} upliftPercent={upliftPercent} />
         </Suspense>
       )}
 

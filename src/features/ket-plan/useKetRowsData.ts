@@ -12,6 +12,36 @@ import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWe
 import { woEntriesToKetRows } from "./ketLogic";
 import type { KetRow } from "./ketTypes";
 
+// Gemeinsamer localStorage-Schlüssel für manuell hochgeladene KET-CSVs — wird von
+// KetBreakdownView (KET Plan / WO), PostblastLiveView und WoReconciliationContext
+// geschrieben/gelesen, damit ein einmal hochgeladener Plan app-weit sichtbar ist
+// und nicht in jeder Ansicht erneut hochgeladen werden muss.
+export const KET_CSV_STORAGE_KEY = "ket-csv-rows-v1";
+
+// Liest den geteilten KET-CSV-Upload reaktiv (Fokus/Storage-Event/30s-Poll) —
+// für Views, die nur LESEN wollen (kein eigener Upload-State wie KetBreakdownView).
+export function useSharedKetCsvRows(): KetRow[] | null {
+  const read = (): KetRow[] | null => {
+    try {
+      const raw = localStorage.getItem(KET_CSV_STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as KetRow[]) : null;
+    } catch { return null; }
+  };
+  const [value, setValue] = useState<KetRow[] | null>(read);
+  useEffect(() => {
+    const refresh = () => setValue(read());
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    const interval = window.setInterval(refresh, 30_000);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+      window.clearInterval(interval);
+    };
+  }, []);
+  return value;
+}
+
 export interface KetRowsDataResult {
   ketRows: KetRow[];
   liveWeek: string;

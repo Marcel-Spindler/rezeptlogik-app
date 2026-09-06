@@ -1,5 +1,4 @@
 import React, { useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import type { DataBundle, DetailedSubRecipe, WeekRecipe } from "../../core/types";
 import { currentHfWeek } from "../../lib/wmsCache";
 
@@ -329,8 +328,9 @@ export function AllergenPlatingView({ data }: { data: DataBundle }) {
 
   // ── Export ────────────────────────────────────────────────────────────────
 
-  function exportExcel() {
+  async function exportExcel() {
     if (!results.length) return;
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
     const rows: (string | number)[][] = [
       [`${weekLabel} – Allergenkennzeichnung (inkl. Sub-Meals)`],

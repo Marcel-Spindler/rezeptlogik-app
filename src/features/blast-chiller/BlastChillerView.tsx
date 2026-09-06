@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import type { DataBundle } from "../../core/types";
 import { CHILLER_CFG, CHILLER_KEYS, assignChiller, computeWoAllergen, normStr, searchSubRec, type ChillerKey } from "./blastChillerLogic";
 
@@ -168,7 +167,8 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
 
   // ── Exports ───────────────────────────────────────────────────────────────
 
-  function exportExcel() {
+  async function exportExcel() {
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
     const wsData: (string | number)[][] = [[weekLabel, "", "", ""]];
     CHILLER_KEYS.forEach(k => {

@@ -4,17 +4,12 @@ import { Suspense } from "react";
 import { useAppState, type AppView } from "./AppContext";
 import { Shell, LoadingCard, ErrorCard } from "./Shell";
 import { NavTabs, GroupSubTabs } from "./NavTabs";
-import { KitchenSurface } from "./KitchenSurface";
 import { AppFooter } from "./AppFooter";
-import { RecipeDetail } from "../features/recipe-detail/RecipeDetailShell";
 import { TodayView } from "../features/today/TodayView";
-import { PlanningOasisView } from "../planning-oasis/PlanningOasisView";
-import { ShopfloorKioskSurface } from "./ShopfloorKioskSurface";
 import { WeekSelector } from "../components/WeekSelector";
 import { RecipeList } from "../components/RecipeList";
 import { DataHealthBanner } from "../components/DataHealthBanner";
 import { CapacityWarningBanner } from "../components/CapacityWarningBanner";
-import { MealCatalogView } from "../features/meal-catalog/MealCatalogView";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
 import { CommandPalette } from "../features/command-palette/CommandPalette";
@@ -22,9 +17,14 @@ import { PlanAssistant } from "../features/plan-assistant/PlanAssistant";
 import { resolveRecipeByCode } from "../lib/helpers";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 
-// Schwergewichtige Fach-Views nur bei Bedarf laden — hält den Initial-Bundle
-// klein (wichtig für die Kiosk-Laptops). recipe/catalog bleiben eager, weil sie
-// die üblichen Landeansichten sind.
+// Fach-Views nur bei Bedarf laden — hält den Initial-Bundle klein (wichtig für
+// die Kiosk-Laptops). Die Rezeptliste bleibt eager, weil sie im Hauptlayout
+// dauerhaft gebraucht wird.
+const RecipeDetail       = lazyWithRetry(() => import("../features/recipe-detail/RecipeDetailShell").then(m => ({ default: m.RecipeDetail })), "recipe-detail");
+const PlanningOasisView  = lazyWithRetry(() => import("../planning-oasis/PlanningOasisView").then(m => ({ default: m.PlanningOasisView })), "planning-oasis");
+const MealCatalogView    = lazyWithRetry(() => import("../features/meal-catalog/MealCatalogView").then(m => ({ default: m.MealCatalogView })), "meal-catalog");
+const KitchenSurface     = lazyWithRetry(() => import("./KitchenSurface").then(m => ({ default: m.KitchenSurface })), "kitchen-surface");
+const ShopfloorKioskSurface = lazyWithRetry(() => import("./ShopfloorKioskSurface").then(m => ({ default: m.ShopfloorKioskSurface })), "shopfloor-surface");
 const CsvImportView       = lazyWithRetry(() => import("../CsvImportView").then(m => ({ default: m.CsvImportView })), "csv-import");
 const KetBreakdownView    = lazyWithRetry(() => import("../KetBreakdownView").then(m => ({ default: m.KetBreakdownView })), "ket-breakdown");
 const PetPlanView         = lazyWithRetry(() => import("../PetPlanView").then(m => ({ default: m.PetPlanView })), "pet-plan");

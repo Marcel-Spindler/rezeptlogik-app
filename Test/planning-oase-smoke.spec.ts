@@ -21,8 +21,8 @@ test("Planning OASE owns rack and line planning navigation", async ({ page }) =>
   await oasisCard.getByRole("button", { name: "Rack" }).evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.getByText("Rack v2")).toBeVisible();
 
-  await oasisCard.getByRole("button", { name: "Linienplanung" }).evaluate((element: HTMLButtonElement) => element.click());
-  await expect(page.getByText("Plating Linien Plannung").first()).toBeVisible();
+  await oasisCard.getByRole("button", { name: "Plating Linien Planung" }).evaluate((element: HTMLButtonElement) => element.click());
+  await expect(page.getByText("Plating Linien Planung").first()).toBeVisible();
 
   await oasisCard.getByRole("button", { name: "Cockpit" }).evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
@@ -50,7 +50,7 @@ test("oase deep links for the remaining sections render correctly", async ({ pag
   await expect(page.getByText("Rack v2")).toBeVisible({ timeout: 30000 });
 
   await page.goto(`${BASE_URL}?view=planning&oase=lines`);
-  await expect(page.getByText("Plating Linien Plannung").first()).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Plating Linien Planung").first()).toBeVisible({ timeout: 30000 });
 
   await page.goto(`${BASE_URL}?view=planning&oase=cockpit`);
   await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible({ timeout: 30000 });
@@ -63,9 +63,9 @@ test("Planning OASE supports section deep links via URL", async ({ page }) => {
   const oasisHeader = page.getByRole("heading", { name: "Planning OASE" }).first();
   const oasisCard = page.locator("div.card").filter({ has: oasisHeader }).first();
 
-  await oasisCard.getByRole("button", { name: "Linienplanung" }).click();
+  await oasisCard.getByRole("button", { name: "Plating Linien Planung" }).click();
   await expect(page).toHaveURL(/oase=lines/);
-  await expect(page.getByText("Plating Linien Plannung").first()).toBeVisible();
+  await expect(page.getByText("Plating Linien Planung").first()).toBeVisible();
 });
 
 test("Planning OASE cockpit renders on mobile", async ({ page }) => {

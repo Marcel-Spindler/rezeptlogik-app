@@ -7,7 +7,7 @@
 // (productionPlanOverrides.ts). Grundlage für die geplante KI-/Live-View-
 // Verknüpfung (Snowflake/WMS/Redzone/Postblast) -- jede Zelle wird so ein
 // eigener, referenzierbarer Datenpunkt statt eines rohen Sheet-Werts.
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useForecastMonitor, useProductionPlanMonitor, useProductionPlanSelection, useProductionPlanWeeks, useRecipeProfilMonitor, type ProductionPlanSelection } from "../gsheet-monitor/useGSheetMonitor";
 import { PRODUCTION_PLAN_DAYS, type ProductionPlanData, type ProductionPlanDay, type ProductionPlanWeekOption } from "../gsheet-monitor/gsheetTypes";
 import { useBackfillsKpi, useRedzoneKpi, useWmsKpi } from "./vorstellungsplanKpis";
@@ -15,6 +15,11 @@ import { buildVorstellungsplanMailHtml } from "./vorstellungsplanMail";
 import { ProductionPlanSheetTable } from "./ProductionPlanSheetTable";
 import { applyProductionPlanOverrides, useProductionPlanOverrides } from "./productionPlanOverrides";
 import { generateVorVorPlanungAI } from "./vorVorPlanungText";
+import { generateFreitagsIstMailAI } from "./istPlanungText";
+import { parseKetCsv } from "../ket-plan/ketLogic";
+import { useKetRowsData, useSharedKetCsvRows } from "../ket-plan/useKetRowsData";
+import type { KetRow } from "../ket-plan/ketTypes";
+import type { DataBundle } from "../../core/types";
 
 const DAY_SHORT: Record<ProductionPlanDay, string> = {
   Sunday: "So", Monday: "Mo", Tuesday: "Di", Wednesday: "Mi", Thursday: "Do", Friday: "Fr", Saturday: "Sa",
@@ -138,7 +143,7 @@ function SheetKpiBlock({ data }: { data: ProductionPlanData }) {
 
 // ─── Haupt-Ansicht ──────────────────────────────────────────────────────────
 
-export function VorstellungsplanView({ week }: { week: string }) {
+export function VorstellungsplanView({ week, appData }: { week: string; appData: DataBundle | null }) {
   const { weeks, currentHfWeek, sheetId, loading: weeksLoading, error: weeksError, forceRefresh: refreshWeeks } = useProductionPlanWeeks();
   const selection = useProductionPlanSelection(weeks, currentHfWeek);
   const gid = selection.selected?.gid ?? "";
@@ -199,6 +204,55 @@ export function VorstellungsplanView({ week }: { week: string }) {
     } catch { /* Clipboard-API evtl. ohne Berechtigung -- Text steht trotzdem im Feld zum manuellen Kopieren */ }
   }
 
+  // Freitags-Ist-Mail: zweite Mail-Variante -- geht Freitags raus, wenn Run 1
+  // final feststeht, mit den im KET-Plan geloggten Ist-Zahlen je WO statt der
+  // Vorab-Schätzung. Quelle: dieselbe wie in "KET Plan / WO" (CSV falls dort/
+  // in PostblastLiveView schon hochgeladen -> geteilter localStorage-Schlüssel,
+  // sonst Firestore-Produktionsplan, sonst Live-WMS) -- kein erneuter Upload
+  // noetig. Eigener CSV-Upload hier ist nur Fallback fuer den Fall, dass keine
+  // der beiden Quellen etwas fuer die Woche hat.
+  const sharedCsvRows = useSharedKetCsvRows();
+  const [manualKetRows, setManualKetRows] = useState<KetRow[] | null>(null);
+  const [ketFileName, setKetFileName] = useState<string | null>(null);
+  const [ketWarnings, setKetWarnings] = useState<string[]>([]);
+  const { ketRows, liveWeek: ketLiveWeek } = useKetRowsData(appData, hfWeek, manualKetRows ?? sharedCsvRows);
+  const [istText, setIstText] = useState<string | null>(null);
+  const [istLoading, setIstLoading] = useState(false);
+  const [istCopyStatus, setIstCopyStatus] = useState<"idle" | "ok">("idle");
+
+  async function handleKetFileUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const text = await file.text();
+    const { rows, warnings } = parseKetCsv(text);
+    setManualKetRows(rows);
+    setKetFileName(file.name);
+    setKetWarnings(warnings);
+    setIstText(null);
+  }
+
+  async function handleGenerateIstText() {
+    if (!ketRows.length) return;
+    setIstLoading(true);
+    setIstText(null);
+    try {
+      const text = await generateFreitagsIstMailAI(ketRows, ketLiveWeek, { gsheetUrl, cookSchedules: appData?.cookSchedules });
+      setIstText(text);
+    } finally {
+      setIstLoading(false);
+    }
+  }
+
+  async function handleCopyIstText() {
+    if (!istText) return;
+    try {
+      await navigator.clipboard.writeText(istText);
+      setIstCopyStatus("ok");
+      setTimeout(() => setIstCopyStatus("idle"), 3000);
+    } catch { /* Clipboard-API evtl. ohne Berechtigung -- Text steht trotzdem im Feld zum manuellen Kopieren */ }
+  }
+
   function handleCopyMail() {
     if (!mergedData || !mailContainerRef.current) return;
     const html = buildVorstellungsplanMailHtml(mergedData, week, { backfills: backfillsKpi, redzone: redzoneKpi, wms: wmsKpi });
@@ -233,6 +287,54 @@ export function VorstellungsplanView({ week }: { week: string }) {
         <KpiTile label="Backfill-Empfehlung" value={backfillsKpi ? fmtInt(backfillsKpi.totalRecommendedPortions) : "–"} />
         <KpiTile label="Redzone · aktive Linien" value={redzoneKpi ? fmtInt(redzoneKpi.activeLineCount) : "–"} tone="indigo" />
         <KpiTile label="Redzone · geplatet" value={redzoneKpi ? fmtInt(redzoneKpi.totalPlated) : "–"} />
+      </div>
+
+      <div className="card p-3 shadow-sm space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-black text-slate-800">🧾 Freitags-Ist-Mail</h3>
+            <p className="text-[11px] text-slate-500">Ist-Zahlen aus Run 1 je WO -- gleiche Quelle wie „KET Plan / WO“, kein erneuter Upload nötig. Sortiert nach Veggie/Protein Debox, dann nach dem je WO berechneten Muss-Start-Termin (Cook Schedule).</p>
+          </div>
+          <label className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer">
+            📂 Fallback: eigene CSV hochladen
+            <input type="file" accept=".csv" className="hidden" onChange={handleKetFileUpload} />
+          </label>
+        </div>
+        <p className="text-[11px] text-slate-500">
+          {manualKetRows ? `${ketFileName} (Fallback-Upload)` : sharedCsvRows ? "KET Plan / WO (hochgeladene CSV)" : "KET Plan / WO (Firestore/Live-WMS)"}
+          {" "}· {ketRows.length} WOs
+          {ketWarnings.length > 0 && <span className="text-amber-600"> · {ketWarnings.length} Warnung(en) im Fallback-Upload</span>}
+        </p>
+        {ketRows.length > 0 && (
+          <button
+            onClick={handleGenerateIstText}
+            disabled={istLoading}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {istLoading ? "⏳ KI generiert…" : "🤖 Freitags-Ist-Mail generieren (KI)"}
+          </button>
+        )}
+        {istText && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-600">🤖 KI-generierte Freitags-Ist-Mail — Run-1-Ist-Zahlen je Departement, sortiert nach berechnetem Muss-Start-Termin</span>
+              <button
+                onClick={handleCopyIstText}
+                className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                📋 Kopieren
+              </button>
+            </div>
+            <textarea
+              readOnly
+              value={istText}
+              onFocus={(e) => e.currentTarget.select()}
+              rows={istText.split("\n").length + 1}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-mono text-slate-700"
+            />
+            {istCopyStatus === "ok" && <p className="text-[11px] text-emerald-600">✓ In Zwischenablage kopiert.</p>}
+          </div>
+        )}
       </div>
 
       {error && (

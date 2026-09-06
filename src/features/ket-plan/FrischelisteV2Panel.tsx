@@ -2,7 +2,6 @@
 // 2-Ebenen-Struktur: Oberbegriff (Middle Kitchen, Protein …) → Station (Braiser, Oven …)
 // Filter: Kategorie (PHF/PTN), Tag (Mo–Fr), Oberbegriff/Station, Ansicht (Submeal/Einkauf)
 import { useState, useMemo, useEffect, useCallback } from "react";
-import * as XLSX from "xlsx";
 import type { DataBundle } from "../../core/types";
 import {
   fetchPlanningSheet,
@@ -232,7 +231,8 @@ export function FrischelisteV2Panel({ data, weekLabel }: Props) {
     triggerDownload("﻿" + csv, "text/csv;charset=utf-8;", `${result.week}_Frischeliste-2.0.csv`);
   }
 
-  function downloadExcel() {
+  async function downloadExcel() {
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
 
     if (viewMode === "einkauf") {

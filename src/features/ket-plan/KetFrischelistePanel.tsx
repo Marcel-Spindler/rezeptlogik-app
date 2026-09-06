@@ -3,7 +3,6 @@
 //     Plus: Middle-Kitchen-Vorschau für Spezial-Artikel (componentlose WOs) der Folge-KW.
 // V2: Frischeliste 2.0 – Live Google Sheets + Rezept-Daten, alle Stationen, Tag-Spalten.
 import { useState, useMemo } from "react";
-import * as XLSX from "xlsx";
 import type { DataBundle } from "../../core/types";
 import type { KetRow, BatchCalc } from "./ketTypes";
 import { FrischelisteV2Panel } from "./FrischelisteV2Panel";
@@ -106,15 +105,16 @@ export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel, d
     );
   }
 
-  function downloadExcel(ptnMode = false) {
+  async function downloadExcel(ptnMode = false) {
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
     if (ptnMode) {
-      XLSX.utils.book_append_sheet(wb, makePtnSheet(liste.protein, "Protein Debox"), "Protein PTN");
-      XLSX.utils.book_append_sheet(wb, makePtnSheet(liste.veggie, "Veggie Debox"), "Veggie PTN");
+      XLSX.utils.book_append_sheet(wb, makePtnSheet(XLSX, liste.protein, "Protein Debox"), "Protein PTN");
+      XLSX.utils.book_append_sheet(wb, makePtnSheet(XLSX, liste.veggie, "Veggie Debox"), "Veggie PTN");
       XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste-PTN.xlsx`);
     } else {
-      XLSX.utils.book_append_sheet(wb, makeMealSheet(liste.protein, "Protein Debox"), "Protein Debox");
-      XLSX.utils.book_append_sheet(wb, makeMealSheet(liste.veggie, "Veggie Debox"), "Veggie Debox");
+      XLSX.utils.book_append_sheet(wb, makeMealSheet(XLSX, liste.protein, "Protein Debox"), "Protein Debox");
+      XLSX.utils.book_append_sheet(wb, makeMealSheet(XLSX, liste.veggie, "Veggie Debox"), "Veggie Debox");
       XLSX.writeFile(wb, `${weekLabel}_PHF-Frischeliste.xlsx`);
     }
   }
@@ -137,7 +137,7 @@ export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel, d
     return rows;
   }
 
-  function makeMealSheet(groups: FrischeMealGroup[], dept: string) {
+  function makeMealSheet(XLSX: typeof import("xlsx"), groups: FrischeMealGroup[], dept: string) {
     const sheetRows: (string | number)[][] = [
       [`PHF-Frischeliste ${weekLabel} – ${dept} – ${dayLabel}`],
       ["PTN", "Mahlzeit", "Komponente", "Artikel", "Menge (kg)", "WOs"],
@@ -148,7 +148,7 @@ export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel, d
     return ws;
   }
 
-  function makePtnSheet(groups: FrischeMealGroup[], dept: string) {
+  function makePtnSheet(XLSX: typeof import("xlsx"), groups: FrischeMealGroup[], dept: string) {
     const sorted = [...groups].sort((a, b) => a.portions - b.portions || b.totalKg - a.totalKg);
     const sheetRows: (string | number)[][] = [
       [`PHF-Frischeliste ${weekLabel} – ${dept} – ${dayLabel} – nach PTN`],
@@ -192,7 +192,8 @@ export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel, d
     triggerDownload("﻿" + lines.join("\n"), "text/csv;charset=utf-8;", `${weekLabel}_PHF-Einkauf.csv`);
   }
 
-  function downloadEinkaufExcel() {
+  async function downloadEinkaufExcel() {
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
     function makeSheet(items: FrischeIngredientTotal[], dept: string) {
       const sheetRows: (string | number)[][] = [
@@ -213,7 +214,8 @@ export function KetFrischelistePanel({ rows, nextWeekRows, calcMap, weekLabel, d
   }
 
   // ── Spezial-Artikel Export ─────────────────────────────────────────────────
-  function downloadSpezialExcel() {
+  async function downloadSpezialExcel() {
+    const XLSX = await import("xlsx");
     const wb = XLSX.utils.book_new();
     function makeSheet(items: FrischeIngredientTotal[], dept: string) {
       const sheetRows: (string | number)[][] = [

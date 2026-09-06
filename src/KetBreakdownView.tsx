@@ -25,7 +25,6 @@ import { computeRunAssignments, shiftLabel } from "./features/ket-plan/ketRunLog
 import { KetEquipmentPanel } from "./features/ket-plan/KetEquipmentPanel";
 import { KetShopfloorDashboard } from "./features/ket-plan/KetShopfloorDashboard";
 import { KetFrischelistePanel } from "./features/ket-plan/KetFrischelistePanel";
-import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS & PATTERNS
@@ -228,12 +227,13 @@ function buildIngredientRows(rows: KetRow[], calcMap: Map<string, BatchCalc>) {
  * Sheet 1 "WOs" — eine Zeile pro WO, alle Felder
  * Sheet 2 "Zutaten" — eine Zeile pro Zutat pro WO
  */
-function exportWosToXlsx(
+async function exportWosToXlsx(
   rows: KetRow[],
   calcMap: Map<string, BatchCalc>,
   woInstructions: Record<string, WoInstruction>,
   filename: string,
-): void {
+): Promise<void> {
+  const XLSX = await import("xlsx");
   const overviewRows = buildWoOverviewRows(rows, calcMap, woInstructions);
   const ingredientRows = buildIngredientRows(rows, calcMap);
   const wb = XLSX.utils.book_new();
