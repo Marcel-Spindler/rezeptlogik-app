@@ -4,6 +4,18 @@ import { persistGet, persistSet, STORES } from "../lib/persistentStore";
 
 const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? "firestore") as "local" | "local-db" | "firestore";
 
+export type DataSourceStatus = {
+  kind: "firestore" | "firestore-cache" | "local" | "local-db" | "json-fallback";
+  label: string;
+  error: string | null;
+};
+
+export let dataSourceStatus: DataSourceStatus = {
+  kind: SOURCE === "firestore" ? "firestore" : SOURCE,
+  label: SOURCE === "firestore" ? "Firestore" : SOURCE === "local-db" ? "Lokale Datenbank" : "Lokale JSON-Datei",
+  error: null,
+};
+
 function logWarn(context: string, err?: unknown) {
   const msg = err instanceof Error ? err.message : String(err ?? "");
   console.warn(`[dataSource] ${context}${msg ? ": " + msg : ""}`);
@@ -93,11 +105,13 @@ export async function loadData(): Promise<DataBundle> {
   if (SOURCE === "local-db") {
     try {
       lastDataError = null;
+      dataSourceStatus = { kind: "local-db", label: "Lokale Datenbank", error: null };
       const bundle = await enrich(await loadFromLocalDb());
       void persistSet(STORES.dataBundle, "current", bundle);
       return bundle;
     } catch (e) {
       lastDataError = e instanceof Error ? e.message : String(e);
+      dataSourceStatus = { kind: "json-fallback", label: "JSON-Fallback", error: lastDataError };
       logWarn("Lokale Datenbank nicht erreichbar, Fallback auf data.json", e);
       const bundle = await enrich(await loadFromJson());
       void persistSet(STORES.dataBundle, "current", bundle);
@@ -107,6 +121,7 @@ export async function loadData(): Promise<DataBundle> {
   if (SOURCE === "firestore") {
     // Wenn wir persistierte Daten haben, sofort zurückgeben und im Hintergrund aktualisieren
     if (cached) {
+      dataSourceStatus = { kind: "firestore-cache", label: "Firestore-Cache", error: lastDataError };
       console.log(`[dataSource] IndexedDB-Hit: DataBundle vom ${new Date(cached.updatedAt).toLocaleString("de-DE")} — lade Firestore im Hintergrund…`);
       void loadFreshFirestoreBundle();
       return cached.data;
@@ -114,12 +129,14 @@ export async function loadData(): Promise<DataBundle> {
     try {
       const bundle = await loadFromFirestore();
       lastDataError = null;
+      dataSourceStatus = { kind: "firestore", label: "Firestore", error: null };
       const merged = await enrich(bundle);
       void persistSet(STORES.dataBundle, "current", merged);
       return merged;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       lastDataError = msg;
+      dataSourceStatus = { kind: "json-fallback", label: "JSON-Fallback", error: lastDataError };
       logWarn("Firestore-Load fehlgeschlagen, Fallback auf data.json", e);
       const bundle = await enrich(await loadFromJson());
       void persistSet(STORES.dataBundle, "current", bundle);
@@ -127,6 +144,7 @@ export async function loadData(): Promise<DataBundle> {
     }
   }
   const bundle = await enrich(await loadFromJson());
+  dataSourceStatus = { kind: "local", label: "Lokale JSON-Datei", error: null };
   void persistSet(STORES.dataBundle, "current", bundle);
   return bundle;
 }

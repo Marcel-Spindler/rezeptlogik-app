@@ -2,6 +2,7 @@ export interface PlanAssistantSource {
   key: string;
   label: string;
   detail: string;
+  status?: "live" | "cache" | "offline";
 }
 
 const TOOL_SOURCES: Record<string, { label: string; detail: string }> = {
@@ -24,6 +25,8 @@ export function buildPlanAssistantSources(input: {
   hasReconciliation: boolean;
   hasBackfills: boolean;
   hasPlatingPlan: boolean;
+  reconciliationStatus?: "live" | "cache" | "offline";
+  backfillsStatus?: "live" | "cache" | "offline";
   steps: Array<{ tool: string }>;
 }): PlanAssistantSource[] {
   const sources: PlanAssistantSource[] = [{
@@ -31,8 +34,8 @@ export function buildPlanAssistantSources(input: {
     label: "Wochenplan",
     detail: `${input.week} · Datenstand ${input.dataGeneratedAt || "unbekannt"}`,
   }];
-  if (input.hasReconciliation) sources.push({ key: "reconciliation", label: "WO-Abgleich", detail: "aktueller Quellenabgleich" });
-  if (input.hasBackfills) sources.push({ key: "backfills", label: "Backfills", detail: "aktuelle Nachproduktionssignale" });
+  if (input.hasReconciliation) sources.push({ key: "reconciliation", label: "WO-Abgleich", detail: input.reconciliationStatus === "offline" ? "keine Live-Feeds verbunden" : "aktueller Quellenabgleich", status: input.reconciliationStatus });
+  if (input.hasBackfills) sources.push({ key: "backfills", label: "Backfills", detail: input.backfillsStatus === "offline" ? "Küchen-/Plating-Feeds nicht verbunden" : "aktuelle Nachproduktionssignale", status: input.backfillsStatus });
   if (input.hasPlatingPlan) sources.push({ key: "plating", label: "Plating-Plan", detail: "gespeicherter Wochenplan" });
   for (const step of input.steps) {
     const source = TOOL_SOURCES[step.tool];

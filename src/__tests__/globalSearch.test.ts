@@ -136,12 +136,25 @@ describe("buildWoFlow status derivation", () => {
     expect(flow.stages.find((s) => s.key === "blast")?.status).toBe("done");
     expect(flow.progressPct).toBe(102);
     expect(flow.weighingCount).toBe(6);
+    expect(flow.stages.find((s) => s.key === "blast")?.metrics).toEqual(expect.arrayContaining([
+      { label: "Plan", value: "200 kg" },
+      { label: "Ist", value: "205 kg" },
+      { label: "Abweichung", value: "+5.0 kg" },
+    ]));
   });
 
   it("still produces submeals from recipe data when no plan rows match", () => {
     const flow = buildWoFlow({ woNumber: "99-99", planRows: [], data: DATA });
     expect(flow.hasPlanRows).toBe(false);
     // recipeCode is unknown here (no rows, no recon) → no recipe-derived submeals
-    expect(flow.stages).toHaveLength(6);
+    expect(flow.stages).toHaveLength(7);
+  });
+
+  it("places sleeving after plating and before done", () => {
+    const flow = buildWoFlow({ woNumber: "35-10", planRows: DATA.productionPlan!.rows, data: DATA });
+    expect(flow.stages.map((stage) => stage.key)).toEqual([
+      "created", "staging", "kitchen", "blast", "plating", "sleeving", "done",
+    ]);
+    expect(flow.stages.find((stage) => stage.key === "sleeving")?.status).toBe("pending");
   });
 });

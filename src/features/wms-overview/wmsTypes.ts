@@ -167,14 +167,16 @@ export type BasePayload = {
   rangeStart?: string;
   rangeEnd?: string;
   generatedAt?: string;
+  source?: "snowflake-live" | "firestore-cache" | "firestore-cache-derived" | "local-live" | "unavailable";
+  cachedAt?: string;
   error?: string;
 };
 
 export type StoredPayload    = BasePayload & { rows: StoredRow[] };
 export type SleevingPayload  = BasePayload & { rows: SleevingRow[] };
 export type InboundPayload   = BasePayload & { rows: InboundRow[] };
-export type WorkordersPayload = { ok: boolean; rows: WorkorderRow[]; error?: string };
-export type WoDetailPayload   = { ok: boolean; rows: WoTransactionRow[]; error?: string; source?: string; cachedAt?: string; week?: string; wmsWeek?: string; controlPattern?: string };
+export type WorkordersPayload = BasePayload & { rows: WorkorderRow[] };
+export type WoDetailPayload   = BasePayload & { rows: WoTransactionRow[]; week?: string; wmsWeek?: string; controlPattern?: string };
 export type FullInventoryPayload = { ok: boolean; rows: FullInventoryRow[]; totalRows?: number; generatedAt?: string; error?: string };
 
 // ─── Deep Search Types ──────────────────────────────────────────────────────

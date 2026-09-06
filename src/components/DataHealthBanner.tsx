@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DataBundle } from "../core/types";
+import type { DataSourceStatus } from "../core/dataSource";
 
 interface HealthIssue { label: string; fix: string; severity: "warn" | "stale" }
 
@@ -67,9 +68,14 @@ function checkCompleteness(data: DataBundle): HealthIssue[] {
   return issues;
 }
 
-function collectHealthIssues(data: DataBundle): HealthIssue[] {
+function collectHealthIssues(data: DataBundle, source: DataSourceStatus): HealthIssue[] {
   const freshness = checkFreshness(data.generatedAt);
-  return [...(freshness ? [freshness] : []), ...checkCompleteness(data)];
+  const sourceIssue = source.error
+    ? { label: `${source.label}: Aktualisierung fehlgeschlagen`, fix: source.error, severity: "warn" as const }
+    : source.kind === "firestore-cache"
+      ? { label: "Firestore-Cache aktiv", fix: "Live-Daten werden im Hintergrund aktualisiert", severity: "warn" as const }
+      : null;
+  return [...(freshness ? [freshness] : []), ...(sourceIssue ? [sourceIssue] : []), ...checkCompleteness(data)];
 }
 
 function readDismissed(): boolean {
@@ -79,7 +85,7 @@ function readDismissed(): boolean {
   } catch { return false; }
 }
 
-export function DataHealthBanner({ data }: { data: DataBundle }) {
+export function DataHealthBanner({ data, source }: { data: DataBundle; source: DataSourceStatus }) {
   const [dismissed, setDismissed] = useState(readDismissed);
   const [open, setOpen] = useState(false);
   // Tick jede Minute, damit der Alterscheck live aktualisiert wird
@@ -91,7 +97,7 @@ export function DataHealthBanner({ data }: { data: DataBundle }) {
 
   if (dismissed) return null;
 
-  const issues = collectHealthIssues(data);
+  const issues = collectHealthIssues(data, source);
   if (issues.length === 0) return null;
 
   const hasCritical = issues.some(i => i.severity === "stale");

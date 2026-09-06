@@ -10,6 +10,9 @@ import { persistGet, persistSet, STORES } from "../../lib/persistentStore";
 export interface WmsStationsResult {
   data: AllData;
   generatedAt: string | null;
+  source: NonNullable<BasePayload["source"]> | "mixed";
+  sourceCounts: { live: number; cache: number; local: number; unavailable: number };
+  cachedAt: string | null;
   rangeStart: string | null;
   rangeEnd: string | null;
 }
@@ -52,7 +55,7 @@ export async function fetchAllWmsStations(
         inR.json() as Promise<InboundPayload>,
         woR.ok ? woR.json() as Promise<WorkordersPayload> : woR.json().catch(() => ({})).then(body => {
           console.warn(`WMS WO-Endpoint Fehler HTTP ${woR.status}:`, body);
-          return { ok: false, rows: [], error: `WO-Daten nicht verfügbar (HTTP ${woR.status}) — lokaler Server läuft? Snowflake verbunden?` } as WorkordersPayload;
+          return { ok: false, rows: [], source: "unavailable", error: `WO-Daten nicht verfügbar (HTTP ${woR.status}) — lokaler Server läuft? Snowflake verbunden?` } as WorkordersPayload;
         }),
         wodR.ok && (wodR.headers.get("content-type") ?? "").includes("json") ? wodR.json() as Promise<WoDetailPayload> : Promise.resolve({ ok: true, rows: [] } as WoDetailPayload),
         plhR.ok && (plhR.headers.get("content-type") ?? "").includes("json") ? plhR.json() as Promise<StoredPayload> : Promise.resolve({ ok: true, rows: [] } as StoredPayload),
@@ -60,9 +63,33 @@ export async function fetchAllWmsStations(
       for (const [label, pay] of [["Plating", pl], ["Staging", stg], ["Debox", deb], ["Post-Blast", pb], ["Sleeving", sl], ["Inbound", inb]] as [string, BasePayload][]) {
         if (!pay.ok) throw new Error(`${label}: ${pay.error ?? "Unbekannter Fehler"}`);
       }
+      const sources = [pl, stg, deb, pb, sl, inb, wo, wod, plh]
+        .map(pay => pay.source)
+        .filter((source): source is NonNullable<BasePayload["source"]> => Boolean(source));
+      const source = sources.length === 0
+        ? "local-live" as const
+        : new Set(sources).size === 1 ? sources[0] : "mixed" as const;
+      const stationPayloads = [pl, stg, deb, pb, sl, inb, wo, wod, plh];
+      const sourceCounts = stationPayloads.reduce(
+        (counts, pay) => {
+          const stationSource = pay.source ?? "local-live";
+          if (stationSource === "snowflake-live") counts.live++;
+          else if (stationSource === "firestore-cache" || stationSource === "firestore-cache-derived") counts.cache++;
+          else if (stationSource === "unavailable") counts.unavailable++;
+          else counts.local++;
+          return counts;
+        },
+        { live: 0, cache: 0, local: 0, unavailable: 0 },
+      );
+      const cachedAt = [pl, stg, deb, pb, sl, inb, wo, wod, plh]
+        .map(pay => pay.cachedAt)
+        .find(value => Boolean(value)) ?? null;
       return {
         data: { plating: pl, platingHolding: plh, staging: stg, debox: deb, postblast: pb, sleeving: sl, inbound: inb, workorders: wo, woDetail: wod },
-        generatedAt: pl.generatedAt ?? sl.generatedAt ?? inb.generatedAt ?? null,
+        generatedAt: cachedAt ?? pl.generatedAt ?? sl.generatedAt ?? inb.generatedAt ?? null,
+        source,
+        sourceCounts,
+        cachedAt,
         rangeStart: pl.rangeStart ?? inb.rangeStart ?? null,
         rangeEnd: pl.rangeEnd ?? inb.rangeEnd ?? null,
       };

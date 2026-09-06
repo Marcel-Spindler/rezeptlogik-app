@@ -10,6 +10,7 @@ import { useBackfillsOptional } from "../backfills/BackfillsContext";
 import { useShortsTrackerMonitor } from "../gsheet-monitor/useGSheetMonitor";
 import { adjustedPortions } from "../../lib/helpers";
 import { currentHfWeek } from "../../lib/hfWeek";
+import { codeDigits } from "../../lib/helpers";
 import {
   computeWeekLoad,
   computeWeeklyStationLoads,
@@ -32,6 +33,8 @@ import {
 import { buildOperationsTasks, buildTaskEscalations, type OperationsTask, type OperationsTaskState } from "./operationsTasks";
 import { buildTodayTrust } from "./todayTrust";
 import { useOperationsTaskState } from "./useOperationsTaskState";
+import { severityByRecipe } from "../wo-reconciliation/reconcileWorkOrders";
+import { filterReconciliationRowsForWeek } from "./todayDigest";
 
 type TaskState = Record<string, OperationsTaskState>;
 
@@ -68,37 +71,59 @@ function usePlanSignals(data: DataBundle | null, week: string, upliftPercent: nu
   }, [data, week, upliftPercent]);
 }
 
-export function TodayView({ data, week }: { data: DataBundle; week: string }) {
-  const { upliftPercent, setView, setSelectedRecipe, source } = useAppState();
+export function TodayView({ data }: { data: DataBundle }) {
+  const { upliftPercent, setView, setSelectedRecipe, setSelectedWeek, source } = useAppState();
   const recon = useWoReconciliation();
   const backfills = useBackfillsOptional();
   const shorts = useShortsTrackerMonitor();
   const { taskState, updateTask, syncError, teamSynced } = useOperationsTaskState();
+  const realWeek = currentHfWeek();
+  const realWeekNum = Number(realWeek.match(/-W(\d{2})$/)?.[1] ?? NaN) || null;
+  const todayRecipeCodes = useMemo(
+    () => new Set(data.weekRecipes.filter(recipe => recipe.hfWeek === realWeek).map(recipe => codeDigits(recipe.code))),
+    [data.weekRecipes, realWeek],
+  );
 
-  const { analysis, loads } = usePlanSignals(data, week, upliftPercent);
+  const { analysis, loads } = usePlanSignals(data, realWeek, upliftPercent);
   const now = new Date();
+  const todayReconRows = useMemo(
+    () => filterReconciliationRowsForWeek(recon?.rows ?? [], realWeekNum)
+      .filter(row => todayRecipeCodes.has(codeDigits(row.recipeCode))),
+    [recon?.rows, realWeekNum, todayRecipeCodes],
+  );
+  const todayReconByRecipe = useMemo(
+    () => severityByRecipe(todayReconRows) as Map<string, { severity: "warn" | "critical"; count: number }>,
+    [todayReconRows],
+  );
+  const todayBackfills = backfills && !backfills.isStaleWeek
+    ? backfills
+    : null;
 
   const sections = useMemo<DigestSection[]>(() => {
     const bfConnected =
-      !!backfills &&
-      (backfills.postblastConnected || backfills.rtiConnected || backfills.linePlaitingConnected);
+      !!todayBackfills &&
+      (todayBackfills.postblastConnected || todayBackfills.rtiConnected || todayBackfills.linePlaitingConnected);
     return [
       buildPlanSection(analysis, loads),
-      buildReconSection(recon?.bySeverityRecipe ?? null),
+      buildReconSection(todayReconByRecipe),
       buildBackfillSection({
-        alerts: backfills?.alerts ?? [],
-        isStaleWeek: backfills?.isStaleWeek ?? false,
-        selectedWeekNum: backfills?.selectedWeekNum ?? null,
+        alerts: todayBackfills?.alerts ?? [],
+        isStaleWeek: false,
+        selectedWeekNum: todayBackfills?.selectedWeekNum ?? null,
         connected: bfConnected,
       }),
       buildStockSection({ shortages: shorts.data?.entries ?? null }),
     ];
-  }, [analysis, loads, recon?.bySeverityRecipe, backfills, shorts.data]);
+  }, [analysis, loads, todayReconByRecipe, todayBackfills, shorts.data]);
 
   const summary = useMemo(() => summarizeDigest(sections), [sections]);
   const tasks = useMemo(
-    () => buildOperationsTasks(backfills?.combined ?? [], backfills?.feasibilityByMeal ?? new Map(), recon?.rows ?? []),
-    [backfills?.combined, backfills?.feasibilityByMeal, recon?.rows],
+    () => buildOperationsTasks(
+      todayBackfills?.combined.filter(item => todayRecipeCodes.has(codeDigits(item.recipeCode))) ?? [],
+      todayBackfills?.feasibilityByMeal ?? new Map(),
+      todayReconRows,
+    ),
+    [todayBackfills?.combined, todayBackfills?.feasibilityByMeal, todayReconRows, todayRecipeCodes],
   );
   const trust = useMemo(
     () => buildTodayTrust(source, {
@@ -110,9 +135,11 @@ export function TodayView({ data, week }: { data: DataBundle; week: string }) {
     }),
     [source, backfills?.postblastConnected, backfills?.preblastConnected, backfills?.rtiConnected, backfills?.linePlaitingConnected, backfills?.wmsHoldingConnected],
   );
-  const realWeek = currentHfWeek();
-
-  const openRecipe = (code: string) => { setSelectedRecipe(code); setView("recipe"); };
+  const openRecipe = (code: string) => {
+    setSelectedWeek(realWeek);
+    setSelectedRecipe(code);
+    setView("recipe");
+  };
 
   return (
     <div className="space-y-4">
@@ -127,7 +154,7 @@ export function TodayView({ data, week }: { data: DataBundle; week: string }) {
           </div>
           <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
             <span className="rounded bg-slate-100 px-2 py-1 font-semibold text-slate-600">
-              KW {week}{week !== realWeek ? ` (aktuell ${realWeek})` : ""}
+              KW {realWeek}
             </span>
             {upliftPercent !== 0 && (
               <span className="rounded bg-verden-50 px-2 py-1 font-semibold text-verden-700">

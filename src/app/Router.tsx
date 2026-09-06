@@ -63,7 +63,7 @@ function MainPaneSwitch({ view }: { view: AppView }) {
 
   switch (view) {
     case "heute":
-      return <TodayView data={data} week={selectedWeek} />;
+      return <TodayView data={data} />;
 
     case "catalog":
       return (
@@ -181,6 +181,7 @@ function FullApp() {
   const state = useAppState();
   const {
     data, selectedWeek, view, upliftPercent, searchText,
+    source,
     weeks, weekRecipes, recipesByCode, recipesOfWeek, filteredRecipes, activeRecipe,
     totals, plannedTotal, prevWeek, weekDelta,
     setSelectedWeek, setSelectedRecipe, setView, setUpliftPercent, setSearchText,
@@ -213,7 +214,7 @@ function FullApp() {
   return (
     <Shell wide={woView} headerRight={<><CommandPalette /><PlanAssistant /></>}>
       <ErrorBoundary label="banners" fallback={null}>
-        <DataHealthBanner data={data} />
+        <DataHealthBanner data={data} source={source} />
         <CapacityWarningBanner data={data} week={selectedWeek} upliftPercent={upliftPercent} />
         <BackfillAlertBanner onOpen={() => setView("backfills")} />
       </ErrorBoundary>

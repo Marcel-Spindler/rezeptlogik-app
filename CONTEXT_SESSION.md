@@ -113,7 +113,7 @@ productionPlanOverrides, …).
 npm run dev                 # Vite + CSV-Watcher (Ports 3141/3142 auto)
 npm run typecheck           # tsc -b
 npm run test                # vitest run
-npm run sync:all            # import:gsheet + import:local + import:rampup + import:weekly-planning + push:firestore
+npm run sync:all            # import:local + import:rampup + import:weekly-planning + push:firestore
 npm run wms:sync-cache      # persönlicher SSO-Pull → wmsCache/*
 npm run discover:sheets     # Tab-Namen + GIDs aller Sheets
 npm run deploy              # build + firebase deploy --only hosting

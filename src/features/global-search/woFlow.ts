@@ -2,7 +2,7 @@
 //
 // Baut aus allem, was OHNE zusätzlichen Fetch verfügbar ist (Produktionsplan im
 // DataBundle + WO-Abgleich-Zeile + Redzone-Live-Status), ein Stufen-Modell:
-//   angelegt → Staging → Küche → Blast → Plating → fertig
+//   angelegt → Staging → Küche → Blast → Plating → Sleeving → fertig
 // Jede Stufe bekommt einen Status (done / active / pending / blocked). Die
 // Herleitung ist bewusst eine dokumentierte HEURISTIK aus Freitext-Statusfeldern
 // und kg-Signalen — kein WMS-Fakt. Fehlt der Produktionsplan, bleibt trotzdem
@@ -38,6 +38,18 @@ function fmtKg(n: number): string {
 
 function fmtInt(n: number | null | undefined): string {
   return n == null || !Number.isFinite(n) ? "–" : new Intl.NumberFormat("de-DE").format(Math.round(n));
+}
+
+function fmtDeltaKg(plannedKg: number | null, actualKg: number | null): string {
+  if (plannedKg == null || actualKg == null) return "–";
+  const delta = actualKg - plannedKg;
+  return `${delta >= 0 ? "+" : ""}${fmtKg(delta)}`;
+}
+
+function deriveDoneStatus(sleevingStatus: WoStageStatus, reconComplete: boolean, anyPost: boolean): WoStageStatus {
+  if (sleevingStatus === "done" && (reconComplete || anyPost)) return "done";
+  if (sleevingStatus === "active") return "active";
+  return "pending";
 }
 
 function resolveWeekLabel(data: DataBundle, weekNum: number | null): string | null {
@@ -77,6 +89,7 @@ export function buildWoFlow({ woNumber, planRows, recon, data, redzone }: BuildW
 
   const stagingStatus = rows.map((r) => r.stagingStatus).find(Boolean);
   const kitchenStatus = rows.map((r) => r.kitchenStatus).find(Boolean);
+  const plannedKg = recon?.appKg ?? recon?.ketKg ?? null;
 
   const cookMethods = [...new Set(rows.flatMap((r) => splitMethods(r.cookMethods)))];
 
@@ -143,12 +156,12 @@ export function buildWoFlow({ woNumber, planRows, recon, data, redzone }: BuildW
 
   const platingStatusKey: WoStageStatus = platingDone ? "done" : platingNow ? "active" : "pending";
 
-  const doneStatusKey: WoStageStatus =
-    platingStatusKey === "done" && (reconComplete || anyPost)
-      ? "done"
-      : platingStatusKey === "active"
-        ? "active"
-        : "pending";
+  // Für die WO-Flow-Ansicht liegt aktuell noch kein verlässliches Sleeving-
+  // Signal pro Work Order vor. Die Stufe bleibt deshalb sichtbar ausstehend,
+  // statt einen Abschluss aus dem Plating-Status abzuleiten.
+  let sleevingStatusKey: WoStageStatus = "pending";
+
+  const doneStatusKey = deriveDoneStatus(sleevingStatusKey, reconComplete, anyPost);
 
   let stages: WoFlowStage[] = [
     {
@@ -200,6 +213,9 @@ export function buildWoFlow({ woNumber, planRows, recon, data, redzone }: BuildW
         { label: "Post-Blast", value: fmtKg(postKg) },
         ...(weighingCount ? [{ label: "Wiegungen", value: String(weighingCount) }] : []),
         ...(reconProgress != null ? [{ label: "Fortschritt", value: `${Math.round(reconProgress)} %` }] : []),
+        ...(plannedKg != null ? [{ label: "Plan", value: fmtKg(plannedKg) }] : []),
+        ...(recon?.actualKg != null ? [{ label: "Ist", value: fmtKg(recon.actualKg) }] : []),
+        ...(plannedKg != null && recon?.actualKg != null ? [{ label: "Abweichung", value: fmtDeltaKg(plannedKg, recon.actualKg) }] : []),
         ...(recon?.lastWeighing ? [{ label: "letzte Wiegung", value: recon.lastWeighing }] : []),
       ],
       notes: [],
@@ -215,6 +231,17 @@ export function buildWoFlow({ woNumber, planRows, recon, data, redzone }: BuildW
           label: "Redzone",
           value: platingDone ? "geplated" : platingNow ? "läuft gerade" : "kein Live-Signal",
         },
+      ],
+      notes: [],
+    },
+    {
+      key: "sleeving",
+      label: "Sleeving",
+      icon: "🔄",
+      status: sleevingStatusKey,
+      when: null,
+      metrics: [
+        { label: "Status", value: "kein WO-Sleeving-Signal" },
       ],
       notes: [],
     },

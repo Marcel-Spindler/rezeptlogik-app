@@ -40,7 +40,7 @@
     "wms:server": "tsx scripts/wms-local-server.ts",
     "wms:sync-cache": "tsx scripts/sync-wms-cache.ts",
     "dump:kpl": "tsx scripts/dump-gsheet.ts 13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U",
-    "sync:all": "npm run import:gsheet && npm run import:local && npm run import:rampup && npm run import:weekly-planning && npm run push:firestore",
+    "sync:all": "npm run import:local && npm run import:rampup && npm run import:weekly-planning && npm run push:firestore",
     "sync:all:deploy": "npm run sync:all && npm run build && npx firebase-tools deploy --only hosting"
   },
   "dependencies": {

@@ -10,6 +10,7 @@ import type { PlannerWeekAnalysis } from "../../lib/planner";
 import type { WeeklyStationLoad } from "../../lib/equipment";
 import type { BackfillAlert } from "../backfills/backfillTypes";
 import type { ShortageEntry } from "../gsheet-monitor/gsheetTypes";
+import type { WoReconciliationRow } from "../wo-reconciliation/woReconcileTypes";
 
 export type DigestSeverity = "critical" | "warning" | "info";
 
@@ -35,6 +36,14 @@ export interface DigestSection {
 
 export function sevRank(s: DigestSeverity): number {
   return s === "critical" ? 0 : s === "warning" ? 1 : 2;
+}
+
+export function filterReconciliationRowsForWeek(
+  rows: WoReconciliationRow[],
+  weekNum: number | null,
+): WoReconciliationRow[] {
+  if (weekNum == null) return [];
+  return rows.filter(row => row.weekNum === weekNum);
 }
 
 function sortItems(items: DigestItem[]): DigestItem[] {

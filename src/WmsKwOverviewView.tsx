@@ -142,6 +142,9 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
   const [loadState,    setLoadState]    = useState<LoadState>("idle");
   const [loadError,    setLoadError]    = useState<string | null>(null);
   const [generatedAt,  setGeneratedAt]  = useState<string | null>(null);
+  const [wmsSource,    setWmsSource]    = useState<"snowflake-live" | "firestore-cache" | "firestore-cache-derived" | "local-live" | "unavailable" | "mixed">("local-live");
+  const [wmsSourceCounts, setWmsSourceCounts] = useState({ live: 0, cache: 0, local: 0, unavailable: 0 });
+  const [wmsCachedAt,  setWmsCachedAt]  = useState<string | null>(null);
   const [rangeStart,   setRangeStart]   = useState<string | null>(null);
   const [rangeEnd,     setRangeEnd]     = useState<string | null>(null);
   const [search,       setSearch]       = useState("");
@@ -193,6 +196,9 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
       const result = await fetchAllWmsStations(week, { onRetry: (_attempt, message) => setLoadError(message) });
       setAllData(result.data);
       setGeneratedAt(result.generatedAt);
+      setWmsSource(result.source);
+      setWmsSourceCounts(result.sourceCounts);
+      setWmsCachedAt(result.cachedAt);
       setRangeStart(result.rangeStart);
       setRangeEnd(result.rangeEnd);
       setLoadState("ready");
@@ -384,6 +390,24 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
     [aggWorkorders, aggPlating, aggPlatingHolding, aggPostblast, aggDebox, aggStaging, aggSleeving, skuInfoIndex],
   );
   const plhReadiness = useMemo(() => buildPlhReadiness(mealOperations), [mealOperations]);
+  const exceptionSummary = useMemo(() => {
+    const chainIssues = bilanz.map(entry => ({ entry, issue: detectKettenbruch(entry) })).filter(item => item.issue != null);
+    const lowReadiness = aggWorkorders.filter(meal => woReadiness(meal.submeals, skuMap).pct < 50).length;
+    const missingStations = [
+      ["Inbound", aggInbound.length],
+      ["Staging", aggStaging.length],
+      ["Debox", aggDebox.length],
+      ["Post-Blast", aggPostblast.length],
+      ["Plating", aggPlating.length],
+    ].filter(([, count]) => count === 0).map(([label]) => label);
+    return {
+      yieldLoss: chainIssues.filter(item => item.issue?.severity === "yield_loss").length,
+      stuck: chainIssues.filter(item => item.issue?.severity === "stuck").length,
+      drops: chainIssues.filter(item => item.issue?.severity === "drop").length,
+      lowReadiness,
+      missingStations,
+    };
+  }, [aggDebox, aggInbound, aggPostblast, aggPlating, aggStaging, aggWorkorders, bilanz, skuMap]);
 
   const compareSnap = useMemo(
     () => snapshots.find(s => s.id === compareSnapId) ?? null,
@@ -523,6 +547,16 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
 
           {loadState === "ready" && generatedAt && (
             <div className="text-[10px] text-slate-500 font-mono">
+              <span className={`mr-2 rounded px-1.5 py-0.5 font-sans font-semibold ${wmsSource === "snowflake-live" || wmsSource === "local-live" ? "bg-emerald-100 text-emerald-700" : wmsSource === "unavailable" ? "bg-rose-100 text-rose-700" : wmsSource === "mixed" ? "bg-amber-100 text-amber-700" : "bg-orange-100 text-orange-700"}`}>
+                {wmsSource === "snowflake-live" ? "WMS LIVE" : wmsSource === "local-live" ? "WMS lokal" : wmsSource === "mixed" ? "WMS gemischt" : wmsSource === "unavailable" ? "WMS nicht verfügbar" : "WMS CACHE"}
+              </span>
+              <span className="mr-2 font-sans text-[10px] text-slate-400" title="Anzahl der Stationsantworten nach Datenquelle">
+                {wmsSourceCounts.live > 0 && `${wmsSourceCounts.live} live`}
+                {wmsSourceCounts.live > 0 && wmsSourceCounts.cache > 0 && " · "}
+                {wmsSourceCounts.cache > 0 && `${wmsSourceCounts.cache} cache`}
+                {wmsSourceCounts.local > 0 && ` · ${wmsSourceCounts.local} lokal`}
+                {wmsSourceCounts.unavailable > 0 && ` · ${wmsSourceCounts.unavailable} nicht verfügbar`}
+              </span>
               {rangeStart && rangeEnd && <span className="mr-2">{rangeStart}→{rangeEnd}</span>}
               {new Date(generatedAt).toLocaleString("de-DE", { hour: "2-digit", minute: "2-digit" })}
             </div>
@@ -541,6 +575,18 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
             ⚠ Inbound/Sleeving/Staging/Debox/Post-Blast/Plating zeigen KW {wmsWeekNum} statt KW {selectedWeekNum} — Snowflake hat für die gewählte KW noch keine Einträge in diesen Stationen, es wird die letzte verfügbare Woche als Näherung gezeigt.
           </div>
         )}
+        {wmsCachedAt && (() => {
+          const ageHours = (Date.now() - new Date(wmsCachedAt).getTime()) / 3_600_000;
+          if (!Number.isFinite(ageHours) || ageHours < 2) return null;
+          const ageLabel = ageHours >= 24
+            ? `${Math.floor(ageHours / 24)}d ${Math.floor(ageHours % 24)}h`
+            : `${Math.floor(ageHours)}h`;
+          return (
+            <div className={`mt-2 rounded border px-2.5 py-1.5 text-[11px] ${ageHours >= 6 ? "bg-rose-900/40 border-rose-600/50 text-rose-200" : "bg-amber-900/40 border-amber-600/50 text-amber-200"}`}>
+              ⚠ WMS-Cache ist {ageLabel} alt. Die Anzeige basiert nicht auf einer aktuellen Snowflake-Abfrage.
+            </div>
+          );
+        })()}
       </div>
 
       {/* ══ ALERT STRIP ════════════════════════════════════════════════════ */}
@@ -635,6 +681,37 @@ export function WmsKwOverviewView({ data }: { data: DataBundle }): JSX.Element {
             {/* ─── TAB: Leitwarte (Command) ─── */}
             {activeTab === "command" && (
               <div className="space-y-3">
+                <div className="card p-4 border-slate-300 bg-slate-50">
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="text-xs font-bold uppercase text-slate-600">Ausnahme-Cockpit</div>
+                    <span className="text-[10px] text-slate-400">automatisch aus den geladenen Stationsdaten</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <button type="button" onClick={() => setActiveTab("bilanz")} className={`w-full rounded-lg border px-3 py-2 text-left hover:shadow-sm transition-shadow ${exceptionSummary.yieldLoss > 0 ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50"}`}>
+                      <div className="text-[10px] uppercase font-semibold text-slate-500">Yield-Verlust</div>
+                      <div className="text-xl font-bold text-slate-800">{exceptionSummary.yieldLoss}</div>
+                    </button>
+                    <button type="button" onClick={() => setActiveTab("bilanz")} className={`w-full rounded-lg border px-3 py-2 text-left hover:shadow-sm transition-shadow ${exceptionSummary.stuck > 0 ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+                      <div className="text-[10px] uppercase font-semibold text-slate-500">Festhängend</div>
+                      <div className="text-xl font-bold text-slate-800">{exceptionSummary.stuck}</div>
+                    </button>
+                    <button type="button" onClick={() => setActiveTab("workorders")} className={`w-full rounded-lg border px-3 py-2 text-left hover:shadow-sm transition-shadow ${exceptionSummary.lowReadiness > 0 ? "border-orange-300 bg-orange-50" : "border-emerald-200 bg-emerald-50"}`}>
+                      <div className="text-[10px] uppercase font-semibold text-slate-500">WO unter 50 %</div>
+                      <div className="text-xl font-bold text-slate-800">{exceptionSummary.lowReadiness}</div>
+                    </button>
+                    <div className={`rounded-lg border px-3 py-2 ${exceptionSummary.missingStations.length > 0 ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50"}`}>
+                      <div className="text-[10px] uppercase font-semibold text-slate-500">Fehlende Stationen</div>
+                      <div className="text-xl font-bold text-slate-800">{exceptionSummary.missingStations.length}</div>
+                    </div>
+                  </div>
+                  {(exceptionSummary.drops > 0 || exceptionSummary.missingStations.length > 0) && (
+                    <div className="mt-2 text-[11px] text-slate-500">
+                      {exceptionSummary.drops > 0 && `${exceptionSummary.drops} Mengenabfall${exceptionSummary.drops > 1 ? "e" : ""} erkannt.`}
+                      {exceptionSummary.drops > 0 && exceptionSummary.missingStations.length > 0 && " "}
+                      {exceptionSummary.missingStations.length > 0 && `Keine Datensätze: ${exceptionSummary.missingStations.join(", ")}.`}
+                    </div>
+                  )}
+                </div>
                 <PlhReadyToPlateBoard rows={plhReadiness} onTrace={handleTrace} onWoDetail={handleWoDetail} />
                 <MealOperationsBoard rows={mealOperations} onTrace={handleTrace} onWoDetail={handleWoDetail} />
 

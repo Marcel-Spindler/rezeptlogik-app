@@ -459,6 +459,8 @@ function WmsMealTraceCard({ wr, recipe, data }: { wr: WeekRecipe; recipe: Recipe
   const [allData, setAllData] = useState<AllData | null>(null);
   const [loadState, setLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [wmsSource, setWmsSource] = useState<string | null>(null);
+  const [wmsCachedAt, setWmsCachedAt] = useState<string | null>(null);
   const [detailSku, setDetailSku] = useState<string | null>(null);
   const [traceSku, setTraceSku] = useState<string | null>(null);
 
@@ -485,6 +487,8 @@ function WmsMealTraceCard({ wr, recipe, data }: { wr: WeekRecipe; recipe: Recipe
     try {
       const result = await fetchAllWmsStations(wr.hfWeek, { onRetry: (_attempt, message) => setLoadError(message) });
       setAllData(result.data);
+      setWmsSource(result.source);
+      setWmsCachedAt(result.cachedAt);
       // Wochen-Submeals stehen jetzt eh geladen im Speicher — gleich in den
       // globalen WO-Abgleich einspeisen, nicht nur für dieses eine Rezept.
       reconciliation?.ingestWmsWorkorders(result.data.workorders.rows);
@@ -501,6 +505,11 @@ function WmsMealTraceCard({ wr, recipe, data }: { wr: WeekRecipe; recipe: Recipe
         <div>
           <h3 className="text-sm font-semibold text-slate-800">WMS-Übersicht · Vollständige Historie</h3>
           <p className="text-[11px] text-slate-500 mt-0.5">Wareneingang, Staging, Debox, Post-Blast, Plating, Sleeving — live aus Snowflake</p>
+          {wmsSource && (
+            <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${wmsSource === "snowflake-live" || wmsSource === "local-live" ? "bg-emerald-100 text-emerald-700" : wmsSource === "mixed" ? "bg-amber-100 text-amber-700" : "bg-orange-100 text-orange-700"}`}>
+              {wmsSource === "snowflake-live" ? "WMS LIVE" : wmsSource === "local-live" ? "WMS lokal" : wmsSource === "mixed" ? "WMS gemischt" : `WMS CACHE${wmsCachedAt ? ` · ${new Date(wmsCachedAt).toLocaleString("de-DE", { hour: "2-digit", minute: "2-digit" })}` : ""}`}
+            </span>
+          )}
         </div>
         <button type="button" onClick={() => void load()} disabled={loadState === "loading"}
           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold transition-colors shrink-0">

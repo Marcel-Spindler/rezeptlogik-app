@@ -8,8 +8,10 @@ import {
   buildPlanSection,
   buildReconSection,
   buildStockSection,
+  filterReconciliationRowsForWeek,
   summarizeDigest,
 } from "../features/today/todayDigest";
+import type { WoReconciliationRow } from "../features/wo-reconciliation/woReconcileTypes";
 
 function analysis(over: Partial<PlannerWeekAnalysis>): PlannerWeekAnalysis {
   return {
@@ -74,6 +76,20 @@ describe("buildReconSection", () => {
   it("empty map → no items", () => {
     expect(buildReconSection(new Map()).items).toHaveLength(0);
     expect(buildReconSection(null).items).toHaveLength(0);
+  });
+});
+
+describe("filterReconciliationRowsForWeek", () => {
+  it("keeps only rows from the current week", () => {
+    const row = (weekNum: number): WoReconciliationRow => ({
+      workOrder: `${weekNum}-10`, weekNum, recipeCode: `FV${weekNum}01A`, recipeName: "Meal", subRecipe: "Sauce",
+      presentIn: ["app"], appPortions: 1, ketPortions: 1, petTarget: null, petMapped: null,
+      appKg: 1, ketKg: 1, actualKg: 1, progressPct: 100, isComplete: true, isCritical: false,
+      kgMismatch: false, portionsMismatch: false, missingPetAssignment: false, severity: "warn",
+      weighingCount: 1, lastWeighing: null,
+    });
+    expect(filterReconciliationRowsForWeek([row(35), row(36)], 36)).toHaveLength(1);
+    expect(filterReconciliationRowsForWeek([row(35)], null)).toHaveLength(0);
   });
 });
 

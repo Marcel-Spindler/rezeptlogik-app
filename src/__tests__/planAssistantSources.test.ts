@@ -9,12 +9,15 @@ describe("buildPlanAssistantSources", () => {
       hasReconciliation: true,
       hasBackfills: true,
       hasPlatingPlan: false,
+      reconciliationStatus: "live",
+      backfillsStatus: "offline",
       steps: [{ tool: "get_wo_trace" }, { tool: "simulate_plan_change" }],
     });
 
     expect(sources).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: "Wochenplan", detail: "2026-W37 · Datenstand 2026-09-04T10:00:00.000Z" }),
       expect.objectContaining({ label: "WO-Abgleich" }),
+      expect.objectContaining({ label: "Backfills", status: "offline", detail: "Küchen-/Plating-Feeds nicht verbunden" }),
       expect.objectContaining({ label: "Plan-Simulation" }),
     ]));
   });

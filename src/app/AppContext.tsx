@@ -6,6 +6,7 @@ import { usePersistent } from "../lib/helpers";
 import { useAppData } from "./useAppData";
 import { useRecipeSelection, type RecipeSelection } from "./useRecipeSelection";
 import type { DataBundle } from "../core/types";
+import type { DataSourceStatus } from "../core/dataSource";
 
 export type AppView = "heute" | "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live" | "backfills" | "redzone-live" | "transparency-plan" | "artikel-woche" | "full-inventory" | "plating-plan" | "plating-day";
 export type AppSurface = "full" | "kitchen" | "rundmail" | "redzone" | "shopfloor";
@@ -18,6 +19,7 @@ export interface AppState extends RecipeSelection {
   rundmailMode: boolean;
   data: DataBundle | null;
   error: string | null;
+  source: DataSourceStatus;
   selectedWeek: string;
   selectedRecipe: string | null;
   view: AppView;
@@ -97,7 +99,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useUrlOverrides(kitchenMode, surface, setView, setSelectedWeekRaw, setSelectedRecipe, setSearchText);
 
-  const { data, error } = useAppData(setSelectedWeekRaw);
+  const { data, error, source } = useAppData(setSelectedWeekRaw);
   const selection = useRecipeSelection(data, selectedWeek, selectedRecipe, upliftPercent, searchText);
 
   const setSelectedWeek = (w: string) => {
@@ -108,7 +110,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value: AppState = {
     surface, kitchenMode, rundmailMode,
-    data, error,
+    data, error, source,
     selectedWeek, selectedRecipe, view, upliftPercent, searchText, kitchenLinkCopied,
     ...selection,
     setSelectedWeek, setSelectedRecipe, setView, setUpliftPercent, setSearchText, setKitchenLinkCopied,

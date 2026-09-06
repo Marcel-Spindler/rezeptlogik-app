@@ -86,6 +86,8 @@ export async function runPlanAgent(params: {
   reconciliation: ToolContext["reconciliation"];
   backfills: ToolContext["backfills"];
   platingPlan: ToolContext["platingPlan"];
+  reconciliationStatus?: "live" | "cache" | "offline";
+  backfillsStatus?: "live" | "cache" | "offline";
   priorContents: GeminiContent[];
   userMessage: string;
   model: "flash" | "pro";
@@ -120,6 +122,8 @@ export async function runPlanAgent(params: {
     hasReconciliation: !!params.reconciliation?.bySeverityRecipe.size,
     hasBackfills: !!params.backfills?.combined.length,
     hasPlatingPlan: !!params.platingPlan,
+    reconciliationStatus: params.reconciliationStatus,
+    backfillsStatus: params.backfillsStatus,
     steps,
   });
 

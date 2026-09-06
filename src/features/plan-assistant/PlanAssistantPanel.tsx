@@ -284,6 +284,8 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
     const liveSteps: ChatStep[] = [];
     const outcome = await runPlanAgent({
       data, week: selectedWeek, upliftPercent, reconciliation, backfills, platingPlan,
+      reconciliationStatus: reconciliation?.sourcesAvailable.some((source) => source === "wms" || source === "postblast") ? "live" : "offline",
+      backfillsStatus: backfills && (backfills.postblastConnected || backfills.preblastConnected || backfills.rtiConnected || backfills.linePlaitingConnected || backfills.wmsHoldingConnected) ? "live" : "offline",
       priorContents: contents, userMessage: q, model,
       onStep: (s: AgentStep | { tool: "__thinking__"; args: Record<string, unknown>; ok: true; summary: string }) => {
         liveSteps.push({ tool: s.tool, summary: s.summary, ok: s.ok });

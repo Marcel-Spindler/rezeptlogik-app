@@ -33,7 +33,7 @@ export interface SearchHit {
 
 // ─── Flow-Modell einer Work Order ──────────────────────────────────────────
 
-export type WoStageKey = "created" | "staging" | "kitchen" | "blast" | "plating" | "done";
+export type WoStageKey = "created" | "staging" | "kitchen" | "blast" | "plating" | "sleeving" | "done";
 export type WoStageStatus = "done" | "active" | "pending" | "blocked" | "unknown";
 
 export interface WoFlowStage {

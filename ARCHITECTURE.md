@@ -319,8 +319,10 @@ nur nach `scratch/ket-publish`.
 **Deploy:** `deploy` (build + hosting), `deploy:functions`, `deploy:all` (hosting +
 functions).
 
-**Wochenstart:** `sync:all` (`import:gsheet` + `import:local` + `import:rampup` +
-`import:weekly-planning` + `push:firestore`), `sync:all:deploy`.
+**Wochenstart:** `sync:all` (`import:local` + `import:rampup` +
+`import:weekly-planning` + `push:firestore`), `sync:all:deploy`. Der lokale Import
+bleibt die Quelle für Rezept-/Strukturdaten; `import:gsheet` wird bei Bedarf
+separat ausgeführt.
 
 ---
 
