@@ -206,6 +206,9 @@ describe("calcBatch equipment resolution", () => {
         components: [],
         gnTraySummary: [],
         scoopInfo: null,
+        portionGrams: null,
+        productFamily: null,
+        stationMinutes: {},
       }]]),
       {},
       "WO test",
@@ -251,6 +254,9 @@ describe("calcBatch equipment resolution", () => {
       components: [],
       gnTraySummary: [],
       scoopInfo: null,
+      portionGrams: null,
+      productFamily: null,
+      stationMinutes: {},
     };
     const secondRow = { ...row, key: "wo::34-2", woNumber: "34-2" };
     const pdf = buildPdf([row, secondRow], new Map([[row.key, calc], [secondRow.key, calc]]), {}, "WO test");

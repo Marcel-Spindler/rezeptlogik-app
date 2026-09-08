@@ -223,6 +223,10 @@ function targetsForRow(row: KetRow, calc: BatchCalc): InstrTarget[] {
         runtimeKey: `${row.key}::${component.name}`,
       });
     }
+    // Zusätzlich die evtl. vorhandene WO-weite Gesamt-/Zusammenbau-Anweisung
+    // (nie neu generiert — nur aus dem Cache/Harvest gerendert; buildPdf zeigt
+    // sie als "Gesamt-/Zusammenbau-Anweisung" über den Komponenten).
+    out.push({ row, calc, cacheKey: instructionCacheKey(row), runtimeKey: row.key });
     return out;
   }
   return [{ row, calc, cacheKey: instructionCacheKey(row), runtimeKey: row.key }];
@@ -435,7 +439,10 @@ async function main() {
     for (const t of targetsForRow(row, calc)) {
       const hit = fsCache[t.cacheKey] ?? fuzzyIndex.get(fuzzyInstructionKey(t.row, t.component?.name));
       if (hit) woInstructions[t.runtimeKey] = hit;
-      else missing.push(t);
+      // Die WO-weite Gesamt-Anweisung eines zusammengesetzten Sub-Rezepts wird
+      // NUR gerendert, wenn sie im Cache/Harvest liegt — nie neu per Gemini
+      // erzeugt (eine vermischte WO-Anweisung wäre irreführend).
+      else if (!(calc.components.length > 0 && !t.component)) missing.push(t);
     }
   }
 

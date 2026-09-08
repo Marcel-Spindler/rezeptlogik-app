@@ -78,7 +78,8 @@ export interface InstructionLine {
 }
 
 // Beliebig viele Stationsbuchstaben (nicht nur A-D — bis zu ~14 mögliche Stationen).
-const STATION_HEADER_RE = /^[A-Z]\.\s+/;
+// Sowohl "A. STATION" (Gemini) als auch "A: STATION" (echte Factor-Blätter mischen beides).
+const STATION_HEADER_RE = /^[A-Z][.:]\s+/;
 
 // Zerlegt den KI-Kochanweisungstext in Zeilen: erkennt Stations-Header ("A. STATION:",
 // "B. STATION:", …) und nummeriert die Schritt-Sätze darunter je Station neu durch.
@@ -121,24 +122,50 @@ function roundKg(kg: number): number {
 // verengten Kontext (eigene Zutaten, eigenes Equipment, eigene Batch-Mengen),
 // statt der kombinierten WO-Gesamtmenge über mehrere physisch getrennte
 // Zubereitungsschritte hinweg (z.B. Rindfleisch-Schmoren + Gemüse-Rösten).
+// Scoop-Angabe ("scoop white", "LEVEL beige") aus den Rezeptdaten — die Küche
+// referenziert sie im Portionier-/Schöpf-Schritt. Kein Gramm-Wert hier (der ist
+// im App-Datenmodell nur die Yield-Ratio, nicht die Portionsmenge).
+function scoopText(info: BatchCalc["scoopInfo"] | WoComponent["scoopInfo"]): string | null {
+  if (!info) return null;
+  const s = [info.methodType, info.methodColor].map((v) => (v ?? "").trim()).filter(Boolean).join(" ");
+  return s || null;
+}
+
+// kg pro GN-Blech je Größe — aus dem aggregierten Blech-Bedarf + der Rohmenge.
+// Erlaubt dem Bot "auf GN 2/1 umfüllen (~2 kg pro Blech)" statt nur "auf Bleche".
+function kgPerTray(summary: BatchCalc["gnTraySummary"], totalKg: number): Array<{ gnType: string; kgPerTray: number }> {
+  return summary
+    .filter((s) => s.trays > 0 && totalKg > 0)
+    .map((s) => ({ gnType: s.gnType, kgPerTray: roundKg(totalKg / s.trays) }));
+}
+
 export function buildWoInstructionContext(row: KetRow, calc: BatchCalc, component?: WoComponent): string {
   if (component) {
     const orderedCookMethods = orderCookingMethods(component.resolvedCookMethods);
+    const siblings = calc.components
+      .filter((c) => c.name !== component.name)
+      .map((c) => ({ name: c.name, totalKg: c.totalKg > 0 ? roundKg(c.totalKg) : null }));
     return JSON.stringify({
       recipeName: row.recipeName,
       subRecipeName: row.subRecipeName,
       componentName: component.name,
+      productFamily: component.productFamily,
       processFlow: orderedCookMethods,
       primaryEquipment: component.primaryEquip,
       equipment: component.equipBatches.map((batch) => batch.equip),
       batches: component.batches > 0 ? component.batches : null,
       perBatchKg: component.perBatchKg > 0 ? roundKg(component.perBatchKg) : null,
       totalKg: component.totalKg > 0 ? roundKg(component.totalKg) : null,
+      portionGrams: component.portionGrams,
+      portionScoop: scoopText(component.scoopInfo),
+      approxMinutesPerBatch: Object.keys(component.stationMinutes ?? {}).length ? component.stationMinutes : null,
+      gnTrays: kgPerTray(component.gnTraySummary ?? [], component.totalKg),
+      siblingComponents: siblings.length ? siblings : null,
       ingredientFlags: component.ingredients
         .filter((ing) => ing.separate || ing.spiceRoom)
         .map((ing) => ({ name: ing.name, separate: ing.separate, spiceRoom: ing.spiceRoom })),
-      rti: false,
-      neverBatch: false,
+      rti: component.rti,
+      neverBatch: component.neverBatch,
       allergensContains: calc.allergensContains,
     }, null, 2);
   }
@@ -147,12 +174,17 @@ export function buildWoInstructionContext(row: KetRow, calc: BatchCalc, componen
   return JSON.stringify({
     recipeName: row.recipeName,
     subRecipeName: row.subRecipeName,
+    productFamily: calc.productFamily,
     processFlow: orderedCookMethods,
     primaryEquipment: calc.primaryEquip,
     equipment: calc.equipBatches.map((batch) => batch.equip),
     batches: calc.batches > 0 ? calc.batches : null,
     perBatchKg: calc.perBatchKg > 0 ? roundKg(calc.perBatchKg) : null,
     totalKg: calc.totalKg > 0 ? roundKg(calc.totalKg) : null,
+    portionGrams: calc.portionGrams,
+    portionScoop: scoopText(calc.scoopInfo),
+    approxMinutesPerBatch: Object.keys(calc.stationMinutes ?? {}).length ? calc.stationMinutes : null,
+    gnTrays: kgPerTray(calc.gnTraySummary ?? [], calc.totalKg),
     ingredientFlags: calc.ingredients
       .filter((ing) => ing.separate || ing.spiceRoom)
       .map((ing) => ({ name: ing.name, separate: ing.separate, spiceRoom: ing.spiceRoom })),

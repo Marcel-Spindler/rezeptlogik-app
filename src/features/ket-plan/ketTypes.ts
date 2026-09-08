@@ -69,6 +69,13 @@ export interface WoInstruction {
   status: "generated" | "needs_review" | "failed";
   generatedAt?: string;
   model?: string;
+  // Herkunft: "factor-pdf" = 1:1 aus einem echten Factor-Produktionsblatt geerntet
+  // (scripts/ket-harvest-instructions.ts) und damit die verlässlichste Quelle;
+  // "gemini" = vom WO-Instruction-Bot approximiert; "manual" = in der App
+  // handbearbeitet. Steuert Badge + "wirklich neu erzeugen?"-Rückfrage.
+  source?: "factor-pdf" | "gemini" | "manual";
+  // Dateiname des Factor-Blatts, aus dem geerntet wurde (nur bei source "factor-pdf").
+  sourceFile?: string;
 }
 
 export interface IngCalc {
@@ -152,6 +159,10 @@ export interface WoComponent {
   gnTraySummary: GnTraySummary[];
   // Portionierwerkzeug für DIESE Komponente (eigener Name) — siehe ScoopInfo oben.
   scoopInfo: ScoopInfo | null;
+  // Kontext für den Gemini-WO-Instruction-Bot (siehe BatchCalc unten).
+  portionGrams: number | null;
+  productFamily: string | null;
+  stationMinutes: Record<string, number>;
 }
 
 export interface EquipBatch {
@@ -230,4 +241,18 @@ export interface BatchCalc {
   // im zusammengesetzten Fall (components.length > 0), dort steht es je Komponente
   // in components[].scoopInfo statt hier vermischt für die ganze WO.
   scoopInfo: ScoopInfo | null;
+
+  // ── Zusatz-Kontext für den Gemini-WO-Instruction-Bot ──────────────────────
+  // Damit der Bot konkreter werden kann (Blech-/Portions-/Zeit-Angaben), ohne
+  // Zahlen zu erfinden — alles hier stammt aus den geladenen App-Daten.
+  // Portionsmenge in Gramm (DetailedSubRecipe.quantity, uom "grams"). null wenn
+  // stück-portioniert oder keine Struktur gematcht.
+  portionGrams: number | null;
+  // Prozess-Familie aus dem PFEI-ProcessSpec ("Shredded Chicken", "Marinades",
+  // "Cupped Sauces - Cold", …) — Archetyp-Signal für den passenden Ablauf.
+  productFamily: string | null;
+  // Ungefähre Minuten pro Batch je Koch-Station (processSpec.minutesPerBatch,
+  // gefiltert auf plausible Werte 1–120 und die echten Koch-Stationen). Leeres
+  // Objekt wenn keine belastbaren Zeiten vorliegen.
+  stationMinutes: Record<string, number>;
 }

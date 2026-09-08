@@ -45,6 +45,15 @@ function InstructionBlocks({ text, variant }: { text: string; variant: "en" | "d
   );
 }
 
+// Herkunft der Kochanweisung: 📄 aus einem echten Factor-Blatt geerntet
+// (verlässlichste Quelle), ✨ vom Gemini-Bot erzeugt, ✎ handbearbeitet.
+function SourceBadge({ source }: { source?: WoInstruction["source"] }) {
+  if (source === "factor-pdf") return <span className="ml-1.5 inline-flex items-center rounded-md bg-sky-100 px-1.5 py-0.5 text-[8px] font-black text-sky-700">📄 Factor-Original</span>;
+  if (source === "manual") return <span className="ml-1.5 inline-flex items-center rounded-md bg-slate-200 px-1.5 py-0.5 text-[8px] font-black text-slate-700">✎ bearbeitet</span>;
+  if (source === "gemini") return <span className="ml-1.5 inline-flex items-center rounded-md bg-purple-100 px-1.5 py-0.5 text-[8px] font-black text-purple-700">✨ KI</span>;
+  return null;
+}
+
 // Kleines Allergen-Tag direkt an der Zutat — zeigt, WELCHE Zutat das WO-weite
 // "CONTAINS"-Badge auslöst (statt nur die aggregierte Liste am WO-Kopf).
 function AllergenTag({ allergen }: { allergen?: string }) {
@@ -241,6 +250,7 @@ function ComponentSection({
         <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-emerald-700">
             <BiLabel de="Kochanweisung" en="Cooking instruction" />
+            {instruction && <SourceBadge source={instruction.source} />}
             <HelpButton section="instructions" align="left" className="text-emerald-600" />
           </div>
           <div className="flex gap-1.5">
@@ -250,7 +260,9 @@ function ComponentSection({
                 <BiLabel de="Bearbeiten" en="Edit" />
               </button>
             )}
-            <button type="button" onClick={() => void generate()} disabled={busy}
+            <button type="button"
+              onClick={() => { if (instruction?.source === "factor-pdf" && !window.confirm("Diese Anweisung ist das echte Factor-Original. Wirklich durch eine KI-Version ersetzen?")) return; void generate(); }}
+              disabled={busy}
               className="rounded-lg bg-emerald-700 px-2.5 py-1 text-[9px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
               {busy ? "Erzeuge … / Generating …" : instruction ? <BiLabel de="Neu erzeugen" en="Regenerate" /> : <BiLabel de="Erzeugen" en="Generate" />}
             </button>
@@ -763,6 +775,21 @@ export function WoDetail({
             (siehe ketLogic.buildWoComponents / Diagnose "WO 35-169"). */}
         {calc.components.length > 0 ? (
           <div className="space-y-3">
+            {/* Gesamt-/Zusammenbau-Anweisung (aus dem Factor-Harvest, falls
+                vorhanden): das "MIDDLE KITCHEN: alle Sub-Rezepte im Verhältnis
+                mischen" über den einzelnen Komponenten. */}
+            {instruction && (
+              <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 overflow-hidden">
+                <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-emerald-200 text-[10px] font-black uppercase tracking-[.12em] text-emerald-800">
+                  Gesamt-/Zusammenbau-Anweisung
+                  <SourceBadge source={instruction.source} />
+                </div>
+                <div className="grid gap-3 p-4 lg:grid-cols-2">
+                  <div><div className="text-[8px] font-black uppercase tracking-widest text-emerald-700 mb-1">English</div><div className="text-[11px] leading-relaxed text-slate-700"><InstructionBlocks text={instruction.english} variant="en" /></div></div>
+                  <div><div className="text-[8px] font-black uppercase tracking-widest text-blue-700 mb-1">Deutsch</div><div className="text-[11px] leading-relaxed text-slate-700"><InstructionBlocks text={instruction.german} variant="de" /></div></div>
+                </div>
+              </section>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
                 Zubereitungskomponenten ({calc.components.length}) — jede mit eigener Kochanweisung
@@ -803,8 +830,15 @@ export function WoDetail({
           <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-emerald-200">
               <div>
-                <div className="text-[10px] font-black uppercase tracking-[.12em] text-emerald-800">Google Gemini WO Instruction Bot</div>
-                <div className="text-[10px] text-emerald-700 mt-0.5">Individuelle Arbeitsanweisung für diese WO und dieses Sub-Rezept</div>
+                <div className="flex items-center text-[10px] font-black uppercase tracking-[.12em] text-emerald-800">
+                  {instruction?.source === "factor-pdf" ? "Kochanweisung" : "Google Gemini WO Instruction Bot"}
+                  {instruction && <SourceBadge source={instruction.source} />}
+                </div>
+                <div className="text-[10px] text-emerald-700 mt-0.5">
+                  {instruction?.source === "factor-pdf"
+                    ? `1:1 aus dem Factor-Produktionsblatt${instruction.sourceFile ? ` (${instruction.sourceFile})` : ""}`
+                    : "Individuelle Arbeitsanweisung für diese WO und dieses Sub-Rezept"}
+                </div>
               </div>
               <div className="flex gap-1.5">
                 {instruction && onInstructionEdit && !editingInstruction && (
@@ -813,7 +847,9 @@ export function WoDetail({
                     Bearbeiten
                   </button>
                 )}
-                <button type="button" onClick={() => void generateInstruction()} disabled={instructionBusy}
+                <button type="button"
+                  onClick={() => { if (instruction?.source === "factor-pdf" && !window.confirm("Diese Anweisung ist das echte Factor-Original. Wirklich durch eine KI-Version ersetzen?")) return; void generateInstruction(); }}
+                  disabled={instructionBusy}
                   className="rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-bold text-white hover:bg-emerald-800 disabled:opacity-50">
                   {instructionBusy ? "Erzeuge …" : instruction ? "Neu erzeugen" : "Instruction erzeugen"}
                 </button>

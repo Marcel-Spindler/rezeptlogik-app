@@ -33,7 +33,11 @@ async function refreshInstructionsFromFirestore(): Promise<InstructionCache> {
     snap.forEach((d) => {
       const data = d.data() as WoInstruction & { cacheKey?: string };
       const key = data.cacheKey ?? d.id;
-      cache[key] = { english: data.english, german: data.german, status: data.status, generatedAt: data.generatedAt, model: data.model };
+      cache[key] = {
+        english: data.english, german: data.german, status: data.status,
+        generatedAt: data.generatedAt, model: data.model,
+        source: data.source, sourceFile: data.sourceFile,
+      };
     });
     void persistSet(STORES.geminiInstructions, "all", cache);
     return cache;

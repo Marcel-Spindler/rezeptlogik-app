@@ -26,6 +26,7 @@
     "import:rampup": "tsx scripts/import-rampup.ts",
     "push:firestore": "tsx scripts/push-firestore.ts",
     "ket:publish": "tsx scripts/ket-publish.ts",
+    "ket:harvest": "tsx scripts/ket-harvest-instructions.ts",
     "rackfile:plan": "tsx scripts/rackfile-tool.ts plan",
     "rackfile:generate": "tsx scripts/rackfile-tool.ts generate",
     "test:smoke:oase": "playwright test Test/planning-oase-smoke.spec.ts --browser=chromium",

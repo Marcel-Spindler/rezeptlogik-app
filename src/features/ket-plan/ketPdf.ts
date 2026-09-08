@@ -17,6 +17,14 @@ function scoopBadgeHtml(info: ScoopInfo): string {
   return `${dot}${escHtml(tool)}${portion ? ` · ${escHtml(portion)}` : ""}`;
 }
 
+// Herkunfts-Kennzeichen der Kochanweisung: 📄 = 1:1 aus einem echten Factor-
+// Produktionsblatt geerntet (verlässlichste Quelle), ✨ = vom Gemini-Bot erzeugt.
+function sourceTag(source?: WoInstruction["source"]): string {
+  if (source === "factor-pdf") return ' <span style="font-size:7px;font-weight:800;color:#0369a1;">· 📄 Factor-Original</span>';
+  if (source === "gemini") return ' <span style="font-size:7px;font-weight:800;color:#7c3aed;">· ✨ KI</span>';
+  return "";
+}
+
 // escHtml je Segment, Stationsnamen (SPICE ROOM, GRILL, OFEN, …) farblich hervorgehoben.
 function escHighlight(text: string, color: string): string {
   return splitInstructionKeywords(text)
@@ -105,7 +113,8 @@ function buildComponentsHtml(row: KetRow, calc: BatchCalc, woInstructions: Recor
 
     const instruction = woInstructions[`${row.key}::${component.name}`];
     const instrBlock = instruction
-      ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:7px 10px 4px;">
+      ? `<div style="padding:4px 10px 0;font-size:7px;font-weight:800;color:#64748b;">Kochanweisung${sourceTag(instruction.source)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:3px 10px 4px;">
           <div>
             <div style="font-size:8px;font-weight:900;color:#166534;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;">English</div>
             ${renderSteps(instruction.english)}
@@ -260,15 +269,18 @@ export function buildPdf(
         </div>`
       : "";
 
-    // Zusammengesetzte Sub-Rezepte bekommen ihre Instruction(s) NICHT hier
-    // (eine WO-weite, vermischte Anweisung wäre irreführend), sondern je
-    // Komponente in componentsHtml unten (siehe buildComponentsHtml).
-    const generatedInstruction = calc.components.length === 0 ? woInstructions[row.key] : undefined;
+    // Einfaches Sub-Rezept: die WO-weite Kochanweisung. Zusammengesetztes
+    // Sub-Rezept: hier steht — falls vorhanden (aus dem Factor-Harvest) — die
+    // Gesamt-/Zusammenbau-Anweisung ("MIDDLE KITCHEN: alle Sub-Rezepte im
+    // Verhältnis mischen"); die einzelnen Zubereitungsschritte je Komponente
+    // stehen darunter in componentsHtml.
+    const generatedInstruction = woInstructions[row.key];
+    const isAssembly = calc.components.length > 0;
     const instrHtml = generatedInstruction
       ? `<div style="margin-top:8px;border:1px solid #d1fae5;border-radius:7px;overflow:hidden;">
           <div style="background:#f0fdf4;padding:4px 10px;border-bottom:1px solid #d1fae5;display:flex;justify-content:space-between;align-items:center;">
-            <span style="font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#166534;">Kochanweisung · ${escHtml(row.subRecipeName)}</span>
-            ${generatedInstruction.status === "needs_review" ? '<span style="font-size:7px;color:#d97706;font-weight:700;">⚠ Review erforderlich</span>' : ""}
+            <span style="font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#166534;">${isAssembly ? "Gesamt-/Zusammenbau-Anweisung" : "Kochanweisung"} · ${escHtml(row.subRecipeName)}${sourceTag(generatedInstruction.source)}</span>
+            ${generatedInstruction.status === "needs_review" && generatedInstruction.source !== "factor-pdf" ? '<span style="font-size:7px;color:#d97706;font-weight:700;">⚠ Review erforderlich</span>' : ""}
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 10px;">
             <div>
@@ -290,10 +302,6 @@ export function buildPdf(
       : "";
     const componentsHtml = buildComponentsHtml(row, calc, woInstructions);
 
-    const unlockedEtaStr = row.unlockedEta
-      ? (() => { try { return new Date(row.unlockedEta).toLocaleString("de-DE"); } catch { return row.unlockedEta; } })()
-      : null;
-
 
     // Duplex-Druck: jede WO beginnt auf einem FRISCHEN BLATT — nicht nur einer
     // neuen Seite. `page-break-before:right` schiebt bei ungerader Seitenzahl eine
@@ -309,14 +317,12 @@ export function buildPdf(
 <section class="card" style="page-break-before:${i > 0 ? "right" : "auto"};page-break-after:auto">
   <div class="card-front">
   <div class="card-top">
-    <div>
-      <div class="wo-num">WO ${row.woNumber}</div>
-      <div class="date-tag">${dateStr}${shift ? ` · Shift ${shift}` : ""}</div>
+    <div class="wo-line">
+      <span class="wo-num">WO ${row.woNumber}</span>
+      <span class="wo-code">${row.recipeCode}</span>
     </div>
-    <div class="recipe-tag">
-      <div class="code">${row.recipeCode}</div>
-      <div class="rname">${row.recipeName}</div>
-    </div>
+    <div class="date-tag">${dateStr}${shift ? ` · Shift ${shift}` : ""}</div>
+    <div class="menu-name">${row.recipeName}</div>
   </div>
 
   <div class="sub">${row.subRecipeName || "—"}</div>
@@ -325,26 +331,18 @@ export function buildPdf(
 
   <div class="stats">
     <div class="stat">
-      <div class="slabel">Ziel-Portionen</div>
-      <div class="sval">${fmtNum(row.targetPortions)}</div>
-    </div>
-    <div class="stat">
       <div class="slabel">Total KG (Roh)</div>
       <div class="sval">${calc.totalKg > 0 ? fmtKg(calc.totalKg) : (calc.recipeFound ? "kein Sub" : "Rezept?")}</div>
     </div>
     <div class="stat">
       <div class="slabel">Primär-Equipment</div>
-      <div class="sval" style="font-size:13px">${equip}</div>
-      <div style="font-size:9px;color:#6b7280;margin-top:1px">${cap} / Batch${capBibleNote}</div>
+      <div class="sval">${equip}</div>
+      <div class="ssub">${cap} / Batch${capBibleNote}</div>
     </div>
     <div class="stat hi-stat">
       <div class="slabel">BATCHE (${equip})${calc.primaryCapBibleMatch ? ` <span title="Kuechenbible-Kapazität (provisorisch)">📖</span>` : ""}</div>
       <div class="sval big">${calc.batches > 0 ? calc.batches : "—"}</div>
-      <div style="font-size:9px;color:#dbeafe;font-weight:800;margin-top:2px;">${calc.batches > 0 ? batchSummary : "—"}</div>
-    </div>
-    <div class="stat">
-      <div class="slabel">Pro Batch</div>
-      <div class="sval">${calc.perBatchKg > 0 ? fmtKg(calc.perBatchKg) : "—"}</div>
+      <div class="ssub" style="color:#dbeafe">${calc.batches > 0 ? batchSummary : "—"}</div>
     </div>
   </div>
 
@@ -354,16 +352,6 @@ export function buildPdf(
   ${factorBadgeHtml}
   ${allergenHtml}
   ${chillerHtml}
-
-  <div class="badges">
-    <span class="badge ${row.kitchenStatus === "Post Blast" ? "badge-green" : row.kitchenStatus === "Pre Blast" ? "badge-amber" : "badge-gray"}">
-      Kitchen: ${row.kitchenStatus || "—"}
-    </span>
-    <span class="badge ${row.stagingStatus === "Staged" ? "badge-green" : row.stagingStatus === "Partially Staged" ? "badge-orange" : row.stagingStatus === "Picking" ? "badge-blue" : "badge-gray"}">
-      Staging: ${row.stagingStatus || "—"}
-    </span>
-    ${unlockedEtaStr ? `<span class="badge badge-blue">🔓 Unlocked: ${unlockedEtaStr}</span>` : ""}
-  </div>
 
   ${row.workOrderComment ? `<div class="comment warn">⚠ WO Kommentar: ${row.workOrderComment}</div>` : ""}
   ${row.stagingComment ? `<div class="comment info">💬 Staging: ${row.stagingComment}</div>` : ""}
@@ -401,28 +389,29 @@ export function buildPdf(
 body{font-family:Arial,sans-serif;font-size:9px;color:#111;background:#fff}
 .page-header,.equip-section{display:none}
 .card{padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;margin:4px;background:#fff}
-.card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
-.wo-num{font-size:13px;font-weight:900;color:#1e3a5f;line-height:1}
+.card-top{margin-bottom:3px}
+.wo-line{display:flex;align-items:baseline;gap:8px}
+.wo-num{font-size:15px;font-weight:900;color:#1e3a5f;line-height:1}
+.wo-code{font-size:9px;font-weight:700;color:#9ca3af;font-family:monospace}
 .date-tag{font-size:8px;color:#6b7280;margin-top:1px}
-.recipe-tag{text-align:right}
-.code{font-size:8px;font-weight:700;color:#9ca3af;font-family:monospace}
-.rname{font-size:8px;font-weight:600;color:#374151;max-width:220px;text-align:right}
+.menu-name{font-size:9px;font-weight:600;color:#64748b;margin-top:1px}
 .sub{font-size:11px;font-weight:900;color:#111;border-bottom:1px solid #e2e8f0;padding-bottom:3px;margin-bottom:4px}
 .methods{background:linear-gradient(135deg,#0f2240,#1e3a5f);color:#fff;border-radius:4px;padding:3px 8px;font-size:8px;font-weight:700;letter-spacing:.03em;margin-bottom:4px}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-bottom:4px}
-.stat{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:2px 4px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-bottom:3px}
+.stat{background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;padding:1px 4px;line-height:1.15}
 .hi-stat{background:#1e3a5f;border-color:#1e3a5f}
 .stat-green{background:#f0fdf4;border-color:#bbf7d0}
 .stat-red{background:#fef2f2;border-color:#fecaca}
-.slabel{font-size:5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;margin-bottom:0}
+.slabel{font-size:5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af}
 .hi-stat .slabel{color:#93c5fd}
 .stat-green .slabel{color:#16a34a}
 .stat-red .slabel{color:#dc2626}
-.sval{font-size:9px;font-weight:900;color:#111;line-height:1.1}
+.sval{font-size:8px;font-weight:900;color:#111;line-height:1.1}
 .hi-stat .sval{color:#fff}
 .stat-green .sval{color:#15803d}
 .stat-red .sval{color:#b91c1c}
-.sval.big{font-size:11px}
+.sval.big{font-size:10px}
+.ssub{font-size:7px;color:#6b7280;font-weight:700}
 
 .components-section{margin-bottom:4px}
 .components-title{font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin:4px 0 3px;padding-top:4px;border-top:1px solid #e2e8f0}
@@ -475,10 +464,10 @@ body{font-family:Arial,sans-serif;font-size:9px;color:#111;background:#fff}
     display:block;font-size:8px;font-weight:800;color:#1e3a5f;
     padding-bottom:2px;margin-bottom:3px;border-bottom:1.5px solid #1e3a5f;
   }
-  .wo-num{font-size:11px}.sub{font-size:10px}
-  .stats{gap:2px;margin-bottom:3px}
-  .sval{font-size:8px}.sval.big{font-size:10px}
-  .stat{padding:1px 3px}.slabel{font-size:5px}
+  .wo-num{font-size:13px}.wo-code{font-size:8px}.sub{font-size:10px}
+  .stats{gap:2px;margin-bottom:2px}
+  .sval{font-size:8px}.sval.big{font-size:9px}
+  .stat{padding:1px 3px}.slabel{font-size:5px}.ssub{font-size:6px}
 
   .methods{padding:3px 6px;font-size:8px}
   .component-name{font-size:9px}

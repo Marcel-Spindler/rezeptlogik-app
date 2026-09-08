@@ -110,6 +110,29 @@ function findProcessSpec(data: DataBundle, subRecipeName: string) {
   return Object.values(data.processSpecs ?? {}).find((spec) => normStr(spec.name) === target);
 }
 
+// Zusatz-Kontext für den Gemini-WO-Instruction-Bot: Portionsmenge (g),
+// Prozess-Familie und ungefähre Batch-Minuten je Koch-Station. Alles aus den
+// bereits geladenen App-Daten — nichts Erfundenes. Siehe BatchCalc / WoComponent.
+const COOK_STATION_KEYS = new Set(["OVEN", "BRAISER", "GRILL", "HOT SHREDDER", "MARINADE", "HAND MARINADE", "PLANETARY MIXER", "HORIZONTAL MIXER"]);
+
+function deriveInstructionContext(
+  processSpec: ReturnType<typeof findProcessSpec>,
+  matchedSub: DetailedSubRecipe | null | undefined,
+): { portionGrams: number | null; productFamily: string | null; stationMinutes: Record<string, number> } {
+  const portionGrams = matchedSub && /gram/i.test(matchedSub.uom ?? "") && typeof matchedSub.quantity === "number" && matchedSub.quantity > 0
+    ? Math.round(matchedSub.quantity)
+    : null;
+  const productFamily = processSpec?.productFamily?.trim() || null;
+  const stationMinutes: Record<string, number> = {};
+  for (const [station, minutes] of Object.entries(processSpec?.minutesPerBatch ?? {})) {
+    const key = station.toUpperCase();
+    if (!COOK_STATION_KEYS.has(key)) continue;
+    if (typeof minutes !== "number" || !(minutes >= 1 && minutes <= 120)) continue;
+    stationMinutes[key] = Math.round(minutes);
+  }
+  return { portionGrams, productFamily, stationMinutes };
+}
+
 function resolveCookMethods(row: KetRow, data: DataBundle, structure?: RecipeStructure, recipe?: Recipe): string[] {
   const methods = new Set<string>();
   for (const method of row.cookMethods) {
@@ -681,6 +704,7 @@ function buildWoComponents(
       readyMade: READY_MADE.test(child.name),
       gnTraySummary,
       scoopInfo: resolveScoopInfo(recipe, child.name),
+      ...deriveInstructionContext(processSpec, child),
     };
   });
 
@@ -923,6 +947,7 @@ export function calcBatch(
     // Nur für den Nicht-Komponenten-Fall — bei zusammengesetzten Sub-Rezepten steht
     // es je Komponente in components[].scoopInfo (siehe Kommentar bei BatchCalc.scoopInfo).
     scoopInfo: components.length === 0 ? resolveScoopInfo(recipe, row.subRecipeName) : null,
+    ...deriveInstructionContext(processSpec, matchedSub),
   };
 }
 

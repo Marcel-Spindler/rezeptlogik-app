@@ -59,6 +59,9 @@ function makeCalc(overrides: Partial<BatchCalc> & { equipBatches: BatchCalc["equ
     components: [],
     gnTraySummary: [],
     scoopInfo: null,
+    portionGrams: null,
+    productFamily: null,
+    stationMinutes: {},
     ...overrides,
   };
 }

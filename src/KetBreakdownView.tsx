@@ -449,6 +449,14 @@ function resolveInstructionsFromCache(rows: KetRow[], calcMap: Map<string, Batch
         ?? fuzzyIndex.get(fuzzyInstructionKey(target.row, target.component?.name));
       if (hit) resolved[target.key] = hit;
     }
+    // Bei zusammengesetzten Sub-Rezepten steht der WO-Laufzeit-Key (row.key) NICHT
+    // in generationTargetsForRow — dort gibt es nur Komponenten-Ziele. Trotzdem
+    // eine evtl. vorhandene WO-weite "Gesamt-/Zusammenbau-Anweisung" aus dem
+    // Factor-Harvest auflösen (Key = recipeCode::subRecipeName).
+    if (calc.components.length > 0 && !resolved[row.key]) {
+      const woLevel = cache[instructionCacheKey(row)] ?? fuzzyIndex.get(fuzzyInstructionKey(row));
+      if (woLevel) resolved[row.key] = woLevel;
+    }
   }
   return resolved;
 }
