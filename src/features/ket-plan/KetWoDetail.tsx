@@ -275,7 +275,7 @@ function ComponentSection({
             <textarea value={deDraft} onChange={(e) => setDeDraft(e.target.value)} rows={4}
               className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] leading-relaxed text-slate-800 resize-y" />
             <div className="flex gap-2">
-              <button type="button" onClick={() => { onEdit?.({ ...instruction, english: enDraft, german: deDraft }); setEditing(false); }}
+              <button type="button" onClick={() => { onEdit?.({ ...instruction, english: enDraft, german: deDraft, source: "manual" }); setEditing(false); }}
                 className="rounded-lg bg-emerald-700 px-2.5 py-1 text-[9px] font-bold text-white hover:bg-emerald-800">
                 Speichern
               </button>
@@ -870,7 +870,7 @@ export function WoDetail({
                 </div>
                 <div className="flex gap-2">
                   <button type="button" onClick={() => {
-                    onInstructionEdit?.({ ...instruction, english: instrEnDraft, german: instrDeDraft });
+                    onInstructionEdit?.({ ...instruction, english: instrEnDraft, german: instrDeDraft, source: "manual" });
                     setEditingInstruction(false);
                   }} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-emerald-800">
                     Speichern
