@@ -3,25 +3,108 @@
 // Woche, von Hand gepflegt — nicht zu verwechseln mit LinePlaiting (Ist-
 // Tracking der laufenden Woche, parseLinePlaiting.ts).
 //
-// Spalten (0-indiziert, siehe gsheetTypes.ts ProductionPlanRow):
-// A Code, B Preference, C Recipe Name, D-F BENL/NORD/DE, G Total,
-// H Total+Buffer, I Complexity Score, J # subs, K # Cook stations,
+// Spalten A-T sind in BEIDEN Layouts gleich (0-indiziert, siehe gsheetTypes.ts
+// ProductionPlanRow): A Code, B Preference, C Recipe Name, D-F BENL/NORD/DE,
+// G Total, H Total+Buffer, I Complexity Score, J # subs, K # Cook stations,
 // L Active cook min, M Passive Hold, N-S Grill/Cup/Butter/Oven/Braiser/Slice
-// (X-Flags), T Allergens, W-AC (22-28) Tages-Matrix So-Sa, AE-AG (30-32)
-// Ready Do/Fr/Sa, AI-AK (34-36) Min Needs Do/Fr/Sa.
+// (X-Flags), T Allergens.
+//
+// Ab Spalte W (22) hängt die Tages-Matrix vom Tab-Layout ab, das hier dynamisch
+// aus der Header-Zeile erkannt wird (parseHeaderDayLayout):
+//   • Einschicht (bis W38, wieder ab W40): 7 Spalten So-Sa (22-28),
+//     Ready Do/Fr/Sa = 30-32, Min Needs Do/Fr/Sa = 34-36.
+//   • Zweischicht (ab W39): Mo-Fr je zwei Spalten (early/late shift), So+Sa
+//     einspaltig → 12 Tagesspalten (22-33), Ready = 35-37, Min Needs = 39-41.
+//     Unter dem Plating-Block folgt ein zweiter Block mit eigener "Code"-
+//     Kopfzeile ("KITCHEN") = der Kochtag-Plan je Meal, ohne Ready/Min Needs.
 //
 // Unterhalb der Meal-Zeilen folgen zwei weitere Blöcke, beide über die
 // Label-Spalte V (21) erkannt: ein KPI-Block (z.B. "unique meals", "lines",
 // "cupping time") und — eingeleitet durch das Label "Utilization" — ein
 // Block mit einer Auslastungszeile pro Station (BRAISER, GRILL, ...). Beide
-// Blöcke nutzen für die Tageswerte dieselben Spalten W-AC wie die Meal-Matrix.
+// Blöcke nutzen für die Tageswerte dieselben Spalten wie die Meal-Matrix
+// (bei Zweischicht steht der Wert je Tag in der early-Spalte, late = 0).
 import { PRODUCTION_PLAN_DAYS, type ProductionPlanData, type ProductionPlanDay, type ProductionPlanDayCell, type ProductionPlanKpiRow, type ProductionPlanRow, type ProductionPlanStationUtilization, type ProductionPlanTotals } from "../gsheetTypes";
 
 const DAY_COL_START = 22; // Spalte W
-const READY_COLS = { thu: 30, fri: 31, sat: 32 } as const;
-const MIN_NEEDS_COLS = { thu: 34, fri: 35, sat: 36 } as const;
 const LABEL_COL = 21; // Spalte V
 const UTILIZATION_LABEL = "Utilization";
+
+// Einschicht-Fallback, falls die Header-Zeile keine erkennbaren Tages-Spalten hat.
+const LEGACY_READY_START = 30;
+const LEGACY_MIN_NEEDS_START = 34;
+
+const WEEKDAY_BY_FIRST_WORD: Record<string, ProductionPlanDay> = {
+  sunday: "Sunday", monday: "Monday", tuesday: "Tuesday", wednesday: "Wednesday",
+  thursday: "Thursday", friday: "Friday", saturday: "Saturday",
+};
+
+// Header-Zellen sind FORMATTED_VALUE, z.B. "Monday 14.09." — das erste Wort
+// trägt den Wochentag. Alles andere (leer, "Thu", "Utilization", ...) → null.
+function headerCellToDay(raw: string): ProductionPlanDay | null {
+  const first = (raw ?? "").trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  return WEEKDAY_BY_FIRST_WORD[first] ?? null;
+}
+
+interface DayLayout {
+  shiftModel: "single" | "dual";
+  // Alle Sheet-Spalten je Wochentag (Einschicht: 1, Zweischicht Mo-Fr: 2).
+  dayColumns: Record<ProductionPlanDay, number[]>;
+  // Nur Zweischicht: die Früh/Spät-Spalten je Mo-Fr-Tag.
+  shiftColumns: Partial<Record<ProductionPlanDay, { early: number; late: number }>>;
+  readyStart: number;    // Spalte "Ready Do", +1 = Fr, +2 = Sa
+  minNeedsStart: number; // Spalte "Min Needs Do", +1 = Fr, +2 = Sa
+}
+
+function legacyLayout(): DayLayout {
+  const dayColumns = {} as Record<ProductionPlanDay, number[]>;
+  PRODUCTION_PLAN_DAYS.forEach((day, i) => { dayColumns[day] = [DAY_COL_START + i]; });
+  return { shiftModel: "single", dayColumns, shiftColumns: {}, readyStart: LEGACY_READY_START, minNeedsStart: LEGACY_MIN_NEEDS_START };
+}
+
+// Aus der (ersten) "Code"-Kopfzeile: zusammenhängenden Lauf von Wochentag-
+// Spalten ab Spalte W zählen (7 → Einschicht, 12 → Zweischicht) und daraus die
+// Spalten-Zuordnung sowie Ready/Min-Needs-Startspalten ableiten.
+function parseHeaderDayLayout(headerRow: string[]): DayLayout {
+  const run: { col: number; day: ProductionPlanDay }[] = [];
+  for (let c = DAY_COL_START; c < headerRow.length; c++) {
+    const day = headerCellToDay(headerRow[c] ?? "");
+    if (!day) break;
+    run.push({ col: c, day });
+  }
+  if (run.length === 0) return legacyLayout();
+
+  const dayColumns = {} as Record<ProductionPlanDay, number[]>;
+  for (const day of PRODUCTION_PLAN_DAYS) {
+    dayColumns[day] = run.filter(r => r.day === day).map(r => r.col);
+  }
+  // Sicherheitsnetz: Tage ohne Treffer im Lauf trotzdem befüllen (ein Tag darf
+  // im Sheet nie ganz fehlen, aber falls doch: kein Crash beim Zugriff).
+  let cursor = DAY_COL_START;
+  for (const day of PRODUCTION_PLAN_DAYS) {
+    if (dayColumns[day].length === 0) dayColumns[day] = [cursor];
+    cursor = dayColumns[day][dayColumns[day].length - 1] + 1;
+  }
+
+  const shiftColumns: DayLayout["shiftColumns"] = {};
+  let hasDual = false;
+  for (const day of PRODUCTION_PLAN_DAYS) {
+    const cols = dayColumns[day];
+    if (cols.length >= 2) {
+      shiftColumns[day] = { early: cols[0], late: cols[1] };
+      hasDual = true;
+    }
+  }
+
+  const readyStart = DAY_COL_START + run.length + 1; // +1 = Leerspalte zwischen Matrix und "Ready"
+  return {
+    shiftModel: hasDual ? "dual" : "single",
+    dayColumns,
+    shiftColumns,
+    readyStart,
+    minNeedsStart: readyStart + 4, // 3 Ready-Spalten + 1 Leerspalte
+  };
+}
 
 // Zahlen im Sheet mischen Tausender-Kommas ("31,851") und reine Ziffern
 // ("7378") je nach Zellformat — beide Formen müssen zum selben Wert führen.
@@ -52,19 +135,52 @@ function classifyDayCell(raw: string): ProductionPlanDayCell {
   return { kind: "station", label: trimmed };
 }
 
-function parseByDayCells(row: string[]): Record<ProductionPlanDay, ProductionPlanDayCell> {
+// Mehrere Schicht-Zellen desselben Wochentags zu einer Tagessicht zusammenfassen:
+// Portionen summieren; sonst Stationslabels zusammenführen; sonst leer.
+function mergeDayCells(cells: ProductionPlanDayCell[]): ProductionPlanDayCell {
+  const portions = cells
+    .filter((c): c is Extract<ProductionPlanDayCell, { kind: "portions" }> => c.kind === "portions")
+    .reduce((sum, c) => sum + c.portions, 0);
+  if (cells.some(c => c.kind === "portions")) return { kind: "portions", portions };
+
+  const labels = [...new Set(
+    cells.filter((c): c is Extract<ProductionPlanDayCell, { kind: "station" }> => c.kind === "station").map(c => c.label),
+  )];
+  if (labels.length) return { kind: "station", label: labels.join(" / ") };
+
+  return { kind: "empty" };
+}
+
+function parseByDayCells(row: string[], layout: DayLayout): Record<ProductionPlanDay, ProductionPlanDayCell> {
   const byDay = {} as Record<ProductionPlanDay, ProductionPlanDayCell>;
-  PRODUCTION_PLAN_DAYS.forEach((day, i) => {
-    byDay[day] = classifyDayCell(row[DAY_COL_START + i] ?? "");
-  });
+  for (const day of PRODUCTION_PLAN_DAYS) {
+    byDay[day] = mergeDayCells(layout.dayColumns[day].map(c => classifyDayCell(row[c] ?? "")));
+  }
   return byDay;
 }
 
-function parseByDayNumbers(row: string[]): Partial<Record<ProductionPlanDay, number | null>> {
+function parseByShiftCells(row: string[], layout: DayLayout): ProductionPlanRow["byShift"] {
+  const byShift: NonNullable<ProductionPlanRow["byShift"]> = {};
+  for (const day of PRODUCTION_PLAN_DAYS) {
+    const cols = layout.shiftColumns[day];
+    if (!cols) continue;
+    byShift[day] = {
+      early: classifyDayCell(row[cols.early] ?? ""),
+      late: classifyDayCell(row[cols.late] ?? ""),
+    };
+  }
+  return byShift;
+}
+
+// KPI-/Utilization-Zeilen: ein Wert je Tag, bei Zweischicht in der early-Spalte
+// (late = 0). Summe über beide Schicht-Spalten trifft in beiden Layouts zu.
+function parseByDayNumbers(row: string[], layout: DayLayout, emptyAs: null | 0): Partial<Record<ProductionPlanDay, number | null>> {
   const byDay: Partial<Record<ProductionPlanDay, number | null>> = {};
-  PRODUCTION_PLAN_DAYS.forEach((day, i) => {
-    byDay[day] = parseIntCell(row[DAY_COL_START + i] ?? "");
-  });
+  for (const day of PRODUCTION_PLAN_DAYS) {
+    const vals = layout.dayColumns[day].map(c => parseIntCell(row[c] ?? ""));
+    const nums = vals.filter((v): v is number => v != null);
+    byDay[day] = nums.length ? nums.reduce((a, b) => a + b, 0) : emptyAs;
+  }
   return byDay;
 }
 
@@ -72,75 +188,108 @@ function isFlag(raw: string): boolean {
   return (raw ?? "").trim().toUpperCase() === "X";
 }
 
+function findWeekLabel(rows: string[][]): string {
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const r = rows[i];
+    if (!r) continue;
+    const wi = r.findIndex(c => (c ?? "").trim() === "Week");
+    if (wi >= 0) {
+      const val = (r[wi + 1] ?? "").trim();
+      if (val) return val;
+    }
+  }
+  return (rows[1]?.[1] ?? "").trim();
+}
+
+function parseMealRow(row: string[], layout: DayLayout, isKitchen: boolean): ProductionPlanRow {
+  const nullReady = { thu: null, fri: null, sat: null };
+  const out: ProductionPlanRow = {
+    code: (row[0] ?? "").trim(),
+    preference: (row[1] ?? "").trim(),
+    recipeName: (row[2] ?? "").trim(),
+    benl: parseIntCell(row[3] ?? "") ?? 0,
+    nordics: parseIntCell(row[4] ?? "") ?? 0,
+    de: parseIntCell(row[5] ?? "") ?? 0,
+    total: parseIntCell(row[6] ?? "") ?? 0,
+    totalWithBuffer: parseIntCell(row[7] ?? "") ?? 0,
+    complexityScore: parseFloatCell(row[8] ?? ""),
+    subCount: parseIntCell(row[9] ?? ""),
+    cookStationCount: parseIntCell(row[10] ?? ""),
+    activeCookMin: parseIntCell(row[11] ?? ""),
+    passiveHoldMin: parseIntCell(row[12] ?? ""),
+    stations: {
+      grill: isFlag(row[13] ?? ""),
+      cup: isFlag(row[14] ?? ""),
+      butter: isFlag(row[15] ?? ""),
+      oven: isFlag(row[16] ?? ""),
+      braiser: isFlag(row[17] ?? ""),
+      slice: isFlag(row[18] ?? ""),
+    },
+    allergens: (row[19] ?? "").trim(),
+    byDay: parseByDayCells(row, layout),
+    readyByDay: isKitchen ? { ...nullReady } : {
+      thu: parseIntCell(row[layout.readyStart] ?? ""),
+      fri: parseIntCell(row[layout.readyStart + 1] ?? ""),
+      sat: parseIntCell(row[layout.readyStart + 2] ?? ""),
+    },
+    minNeedsByDay: isKitchen ? { ...nullReady } : {
+      thu: parseIntCell(row[layout.minNeedsStart] ?? ""),
+      fri: parseIntCell(row[layout.minNeedsStart + 1] ?? ""),
+      sat: parseIntCell(row[layout.minNeedsStart + 2] ?? ""),
+    },
+  };
+  if (layout.shiftModel === "dual") out.byShift = parseByShiftCells(row, layout);
+  return out;
+}
+
 export function parseProductionPlan(rows: string[][]): ProductionPlanData {
-  const week = (rows[1]?.[1] ?? "").trim();
+  const week = findWeekLabel(rows);
 
   const headerIdx = rows.findIndex((r) => (r[0] ?? "").trim() === "Code");
   if (headerIdx === -1) {
-    return { week, rows: [], totals: null, kpiRows: [], utilization: [], lastUpdated: Date.now() };
+    return { week, shiftModel: "single", rows: [], totals: null, kpiRows: [], utilization: [], lastUpdated: Date.now() };
   }
 
-  const planRows: ProductionPlanRow[] = [];
+  const layout = parseHeaderDayLayout(rows[headerIdx]);
+
+  const platingRows: ProductionPlanRow[] = [];
+  const kitchenRows: ProductionPlanRow[] = [];
   let totals: ProductionPlanTotals | null = null;
   const kpiRows: ProductionPlanKpiRow[] = [];
+  const seenKpiLabels = new Set<string>();
   const utilization: ProductionPlanStationUtilization[] = [];
   let inUtilizationBlock = false;
+  let inKitchenBlock = false;
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.length === 0) continue;
     const code = (row[0] ?? "").trim();
 
-    if (code) {
-      if (code === "Code") continue; // wiederholte Header-Zeile
-      planRows.push({
-        code,
-        preference: (row[1] ?? "").trim(),
-        recipeName: (row[2] ?? "").trim(),
-        benl: parseIntCell(row[3] ?? "") ?? 0,
-        nordics: parseIntCell(row[4] ?? "") ?? 0,
-        de: parseIntCell(row[5] ?? "") ?? 0,
-        total: parseIntCell(row[6] ?? "") ?? 0,
-        totalWithBuffer: parseIntCell(row[7] ?? "") ?? 0,
-        complexityScore: parseFloatCell(row[8] ?? ""),
-        subCount: parseIntCell(row[9] ?? ""),
-        cookStationCount: parseIntCell(row[10] ?? ""),
-        activeCookMin: parseIntCell(row[11] ?? ""),
-        passiveHoldMin: parseIntCell(row[12] ?? ""),
-        stations: {
-          grill: isFlag(row[13] ?? ""),
-          cup: isFlag(row[14] ?? ""),
-          butter: isFlag(row[15] ?? ""),
-          oven: isFlag(row[16] ?? ""),
-          braiser: isFlag(row[17] ?? ""),
-          slice: isFlag(row[18] ?? ""),
-        },
-        allergens: (row[19] ?? "").trim(),
-        byDay: parseByDayCells(row),
-        readyByDay: {
-          thu: parseIntCell(row[READY_COLS.thu] ?? ""),
-          fri: parseIntCell(row[READY_COLS.fri] ?? ""),
-          sat: parseIntCell(row[READY_COLS.sat] ?? ""),
-        },
-        minNeedsByDay: {
-          thu: parseIntCell(row[MIN_NEEDS_COLS.thu] ?? ""),
-          fri: parseIntCell(row[MIN_NEEDS_COLS.fri] ?? ""),
-          sat: parseIntCell(row[MIN_NEEDS_COLS.sat] ?? ""),
-        },
-      });
+    if (code === "Code") {
+      // Zweite "Code"-Kopfzeile → ab hier der KITCHEN-Block (Zweischicht-Layout).
+      inKitchenBlock = true;
+      inUtilizationBlock = false;
       continue;
     }
 
-    // Code leer, aber BENL gefüllt -> Wochensummen-Zeile (nur die erste zählt).
+    if (code) {
+      (inKitchenBlock ? kitchenRows : platingRows).push(parseMealRow(row, layout, inKitchenBlock));
+      continue;
+    }
+
+    // Code leer, aber BENL gefüllt -> Wochensummen-Zeile (nur die erste Plating-Summe zählt).
     const benlTotal = parseIntCell(row[3] ?? "");
-    if (!totals && benlTotal != null) {
-      totals = {
-        benl: benlTotal,
-        nordics: parseIntCell(row[4] ?? ""),
-        de: parseIntCell(row[5] ?? ""),
-        total: parseIntCell(row[6] ?? ""),
-        totalWithBuffer: parseIntCell(row[7] ?? ""),
-      };
+    if (benlTotal != null) {
+      if (!totals && !inKitchenBlock) {
+        totals = {
+          benl: benlTotal,
+          nordics: parseIntCell(row[4] ?? ""),
+          de: parseIntCell(row[5] ?? ""),
+          total: parseIntCell(row[6] ?? ""),
+          totalWithBuffer: parseIntCell(row[7] ?? ""),
+        };
+      }
       continue;
     }
 
@@ -154,15 +303,27 @@ export function parseProductionPlan(rows: string[][]): ProductionPlanData {
     }
 
     if (inUtilizationBlock) {
-      const byDay: Partial<Record<ProductionPlanDay, number>> = {};
-      PRODUCTION_PLAN_DAYS.forEach((day, di) => {
-        byDay[day] = parseIntCell(row[DAY_COL_START + di] ?? "") ?? 0;
-      });
+      const byDay = parseByDayNumbers(row, layout, 0) as Partial<Record<ProductionPlanDay, number>>;
       utilization.push({ station: label, byDay });
-    } else {
-      kpiRows.push({ label, byDay: parseByDayNumbers(row) });
+    } else if (!seenKpiLabels.has(label)) {
+      // Der KITCHEN-Block wiederholt viele KPI-Labels ("total meals", "lines", ...) —
+      // nur das erste Vorkommen (Plating) behalten, damit der KPI-Block nicht doppelt erscheint.
+      seenKpiLabels.add(label);
+      kpiRows.push({ label, byDay: parseByDayNumbers(row, layout, null) });
     }
   }
 
-  return { week, rows: planRows, totals, kpiRows, utilization, lastUpdated: Date.now() };
+  const result: ProductionPlanData = {
+    week,
+    shiftModel: layout.shiftModel,
+    rows: platingRows,
+    totals,
+    kpiRows,
+    utilization,
+    lastUpdated: Date.now(),
+  };
+  if (layout.shiftModel === "dual" || kitchenRows.length > 0) {
+    result.kitchen = { rows: kitchenRows };
+  }
+  return result;
 }

@@ -10,7 +10,7 @@
 // ein Dokument pro Woche mit rows[code] = Override-Patch für diese Meal-Zeile.
 import { useEffect, useState } from "react";
 import { deleteField, doc, getFirebase, onSnapshot, setDoc, updateDoc } from "../../core/firebase";
-import { PRODUCTION_PLAN_DAYS, type ProductionPlanData, type ProductionPlanDay, type ProductionPlanDayCell, type ProductionPlanRow } from "../gsheet-monitor/gsheetTypes";
+import { PRODUCTION_PLAN_DAYS, type ProductionPlanData, type ProductionPlanDay, type ProductionPlanDayCell, type ProductionPlanRow, type ProductionPlanShift } from "../gsheet-monitor/gsheetTypes";
 
 const COLLECTION_PATH = "apps/rezeptlogik/productionPlanOverrides";
 
@@ -21,8 +21,25 @@ export interface ProductionPlanRowOverride {
   totalWithBuffer?: number | null;
   allergens?: string;
   byDay?: Partial<Record<ProductionPlanDay, ProductionPlanDayCell>>;
+  // Nur Zweischicht-Wochen: einzelne Früh-/Spät-Zellen (Mo-Fr). Die pro Tag
+  // zusammengefasste `byDay`-Sicht (und damit Ready/Min Needs) wird beim Rendern
+  // aus den effektiven Schicht-Zellen neu berechnet.
+  byShift?: Partial<Record<ProductionPlanDay, Partial<Record<ProductionPlanShift, ProductionPlanDayCell>>>>;
   readyByDay?: Partial<Record<ReadyDayKey, number | null>>;
   minNeedsByDay?: Partial<Record<ReadyDayKey, number | null>>;
+}
+
+const EMPTY_CELL: ProductionPlanDayCell = { kind: "empty" };
+
+// Früh- + Spät-Zelle eines Tages zusammenfassen — identische Regel wie im Parser
+// (mergeDayCells): Portionen summieren, sonst Stationslabels zusammenführen.
+function mergeShiftCells(early: ProductionPlanDayCell, late: ProductionPlanDayCell): ProductionPlanDayCell {
+  const cells = [early, late];
+  if (cells.some(c => c.kind === "portions")) {
+    return { kind: "portions", portions: cells.reduce((s, c) => s + (c.kind === "portions" ? c.portions : 0), 0) };
+  }
+  const labels = [...new Set(cells.filter((c): c is Extract<ProductionPlanDayCell, { kind: "station" }> => c.kind === "station").map(c => c.label))];
+  return labels.length ? { kind: "station", label: labels.join(" / ") } : { kind: "empty" };
 }
 
 export type ProductionPlanOverrideRows = Record<string /* row.code */, ProductionPlanRowOverride>;
@@ -49,8 +66,32 @@ function computeMinNeeds(ready: number, row: ProductionPlanRow): number {
 
 export function mergeRowOverride(row: ProductionPlanRow, override: ProductionPlanRowOverride | undefined): ProductionPlanRow {
   if (!override) return row;
-  const byDay = override.byDay ? { ...row.byDay, ...override.byDay } : row.byDay;
-  const dayEdited = !!override.byDay;
+
+  // 1. Effektive Schicht-Aufteilung (nur dual): Overrides über row.byShift legen.
+  let byShift = row.byShift;
+  const shiftEditedDays = override.byShift
+    ? (Object.keys(override.byShift) as ProductionPlanDay[])
+    : [];
+  if (shiftEditedDays.length) {
+    byShift = { ...(row.byShift ?? {}) };
+    for (const day of shiftEditedDays) {
+      const base = row.byShift?.[day] ?? { early: EMPTY_CELL, late: EMPTY_CELL };
+      byShift[day] = { ...base, ...override.byShift![day] };
+    }
+  }
+
+  // 2. byDay: erst die Schicht-Edits als Tages-Merge einrechnen, dann direkte byDay-Overrides.
+  let byDay = row.byDay;
+  if (shiftEditedDays.length && byShift) {
+    byDay = { ...byDay };
+    for (const day of shiftEditedDays) {
+      const s = byShift[day];
+      if (s) byDay[day] = mergeShiftCells(s.early, s.late);
+    }
+  }
+  if (override.byDay) byDay = { ...byDay, ...override.byDay };
+
+  const dayEdited = !!override.byDay || shiftEditedDays.length > 0;
   const autoReady = dayEdited ? sumPortionsInByDay(byDay) : null;
 
   const readyByDay = { ...row.readyByDay };
@@ -74,6 +115,7 @@ export function mergeRowOverride(row: ProductionPlanRow, override: ProductionPla
     ...row,
     totalWithBuffer: override.totalWithBuffer ?? row.totalWithBuffer,
     allergens: override.allergens ?? row.allergens,
+    byShift,
     byDay,
     readyByDay,
     minNeedsByDay,
@@ -112,8 +154,9 @@ export async function saveProductionPlanCellOverride(week: string, code: string,
   }
 }
 
-// fieldPath z.B. "totalWithBuffer", "allergens", "byDay.Monday" — muss exakt
-// den Feldnamen aus ProductionPlanRowOverride treffen, siehe deleteField()-Doku.
+// fieldPath z.B. "totalWithBuffer", "allergens", "byDay.Monday",
+// "byShift.Monday.early" — muss exakt den Feldpfad aus ProductionPlanRowOverride
+// treffen, siehe deleteField()-Doku.
 export async function clearProductionPlanCellOverride(week: string, code: string, fieldPath: string): Promise<void> {
   if (!week || !code) return;
   try {

@@ -103,7 +103,9 @@ async function fetchProductionPlanRows(gid: string): Promise<string[][]> {
   const title = tab.properties?.title ?? "";
   const valuesRes = await client.spreadsheets.values.get({
     spreadsheetId: PRODUCTION_PLAN_SHEET_ID,
-    range: `'${title}'!A1:AK500`,
+    // Bis AR statt AK: das Zweischicht-Layout (ab W39) hat 12 Tagesspalten und
+    // schiebt Ready/Min Needs bis Spalte AP (Index 41) — AK (36) würde sie abschneiden.
+    range: `'${title}'!A1:AR500`,
     valueRenderOption: "FORMATTED_VALUE",
   });
   return (valuesRes.data.values ?? []) as string[][];

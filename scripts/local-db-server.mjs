@@ -183,6 +183,14 @@ async function generateGeminiVorplanung(currentWeek, prevWeek, gsheetUrl) {
     "- stations.cup = true ODER ein Tages-Label das 'Cup' enthält → dieses Meal wird gecuppt",
     "- PORTIONEN gecuppt = Summe totalWithBuffer aller Cup-Meals",
     "- Im Kontext siehst du 'CUP-GESAMT' = korrekt berechnete Zahl (nutze DIESE!)",
+    "",
+    "SCHICHTMODELL / KÜCHENPLAN:",
+    "- Steht im Kontext 'SCHICHTMODELL: 2-Schicht-Woche', dann in Sektion 6/7 kurz erwähnen,",
+    "  dass diese Woche im 2-Schicht-Betrieb (Mo-Fr Früh-/Spätschicht) läuft.",
+    "- Falls ein 'KÜCHENPLAN' im Kontext steht: eine eigene kurze Sektion",
+    "  '👨‍🍳 KITCHEN PLAN / KÜCHENPLAN' mit den Kochmengen je Tag (inkl. früh/spät-Split) ausgeben,",
+    "  direkt vor der Sektion RISKS. In beiden Sprachversionen.",
+    "- Ohne diese Kontext-Zeilen: nichts dazu schreiben (Einschicht-Woche, kein Küchenplan).",
   ].join("\n");
 
   function summarizePlanData(data, label) {
@@ -292,6 +300,30 @@ async function generateGeminiVorplanung(currentWeek, prevWeek, gsheetUrl) {
       `Meal-Details:`,
       ...mealDetails.map(m => `  ${m.code} "${m.name}" — ${m.totalWithBuffer} Port., Stationen: [${m.stations.join(",")}], DayLabels: [${m.dayLabels.join(",")}], Allergen: ${m.allergens || "-"}, Cx: ${m.complexityScore ?? "-"}, Subs: ${m.subCount ?? "-"}`),
     ];
+
+    if (data.shiftModel === "dual") {
+      sections.push("", "SCHICHTMODELL: 2-Schicht-Woche (Mo-Fr je Früh-/Spätschicht, So/Sa einschichtig).");
+      const kRows = data.kitchen?.rows ?? [];
+      if (kRows.length > 0) {
+        const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const perDay = Object.fromEntries(days.map(d => [d, { early: 0, late: 0, total: 0 }]));
+        for (const row of kRows) {
+          for (const d of days) {
+            const cell = row.byDay?.[d];
+            if (cell?.kind === "portions") perDay[d].total += cell.portions;
+            const sh = row.byShift?.[d];
+            if (sh?.early?.kind === "portions") perDay[d].early += sh.early.portions;
+            if (sh?.late?.kind === "portions") perDay[d].late += sh.late.portions;
+          }
+        }
+        sections.push(`KÜCHENPLAN (${kRows.length} Meals, geplante Kochmengen je Tag):`);
+        for (const d of days) {
+          const a = perDay[d];
+          if (a.total <= 0) continue;
+          sections.push(`  ${d}: ${a.total}${a.late > 0 ? ` (früh ${a.early} / spät ${a.late})` : ""}`);
+        }
+      }
+    }
 
     if (data.kpiRows?.length > 0) {
       sections.push("", "Sheet-KPIs:");

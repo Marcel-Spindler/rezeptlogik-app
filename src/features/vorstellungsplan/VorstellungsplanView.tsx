@@ -372,7 +372,14 @@ export function VorstellungsplanView({ week, appData }: { week: string; appData:
       {data && (
         <>
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black text-slate-800">Vorstellungsplan {data.week || week}</h3>
+            <h3 className="text-sm font-black text-slate-800">
+              Vorstellungsplan {data.week || week}
+              {data.shiftModel === "dual" && (
+                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-300 align-middle">
+                  2-Schicht-Modell · Küchenplan unten
+                </span>
+              )}
+            </h3>
             <div className="flex gap-2">
               <button
                 onClick={handleGenerateVorVorText}

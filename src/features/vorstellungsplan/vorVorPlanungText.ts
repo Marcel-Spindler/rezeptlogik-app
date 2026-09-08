@@ -5,7 +5,8 @@
 // KPI-Vergleich: wenn Vorwochen-Daten verfügbar sind, zeigt der Text
 // automatisch Week-over-Week Deltas (Cup-Meals, Portionen, Stationen).
 // "Neue Meals" per Code-Diff mit Caveat bei starker Rotation (>50% neu).
-import type { ProductionPlanData, ProductionPlanRow } from "../gsheet-monitor/gsheetTypes";
+import type { ProductionPlanData, ProductionPlanDay, ProductionPlanRow } from "../gsheet-monitor/gsheetTypes";
+import { PRODUCTION_PLAN_DAYS } from "../gsheet-monitor/gsheetTypes";
 
 const STATION_LABELS: ReadonlyArray<{ key: keyof ProductionPlanRow["stations"]; label: string; emoji: string }> = [
   { key: "cup", label: "Cup", emoji: "🥤" },
@@ -88,6 +89,44 @@ export interface VorVorPlanungOptions {
   prevWeekData?: ProductionPlanData | null;
 }
 
+const DAY_SHORT: Record<ProductionPlanDay, string> = {
+  Sunday: "So", Monday: "Mo", Tuesday: "Di", Wednesday: "Mi", Thursday: "Do", Friday: "Fr", Saturday: "Sa",
+};
+
+// Bei Zweischicht-Wochen (ab W39): Hinweis aufs Schichtmodell + kompakte
+// Küchenplan-Übersicht (Kochmengen je Tag, mit früh/spät-Split wo vorhanden).
+function buildShiftKitchenLines(data: ProductionPlanData): string[] {
+  if (data.shiftModel !== "dual") return [];
+  const lines: string[] = [];
+  lines.push("🕒 2-Schicht-Modell diese Woche (Mo–Fr je Früh-/Spätschicht) — Küchenplan separat unten.");
+
+  const kitchenRows = data.kitchen?.rows ?? [];
+  if (kitchenRows.length > 0) {
+    // Kochmengen je Tag über alle Meals summieren (früh / spät getrennt).
+    const perDay = new Map<ProductionPlanDay, { early: number; late: number; total: number }>();
+    for (const d of PRODUCTION_PLAN_DAYS) perDay.set(d, { early: 0, late: 0, total: 0 });
+    for (const row of kitchenRows) {
+      for (const d of PRODUCTION_PLAN_DAYS) {
+        const agg = perDay.get(d)!;
+        const cell = row.byDay[d];
+        if (cell.kind === "portions") agg.total += cell.portions;
+        const shift = row.byShift?.[d];
+        if (shift?.early.kind === "portions") agg.early += shift.early.portions;
+        if (shift?.late.kind === "portions") agg.late += shift.late.portions;
+      }
+    }
+    lines.push("");
+    lines.push(`🍳 Küchenplan — geplante Kochmengen je Tag (${kitchenRows.length} Meals):`);
+    for (const d of PRODUCTION_PLAN_DAYS) {
+      const agg = perDay.get(d)!;
+      if (agg.total <= 0) continue;
+      const split = agg.late > 0 ? ` (früh ${fmtInt(agg.early)} / spät ${fmtInt(agg.late)})` : "";
+      lines.push(`   ${DAY_SHORT[d]}: ${fmtInt(agg.total)}${split}`);
+    }
+  }
+  return lines;
+}
+
 export function buildVorVorPlanungText(data: ProductionPlanData, options: VorVorPlanungOptions = {}): string {
   const { gsheetUrl, prevWeekData } = options;
   const lines: string[] = [];
@@ -145,6 +184,12 @@ export function buildVorVorPlanungText(data: ProductionPlanData, options: VorVor
     }
   }
   lines.push("");
+
+  const shiftKitchenLines = buildShiftKitchenLines(data);
+  if (shiftKitchenLines.length > 0) {
+    lines.push(...shiftKitchenLines);
+    lines.push("");
+  }
 
   const allergenSet = new Set<string>();
   for (const r of data.rows) {

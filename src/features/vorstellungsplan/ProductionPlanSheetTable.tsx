@@ -8,13 +8,22 @@
 // eigentlich zeigen soll: Cup/Slicing-Vorbereitung und Plating-Menge für EIN
 // Meal in einer durchgehenden Zeile über die Woche zu lesen.
 //
+// Zweischicht-Layout (ab W39, data.shiftModel === "dual"): Mo-Fr bekommen je
+// eine Früh- und eine Spät-Unterspalte (aus row.byShift), So/Sa bleiben
+// einspaltig. Die Schicht-Zellen sind einzeln editierbar (byShift-Override);
+// die pro Tag zusammengefasste Sicht und damit Ready/Min Needs rechnet
+// mergeRowOverride daraus neu. Der Küchenplan-Block darunter (data.kitchen)
+// wird als eigene aufklappbare Tabelle gerendert (reine Anzeige).
+//
 // Pilot-Set editierbar (2026-08-24, siehe productionPlanOverrides.ts): Buffer,
-// Allergene, Tages-Matrix. Das GSheet bleibt Basiswert -- Edits landen als
-// Overlay in Firestore (amber = weicht vom GSheet ab, ↺ setzt zurück), nicht
-// im Sheet selbst. Grundlage für die spätere KI-/Live-View-Verknüpfung: jede
-// Zelle wird ein eigener editier- und referenzierbarer Datenpunkt.
+// Allergene, Tages-Matrix (So/Sa + bei Einschicht alle Tage, bei Zweischicht
+// zusätzlich die einzelnen Früh-/Spät-Zellen). Das GSheet bleibt Basiswert --
+// Edits landen als Overlay in Firestore (amber = weicht vom GSheet ab, ↺ setzt
+// zurück), nicht im Sheet selbst. Grundlage für die spätere KI-/Live-View-
+// Verknüpfung: jede Zelle wird ein eigener editier- und referenzierbarer
+// Datenpunkt.
 import { useState, type ReactNode } from "react";
-import { PRODUCTION_PLAN_DAYS, type ForecastRow, type ProductionPlanData, type ProductionPlanDay, type ProductionPlanDayCell, type ProductionPlanRow, type RecipeProfilRow } from "../gsheet-monitor/gsheetTypes";
+import { PRODUCTION_PLAN_DAYS, type ForecastRow, type ProductionPlanData, type ProductionPlanDay, type ProductionPlanDayCell, type ProductionPlanKitchen, type ProductionPlanRow, type ProductionPlanShift, type RecipeProfilRow } from "../gsheet-monitor/gsheetTypes";
 import { formatShortDate, hfWeekDayDate } from "./productionPlanDates";
 import { mergeRowOverride, type ProductionPlanOverrideRows, type ProductionPlanRowOverride } from "./productionPlanOverrides";
 import { crossCheckProductionPlanRow } from "./productionPlanLiveCheck";
@@ -22,6 +31,22 @@ import { crossCheckProductionPlanRow } from "./productionPlanLiveCheck";
 const DAY_SHORT: Record<ProductionPlanDay, string> = {
   Sunday: "So", Monday: "Mo", Tuesday: "Di", Wednesday: "Mi", Thursday: "Do", Friday: "Fr", Saturday: "Sa",
 };
+
+const SHIFT_SHORT: Record<ProductionPlanShift, string> = { early: "früh", late: "spät" };
+
+// Die anzuzeigenden Tages-Spalten: Einschicht = 7 (je 1 pro Wochentag),
+// Zweischicht = 12 (Mo-Fr je früh/spät, So/Sa einspaltig).
+type DayColumn = { day: ProductionPlanDay; shift: ProductionPlanShift | null };
+
+function dayColumnsFor(shiftModel: ProductionPlanData["shiftModel"]): DayColumn[] {
+  if (shiftModel !== "dual") return PRODUCTION_PLAN_DAYS.map(day => ({ day, shift: null }));
+  const out: DayColumn[] = [];
+  for (const day of PRODUCTION_PLAN_DAYS) {
+    if (day === "Sunday" || day === "Saturday") out.push({ day, shift: null });
+    else { out.push({ day, shift: "early" }); out.push({ day, shift: "late" }); }
+  }
+  return out;
+}
 
 const READY_DAYS: ReadonlyArray<{ day: ProductionPlanDay; key: "thu" | "fri" | "sat" }> = [
   { day: "Thursday", key: "thu" }, { day: "Friday", key: "fri" }, { day: "Saturday", key: "sat" },
@@ -35,8 +60,10 @@ const STATION_KEYS: ReadonlyArray<{ key: keyof ProductionPlanRow["stations"]; la
 // Spalten nach Code+Meal (2 sticky) -- fuer den "Wochensumme"-Footer, der nur
 // ueber Markt-Split/Total/+Buffer echte Summen hat (aus data.totals) und den
 // Rest (Komplexitaet...Allergene) in einer Leerzelle ueberspannt.
-const TRAILING_COLSPAN = 5 /* Komplexitaet-Block */ + 1 /* Stationen-Badges */
-  + PRODUCTION_PLAN_DAYS.length + READY_DAYS.length + READY_DAYS.length + 1 /* Allergene */;
+function trailingColspan(dayColCount: number): number {
+  return 5 /* Komplexitaet-Block */ + 1 /* Stationen-Badges */
+    + dayColCount + READY_DAYS.length + READY_DAYS.length + 1 /* Allergene */;
+}
 
 function fmtNum(n: number | null | undefined, digits = 0): string {
   if (n == null || !Number.isFinite(n)) return "–";
@@ -67,6 +94,25 @@ function editTextToDayCell(raw: string): ProductionPlanDayCell {
     if (n != null) return { kind: "portions", portions: n };
   }
   return { kind: "station", label: trimmed };
+}
+
+// Inhalt einer Tageszelle (leer / Stationslabel / Portionen) einheitlich rendern.
+function dayCellContent(cell: ProductionPlanDayCell): { content: ReactNode; kindClass: string; align: "left" | "right" | "center" } {
+  if (cell.kind === "empty") {
+    return { content: <span className="text-slate-300">·</span>, kindClass: "px-1.5 py-1", align: "center" };
+  }
+  if (cell.kind === "station") {
+    return {
+      content: <span className="text-[10px] font-bold text-sky-700">{cell.label}</span>,
+      kindClass: "px-1.5 py-1 bg-sky-50 whitespace-nowrap",
+      align: "center",
+    };
+  }
+  return {
+    content: <span className="font-semibold text-slate-800 tabular-nums">{fmtNum(cell.portions)}</span>,
+    kindClass: "px-1.5 py-1",
+    align: "right",
+  };
 }
 
 function StationBadges({ row }: { row: ProductionPlanRow }) {
@@ -165,6 +211,18 @@ function GroupHeader({ label, span, borderStart = true }: { label: string; span:
   );
 }
 
+// Kopfzelle für eine Tages-(Schicht-)Spalte: Wochentag-Kürzel + Datum, bei
+// Zweischicht zusätzlich "früh"/"spät".
+function DayHeadCell({ col, hfWeek, borderStart }: { col: DayColumn; hfWeek: string; borderStart: boolean }) {
+  return (
+    <th className={`bg-slate-800 px-1.5 py-1 font-semibold ${borderStart ? "border-l border-slate-700" : ""}`}>
+      {DAY_SHORT[col.day]}
+      {col.shift && <span className="ml-0.5 font-normal text-[8px] text-amber-300">{SHIFT_SHORT[col.shift]}</span>}
+      <div className="font-normal text-[8px] text-slate-400">{formatShortDate(hfWeekDayDate(hfWeek, col.day))}</div>
+    </th>
+  );
+}
+
 export function ProductionPlanSheetTable({
   data, hfWeek, overrides, onSaveCell, onClearCell, forecastByCode, recipeProfilByCode,
 }: {
@@ -177,8 +235,11 @@ export function ProductionPlanSheetTable({
   recipeProfilByCode?: Map<string, RecipeProfilRow>;
 }) {
   const totals = data.totals;
+  const dayCols = dayColumnsFor(data.shiftModel);
+  const isDual = data.shiftModel === "dual";
 
   return (
+    <>
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
       {/* border-separate statt -collapse: bei border-collapse "bluten" nicht-
           sticky Zellen (Chromium) beim horizontalen Scrollen durch die sticky
@@ -193,7 +254,7 @@ export function ProductionPlanSheetTable({
             <th rowSpan={2} className="bg-slate-900 px-2 py-1.5 text-right font-bold whitespace-nowrap">+Buffer</th>
             <GroupHeader label="Komplexität" span={5} />
             <th rowSpan={2} className="bg-slate-900 px-2 py-1.5 text-center font-bold border-l border-slate-700 whitespace-nowrap">Stationen</th>
-            <GroupHeader label="Tages-Matrix" span={PRODUCTION_PLAN_DAYS.length} />
+            <GroupHeader label={isDual ? "Tages-Matrix · 2 Schichten (früh/spät)" : "Tages-Matrix"} span={dayCols.length} />
             <GroupHeader label="Ready" span={READY_DAYS.length} />
             <GroupHeader label="Min Needs" span={READY_DAYS.length} />
             <th rowSpan={2} className="bg-slate-900 px-2 py-1.5 text-left font-bold border-l border-slate-700">Allergene</th>
@@ -207,11 +268,8 @@ export function ProductionPlanSheetTable({
             <th className="bg-slate-800 px-1.5 py-1 text-right font-semibold">Stat.#</th>
             <th className="bg-slate-800 px-1.5 py-1 text-right font-semibold whitespace-nowrap">Aktiv Min</th>
             <th className="bg-slate-800 px-1.5 py-1 text-right font-semibold whitespace-nowrap">Passiv Min</th>
-            {PRODUCTION_PLAN_DAYS.map((d, i) => (
-              <th key={d} className={`bg-slate-800 px-1.5 py-1 font-semibold ${i === 0 ? "border-l border-slate-700" : ""}`}>
-                {DAY_SHORT[d]}
-                <div className="font-normal text-[8px] text-slate-400">{formatShortDate(hfWeekDayDate(hfWeek, d))}</div>
-              </th>
+            {dayCols.map((col, i) => (
+              <DayHeadCell key={`${col.day}-${col.shift ?? "x"}`} col={col} hfWeek={hfWeek} borderStart={i === 0} />
             ))}
             {READY_DAYS.map((r, i) => (
               <th key={`ready-${r.key}`} className={`bg-slate-800 px-1.5 py-1 font-semibold ${i === 0 ? "border-l border-slate-700" : ""}`}>{DAY_SHORT[r.day]}</th>
@@ -269,29 +327,41 @@ export function ProductionPlanSheetTable({
                 <td className="px-1.5 py-1 text-right tabular-nums text-slate-500">{fmtNum(row.activeCookMin)}</td>
                 <td className="px-1.5 py-1 text-right tabular-nums text-slate-500">{fmtNum(row.passiveHoldMin)}</td>
                 <td className="px-2 py-1 border-l border-slate-100"><StationBadges row={row} /></td>
-                {PRODUCTION_PLAN_DAYS.map((d, di) => {
-                  const cell = effRow.byDay[d];
+                {dayCols.map((col, di) => {
                   const borderClass = di === 0 ? "border-l border-slate-100" : "";
-                  let content: ReactNode;
-                  let kindClass = "px-1.5 py-1";
-                  let align: "left" | "right" | "center" = "center";
-                  if (cell.kind === "empty") {
-                    content = <span className="text-slate-300">·</span>;
-                  } else if (cell.kind === "station") {
-                    content = <span className="text-[10px] font-bold text-sky-700">{cell.label}</span>;
-                    kindClass += " bg-sky-50 whitespace-nowrap";
-                  } else {
-                    content = <span className="font-semibold text-slate-800 tabular-nums">{fmtNum(cell.portions)}</span>;
-                    align = "right";
+                  // Zweischicht-Unterspalten (Mo-Fr früh/spät): editierbar via byShift-Override.
+                  // Die gemergte Tages-Sicht (byDay → Ready/Min Needs) rechnet mergeRowOverride neu.
+                  if (col.shift) {
+                    const shift: ProductionPlanShift = col.shift;
+                    const day = col.day;
+                    const cell = effRow.byShift?.[day]?.[shift] ?? { kind: "empty" as const };
+                    const { content, kindClass, align } = dayCellContent(cell);
+                    const overridden = override?.byShift?.[day]?.[shift] != null;
+                    return (
+                      <EditableCell
+                        key={`${day}-${shift}`}
+                        editValue={dayCellToEditText(cell)}
+                        align={align}
+                        state={overridden ? "overridden" : "none"}
+                        onCommit={(raw) => onSaveCell(row.code, { byShift: { [day]: { [shift]: editTextToDayCell(raw) } } })}
+                        onReset={() => onClearCell(row.code, `byShift.${day}.${shift}`)}
+                        className={`${kindClass} ${borderClass}`}
+                      >
+                        {content}
+                      </EditableCell>
+                    );
                   }
+                  // So/Sa (Zweischicht) bzw. alle Tage (Einschicht): editierbar via byDay-Override.
+                  const cell = effRow.byDay[col.day];
+                  const { content, kindClass, align } = dayCellContent(cell);
                   return (
                     <EditableCell
-                      key={d}
+                      key={col.day}
                       editValue={dayCellToEditText(cell)}
                       align={align}
-                      state={override?.byDay?.[d] != null ? "overridden" : "none"}
-                      onCommit={(raw) => onSaveCell(row.code, { byDay: { [d]: editTextToDayCell(raw) } })}
-                      onReset={() => onClearCell(row.code, `byDay.${d}`)}
+                      state={override?.byDay?.[col.day] != null ? "overridden" : "none"}
+                      onCommit={(raw) => onSaveCell(row.code, { byDay: { [col.day]: editTextToDayCell(raw) } })}
+                      onReset={() => onClearCell(row.code, `byDay.${col.day}`)}
                       className={`${kindClass} ${borderClass}`}
                     >
                       {content}
@@ -364,11 +434,75 @@ export function ProductionPlanSheetTable({
               <td className="px-1.5 py-1.5 text-right tabular-nums">{fmtNum(totals.de)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums border-l border-indigo-100">{fmtNum(totals.total)}</td>
               <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(totals.totalWithBuffer)}</td>
-              <td colSpan={TRAILING_COLSPAN} className="border-l border-indigo-100" />
+              <td colSpan={trailingColspan(dayCols.length)} className="border-l border-indigo-100" />
             </tr>
           </tfoot>
         )}
       </table>
     </div>
+    {data.kitchen && <KitchenPlanSection kitchen={data.kitchen} hfWeek={hfWeek} />}
+    </>
+  );
+}
+
+// ─── Küchenplan-Block (nur Zweischicht) ────────────────────────────────────────
+// Eigene aufklappbare Tabelle unter dem Plating-Plan: derselbe Zeilen-Aufbau,
+// aber die Werte sind die geplanten KOCHmengen je Tag/Schicht (Kochtag, meist
+// einen Tag vor dem Plating-Tag). Reine Anzeige, keine Overrides.
+function KitchenPlanSection({ kitchen, hfWeek }: { kitchen: ProductionPlanKitchen; hfWeek: string }) {
+  const [open, setOpen] = useState(false);
+  const dayCols = dayColumnsFor("dual");
+  if (kitchen.rows.length === 0) return null;
+
+  return (
+    <details className="mt-2 rounded-xl border border-slate-200 bg-white shadow-sm" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50">
+        🍳 Küchenplan (Kochtag je Schicht) · {kitchen.rows.length} Meals
+        <span className="ml-2 font-normal text-slate-400">{open ? "▲ einklappen" : "▼ aufklappen"}</span>
+      </summary>
+      <div className="overflow-x-auto border-t border-slate-100">
+        <table className="border-separate border-spacing-0 text-[11px] w-max">
+          <thead>
+            <tr className="bg-slate-900 text-white">
+              <th rowSpan={2} className="sticky left-0 z-20 w-24 bg-slate-900 px-2 py-1.5 text-left font-bold">Code</th>
+              <th rowSpan={2} className="sticky left-24 z-20 min-w-[12rem] bg-slate-900 px-2 py-1.5 text-left font-bold border-r border-slate-700">Meal</th>
+              <th rowSpan={2} className="bg-slate-900 px-2 py-1.5 text-right font-bold border-l border-slate-700 whitespace-nowrap">+Buffer</th>
+              <GroupHeader label="Kochmengen · 2 Schichten (früh/spät)" span={dayCols.length} />
+            </tr>
+            <tr className="bg-slate-800 text-white text-[10px]">
+              {dayCols.map((col, i) => (
+                <DayHeadCell key={`k-${col.day}-${col.shift ?? "x"}`} col={col} hfWeek={hfWeek} borderStart={i === 0} />
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {kitchen.rows.map((row, i) => {
+              const rowBg = i % 2 === 0 ? "bg-white" : "bg-slate-50";
+              return (
+                <tr key={row.code} className={rowBg}>
+                  <td className={`sticky left-0 z-10 ${rowBg} px-2 py-1 font-mono text-slate-600 whitespace-nowrap`}>{row.code}</td>
+                  <td className={`sticky left-24 z-10 ${rowBg} px-2 py-1 font-semibold text-slate-800 max-w-[16rem] truncate border-r border-slate-100`} title={row.recipeName}>
+                    {row.recipeName}
+                  </td>
+                  <td className="px-2 py-1 text-right font-bold tabular-nums text-slate-900 border-l border-slate-100">{fmtNum(row.totalWithBuffer)}</td>
+                  {dayCols.map((col, di) => {
+                    const cell = col.shift
+                      ? (row.byShift?.[col.day]?.[col.shift] ?? { kind: "empty" as const })
+                      : row.byDay[col.day];
+                    const { content, kindClass, align } = dayCellContent(cell);
+                    const alignClass = align === "right" ? "text-right" : "text-center";
+                    return (
+                      <td key={`${col.day}-${col.shift ?? "x"}`} className={`${kindClass} ${di === 0 ? "border-l border-slate-100" : ""} ${alignClass}`}>
+                        {content}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </details>
   );
 }

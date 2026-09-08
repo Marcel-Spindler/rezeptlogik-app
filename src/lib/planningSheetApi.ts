@@ -24,12 +24,19 @@ export interface PlanningRow {
   total: number;
   totalBuffer: number;
   stations: Partial<Record<SheetStation, boolean>>;
+  // Plating-Mengen je Tag (bei Zweischicht: Früh + Spät summiert).
   days: Partial<Record<SheetDay, number>>;
+  // Nur beim Zweischicht-Layout (ab W39): die geplanten KOCHmengen je Tag aus
+  // dem "KITCHEN"-Block unter dem Plating-Block (Kochtag statt Plating-Tag).
+  kitchenDays?: Partial<Record<SheetDay, number>>;
 }
 
 export interface PlanningSheetData {
   week: string;
   tabName: string;
+  // "single" = klassisches Einschicht-Layout, "dual" = Zweischicht (ab W39,
+  // Mo-Fr je Früh-/Spätschicht + separater Küchenplan-Block).
+  shiftModel: "single" | "dual";
   rows: PlanningRow[];
   fetchedAt: number;
 }
@@ -284,7 +291,8 @@ export function getCachedPlanningSheet(weekLabel: string): PlanningSheetData | n
 
 // ── Parser ─────────────────────────────────────────────────────────────────────
 
-function _parseRows(raw: string[][], tabName: string): PlanningSheetData {
+// Nur für Tests exportiert (Prefix `_` = intern, nicht im App-Code verwenden).
+export function _parseRows(raw: string[][], tabName: string): PlanningSheetData {
   let week = tabName;
 
   // Woche aus "Week | 2026-W36" ermitteln (Zeilen 1-20 scannen)
@@ -304,7 +312,10 @@ function _parseRows(raw: string[][], tabName: string): PlanningSheetData {
   let colTotal = -1;
   let colTotalBuf = -1;
   const stationCols: Partial<Record<SheetStation, number>> = {};
-  const dayCols: Partial<Record<SheetDay, number>> = {};
+  // Ab W39 (Zweischicht-Layout) hat ein Wochentag ZWEI Spalten (Früh-/Spät-
+  // schicht) mit demselben Datums-Header → alle Spalten je Tag sammeln und
+  // später aufsummieren, sonst geht die Spätschicht verloren.
+  const dayCols: Partial<Record<SheetDay, number[]>> = {};
 
   for (let i = 0; i < raw.length; i++) {
     const row = raw[i];
@@ -328,19 +339,46 @@ function _parseRows(raw: string[][], tabName: string): PlanningSheetData {
 
       // Tages-Spalten: Header ist "Date(2026,7,23)" (gviz-Format)
       const dayName = _gvizDateToDayName(c);
-      if (dayName && !(dayName in dayCols)) (dayCols as any)[dayName] = j;
+      if (dayName) ((dayCols as Record<string, number[]>)[dayName] ??= []).push(j);
     });
     break;
   }
 
-  if (headerIdx < 0) return { week, tabName, rows: [], fetchedAt: Date.now() };
+  if (headerIdx < 0) return { week, tabName, shiftModel: "single", rows: [], fetchedAt: Date.now() };
+
+  // Zweischicht, wenn ein Wochentag ≥2 Datums-Spalten hat (Früh + Spät).
+  const shiftModel: "single" | "dual" =
+    Object.values(dayCols).some(cs => (cs?.length ?? 0) >= 2) ? "dual" : "single";
+
+  // Tageswerte einer Zeile über alle Spalten je Wochentag summieren
+  // (Zweischicht: Früh- + Spätschicht-Spalte). Strings ("Cup"/"Slicing") → 0.
+  function readDays(row: string[]): Partial<Record<SheetDay, number>> {
+    const days: Partial<Record<SheetDay, number>> = {};
+    for (const [dk, djs] of Object.entries(dayCols) as [SheetDay, number[]][]) {
+      const n = djs.reduce((sum, dj) => sum + parseNum(row[dj]), 0);
+      if (n > 0) days[dk] = n;
+    }
+    return days;
+  }
 
   const planRows: PlanningRow[] = [];
+  const byCode = new Map<string, PlanningRow>();
+  // Ab W39 folgt unter dem Plating-Block ein zweiter "Code"-Block (KITCHEN =
+  // Kochtag-Plan je Meal). Dessen Zeilen NICHT als Plating-Zeilen mitzählen,
+  // sondern als kitchenDays an die schon bekannte Plating-Zeile hängen.
+  let inKitchenBlock = false;
 
   for (let i = headerIdx + 1; i < raw.length; i++) {
     const row = raw[i];
+    if (row[colCode]?.trim() === "Code") { inKitchenBlock = true; continue; }
     const code = row[colCode]?.trim();
     if (!code || !/^F[A-Z]\d{4}[A-Z]$/.test(code)) continue;
+
+    if (inKitchenBlock) {
+      const target = byCode.get(code);
+      if (target) target.kitchenDays = readDays(row);
+      continue;
+    }
 
     const stations: Partial<Record<SheetStation, boolean>> = {};
     for (const [sk, sj] of Object.entries(stationCols) as [SheetStation, number][]) {
@@ -348,26 +386,20 @@ function _parseRows(raw: string[][], tabName: string): PlanningSheetData {
       if (v === "X") stations[sk] = true;
     }
 
-    const days: Partial<Record<SheetDay, number>> = {};
-    for (const [dk, dj] of Object.entries(dayCols) as [SheetDay, number][]) {
-      // Nur numerische Werte übernehmen – Strings wie "Cup"/"Slicing" sind Notizen
-      const raw_val = row[dj];
-      const n = parseNum(raw_val);
-      if (n > 0) days[dk] = n;
-    }
-
-    planRows.push({
+    const planRow: PlanningRow = {
       code,
       name: colName >= 0 ? (row[colName]?.trim() || code) : code,
       preference: colPref >= 0 ? (row[colPref]?.trim() || "") : "",
       total: colTotal >= 0 ? parseNum(row[colTotal]) : 0,
       totalBuffer: colTotalBuf >= 0 ? parseNum(row[colTotalBuf]) : 0,
       stations,
-      days,
-    });
+      days: readDays(row),
+    };
+    planRows.push(planRow);
+    byCode.set(code, planRow);
   }
 
-  return { week, tabName, rows: planRows, fetchedAt: Date.now() };
+  return { week, tabName, shiftModel, rows: planRows, fetchedAt: Date.now() };
 }
 
 function parseNum(s: string | undefined): number {

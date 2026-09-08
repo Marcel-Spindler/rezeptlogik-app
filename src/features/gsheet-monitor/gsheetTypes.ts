@@ -215,8 +215,18 @@ export interface LinePlaitingData {
 // useProductionPlanGid in useGSheetMonitor.ts). Anders als LinePlaiting (Ist-
 // Tracking der laufenden Woche) ist das hier der VORAB-PLAN für eine
 // kommende Woche: welches Meal wird an welchem Tag (So-Sa) geplatet, inkl.
-// Cup/Slicing-Vorbereitungstagen. Spalten W-AC (0-indiziert 22-28) sind die
-// eigentliche Tages-Matrix je Meal — siehe parseProductionPlan.ts.
+// Cup/Slicing-Vorbereitungstagen.
+//
+// ZWEI TAB-LAYOUTS (siehe parseProductionPlan.ts, dort dynamisch erkannt):
+//   • Einschicht (bis W38, wieder ab W40): Tages-Matrix = Spalten W-AC
+//     (0-indiziert 22-28, je 1 Spalte So-Sa), Ready = 30-32, Min Needs = 34-36.
+//   • Zweischicht (ab W39): Mo-Fr je zwei Spalten (early/late shift), So+Sa
+//     einspaltig → 12 Tagesspalten (22-33), Ready = 35-37, Min Needs = 39-41.
+//     Darunter folgt zusätzlich ein zweiter Block "KITCHEN" (eigene Code-
+//     Kopfzeile) = der Kochtag-Plan je Meal/Schicht, ohne Ready/Min Needs.
+// `byDay` ist in BEIDEN Layouts die pro Wochentag zusammengefasste Sicht
+// (Portionen summiert, Stationslabels zusammengeführt); die Schicht-Aufteilung
+// liegt zusätzlich in `byShift` (nur beim Zweischicht-Layout gesetzt).
 // ════════════════════════════════════════════════════════════════════════════
 
 export type ProductionPlanDay = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
@@ -224,6 +234,12 @@ export type ProductionPlanDay = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | 
 export const PRODUCTION_PLAN_DAYS: readonly ProductionPlanDay[] = [
   "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
 ];
+
+// Zweischicht-Layout: Mo-Fr sind in eine Früh- ("early") und eine Spätschicht
+// ("late") aufgeteilt. So/Sa haben keine Schicht-Aufteilung.
+export type ProductionPlanShift = "early" | "late";
+
+export const PRODUCTION_PLAN_SHIFTS: readonly ProductionPlanShift[] = ["early", "late"];
 
 // Eine Tageszelle in der Plating-Matrix ist entweder leer, ein Stationslabel
 // ("Cup"/"Slicing"/"Cup + Slicing" — Vorbereitungstag) oder eine Portionszahl
@@ -251,8 +267,14 @@ export interface ProductionPlanRow {
   passiveHoldMin: number | null;
   stations: { grill: boolean; cup: boolean; butter: boolean; oven: boolean; braiser: boolean; slice: boolean };
   allergens: string;
+  // Pro Wochentag zusammengefasst (bei Zweischicht: Früh + Spät gemergt —
+  // Portionen summiert, Stationslabels zusammengeführt). In BEIDEN Layouts gesetzt.
   byDay: Record<ProductionPlanDay, ProductionPlanDayCell>;
+  // Nur beim Zweischicht-Layout gesetzt: die rohe Früh/Spät-Aufteilung je
+  // Mo-Fr-Tag (So/Sa tauchen hier nicht auf, keine Schichten).
+  byShift?: Partial<Record<ProductionPlanDay, Record<ProductionPlanShift, ProductionPlanDayCell>>>;
   // "Ready"-Spalten (nur Do/Fr/Sa im Sheet vorhanden) — bis wann die Gesamtmenge fertig sein soll.
+  // Im KITCHEN-Block immer null (dort gibt es diese Spalten nicht).
   readyByDay: { thu: number | null; fri: number | null; sat: number | null };
   // "Min Needs"-Spalten (nur Do/Fr/Sa) — negativ = Überschuss, wie bei LinePlaiting.
   minNeedsByDay: { thu: number | null; fri: number | null; sat: number | null };
@@ -283,12 +305,24 @@ export interface ProductionPlanStationUtilization {
   byDay: Partial<Record<ProductionPlanDay, number>>;
 }
 
+// Der zweite "KITCHEN"-Block unter dem Plating-Block (nur Zweischicht-Layout):
+// derselbe Zeilen-Aufbau je Meal, aber die Tages-/Schicht-Werte sind die
+// geplanten KOCHmengen (Kochtag, meist einen Tag vor dem Plating-Tag).
+// readyByDay/minNeedsByDay sind hier immer null.
+export interface ProductionPlanKitchen {
+  rows: ProductionPlanRow[];
+}
+
 export interface ProductionPlanData {
   week: string; // "2026-W37", aus Zeile "Week" / Spalte B
+  // "single" = Einschicht-Layout (bis W38, ab W40), "dual" = Zweischicht (ab W39).
+  shiftModel: "single" | "dual";
   rows: ProductionPlanRow[];
   totals: ProductionPlanTotals | null;
   kpiRows: ProductionPlanKpiRow[];
   utilization: ProductionPlanStationUtilization[];
+  // Nur bei shiftModel === "dual": der Küchenplan-Block unter dem Plating-Block.
+  kitchen?: ProductionPlanKitchen;
   lastUpdated: number;
 }
 

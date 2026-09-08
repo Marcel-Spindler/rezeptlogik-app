@@ -27,10 +27,13 @@ function offsetDay(day: SheetDay, offset: number): SheetDay {
   return DAY_ORDER[((idx - offset) % 7 + 7) % 7];
 }
 
-// Rechnet Cook Shifts in Tage Vorlauf um.
-// +1 Tag: Anlieferung muss einen Tag VOR Staging-Start erfolgen.
+// Rechnet Cook Shifts in Tage Vorlauf VOR DEM PLATING-TAG um.
+// +1 Tag: Anlieferung muss einen Tag VOR Staging-Start erfolgen (Staging-Start
+// = Kochtag ≈ Plating-Tag − 1, dieser eine Tag steckt im "+1").
 // Aktuell: 1 Schicht = 1 Tag (Tagschicht-Modell).
-// Bei Umstellung auf 2-Schicht-Betrieb: hier anpassen.
+// Zweischicht-Wochen (ab W39) rechnen NICHT hierüber, sondern über den echten
+// Kochtag aus dem Küchenplan (planRow.kitchenDays) + `shifts` Tage Vorlauf vor
+// dem Kochtag — siehe buildV2Data.
 function shiftsToDays(shifts: number): number {
   return shifts + 1;
 }
@@ -335,7 +338,7 @@ export function buildV2Data(
     const deduped = new Map<string, {
       qty: number; submeal: string; station: StationType;
       category: string; name: string; id: string;
-      leadDays: number; cookMethod: string;
+      shifts: number; leadDays: number; cookMethod: string;
     }>();
 
     for (const ing of grossIngs) {
@@ -358,22 +361,39 @@ export function buildV2Data(
           category: ing.ingredientCategory ?? "",
           name: ing.ingredient,
           id: ingKey,
+          shifts,
           leadDays: shiftsToDays(shifts),
           cookMethod: matchedMethod,
         });
       }
     }
 
-    for (const [rowKey, { qty, submeal, station, category, name, id, leadDays, cookMethod }] of deduped) {
+    for (const [rowKey, { qty, submeal, station, category, name, id, shifts, leadDays, cookMethod }] of deduped) {
       const daysKg = emptyDays();
       let totalKg = 0;
-      for (const platingDay of PROD_DAYS) {
-        const portions = planRow.days[platingDay] ?? 0;
-        if (portions <= 0) continue;
-        const deliveryDay = offsetDay(platingDay, leadDays);
-        const kg = (portions * qty) / 1000;
-        daysKg[deliveryDay] += kg;
-        totalKg += kg;
+      // Zweischicht-Woche mit Küchenplan: echten Kochtag als Basis nehmen und
+      // `shifts` Tage davor anliefern. Deckt sich mit dem Plating-Pfad, solange
+      // Kochtag = Plating-Tag − 1 (Regelfall), ist aber korrekt, wenn Marcel im
+      // Küchenplan einen anderen Kochtag setzt. Sonst: klassischer Plating-Pfad.
+      const cookPlan = planRow.kitchenDays;
+      if (cookPlan) {
+        for (const cookDay of DAY_ORDER) {
+          const portions = cookPlan[cookDay] ?? 0;
+          if (portions <= 0) continue;
+          const deliveryDay = offsetDay(cookDay, shifts);
+          const kg = (portions * qty) / 1000;
+          daysKg[deliveryDay] += kg;
+          totalKg += kg;
+        }
+      } else {
+        for (const platingDay of PROD_DAYS) {
+          const portions = planRow.days[platingDay] ?? 0;
+          if (portions <= 0) continue;
+          const deliveryDay = offsetDay(platingDay, leadDays);
+          const kg = (portions * qty) / 1000;
+          daysKg[deliveryDay] += kg;
+          totalKg += kg;
+        }
       }
       if (totalKg <= 0) continue;
 
@@ -506,7 +526,7 @@ export function buildV2DataFallback(
     };
   });
 
-  const synthetic: PlanningSheetData = { week, tabName: "(Schätzung)", rows: planRows, fetchedAt: Date.now() };
+  const synthetic: PlanningSheetData = { week, tabName: "(Schätzung)", shiftModel: "single", rows: planRows, fetchedAt: Date.now() };
   return buildV2Data(data, synthetic, catFilter);
 }
 
