@@ -98,6 +98,7 @@ thead th{background:#1F3864;color:#fff;padding:7px 8px;font-size:10px;font-weigh
 thead th:first-child{text-align:left;padding-left:10px;width:70px}
 thead th:nth-child(2){text-align:left}
 thead th:nth-child(3){text-align:left;width:240px}
+.ch-title-row{display:none} /* only shown when printing, repeats as native <thead> row per page */
 .dr td{padding:6px 8px;border:0.5px solid rgba(0,0,0,.07);vertical-align:middle}
 .dr td:first-child{padding-left:10px;font-size:11px;font-weight:700;color:#1F3864;white-space:nowrap}
 .wo-name{font-size:11.5px;font-weight:600}
@@ -127,7 +128,7 @@ thead th:nth-child(3){text-align:left;width:240px}
   /* hide everything except chiller sections */
   .hdr, .two-col, #status-banner, .process-row,
   .export-bar, .day-tabs, .gsheet-hint,
-  #dayTabsWrap, .stats, .ch-arr { display:none !important; }
+  #dayTabsWrap, .stats, .ch-arr, .ch-head { display:none !important; }
 
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { background: #fff; margin: 0; padding: 0; font-size: 9pt; }
@@ -135,41 +136,22 @@ thead th:nth-child(3){text-align:left;width:240px}
   .wrap { padding: 0; max-width: 100%; }
   .chiller-sections { gap: 0; margin: 0; }
 
-  /* each chiller = own page */
+  /* each chiller starts on its own page, but may spill onto further pages */
   .ch-section {
     display: block;
     page-break-before: always;
     break-before: page;
-    page-break-inside: avoid;
-    break-inside: avoid;
     border: none;
     border-radius: 0;
     margin: 0;
     padding: 0;
     width: 100%;
-    height: 100vh;
-    overflow: hidden;
   }
 
   /* first chiller: no blank page before it */
   .ch-section:first-child {
     page-break-before: auto;
     break-before: auto;
-  }
-
-  /* header bar full width, larger */
-  .ch-head {
-    padding: 8pt 10pt !important;
-    font-size: 13pt !important;
-    font-weight: 700 !important;
-    cursor: default;
-    border-radius: 0 !important;
-    width: 100%;
-    margin-bottom: 0;
-  }
-  .ch-cnt {
-    font-size: 10pt !important;
-    padding: 3pt 10pt !important;
   }
 
   /* always show body */
@@ -194,7 +176,23 @@ thead th:nth-child(3){text-align:left;width:240px}
     border: 0.5pt solid rgba(255,255,255,.2);
   }
 
+  /* repeating title row inside <thead> — shows chiller name on every printed page */
+  .ch-title-row { display: table-row; }
+  .ch-title-row th {
+    font-size: 12pt !important;
+    font-weight: 700 !important;
+    text-align: left !important;
+    padding: 7pt 8pt !important;
+    border: 0.5pt solid rgba(255,255,255,.2);
+  }
+  .c1 .ch-title-row th { background: #E8F5E9 !important; color: #1B5E20 !important; }
+  .c3 .ch-title-row th { background: #FFF8E1 !important; color: #7B3F00 !important; }
+  .c4 .ch-title-row th { background: #E3F2FD !important; color: #0D3780 !important; }
+  .c5 .ch-title-row th { background: #F3E5F5 !important; color: #4A148C !important; }
+  .c6 .ch-title-row th { background: #FFEBEE !important; color: #B71C1C !important; }
+
   /* base row size — scales down via JS class if many rows */
+  .dr { page-break-inside: avoid; break-inside: avoid; }
   .dr td {
     padding: 3pt 6pt !important;
     border: 0.4pt solid #ddd;
@@ -224,11 +222,11 @@ thead th:nth-child(3){text-align:left;width:240px}
   .ch-section.rows-gt30 .dr td  { font-size: 7.5pt !important; padding: 2pt 5pt !important; }
   .ch-section.rows-gt30 .a-pill { font-size: 6.5pt !important; }
   .ch-section.rows-gt30 .wo-recipe { display: none; }
-  .ch-section.rows-gt30 thead th { font-size: 7pt !important; padding: 3pt 5pt !important; }
+  .ch-section.rows-gt30 thead tr:not(.ch-title-row) th { font-size: 7pt !important; padding: 3pt 5pt !important; }
 
   .ch-section.rows-gt45 .dr td  { font-size: 6.5pt !important; padding: 1.5pt 4pt !important; }
   .ch-section.rows-gt45 .a-pill { font-size: 5.5pt !important; max-width: 140pt; }
-  .ch-section.rows-gt45 thead th { font-size: 6pt !important; padding: 2pt 4pt !important; }
+  .ch-section.rows-gt45 thead tr:not(.ch-title-row) th { font-size: 6pt !important; padding: 2pt 4pt !important; }
 
   .ch-section.rows-gt60 .dr td  { font-size: 5.5pt !important; padding: 1pt 3pt !important; }
   .ch-section.rows-gt60 .a-pill { font-size: 5pt !important; }
@@ -593,11 +591,14 @@ function renderAll() {
           ${it.length === 0
             ? `<div class="empty-row">Keine Work Orders für diesen Tag</div>`
             : `<div class="tbl-wrap"><table>
-                <thead><tr>
-                  <th style="text-align:left">WO</th>
-                  <th style="text-align:left">Sub-Rezept / Komponente</th>
-                  <th style="text-align:left">Allergene</th>
-                </tr></thead>
+                <thead>
+                  <tr class="ch-title-row"><th colspan="3">${cfg.label} — ${cfg.sub} (${it.length} WOs)</th></tr>
+                  <tr>
+                    <th style="text-align:left">WO</th>
+                    <th style="text-align:left">Sub-Rezept / Komponente</th>
+                    <th style="text-align:left">Allergene</th>
+                  </tr>
+                </thead>
                 <tbody>${it.map(d => `<tr class="dr">
                   <td>${d.wo}</td>
                   <td>

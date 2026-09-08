@@ -1,0 +1,14 @@
+Section,Position,Column A,Column B,Column C,Column D,Column E,Column F,Column G,Column H,Column I,Column J,Column K,Column L,Column M,Column N,Column O,Column P,Column Q,Column R
+CONTROL,A1:R4,Week,2026-W38,,First Run %,70%,,Buffer %,5%,,Earliest Fresh,Saturday,,,,,,,
+RECIPE MIX,A5:H30,Code,Preference,Recipe Name,BENL,NORD,DE,Total,Total+Buffer,,,,,,,,,,
+PLATING CALENDAR,J5:R30,,,,,,,,,,Code,Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Check
+PLATING SUMMARY,J32:R39,,,,,,,,,,Metric,Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Total
+KITCHEN START,A42:R47,Day,Department,WO Arrow Chain,,,,,,,,,,,,,,,
+KITCHEN START,A43:R43,Sunday 06.09.,Veggie,38-3 Zucchini -> 38-4 Red Peppers -> 38-2 Fondue,,,,,,,,,,,,,,,
+KITCHEN START,A44:R44,Sunday 06.09.,Proteine,38-5 Shredded Chicken -> 38-108 Cheddar,,,,,,,,,,,,,,,
+KITCHEN START,A45:R45,Monday 07.09.,Veggie,...,,,,,,,,,,,,,,,
+KITCHEN START,A46:R46,Monday 07.09.,Proteine,...,,,,,,,,,,,,,,,
+FRESH EINKAUF,A49:R70,Production Day,Needed By,kg,SKU,Item,WOs,Recipes,Department,,,,,,,,,,
+FRESH EINKAUF,A50:R50,Sunday 06.09.,Saturday,184.5,PHF-...,Zucchini diced,"38-3, 38-4",FV1169A,Veggie,,,,,,,,,,
+FRESH EINKAUF,A51:R51,Sunday 06.09.,Saturday,42.0,DAI-...,White Cheddar shredded,38-108,FV1351A,Proteine,,,,,,,,,,
+EXPORT CHECK,Separate Tab,KET Export Preview,PET Export Preview,Missing Data,Capacity Warnings,,,,,,,,,,,,,,

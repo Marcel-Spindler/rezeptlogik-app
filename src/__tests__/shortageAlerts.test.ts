@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { correlateShortages, describeShortageImpact } from "../features/gsheet-monitor/shortageAlerts";
+import { correlateShortages, describeShortageImpact, formatRecoveryStatus } from "../features/gsheet-monitor/shortageAlerts";
 import type { ShortageEntry } from "../features/gsheet-monitor/gsheetTypes";
 import type { WoMatchedStatus } from "../features/gsheet-monitor/postblastMatch";
 
@@ -49,8 +49,13 @@ describe("correlateShortages", () => {
   });
 
   it("does not mark an entry with a recovery status as new", () => {
-    const result = correlateShortages([shortage({ recoveryStatus: "Shipment En Route", notes: "" })], []);
+    const result = correlateShortages([shortage({ recoveryStatus: "Shipment  En Route", notes: "" })], []);
     expect(result[0].isNew).toBe(false);
+  });
+
+  it("normalizes extra whitespace in the sheet status before translating it", () => {
+    expect(formatRecoveryStatus("Shipment  En Route")).toBe("Versand auf dem Weg");
+    expect(formatRecoveryStatus("Located in Warehouse")).toBe("Im Lager");
   });
 
   it("sorts by shortage size, largest first", () => {
@@ -72,7 +77,7 @@ describe("describeShortageImpact", () => {
     expect(text).toContain("81.5");
     expect(text).toContain("Basil Pesto");
     expect(text).toContain("FV0001A");
-    expect(text).toContain("Shipment En Route");
+    expect(text).toContain("Versand auf dem Weg");
   });
 
   it("flags a genuinely new entry as needing a decision instead of inventing a solution", () => {

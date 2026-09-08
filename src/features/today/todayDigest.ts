@@ -10,6 +10,7 @@ import type { PlannerWeekAnalysis } from "../../lib/planner";
 import type { WeeklyStationLoad } from "../../lib/equipment";
 import type { BackfillAlert } from "../backfills/backfillTypes";
 import type { ShortageEntry } from "../gsheet-monitor/gsheetTypes";
+import { formatRecoveryStatus } from "../gsheet-monitor/shortageAlerts";
 import type { WoReconciliationRow } from "../wo-reconciliation/woReconcileTypes";
 
 export type DigestSeverity = "critical" | "warning" | "info";
@@ -175,18 +176,20 @@ export function buildStockSection(input: {
     const open = input.shortages.filter((s) => !s.filled).sort((a, b) => b.shortKg - a.shortKg);
     for (const s of open.slice(0, 12)) {
       const isNew = !s.recoveryStatus.trim() && !s.notes.trim();
+      const recoveryStatusText = s.recoveryStatus ? formatRecoveryStatus(s.recoveryStatus) : "";
+      const recoveryText = [recoveryStatusText, s.notes].filter(Boolean).join(" — ") || "noch keine Recovery-Info im Sheet";
       items.push({
         id: `short-${s.rowIndex}`,
         severity: isNew ? "critical" : "warning",
-        text: `${isNew ? "🆕 " : ""}Shortage ${s.workOrder ?? s.rawWorkOrderSuffix}: ${s.ingredient} −${s.shortKg.toFixed(1)} kg`,
-        sub: s.recoveryStatus || s.notes || "noch keine Recovery-Info im Sheet",
+        text: `${isNew ? "🆕 " : ""}Mangel ${s.workOrder ?? s.rawWorkOrderSuffix}: ${s.ingredient} −${s.shortKg.toFixed(1)} kg`,
+        sub: recoveryText,
       });
     }
   }
 
   return {
     key: "stock",
-    label: "Rohstoff-Shortages",
+    label: "Rohstoffmängel",
     icon: "📦",
     view: "postblast-live",
     items: sortItems(items),

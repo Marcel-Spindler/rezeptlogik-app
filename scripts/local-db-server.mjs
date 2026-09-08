@@ -15,6 +15,8 @@ loadEnv({ path: path.join(root, ".env.local") });
 loadEnv({ path: path.join(root, ".env") });
 const dbPath = path.resolve(process.env.LOCAL_DB_PATH ?? path.join(root, "local-db", "rezeptlogik.sqlite"));
 const port = Number(process.env.LOCAL_DB_PORT ?? 3142);
+const ketDriveRoot = process.env.KET_DRIVE_ROOT ? path.resolve(process.env.KET_DRIVE_ROOT) : "";
+const A4 = { width: 595.28, height: 841.89 };
 
 const dbAvailable = fs.existsSync(dbPath);
 if (!dbAvailable) {
@@ -419,14 +421,49 @@ async function htmlToPdf(html) {
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle" });
-    return await page.pdf({
+    let pdf = Buffer.from(await page.pdf({
       format: "A4",
       margin: { top: "8mm", right: "8mm", bottom: "8mm", left: "8mm" },
       printBackground: true,
-    });
+    }));
+    const { PDFDocument } = await import("pdf-lib");
+    const doc = await PDFDocument.load(pdf);
+    if (doc.getPageCount() % 2 === 1) {
+      doc.addPage([A4.width, A4.height]);
+      pdf = Buffer.from(await doc.save());
+    }
+    return pdf;
   } finally {
     await browser.close();
   }
+}
+
+function sanitizeDriveSegment(value) {
+  return String(value || "")
+    .replace(/[<>:"/\\|?*]+/g, "_")
+    .replace(/[^\wäöüßÄÖÜ.\- ]+/gi, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "")
+    .slice(0, 80)
+    .replace(/[. ]+$/g, "");
+}
+
+function savePdfToKetDrive(pdf, segments, filename) {
+  if (!ketDriveRoot) throw new Error("KET_DRIVE_ROOT fehlt im lokalen Server (.env.local).");
+  if (!fs.existsSync(ketDriveRoot)) throw new Error(`KET_DRIVE_ROOT existiert nicht: ${ketDriveRoot}`);
+  const safeSegments = Array.isArray(segments) ? segments.map(sanitizeDriveSegment).filter(Boolean) : [];
+  if (safeSegments.length === 0) throw new Error("Drive-Zielsegmente fehlen.");
+  const safeFilename = sanitizeDriveSegment(filename || "wo-breakdown.pdf") || "wo-breakdown.pdf";
+  const finalFilename = safeFilename.toLowerCase().endsWith(".pdf") ? safeFilename : `${safeFilename}.pdf`;
+  let dir = ketDriveRoot;
+  for (const segment of safeSegments) {
+    dir = path.join(dir, segment);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+  }
+  const outPath = path.join(dir, finalFilename);
+  fs.writeFileSync(outPath, Buffer.from(pdf));
+  return path.relative(ketDriveRoot, outPath).split(path.sep).join("/");
 }
 
 function loadBundle(db) {
@@ -523,6 +560,17 @@ const server = http.createServer((req, res) => {
         res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
         res.setHeader("Cache-Control", "no-store");
         res.end(Buffer.from(pdf));
+      })
+      .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
+    return;
+  }
+  if (url.pathname === "/api/local-db/save-ket-pdf" && req.method === "POST") {
+    readJsonBody(req)
+      .then(async (body) => {
+        if (!body.html) throw new Error("html fehlt im Request-Body");
+        const pdf = await htmlToPdf(body.html);
+        const relPath = savePdfToKetDrive(pdf, body.segments, body.filename);
+        sendJson(res, 200, { ok: true, path: relPath });
       })
       .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
     return;

@@ -1,3 +1,4 @@
 {
-    "claudeCode.initialPermissionMode": "plan"
+    "claudeCode.initialPermissionMode": "plan",
+    "files.autoSave": "afterDelay"
 }

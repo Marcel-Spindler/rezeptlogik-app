@@ -15,7 +15,7 @@ import { buildVorstellungsplanMailHtml } from "./vorstellungsplanMail";
 import { ProductionPlanSheetTable } from "./ProductionPlanSheetTable";
 import { applyProductionPlanOverrides, useProductionPlanOverrides } from "./productionPlanOverrides";
 import { generateVorVorPlanungAI } from "./vorVorPlanungText";
-import { generateFreitagsIstMailAI } from "./istPlanungText";
+import { buildLogistikRundmailText, buildLogistikRundmailHtml } from "./logistikRundmail";
 import { parseKetCsv } from "../ket-plan/ketLogic";
 import { useKetRowsData, useSharedKetCsvRows } from "../ket-plan/useKetRowsData";
 import type { KetRow } from "../ket-plan/ketTypes";
@@ -216,9 +216,12 @@ export function VorstellungsplanView({ week, appData }: { week: string; appData:
   const [ketFileName, setKetFileName] = useState<string | null>(null);
   const [ketWarnings, setKetWarnings] = useState<string[]>([]);
   const { ketRows, liveWeek: ketLiveWeek } = useKetRowsData(appData, hfWeek, manualKetRows ?? sharedCsvRows);
-  const [istText, setIstText] = useState<string | null>(null);
-  const [istLoading, setIstLoading] = useState(false);
-  const [istCopyStatus, setIstCopyStatus] = useState<"idle" | "ok">("idle");
+  const [logistikText, setLogistikText] = useState<string | null>(null);
+  const [logistikHtml, setLogistikHtml] = useState<string | null>(null);
+  const [logistikLoading, setLogistikLoading] = useState(false);
+  const [logistikNote, setLogistikNote] = useState("");
+  const [logistikCopyStatus, setLogistikCopyStatus] = useState<"idle" | "ok">("idle");
+  const [logistikError, setLogistikError] = useState<string | null>(null);
 
   async function handleKetFileUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -229,28 +232,33 @@ export function VorstellungsplanView({ week, appData }: { week: string; appData:
     setManualKetRows(rows);
     setKetFileName(file.name);
     setKetWarnings(warnings);
-    setIstText(null);
+    setLogistikText(null);
+    setLogistikHtml(null);
   }
 
-  async function handleGenerateIstText() {
-    if (!ketRows.length) return;
-    setIstLoading(true);
-    setIstText(null);
+  async function handleGenerateLogistikText() {
+    if (!appData || !ketRows.length) return;
+    setLogistikLoading(true);
+    setLogistikText(null);
+    setLogistikHtml(null);
+    setLogistikError(null);
     try {
-      const text = await generateFreitagsIstMailAI(ketRows, ketLiveWeek, { gsheetUrl, cookSchedules: appData?.cookSchedules });
-      setIstText(text);
+      setLogistikText(buildLogistikRundmailText(ketRows, appData, ketLiveWeek, logistikNote, appData.cookSchedules));
+      setLogistikHtml(buildLogistikRundmailHtml(ketRows, appData, ketLiveWeek, logistikNote, appData.cookSchedules));
+    } catch (cause) {
+      setLogistikError(`Logistik-Rundmail konnte nicht erstellt werden: ${cause instanceof Error ? cause.message : String(cause)}`);
     } finally {
-      setIstLoading(false);
+      setLogistikLoading(false);
     }
   }
 
-  async function handleCopyIstText() {
-    if (!istText) return;
+  async function handleCopyLogistikText() {
+    if (!logistikText) return;
     try {
-      await navigator.clipboard.writeText(istText);
-      setIstCopyStatus("ok");
-      setTimeout(() => setIstCopyStatus("idle"), 3000);
-    } catch { /* Clipboard-API evtl. ohne Berechtigung -- Text steht trotzdem im Feld zum manuellen Kopieren */ }
+      await navigator.clipboard.writeText(logistikText);
+      setLogistikCopyStatus("ok");
+      setTimeout(() => setLogistikCopyStatus("idle"), 3000);
+    } catch { /* Text bleibt zum manuellen Kopieren sichtbar. */ }
   }
 
   function handleCopyMail() {
@@ -292,8 +300,8 @@ export function VorstellungsplanView({ week, appData }: { week: string; appData:
       <div className="card p-3 shadow-sm space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h3 className="text-sm font-black text-slate-800">🧾 Freitags-Ist-Mail</h3>
-            <p className="text-[11px] text-slate-500">Ist-Zahlen aus Run 1 je WO -- gleiche Quelle wie „KET Plan / WO“, kein erneuter Upload nötig. Sortiert nach Veggie/Protein Debox, dann nach dem je WO berechneten Muss-Start-Termin (Cook Schedule).</p>
+            <h3 className="text-sm font-black text-slate-800">🧾 Freitags-Ist-Rundmail</h3>
+            <p className="text-[11px] text-slate-500">Eine Mail für den Start: Einkauf erhält nur PHF-Frischeartikel und Rezeptmengen; Küche erhält nur die WOs des ersten Produktionstags.</p>
           </div>
           <label className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-white ring-1 ring-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer">
             📂 Fallback: eigene CSV hochladen
@@ -305,36 +313,44 @@ export function VorstellungsplanView({ week, appData }: { week: string; appData:
           {" "}· {ketRows.length} WOs
           {ketWarnings.length > 0 && <span className="text-amber-600"> · {ketWarnings.length} Warnung(en) im Fallback-Upload</span>}
         </p>
-        {ketRows.length > 0 && (
-          <button
-            onClick={handleGenerateIstText}
-            disabled={istLoading}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {istLoading ? "⏳ KI generiert…" : "🤖 Freitags-Ist-Mail generieren (KI)"}
-          </button>
-        )}
-        {istText && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-600">🤖 KI-generierte Freitags-Ist-Mail — Run-1-Ist-Zahlen je Departement, sortiert nach berechnetem Muss-Start-Termin</span>
-              <button
-                onClick={handleCopyIstText}
-                className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-indigo-600 text-white hover:bg-indigo-700"
-              >
-                📋 Kopieren
-              </button>
+        <div className="space-y-2">
+          <textarea
+            value={logistikNote}
+            onChange={(event) => setLogistikNote(event.target.value)}
+            placeholder="Sonderhinweis, z.B. Lauch/Porree wird erst am Sonntag geliefert."
+            rows={2}
+            className="w-full rounded-md border border-slate-200 px-2.5 py-2 text-xs text-slate-700"
+          />
+          {ketRows.length > 0 && (
+            <button
+              onClick={handleGenerateLogistikText}
+              disabled={logistikLoading}
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {logistikLoading ? "Rundmail wird erstellt…" : "Wochen-Rundmail erstellen"}
+            </button>
+          )}
+          {logistikError && <p className="text-[11px] text-amber-700">{logistikError}</p>}
+          {logistikText && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-600">Wochen-Rundmail — Einkauf und Küche</span>
+                <button onClick={handleCopyLogistikText} className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700">📋 Text kopieren</button>
+              </div>
+              {logistikHtml && (
+                <div
+                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm overflow-auto"
+                  dangerouslySetInnerHTML={{ __html: logistikHtml }}
+                />
+              )}
+              <details className="text-xs">
+                <summary className="cursor-pointer text-slate-400 hover:text-slate-600 py-1">Plain-Text (zum Kopieren für Slack/Outlook)</summary>
+                <textarea readOnly value={logistikText} onFocus={(event) => event.currentTarget.select()} rows={logistikText.split("\n").length + 1} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-mono text-slate-700" />
+              </details>
+              {logistikCopyStatus === "ok" && <p className="text-[11px] text-emerald-600">✓ In Zwischenablage kopiert.</p>}
             </div>
-            <textarea
-              readOnly
-              value={istText}
-              onFocus={(e) => e.currentTarget.select()}
-              rows={istText.split("\n").length + 1}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-mono text-slate-700"
-            />
-            {istCopyStatus === "ok" && <p className="text-[11px] text-emerald-600">✓ In Zwischenablage kopiert.</p>}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {error && (

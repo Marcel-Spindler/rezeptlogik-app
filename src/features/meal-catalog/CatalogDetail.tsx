@@ -126,7 +126,7 @@ export function CatalogDetail({
               {isFavorite ? <span className="text-amber-400">&#9733;</span> : <span className="text-white/40 hover:text-amber-300">&#9734;</span>}
             </button>
           </div>
-          <h2 className="mt-3 text-2xl font-bold leading-tight text-slate-950">{titleOf(selected)}</h2>
+          <h2 className="mt-3 text-2xl font-bold leading-tight text-white">{titleOf(selected)}</h2>
           {subtitleOf(selected) && <p className="mt-2 max-w-2xl text-base text-slate-600">{subtitleOf(selected)}</p>}
           <div className="mt-4 flex flex-wrap gap-1.5">
             {tagsOf(selected).map(item => <span key={item} className="catalog-tag">{label(item)}</span>)}

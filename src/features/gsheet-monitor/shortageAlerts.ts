@@ -15,6 +15,23 @@ export interface ShortageImpact {
   isNew: boolean;
 }
 
+const RECOVERY_STATUS_DE: Record<string, string> = {
+  "shipment en route": "Versand auf dem Weg",
+  "located in warehouse": "Im Lager",
+  "partially recovered": "Teilweise wiederhergestellt",
+  validating: "Wird geprüft",
+  recovered: "Wiederhergestellt",
+  "on route": "Auf dem Weg",
+  "in transit": "Auf dem Weg",
+};
+
+export function formatRecoveryStatus(status: string): string {
+  const normalized = status.replace(/\s+/g, " ").trim();
+  if (!normalized) return "Noch keine Recovery-Info";
+  const key = normalized.toLowerCase();
+  return RECOVERY_STATUS_DE[key] ?? normalized;
+}
+
 export function correlateShortages(
   shortages: readonly ShortageEntry[],
   matched: readonly WoMatchedStatus[]
@@ -37,8 +54,9 @@ export function describeShortageImpact(impact: ShortageImpact): string {
   const mealPart = affectedWo
     ? `→ betrifft "${affectedWo.subRecipe}" (Meal ${affectedWo.recipeCode} "${affectedWo.recipeName}")`
     : "→ betroffenes Meal/Sub-Rezept nicht im aktuellen Plan gefunden (WO evtl. schon abgeschlossen oder andere Woche)";
+  const recoveryStatusText = formatRecoveryStatus(s.recoveryStatus);
   const solution = s.recoveryStatus || s.notes
-    ? `Stand lt. Sheet: ${[s.recoveryStatus, s.notes].filter(Boolean).join(" — ")}`
+    ? `Stand laut Sheet: ${[recoveryStatusText, s.notes].filter(Boolean).join(" — ")}`
     : "⚠ Noch keine Recovery-Info im Sheet hinterlegt — braucht eine Entscheidung";
-  return `${impact.isNew ? "🆕 NEU" : "⚠"} Shortage ${woLabel}: "${s.ingredient}" −${s.shortKg.toFixed(1)} kg ${mealPart}. ${solution}`;
+  return `${impact.isNew ? "🆕 NEU" : "⚠"} Mangel ${woLabel}: "${s.ingredient}" −${s.shortKg.toFixed(1)} kg ${mealPart}. ${solution}`;
 }

@@ -44,6 +44,8 @@ const INSTRUCTION_CACHE_MAX = 500;
 const DATE_PATTERN = /^(\d{4}-\d{2}-\d{2})/;
 const SHIFT_PATTERN = /[-–]\s*(\d+)$/;
 const SAFE_FILENAME_PATTERN = /[^\wäöüßÄÖÜ\-\.]+/gi;
+const KET_DRIVE_WEEK_SUFFIX = "-Gemini";
+const KET_DRIVE_DOW = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
 
 const PDF_PRINT_DELAY_MS = 300; // ms to wait for PDF to render before printing
@@ -88,6 +90,22 @@ function detectSource(
  */
 function sanitizeFilename(name: string): string {
   return name.replace(SAFE_FILENAME_PATTERN, "_");
+}
+
+function ketDriveWeekFolder(row: KetRow): string {
+  const kw = weekPrefixFromWoNumber(row.woNumber);
+  return kw != null ? `W${kw}${KET_DRIVE_WEEK_SUFFIX}` : `Wunbekannt${KET_DRIVE_WEEK_SUFFIX}`;
+}
+
+function ketDriveDayFolder(row: KetRow): string {
+  const date = extractDate(row.dateNeeded);
+  const d = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return "ohne Datum";
+  return `${KET_DRIVE_DOW[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function ketDriveStationFolder(calc: BatchCalc): "Protein" | "Veggie" {
+  return classifyDeboxDepartment(calc) === "protein" ? "Protein" : "Veggie";
 }
 
 /** Rundet auf 1 Nachkommastelle, oder leer wenn kein Wert. */
@@ -895,6 +913,50 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     }
   }, [calcMap, caps, source, woInstructions, markAsPrinted]);
 
+  const saveRowToKetDrive = useCallback(async (row: KetRow, instructions: Record<string, WoInstruction> = woInstructions): Promise<string> => {
+    const calc = calcMap.get(row.key);
+    if (!calc) throw new Error(`Keine Berechnung für WO ${row.woNumber}`);
+    const title = `WO ${row.woNumber}`;
+    const html = buildPdf([row], calcMap, caps, title, source, instructions);
+    const resp = await fetch("/api/local-db/save-ket-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        html,
+        filename: `${woFilename(row)}.pdf`,
+        segments: [ketDriveWeekFolder(row), ketDriveStationFolder(calc), ketDriveDayFolder(row)],
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` })) as { error?: string };
+      throw new Error(err.error || `HTTP ${resp.status}`);
+    }
+    const payload = await resp.json().catch(() => ({})) as { path?: string };
+    return payload.path ?? `${ketDriveWeekFolder(row)}/${ketDriveStationFolder(calc)}/${ketDriveDayFolder(row)}/${woFilename(row)}.pdf`;
+  }, [calcMap, caps, source, woInstructions]);
+
+  const publishRowsToKetDrive = useCallback(async (rows: KetRow[], instructions: Record<string, WoInstruction> = woInstructions): Promise<void> => {
+    if (rows.length === 0) return;
+    setBulkDlBusy(true);
+    setBulkDlError(null);
+    setBulkDlStatus(null);
+    const failed: string[] = [];
+    let lastPath = "";
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      setBulkDlStatus(`${i + 1} von ${rows.length} in Drive verteilt …`);
+      try {
+        lastPath = await saveRowToKetDrive(row, instructions);
+      } catch (error) {
+        failed.push(`${row.woNumber}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    markAsPrinted(rows.filter((row) => !failed.some((failure) => failure.startsWith(`${row.woNumber}:`))));
+    setBulkDlStatus(failed.length === 0 ? `${rows.length} PDF(s) in Drive verteilt${lastPath ? ` · zuletzt: ${lastPath}` : ""}` : null);
+    setBulkDlError(failed.length > 0 ? `${failed.length} von ${rows.length} Drive-Speicherungen fehlgeschlagen: ${failed.join(" | ")}` : null);
+    setBulkDlBusy(false);
+  }, [markAsPrinted, saveRowToKetDrive, woInstructions]);
+
   // Speichert jede WO als eigene PDF-Datei (sequenziell, ein Server-Call pro
   // WO) — geteilte Schleife für "alle sichtbaren WOs speichern" (Seitenspalte)
   // und "Auswahl speichern" (Alle-WOs-Tab), damit Fortschritts-/Fehleranzeige
@@ -960,6 +1022,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     const targetsToGenerate = forceAll ? allTargets : allTargets.filter((t) => !woInstructions[t.key]);
     if (targetsToGenerate.length === 0) {
       setBatchInstructionStatus("Alle WOs haben bereits Instructions (aus Cache)");
+      void publishRowsToKetDrive(instructionRows);
       return;
     }
     setBatchInstructionBusy(true);
@@ -978,7 +1041,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
         setFailedInstructions(result.failed);
         setBatchInstructionStatus(`${genCount} von ${targetsToGenerate.length} erzeugt · ${result.failed.length} fehlgeschlagen${skipNote}`);
       } else {
-        setBatchInstructionStatus(`${genCount} WO-Instructions erzeugt${skipNote}`);
+        const nextInstructions = { ...woInstructions, ...result.generated };
+        setBatchInstructionStatus(`${genCount} WO-Instructions erzeugt${skipNote} · verteile PDFs in Drive …`);
+        void publishRowsToKetDrive(instructionRows.filter((row) => rowInstructionStatus(row, calcMap.get(row.key), (k) => !!nextInstructions[k]).complete), nextInstructions);
       }
     } catch (error) {
       console.error("[KetBreakdown] Batch instruction generation failed:", error);
@@ -986,7 +1051,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [instructionRows, targetsForRows, woInstructions, persistInstructions]);
+  }, [instructionRows, targetsForRows, woInstructions, persistInstructions, publishRowsToKetDrive, calcMap]);
 
   // Gezielte Instruction-Generierung für per Checkbox ausgewählte WOs (unabhängig von der
   // Tage-Auswahl oben) — gleicher Ablauf wie generateInstructionsForSelectedDays, nur mit
@@ -1013,7 +1078,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
         setFailedInstructions(result.failed);
         setBatchInstructionStatus(`${genCount} von ${targetsToGenerate.length} erzeugt · ${result.failed.length} fehlgeschlagen`);
       } else {
-        setBatchInstructionStatus(`${genCount} WO-Instructions für Auswahl erzeugt`);
+        const nextInstructions = { ...woInstructions, ...result.generated };
+        setBatchInstructionStatus(`${genCount} WO-Instructions für Auswahl erzeugt · verteile PDFs in Drive …`);
+        void publishRowsToKetDrive(rowsToGenerate.filter((row) => rowInstructionStatus(row, calcMap.get(row.key), (k) => !!nextInstructions[k]).complete), nextInstructions);
       }
     } catch (error) {
       console.error("[KetBreakdown] Selection instruction generation failed:", error);
@@ -1021,7 +1088,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [ketRows, selectedWoKeys, targetsForRows, woInstructions, persistInstructions]);
+  }, [ketRows, selectedWoKeys, targetsForRows, woInstructions, persistInstructions, publishRowsToKetDrive, calcMap]);
 
   // Drucken/Speichern für die per Checkbox ausgewählten WOs (Alle-WOs-Tab) —
   // dieselbe selectedWoKeys-Quelle wie generateInstructionsForSelection oben.
@@ -1064,7 +1131,9 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
         setFailedInstructions(result.failed);
         setBatchInstructionStatus(`${genCount} erzeugt · ${result.failed.length} fehlgeschlagen`);
       } else {
-        setBatchInstructionStatus(`${genCount} Kochanweisung(en) erzeugt`);
+        const nextInstructions = { ...woInstructions, ...result.generated };
+        setBatchInstructionStatus(`${genCount} Kochanweisung(en) erzeugt · verteile PDFs in Drive …`);
+        void publishRowsToKetDrive(rows.filter((row) => rowInstructionStatus(row, calcMap.get(row.key), (k) => !!nextInstructions[k]).complete), nextInstructions);
       }
     } catch (error) {
       console.error("[KetBreakdown] Row instruction generation failed:", error);
@@ -1072,7 +1141,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     } finally {
       setBatchInstructionBusy(false);
     }
-  }, [calcMap, woInstructions, persistInstructions]);
+  }, [calcMap, woInstructions, persistInstructions, publishRowsToKetDrive]);
 
   const retryFailedInstructions = useCallback(async () => {
     if (failedInstructions.length === 0) return;

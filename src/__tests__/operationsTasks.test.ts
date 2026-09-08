@@ -34,6 +34,17 @@ describe("buildOperationsTasks", () => {
     expect(tasks[1]).toMatchObject({ id: "backfill:FV1234", severity: "warning" });
   });
 
+  it("blendet reine PET-Zuweisungsluecken aus der operativen Liste aus", () => {
+    const tasks = buildOperationsTasks([], new Map(), [reconciliation({
+      severity: "warn",
+      portionsMismatch: false,
+      kgMismatch: false,
+      missingPetAssignment: true,
+    })]);
+
+    expect(tasks).toEqual([]);
+  });
+
   it("eskaliert einen Backfill bei blockierter Rohware", () => {
     const tasks = buildOperationsTasks(
       [backfill()],

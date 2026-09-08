@@ -130,6 +130,7 @@ export function aggregateWorkorders(rows: WorkorderRow[]): AggWorkorderMeal[] {
 
 export type SkuBilanzEntry = {
   sku: string;
+  uom: string;
   woRequired: number;
   inboundQty: number;
   stagingQty: number;
@@ -146,6 +147,40 @@ export type SkuBilanzEntry = {
   gapBreakdown: { documented: number; unresolved: number; sleevingPct: number };
 };
 
+export type WmsStockEntry = {
+  sku: string;
+  inboundQty: number;
+  stagingQty: number;
+  deboxQty: number;
+  postblastQty: number;
+  platingQty: number;
+  totalStock: number;
+};
+
+export function buildWmsStockIndex(
+  aggInbound: AggInboundRow[],
+  aggStaging: AggStoredRow[],
+  aggDebox: AggStoredRow[],
+  aggPostblast: AggStoredRow[],
+  aggPlating: AggStoredRow[],
+): Map<string, WmsStockEntry> {
+  const stock = new Map<string, WmsStockEntry>();
+  const add = (sku: string, field: keyof Omit<WmsStockEntry, "sku" | "totalStock">, quantity: number) => {
+    const key = skuKey(sku);
+    if (!key) return;
+    const entry = stock.get(key) ?? { sku: key, inboundQty: 0, stagingQty: 0, deboxQty: 0, postblastQty: 0, platingQty: 0, totalStock: 0 };
+    entry[field] += quantity;
+    stock.set(key, entry);
+  };
+  for (const row of aggInbound) add(row.sku, "inboundQty", row.totalReceived);
+  for (const row of aggStaging) add(row.sku, "stagingQty", row.totalQty);
+  for (const row of aggDebox) add(row.sku, "deboxQty", row.totalQty);
+  for (const row of aggPostblast) add(row.sku, "postblastQty", row.totalQty);
+  for (const row of aggPlating) add(row.sku, "platingQty", row.totalQty);
+  for (const entry of stock.values()) entry.totalStock = entry.stagingQty + entry.deboxQty + entry.postblastQty + entry.platingQty;
+  return stock;
+}
+
 export function buildSkuBilanz(
   rawWorkorders: WorkorderRow[],
   aggInbound: AggInboundRow[],
@@ -155,21 +190,22 @@ export function buildSkuBilanz(
   aggSleeving: AggSleevingRow[],
   aggPlating: AggStoredRow[],
 ): SkuBilanzEntry[] {
-  const woMap = new Map<string, { required: number; wos: Set<string> }>();
+  const woMap = new Map<string, { required: number; wos: Set<string>; uoms: Set<string> }>();
   for (const r of rawWorkorders) {
     const sku = skuKey(r.submealItemNumber);
     if (!sku) continue;
-    if (!woMap.has(sku)) woMap.set(sku, { required: 0, wos: new Set() });
+    if (!woMap.has(sku)) woMap.set(sku, { required: 0, wos: new Set(), uoms: new Set() });
     const entry = woMap.get(sku)!;
     entry.required += r.quantity ?? 0;
     if (r.woNumber) entry.wos.add(r.woNumber);
+    if (r.uom) entry.uoms.add(r.uom);
   }
   const skuSum = (rows: AggStoredRow[], sku: string) =>
     rows.filter(r => r.sku === sku).reduce((s, r) => s + r.totalQty, 0);
   const inboundMap = new Map(aggInbound.map(r => [r.sku, r.totalReceived]));
   const sleevingMap = new Map(aggSleeving.map(r => [r.sku, r.net]));
   const sleevingLostMap = new Map(aggSleeving.map(r => [r.sku, r.lost]));
-  return [...woMap.entries()].map(([sku, { required, wos }]) => {
+  return [...woMap.entries()].map(([sku, { required, wos, uoms }]) => {
     const stagingQty   = skuSum(aggStaging,   sku);
     const deboxQty     = skuSum(aggDebox,     sku);
     const postblastQty = skuSum(aggPostblast, sku);
@@ -187,7 +223,7 @@ export function buildSkuBilanz(
       unresolved: unresolvedGap,
       sleevingPct: inboundQty > 0 ? sleevingLost / inboundQty : 0,
     };
-    return { sku, woRequired: required, inboundQty, stagingQty, deboxQty, postblastQty, sleevingNet, sleevingLost, platingQty, totalStock, coverage, gap, unresolvedGap, woNumbers: [...wos], gapBreakdown };
+    return { sku, uom: [...uoms].join("/") || "Stk", woRequired: required, inboundQty, stagingQty, deboxQty, postblastQty, sleevingNet, sleevingLost, platingQty, totalStock, coverage, gap, unresolvedGap, woNumbers: [...wos], gapBreakdown };
   }).sort((a, b) => a.coverage - b.coverage);
 }
 

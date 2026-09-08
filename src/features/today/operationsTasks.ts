@@ -64,6 +64,7 @@ export function buildOperationsTasks(
 
   for (const row of reconciliationRows) {
     if (row.severity === "ok") continue;
+    if (row.missingPetAssignment && !row.portionsMismatch && !row.kgMismatch) continue;
     const issue = row.portionsMismatch ? "Portionsabweichung" : row.kgMismatch ? "Gewichtsabweichung" : row.missingPetAssignment ? "PET-Zuweisung fehlt" : "Quellenabweichung";
     tasks.push({
       id: `reconciliation:${row.workOrder}:${row.subRecipe}`,

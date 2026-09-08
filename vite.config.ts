@@ -558,8 +558,18 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
+        // Vendor-Libs in eigene Chunks auslagern: kleineres, seltener wechselndes
+        // Haupt-Bundle + bessere Browser-Caching-Trefferquote nach Deploys.
         manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
           if (id.includes("node_modules/exceljs")) return "excel-workbook-vendor";
+          if (id.includes("node_modules/xlsx")) return "xlsx-vendor";
+          if (id.includes("node_modules/firebase") || id.includes("node_modules/@firebase")) return "firebase-vendor";
+          if (id.includes("node_modules/pdf-lib")) return "pdf-lib-vendor";
+          if (id.includes("node_modules/papaparse")) return "papaparse-vendor";
+          if (id.includes("node_modules/idb")) return "idb-vendor";
+          if (id.includes("node_modules/@tanstack/react-virtual")) return "react-virtual-vendor";
+          if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/") || id.includes("node_modules/scheduler")) return "react-vendor";
           return undefined;
         },
       },
