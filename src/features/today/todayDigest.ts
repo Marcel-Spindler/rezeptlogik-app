@@ -6,7 +6,6 @@
 // (GSheet-/WMS-Poller laufen nur mit lokalem Server), trägt die Sektion einen
 // `offline`-Hinweis statt so zu tun, als sei nichts los.
 import type { AppView } from "../../app/AppContext";
-import type { PlannerWeekAnalysis } from "../../lib/planner";
 import type { WeeklyStationLoad } from "../../lib/equipment";
 import type { BackfillAlert } from "../backfills/backfillTypes";
 import type { ShortageEntry } from "../gsheet-monitor/gsheetTypes";
@@ -55,43 +54,13 @@ const WARN_UTIL = 80;
 const CRIT_UTIL = 100;
 
 // ─── 1) Plan & Kapazität ───────────────────────────────────────────────────
+// Wochen-Stations-Auslastung (Σ aktive Minuten / Kapazität). Die frühere
+// Wochenboard-Analyse (Tag×Schicht-Konflikte aus dem Cockpit) ist mit dem
+// Cockpit entfallen — Küchen-Timing steckt jetzt im „Kochplan".
 export function buildPlanSection(
-  analysis: PlannerWeekAnalysis | null,
   loads: WeeklyStationLoad[],
 ): DigestSection {
   const items: DigestItem[] = [];
-
-  if (analysis) {
-    const unplanned = analysis.recipes.filter(
-      (r) => !r.assigned && !r.subRecipes.some((s) => s.assigned),
-    );
-    if (unplanned.length) {
-      items.push({
-        // „ungeplant" ist ein Hinweis, kein Handlungsaufruf für heute — das
-        // OASE-Board wird nicht für jede KW gepflegt.
-        id: "plan-unplanned",
-        severity: "info",
-        text: `${unplanned.length} Meal${unplanned.length > 1 ? "s" : ""} im Wochenboard noch ungeplant`,
-        sub: unplanned.slice(0, 8).map((r) => r.recipeCode).join(" · "),
-      });
-    }
-    for (const c of analysis.conflicts.slice(0, 6)) {
-      items.push({
-        id: `plan-conf-${c.station}-${c.day}-${c.shift}`,
-        severity: c.utilizationPct >= 130 ? "critical" : "warning",
-        text: `${c.station} ${c.day}/${c.shift}: ${Math.round(c.utilizationPct)}% ausgelastet`,
-        sub: `${c.assignments.map((a) => a.recipeCode).join(", ")} · bräuchte ${c.requiredDevices} statt ${c.deviceCount} Gerät(e)`,
-      });
-    }
-    for (const p of analysis.poolConflicts.slice(0, 4)) {
-      items.push({
-        id: `plan-pool-${p.poolName}-${p.day}-${p.shift}`,
-        severity: "warning",
-        text: `Pool ${p.poolName} ${p.day}/${p.shift}: ${Math.round(p.utilizationPct)}%`,
-        sub: p.assignments.map((a) => `${a.recipeCode}(${a.station})`).join(", "),
-      });
-    }
-  }
 
   for (const l of loads.filter((l) => l.utilizationPct >= WARN_UTIL).slice(0, 6)) {
     items.push({

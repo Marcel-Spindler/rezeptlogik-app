@@ -15,11 +15,8 @@ import {
   computeWeekLoad,
   computeWeeklyStationLoads,
   loadStationDeviceCounts,
-  loadStationPools,
-  DEFAULT_SHIFT_MIN,
   type WeeklyStationLoad,
 } from "../../lib/equipment";
-import { analyzePlan, getActiveScenario, loadPlannerStorage, type PlannerWeekAnalysis } from "../../lib/planner";
 import {
   buildBackfillSection,
   buildPlanSection,
@@ -49,25 +46,15 @@ const SEV_RING: Record<DigestSeverity, string> = {
   info: "ring-sky-200 bg-sky-50",
 };
 
-function usePlanSignals(data: DataBundle | null, week: string, upliftPercent: number) {
-  return useMemo(() => {
-    if (!data || !week) return { analysis: null as PlannerWeekAnalysis | null, loads: [] as WeeklyStationLoad[] };
+function useStationLoads(data: DataBundle | null, week: string, upliftPercent: number) {
+  return useMemo<WeeklyStationLoad[]>(() => {
+    if (!data || !week) return [];
     const mult = adjustedPortions(1, upliftPercent);
-    let analysis: PlannerWeekAnalysis | null = null;
-    let loads: WeeklyStationLoad[] = [];
     try {
-      const scenario = getActiveScenario(loadPlannerStorage(), week);
-      analysis = analyzePlan(data, week, scenario, {
-        portionMultiplier: mult,
-        shiftCapacityMin: DEFAULT_SHIFT_MIN,
-        stationDeviceCounts: loadStationDeviceCounts(),
-        stationPools: loadStationPools(),
-      });
-    } catch { /* Planner-Analyse optional */ }
-    try {
-      loads = computeWeeklyStationLoads(computeWeekLoad(data, week, { portionMultiplier: mult }), loadStationDeviceCounts());
-    } catch { /* Kapazität optional */ }
-    return { analysis, loads };
+      return computeWeeklyStationLoads(computeWeekLoad(data, week, { portionMultiplier: mult }), loadStationDeviceCounts());
+    } catch {
+      return [];
+    }
   }, [data, week, upliftPercent]);
 }
 
@@ -84,7 +71,7 @@ export function TodayView({ data }: { data: DataBundle }) {
     [data.weekRecipes, realWeek],
   );
 
-  const { analysis, loads } = usePlanSignals(data, realWeek, upliftPercent);
+  const loads = useStationLoads(data, realWeek, upliftPercent);
   const now = new Date();
   const todayReconRows = useMemo(
     () => filterReconciliationRowsForWeek(recon?.rows ?? [], realWeekNum)
@@ -104,7 +91,7 @@ export function TodayView({ data }: { data: DataBundle }) {
       !!todayBackfills &&
       (todayBackfills.postblastConnected || todayBackfills.rtiConnected || todayBackfills.linePlaitingConnected);
     return [
-      buildPlanSection(analysis, loads),
+      buildPlanSection(loads),
       buildReconSection(todayReconByRecipe),
       buildBackfillSection({
         alerts: todayBackfills?.alerts ?? [],
@@ -114,7 +101,7 @@ export function TodayView({ data }: { data: DataBundle }) {
       }),
       buildStockSection({ shortages: shorts.data?.entries ?? null }),
     ];
-  }, [analysis, loads, todayReconByRecipe, todayBackfills, shorts.data]);
+  }, [loads, todayReconByRecipe, todayBackfills, shorts.data]);
 
   const summary = useMemo(() => summarizeDigest(sections), [sections]);
   const tasks = useMemo(

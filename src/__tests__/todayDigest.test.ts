@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { PlannerWeekAnalysis } from "../lib/planner";
 import type { WeeklyStationLoad } from "../lib/equipment";
 import type { BackfillAlert } from "../features/backfills/backfillTypes";
 import type { ShortageEntry } from "../features/gsheet-monitor/gsheetTypes";
@@ -13,52 +12,27 @@ import {
 } from "../features/today/todayDigest";
 import type { WoReconciliationRow } from "../features/wo-reconciliation/woReconcileTypes";
 
-function analysis(over: Partial<PlannerWeekAnalysis>): PlannerWeekAnalysis {
-  return {
-    week: "2026-W37",
-    scenario: { id: "base", name: "Basis", assignments: {} },
-    unplannedCount: 0,
-    plannedCount: 0,
-    recipes: [],
-    conflicts: [],
-    poolConflicts: [],
-    stationLoadBySlot: {},
-    poolLoadBySlot: {},
-    ...over,
-  };
-}
-
 const load = (over: Partial<WeeklyStationLoad>): WeeklyStationLoad => ({
   key: "Oven", label: "Ofen", model: "minutes", deviceCount: 2,
   utilizationPct: 50, extraDevicesNeeded: 0, basis: "x", ...over,
 });
 
 describe("buildPlanSection", () => {
-  it("flags unplanned meals, station conflicts and hot equipment", () => {
-    const s = buildPlanSection(
-      analysis({
-        recipes: [
-          { recipeCode: "FV0001A", recipeName: "A", activeMin: 0, totalActiveMin: 0, topStations: [], subRecipes: [] },
-          { recipeCode: "FV0002A", recipeName: "B", assigned: { recipeCode: "FV0002A", day: "Di", shift: "S1" }, activeMin: 0, totalActiveMin: 0, topStations: [], subRecipes: [] },
-        ],
-        conflicts: [
-          { station: "Braiser", day: "Mi", shift: "S1", totalMin: 900, capacityMin: 600, deviceCount: 1, utilizationPct: 150, requiredDevices: 2, assignments: [{ recipeCode: "FV0002A", recipeName: "B", minutes: 900 }] },
-        ],
-      }),
-      [load({ key: "Braiser", label: "Braiser", utilizationPct: 110, extraDevicesNeeded: 1 }), load({ utilizationPct: 40 })],
-    );
+  it("flags hot equipment by weekly station utilisation", () => {
+    const s = buildPlanSection([
+      load({ key: "Braiser", label: "Braiser", utilizationPct: 110, extraDevicesNeeded: 1 }),
+      load({ key: "Oven", label: "Ofen", utilizationPct: 130 }),
+      load({ utilizationPct: 40 }),
+    ]);
     const texts = s.items.map((i) => i.text);
-    expect(texts.some((t) => t.includes("1 Meal") && t.includes("ungeplant"))).toBe(true);
-    expect(texts.some((t) => t.includes("Braiser Mi/S1"))).toBe(true);
     expect(texts.some((t) => t.includes("Braiser: 110%"))).toBe(true);
-    // critical (150% conflict + 110% load) sorted before the info "unplanned" row
+    // 130% sorts critical, before the 110% warning
     expect(s.items[0].severity).toBe("critical");
-    expect(s.items.find((i) => i.id === "plan-unplanned")?.severity).toBe("info");
     expect(s.view).toBe("planning");
   });
 
-  it("is empty when nothing is wrong", () => {
-    expect(buildPlanSection(analysis({}), [load({ utilizationPct: 30 })]).items).toHaveLength(0);
+  it("is empty when nothing is hot", () => {
+    expect(buildPlanSection([load({ utilizationPct: 30 })]).items).toHaveLength(0);
   });
 });
 
@@ -147,7 +121,7 @@ describe("buildStockSection", () => {
 describe("summarizeDigest", () => {
   it("counts by severity and detects all-clear", () => {
     const empty = summarizeDigest([
-      buildPlanSection(analysis({}), []),
+      buildPlanSection([]),
       buildReconSection(new Map()),
     ]);
     expect(empty.allClear).toBe(true);

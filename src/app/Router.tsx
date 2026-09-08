@@ -41,6 +41,7 @@ const ArtikelWocheView    = lazyWithRetry(() => import("../features/artikel-woch
 const FullInventoryView   = lazyWithRetry(() => import("../features/full-inventory/FullInventoryView").then(m => ({ default: m.FullInventoryView })), "full-inventory");
 const PlatingPlanView     = lazyWithRetry(() => import("../features/plating-plan/PlatingPlanView").then(m => ({ default: m.PlatingPlanView })), "plating-plan");
 const PlatingDayView      = lazyWithRetry(() => import("../features/plating-plan/PlatingDayView").then(m => ({ default: m.PlatingDayView })), "plating-day");
+const KitchenPlanView     = lazyWithRetry(() => import("../features/kitchen-plan/KitchenPlanView").then(m => ({ default: m.KitchenPlanView })), "kitchen-plan");
 const RedzoneLiveView     = lazyWithRetry(() => import("../features/redzone-live/RedzoneLiveView").then(m => ({ default: m.RedzoneLiveView })), "redzone-live");
 
 function ViewLoading() {
@@ -57,7 +58,7 @@ function MainPane({ view }: { view: AppView }) {
 
 function MainPaneSwitch({ view }: { view: AppView }) {
   const {
-    data, selectedWeek, selectedRecipe, upliftPercent,
+    data, selectedWeek, upliftPercent,
     recipesByCode, recipesOfWeek, activeRecipe, setSelectedWeek, setSelectedRecipe, setView,
   } = useAppState();
   if (!data) return null;
@@ -106,9 +107,7 @@ function MainPaneSwitch({ view }: { view: AppView }) {
           week={selectedWeek}
           locale="de"
           upliftPercent={upliftPercent}
-          selectedRecipe={selectedRecipe}
-          onSelectRecipe={code => { setSelectedRecipe(code); setView("recipe"); }}
-          defaultSection="cockpit"
+          defaultSection="lines"
         />
       );
 
@@ -176,6 +175,9 @@ function MainPaneSwitch({ view }: { view: AppView }) {
 
     case "plating-day":
       return <PlatingDayView data={data} week={selectedWeek} />;
+
+    case "kochplan":
+      return <KitchenPlanView data={data} week={selectedWeek} />;
   }
 }
 

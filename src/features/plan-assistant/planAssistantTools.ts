@@ -1,18 +1,12 @@
 // Werkzeuge für „Frag den Plan" — Deklarationen (an Gemini) + Ausführung (im
 // Client, gegen die Live-Daten). Der Agent-Loop in planAssistantAgent.ts ruft
-// executeClientTool() für die Lese-/Simulations-Tools; propose_plan_change und
-// check_plan_issues sind terminal und werden dort abgefangen.
+// executeClientTool() für die Lese-/Simulations-Tools; die propose_*- und
+// check_plan_issues-Tools sind terminal und werden dort abgefangen.
 
 import type { DataBundle, Recipe } from "../../core/types";
 import { codeDigits, fmtNum, resolveRecipeByCode } from "../../lib/helpers";
-import {
-  getBaseVerdenVolume, loadStationDeviceCounts, loadStationPools, DEFAULT_SHIFT_MIN,
-} from "../../lib/equipment";
-import {
-  analyzePlan, assignRecipe, getActiveScenario, loadPlannerStorage, suggestAssignments,
-  PLANNER_SHIFTS, type PlannerDay, type PlannerShift,
-} from "../../lib/planner";
-import { buildBoardNote, composeBoardNotes } from "../planning-oasis/cockpit/slotScheduling";
+import { getBaseVerdenVolume } from "../../lib/equipment";
+import type { PlannerDay } from "../../lib/planner";
 import type { WoReconciliationState } from "../wo-reconciliation/WoReconciliationContext";
 import type { BackfillsState } from "../backfills/BackfillsContext";
 import {
@@ -22,7 +16,7 @@ import {
   applyDayPlanMoves, describeDayPlan, generateAllDayPlans, summarizeDayPlan,
 } from "../plating-plan/platingDayLogic";
 import { PLATING_DAYS, type PlatingDay, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
-import type { PlanChange } from "./planAssistantTypes";
+import { describeKitchenPlan, generateKitchenPlan } from "../kitchen-plan/kitchenPlanLogic";
 
 export interface ToolContext {
   data: DataBundle;
@@ -34,7 +28,7 @@ export interface ToolContext {
 }
 
 export const TERMINAL_TOOLS = new Set([
-  "propose_plan_change", "check_plan_issues", "propose_plating_plan", "propose_day_plating_change",
+  "check_plan_issues", "propose_plating_plan", "propose_day_plating_change",
 ]);
 
 /** Erzeugt einen Plating-Plan und wendet Move-/Notiz-Deltas an (für Sim + Apply).
@@ -72,20 +66,6 @@ export function buildPlatingPlanWithMoves(
 }
 
 // ─── Gemini-Funktionsdeklarationen ─────────────────────────────────────────────
-const CHANGE_ITEM = {
-  type: "OBJECT",
-  properties: {
-    recipeCode: { type: "STRING", description: "Rezept-Code, z. B. FV0035A" },
-    subRecipeId: { type: "STRING", description: "Nur bei separat geplantem Sub-Rezept" },
-    day: { type: "STRING", description: "Produktionstag Mo/Di/Mi/Do/Fr/Sa (Küche Mo–Fr)" },
-    shift: { type: "STRING", description: "S1=Früh, S2=Spät" },
-    targetPortions: { type: "NUMBER", description: "Optional: Ziel-Portionszahl" },
-    splitSpec: { type: "STRING", description: "Optional: Batch-Split, z. B. Do:400|Fr:1200" },
-    reason: { type: "STRING", description: "Kurze Begründung" },
-  },
-  required: ["recipeCode", "day", "shift", "reason"],
-} as const;
-
 const DAY_MOVE_DAY = { type: "STRING", description: "Produktionstag Mo/Di/Mi/Do/Fr/Sa" } as const;
 const DAY_MOVE_ITEM = {
   type: "OBJECT",
@@ -128,22 +108,8 @@ export const TOOL_DECLARATIONS = [{
       },
     },
     {
-      name: "simulate_plan_change",
-      description: "Wendet vorgeschlagene Assignment-Änderungen NUR probeweise an (nichts wird gespeichert) und gibt zurück, welche Stations-/Pool-Engpässe dadurch neu entstehen oder wegfallen. IMMER vor propose_plan_change aufrufen.",
-      parameters: {
-        type: "OBJECT",
-        properties: { changes: { type: "ARRAY", items: CHANGE_ITEM } },
-        required: ["changes"],
-      },
-    },
-    {
-      name: "suggest_assignments",
-      description: "Automatischer Vorschlag, an welchem Tag/welcher Schicht die noch ungeplanten Meals am besten laufen (Lead-Class rückwärts vom Plating-Tag, Kapazitäts-bewusst).",
-      parameters: { type: "OBJECT", properties: {} },
-    },
-    {
-      name: "get_capacity_overview",
-      description: "Auslastung je Station und Tag/Schicht im aktuellen Plan (auch unter 100%) — zeigt, wo noch Kapazität frei ist.",
+      name: "get_kitchen_plan",
+      description: "Der abgeleitete Kochplan: pro Küchentag (Mo–Fr) die zu fertigenden Sub-Meals, gruppiert nach Küchenbereich (Braiser / Middle Kitchen / Brine-Grill / Oven), mit Portionen, kg, Batches und aktiver Kochzeit. Küchentag = Plating-Tag − Vorlauf (aus dem Cook Schedule). Braucht einen gespeicherten Wochen-Plating-Plan.",
       parameters: { type: "OBJECT", properties: {} },
     },
     {
@@ -239,18 +205,6 @@ export const TOOL_DECLARATIONS = [{
       },
     },
     {
-      name: "propose_plan_change",
-      description: "TERMINAL. Legt dem Nutzer Assignment-Änderungen zur Bestätigung vor. Erst nach simulate_plan_change nutzen.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          changes: { type: "ARRAY", items: CHANGE_ITEM },
-          summary: { type: "STRING", description: "Was wird geändert, warum, + Simulations-Ergebnis" },
-        },
-        required: ["changes", "summary"],
-      },
-    },
-    {
       name: "check_plan_issues",
       description: "TERMINAL. Strukturierte Liste von Risiken/Problemen/Optimierungen im Plan.",
       parameters: {
@@ -277,15 +231,6 @@ export const TOOL_DECLARATIONS = [{
 }];
 
 // ─── Ausführung (Client-seitig) ───────────────────────────────────────────────
-
-function analyzeOpts(upliftPercent: number) {
-  return {
-    portionMultiplier: 1 + (upliftPercent || 0) / 100,
-    shiftCapacityMin: DEFAULT_SHIFT_MIN,
-    stationDeviceCounts: loadStationDeviceCounts(),
-    stationPools: loadStationPools(),
-  };
-}
 
 function findRecipe(data: DataBundle, code: string): Recipe | undefined {
   const byCode = Object.fromEntries((Object.values(data.recipes ?? {}) as Recipe[]).map(r => [r.code, r]));
@@ -371,85 +316,7 @@ function toolGetWoTrace(args: Record<string, unknown>, ctx: ToolContext) {
   };
 }
 
-function conflictSummary(a: ReturnType<typeof analyzePlan>) {
-  return {
-    plannedCount: a.plannedCount,
-    unplannedCount: a.unplannedCount,
-    stationConflicts: a.conflicts.map(c => `${c.station} ${c.day}/${c.shift} ${Math.round(c.utilizationPct)}%`),
-    poolConflicts: a.poolConflicts.map(p => `${p.poolName} ${p.day}/${p.shift} ${Math.round(p.utilizationPct)}%`),
-  };
-}
-
-function toolSimulate(args: Record<string, unknown>, ctx: ToolContext) {
-  const changes = (Array.isArray(args.changes) ? args.changes : []) as PlanChange[];
-  if (!changes.length) return { error: "Keine changes übergeben." };
-  const opts = analyzeOpts(ctx.upliftPercent);
-  const base = loadPlannerStorage();
-  const scenario = getActiveScenario(base, ctx.week);
-  const before = analyzePlan(ctx.data, ctx.week, scenario, opts);
-
-  let tmp = base;
-  const applied: string[] = [];
-  const skipped: string[] = [];
-  for (const ch of changes) {
-    const wr = ctx.data.weekRecipes.find(
-      r => r.hfWeek === ctx.week && codeDigits(r.code) === codeDigits(ch.recipeCode),
-    );
-    const day = normalizeDay(ch.day);
-    const shift = normalizeShift(ch.shift);
-    if (!wr || !day || !shift) { skipped.push(`${ch.recipeCode} (${!wr ? "kein Meal" : !day ? "Tag?" : "Schicht?"})`); continue; }
-    tmp = assignRecipe(tmp, ctx.week, scenario.id, wr, {
-      subRecipeId: ch.subRecipeId || undefined,
-      day, shift,
-      targetPortions: typeof ch.targetPortions === "number" ? Math.max(0, Math.round(ch.targetPortions)) : undefined,
-      note: buildBoardNote("Sim", composeBoardNotes("", ch.subRecipeId ? "" : (ch.splitSpec ?? ""))),
-    });
-    applied.push(`${wr.code}→${day}/${shift}`);
-  }
-  const after = analyzePlan(ctx.data, ctx.week, getActiveScenario(tmp, ctx.week), opts);
-  const beforeSet = new Set(before.conflicts.map(c => `${c.station} ${c.day}/${c.shift}`));
-  const afterSet = new Set(after.conflicts.map(c => `${c.station} ${c.day}/${c.shift}`));
-  return {
-    applied, skipped,
-    before: conflictSummary(before),
-    after: conflictSummary(after),
-    newConflicts: [...afterSet].filter(x => !beforeSet.has(x)),
-    resolvedConflicts: [...beforeSet].filter(x => !afterSet.has(x)),
-    verdict: [...afterSet].some(x => !beforeSet.has(x)) ? "erzeugt neue Engpässe" : "keine neuen Engpässe",
-  };
-}
-
-function toolSuggest(_args: Record<string, unknown>, ctx: ToolContext) {
-  const storage = loadPlannerStorage();
-  const scenario = getActiveScenario(storage, ctx.week);
-  const suggestions = suggestAssignments(
-    ctx.data, ctx.week, scenario, PLANNER_SHIFTS.slice(0, 2),
-    analyzeOpts(ctx.upliftPercent),
-  );
-  const rows = Object.entries(suggestions).slice(0, 40).map(([key, s]) =>
-    `${key}: ${s.day}/${s.shift} (Score ${Math.round(s.score)}) — ${s.reason}`,
-  );
-  return { count: rows.length, suggestions: rows };
-}
-
-function toolCapacity(_args: Record<string, unknown>, ctx: ToolContext) {
-  const storage = loadPlannerStorage();
-  const scenario = getActiveScenario(storage, ctx.week);
-  const a = analyzePlan(ctx.data, ctx.week, scenario, analyzeOpts(ctx.upliftPercent));
-  const counts = loadStationDeviceCounts();
-  const rows: string[] = [];
-  for (const [slot, perStation] of Object.entries(a.stationLoadBySlot)) {
-    for (const [station, min] of Object.entries(perStation)) {
-      if (!min) continue;
-      const cap = (counts[station as keyof typeof counts] ?? 1) * DEFAULT_SHIFT_MIN;
-      rows.push(`${slot.replace("__", "/")} ${station}: ${Math.round((min / cap) * 100)}% (${fmtNum(min)}/${fmtNum(cap)} min)`);
-    }
-  }
-  rows.sort((x, y) => parseInt(y.split(": ")[1]) - parseInt(x.split(": ")[1]));
-  return { slots: rows.slice(0, 40) };
-}
-
-// ── Tag/Schicht-Normalisierung (auch für den Apply-Pfad genutzt) ──────────────
+// ── Tag-Normalisierung (auch für den Plating-Apply-Pfad genutzt) ──────────────
 export function normalizeDay(raw: string): PlannerDay | null {
   const s = String(raw ?? "").trim().toLowerCase();
   const map: Record<string, PlannerDay> = {
@@ -460,12 +327,11 @@ export function normalizeDay(raw: string): PlannerDay | null {
   };
   return map[s] ?? null;
 }
-export function normalizeShift(raw: string): PlannerShift | null {
-  const s = String(raw ?? "").trim().toLowerCase();
-  if (s.startsWith("s1") || s.includes("früh") || s.includes("fruh") || s.includes("early") || s === "1") return "S1";
-  if (s.startsWith("s2") || s.includes("spät") || s.includes("spat") || s.includes("late") || s === "2") return "S2";
-  if (s.startsWith("s3") || s === "3") return "S3";
-  return (PLANNER_SHIFTS as readonly string[]).includes(s.toUpperCase()) ? (s.toUpperCase() as PlannerShift) : null;
+
+function toolGetKitchenPlan(_args: Record<string, unknown>, ctx: ToolContext) {
+  if (!ctx.platingPlan) return { note: `Für ${ctx.week} ist noch kein Plating-Plan gespeichert — der Kochplan baut darauf auf. generate_plating_plan erzeugt den Rohbau.` };
+  const kp = generateKitchenPlan(ctx.data, ctx.platingPlan);
+  return { plan: describeKitchenPlan(kp) };
 }
 
 function toolGetPlatingPlan(_args: Record<string, unknown>, ctx: ToolContext) {
@@ -565,9 +431,7 @@ const EXECUTORS: Record<string, (args: Record<string, unknown>, ctx: ToolContext
   get_recipe_detail: toolGetRecipeDetail,
   get_backfill_detail: toolGetBackfillDetail,
   get_wo_trace: toolGetWoTrace,
-  simulate_plan_change: toolSimulate,
-  suggest_assignments: toolSuggest,
-  get_capacity_overview: toolCapacity,
+  get_kitchen_plan: toolGetKitchenPlan,
   get_plating_plan: toolGetPlatingPlan,
   generate_plating_plan: toolGeneratePlating,
   get_day_plating_plan: toolGetDayPlating,

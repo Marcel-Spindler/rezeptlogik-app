@@ -3,8 +3,10 @@ import { expect, test } from "@playwright/test";
 test.setTimeout(90000);
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:5173";
 
-// Planning OASE was trimmed from 8 internal sections down to 3 (cockpit/lines/rack) —
-// mfg, breakdown, wms, recipes and agent were removed. This spec only covers what's left.
+// Planning OASE is down to 2 internal sections: "Plating Linien Planung" and
+// "Rack". The former "Cockpit" (Drag&Drop-Wochenboard, PlanningView) is gone —
+// the kitchen is planned backwards from the Plating-Plan + Cook Schedule in its
+// own top-level "Kochplan" view (src/features/kitchen-plan/).
 
 test("Planning OASE owns rack and line planning navigation", async ({ page }) => {
   await page.goto(`${BASE_URL}?view=planning`);
@@ -12,37 +14,26 @@ test("Planning OASE owns rack and line planning navigation", async ({ page }) =>
   const oasisHeader = page.getByRole("heading", { name: "Planning OASE" }).first();
   const oasisCard = page.locator("div.card").filter({ has: oasisHeader }).first();
 
-  const nav = page.locator("aside").first();
-  await expect(nav.getByRole("button", { name: "Breakdown+" })).toHaveCount(0);
-  await expect(nav.getByRole("button", { name: "Rack" })).toHaveCount(0);
-  await expect(nav.getByRole("button", { name: "Linien-Fokus" })).toHaveCount(0);
+  // Default section = Plating Linien Planung.
+  await expect(page.getByText("Plating Linien Planung").first()).toBeVisible();
 
-  await expect(oasisCard.getByRole("button", { name: "Rack" })).toBeVisible();
   await oasisCard.getByRole("button", { name: "Rack" }).evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.getByText("Rack v2")).toBeVisible();
 
   await oasisCard.getByRole("button", { name: "Plating Linien Planung" }).evaluate((element: HTMLButtonElement) => element.click());
   await expect(page.getByText("Plating Linien Planung").first()).toBeVisible();
 
-  await oasisCard.getByRole("button", { name: "Cockpit" }).evaluate((element: HTMLButtonElement) => element.click());
-  await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
+  // The old "Cockpit" tab must not reappear.
+  await expect(oasisCard.getByRole("button", { name: "Cockpit" })).toHaveCount(0);
 });
 
-test("removed sections no longer have nav buttons or deep links", async ({ page }) => {
-  await page.goto(`${BASE_URL}?view=planning`);
-  const oasisHeader = page.getByRole("heading", { name: "Planning OASE" }).first();
-  const oasisCard = page.locator("div.card").filter({ has: oasisHeader }).first();
-  await expect(oasisCard).toBeVisible({ timeout: 30000 });
-
-  for (const label of ["Küchen-Kalender", "Breakdown+", "WMS Live", "Rezept-Fokus", "Agent Setup"]) {
-    await expect(oasisCard.getByRole("button", { name: label })).toHaveCount(0);
+test("stale ?oase deep links fall back to the default section without crashing", async ({ page }) => {
+  for (const stale of ["cockpit", "wms", "mfg"]) {
+    await page.goto(`${BASE_URL}?view=planning&oase=${stale}`);
+    await expect(page.getByText("Planning OASE").first()).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText("Fehler beim Laden")).toHaveCount(0);
+    await expect(page.getByText("Plating Linien Planung").first()).toBeVisible();
   }
-
-  // A stale ?oase=wms deep link (from before the trim) must not crash the page —
-  // it should just fall back to the default section.
-  await page.goto(`${BASE_URL}?view=planning&oase=wms`);
-  await expect(page.getByText("Planning OASE").first()).toBeVisible({ timeout: 30000 });
-  await expect(page.getByText("Fehler beim Laden")).toHaveCount(0);
 });
 
 test("oase deep links for the remaining sections render correctly", async ({ page }) => {
@@ -51,12 +42,9 @@ test("oase deep links for the remaining sections render correctly", async ({ pag
 
   await page.goto(`${BASE_URL}?view=planning&oase=lines`);
   await expect(page.getByText("Plating Linien Planung").first()).toBeVisible({ timeout: 30000 });
-
-  await page.goto(`${BASE_URL}?view=planning&oase=cockpit`);
-  await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible({ timeout: 30000 });
 });
 
-test("Planning OASE supports section deep links via URL", async ({ page }) => {
+test("section switch writes the oase query param", async ({ page }) => {
   await page.goto(`${BASE_URL}?view=planning&oase=rack`);
   await expect(page.getByText("Rack v2")).toBeVisible({ timeout: 30000 });
 
@@ -68,23 +56,8 @@ test("Planning OASE supports section deep links via URL", async ({ page }) => {
   await expect(page.getByText("Plating Linien Planung").first()).toBeVisible();
 });
 
-test("Planning OASE cockpit renders on mobile", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${BASE_URL}?view=planning&oase=cockpit`);
-  // On mobile the NavTabs category flyouts collapse (display:none until tapped),
-  // so scope to the OASE view's own heading rather than the first "Planning OASE" text.
-  await expect(page.getByRole("heading", { name: "Planning OASE" }).first()).toBeVisible({ timeout: 30000 });
-  await expect(page.getByText("App Data: ok")).toBeVisible({ timeout: 30000 });
-  await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible();
-});
-
-// KI-Planungsassistent + Auto-Plan/Vorschläge/Planungsregeln were removed
-// (2026-08-24): Planning OASE no longer auto-computes a schedule, it mirrors
-// the hand-maintained GSheet instead (see VorstellungsplanView). This spec
-// now guards against the automation UI silently reappearing.
-test("cockpit toolbar has no automation controls", async ({ page }) => {
-  await page.goto(`${BASE_URL}?view=planning&oase=cockpit`);
-  await expect(page.getByText("Manufacturing Planning Calendar")).toBeVisible({ timeout: 30000 });
-  await expect(page.getByRole("button", { name: "KI-Assistent" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Auto: Meals + Subs" })).toHaveCount(0);
+test("Kochplan view loads and points at the Plating-Plan when none exists", async ({ page }) => {
+  await page.goto(`${BASE_URL}?view=kochplan`);
+  await expect(page.getByRole("heading", { name: /Kochplan/ })).toBeVisible({ timeout: 30000 });
+  await expect(page.getByText("Fehler beim Laden")).toHaveCount(0);
 });

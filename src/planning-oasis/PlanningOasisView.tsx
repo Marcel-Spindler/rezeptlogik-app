@@ -1,14 +1,12 @@
-// Planning-OASE-Cockpit: Wochenplanung, Plating Linien Planung und Rack in einem
-// Bereich. "Plating Linien Planung" (vormals "Linienplanung") ist die Mail-
-// Vorbereitung fuer die Kueche/Boss-Runde: Vorstellungsplan-Spiegel + Vor-Vor-
-// Planung-Mail (vorab) + Freitags-Ist-Mail (Run-1-Ist-Zahlen aus dem KET-Plan).
-// Reduziert auf 3 Sections (cockpit/lines/rack) — Mfg-Kalender, Breakdown-intern,
-// WMS-intern und Agent-Formular wurden entfernt, die Rezept-Fokus-Kachelansicht
-// ebenfalls. Cockpit/Lines/Rack werden in eigenen Phasen komplett neu gebaut;
-// hier hängen sie noch unverändert an PlanningView/LinePlanningView/RackV2View.
+// Planning OASE: Plating Linien Planung + Rack in einem Bereich.
+// "Plating Linien Planung" (vormals "Linienplanung") ist die Mail-Vorbereitung
+// fuer die Kueche/Boss-Runde: Vorstellungsplan-Spiegel + Vor-Vor-Planung-Mail
+// (vorab) + Freitags-Ist-Mail (Run-1-Ist-Zahlen aus dem KET-Plan).
+// Das frühere "Cockpit" (Drag&Drop-Wochenboard, PlanningView) ist raus — die
+// Küchen-Rückwärtsplanung läuft jetzt in der eigenen Top-Level-View "Kochplan"
+// (src/features/kitchen-plan/), abgeleitet aus dem Plating-Plan + Cook Schedule.
 import { Suspense, useEffect, useMemo, useState } from "react";
 import type { DataBundle, WeekRecipe } from "../core/types";
-import { PlanningView } from "../PlanningView";
 import type { UiLocale } from "../lib/i18n";
 import { usePlanningOasisData } from "../lib/planningOasisData";
 import { loadFactorDailyMeta, type FactorDailyMeta } from "../lib/planningTruthData";
@@ -21,10 +19,9 @@ import { lazyWithRetry } from "../lib/lazyWithRetry";
 const LinePlanningSection = lazyWithRetry(() => import("../LinePlanningView").then(m => ({ default: m.LinePlanningView })), "line-planning");
 const RackSection = lazyWithRetry(() => import("../RackV2View").then(m => ({ default: m.RackV2View })), "rack-v2");
 
-type OasisSection = "cockpit" | "lines" | "rack";
-const OASIS_SECTIONS: readonly OasisSection[] = ["cockpit", "lines", "rack"];
+type OasisSection = "lines" | "rack";
+const OASIS_SECTIONS: readonly OasisSection[] = ["lines", "rack"];
 const OASIS_TABS: ReadonlyArray<[OasisSection, string]> = [
-  ["cockpit", "Cockpit"],
   ["lines", "Plating Linien Planung"],
   ["rack", "Rack"],
 ];
@@ -45,6 +42,7 @@ function isOasisSection(value: string | null): value is OasisSection {
 function oasisSectionFromUrl(fallback: OasisSection): OasisSection {
   if (typeof window === "undefined") return fallback;
   const param = new URLSearchParams(window.location.search).get("oase");
+  // Alt-Deeplink ?oase=cockpit fällt still auf die erste Section zurück.
   return isOasisSection(param) ? param : fallback;
 }
 
@@ -203,26 +201,14 @@ function OasisHeader({
   );
 }
 
-function CockpitSection({ data, week, locale, upliftPercent, selectedRecipe, onSelectRecipe }: {
-  data: DataBundle; week: string; locale: UiLocale; upliftPercent: number;
-  selectedRecipe?: string | null; onSelectRecipe?: (code: string) => void;
-}) {
-  return (
-    <PlanningView
-      data={data} week={week} locale={locale} upliftPercent={upliftPercent}
-      selectedRecipe={selectedRecipe} onSelectRecipe={onSelectRecipe}
-      onPlanSnapshotSaved={() => {}}
-    />
-  );
-}
-
 export function PlanningOasisView({
-  data, week, locale, upliftPercent, selectedRecipe, onSelectRecipe, defaultSection = "cockpit",
+  data, week, locale, upliftPercent, defaultSection = "lines",
 }: {
   data: DataBundle;
   week: string;
   locale: UiLocale;
   upliftPercent: number;
+  /** Von Router weitergereicht (früher fürs Cockpit) — aktuell ungenutzt. */
   selectedRecipe?: string | null;
   onSelectRecipe?: (recipeCode: string) => void;
   defaultSection?: OasisSection;
@@ -252,13 +238,6 @@ export function PlanningOasisView({
         rampUpChanges={rampUpChanges}
         onRefreshRampUp={async () => { await refreshRampUpDataOnStart(); window.location.reload(); }}
       />
-
-      {section === "cockpit" && (
-        <CockpitSection
-          data={data} week={week} locale={locale} upliftPercent={upliftPercent}
-          selectedRecipe={selectedRecipe} onSelectRecipe={onSelectRecipe}
-        />
-      )}
 
       {section === "lines" && (
         <Suspense fallback={<div className="card p-6 text-slate-500">Plating Linien Planung wird geladen …</div>}>

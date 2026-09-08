@@ -3,12 +3,12 @@ import { useAppState } from "../../app/AppContext";
 import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
 import { useBackfillsOptional } from "../backfills/BackfillsContext";
 import { runPlanAgent, type AgentStep, type GeminiContent } from "./planAssistantAgent";
-import { applyDayPlatingMoves, applyPlanChanges, applyPlatingWeekPlan, undoPlanChanges } from "./planAssistantApi";
+import { applyDayPlatingMoves, applyPlatingWeekPlan } from "./planAssistantApi";
 import { buildPlatingPlanWithMoves } from "./planAssistantTools";
 import { subscribePlatingWeekPlan } from "../plating-plan/platingWeekPlanFirestore";
 import type { PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
 import type {
-  ChatMessage, ChatStep, DayPlatingProposal, PlanIssue, PlanProposal, PlatingProposal,
+  ChatMessage, ChatStep, DayPlatingProposal, PlanIssue, PlatingProposal,
 } from "./planAssistantTypes";
 import type { PlanAssistantSource } from "./planAssistantSources";
 import { savePlanAssistantFeedback, type PlanAssistantFeedbackScore } from "./planAssistantFeedback";
@@ -33,9 +33,7 @@ const TOOL_LABEL: Record<string, string> = {
   get_recipe_detail: "Rezept-Details",
   get_backfill_detail: "Backfill-Details",
   get_wo_trace: "WO-Abgleich",
-  simulate_plan_change: "Änderung simuliert",
-  suggest_assignments: "Auto-Vorschlag",
-  get_capacity_overview: "Kapazitäts-Check",
+  get_kitchen_plan: "Kochplan gelesen",
   get_plating_plan: "Plating-Plan gelesen",
   generate_plating_plan: "Plating-Plan generiert",
   simulate_plating_change: "Plating simuliert",
@@ -123,58 +121,6 @@ function IssueList({ issues }: { issues: PlanIssue[] }) {
           {it.suggestion ? <div className="mt-0.5 italic opacity-90">→ {it.suggestion}</div> : null}
         </div>
       ))}
-    </div>
-  );
-}
-
-function ProposalCard({ proposal, onApply, onUndo }: {
-  proposal: PlanProposal;
-  onApply: (newScenario: boolean) => void;
-  onUndo: () => void;
-}) {
-  return (
-    <div className="mt-2 rounded-lg border border-violet-300 bg-violet-50 p-2.5 text-[11px] text-violet-900">
-      <div className="font-semibold">Planänderungs-Vorschlag</div>
-      {proposal.summary ? <div className="mt-0.5 whitespace-pre-wrap">{proposal.summary}</div> : null}
-      <ul className="mt-1.5 space-y-1">
-        {proposal.changes.map((c, i) => {
-          const r = proposal.results?.[i];
-          return (
-            <li key={i} className="rounded border border-violet-200 bg-white px-2 py-1">
-              <span className="font-mono font-semibold">{c.recipeCode}</span>
-              {c.subRecipeId ? <span className="font-mono opacity-70"> · {c.subRecipeId}</span> : null}
-              {" → "}<strong>{c.day}/{c.shift}</strong>
-              {c.targetPortions ? ` @${c.targetPortions}` : ""}
-              {c.splitSpec ? ` · Split ${c.splitSpec}` : ""}
-              <div className="opacity-80">{c.reason}</div>
-              {r ? <div className={r.ok ? "text-emerald-700" : "text-rose-700"}>{r.ok ? "✓ " : "✗ "}{r.detail}</div> : null}
-            </li>
-          );
-        })}
-      </ul>
-      {proposal.applied ? (
-        <div className="mt-1.5 flex items-center justify-between">
-          <span className="font-semibold text-emerald-700">
-            ✓ Übernommen{proposal.appliedToNewScenario ? ` → Szenario „${proposal.appliedToNewScenario}"` : ""} · im Cockpit sichtbar
-          </span>
-          {proposal.undoSnapshot ? (
-            <button type="button" onClick={onUndo} className="rounded border border-slate-300 px-2 py-0.5 text-[10px] text-slate-600 hover:bg-slate-100">
-              Rückgängig
-            </button>
-          ) : null}
-        </div>
-      ) : proposal.applyError ? (
-        <div className="mt-1.5 font-semibold text-rose-700">{proposal.applyError}</div>
-      ) : (
-        <div className="mt-2 flex gap-2">
-          <button type="button" onClick={() => onApply(false)} className="rounded-md bg-violet-600 px-3 py-1 text-xs font-semibold text-white hover:bg-violet-500">
-            Übernehmen
-          </button>
-          <button type="button" onClick={() => onApply(true)} className="rounded-md border border-violet-400 px-3 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100">
-            In neues Szenario
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -301,7 +247,6 @@ export function PlanAssistantPanel({ onClose, initialPrompt, onPromptConsumed }:
         content: outcome.error ? `⚠ ${outcome.error}` : (outcome.text || "(keine Antwort)"),
         steps: liveSteps,
         issues: outcome.issues,
-        proposal: outcome.proposal,
         platingProposal: outcome.platingProposal,
         dayPlatingProposal: outcome.dayPlatingProposal,
         sources: outcome.sources,
@@ -360,34 +305,6 @@ export function PlanAssistantPanel({ onClose, initialPrompt, onPromptConsumed }:
     });
   }, [messages, platingPlan, setMessages]);
 
-  const applyProposal = useCallback((msgId: string, newScenario: boolean) => {
-    if (!data) return;
-    setMessages(ms => ms.map(m => {
-      if (m.id !== msgId || !m.proposal) return m;
-      const name = newScenario ? `KI ${new Date().toLocaleDateString("de-DE")}` : undefined;
-      const res = applyPlanChanges(m.proposal.changes, data, selectedWeek, { newScenarioName: name });
-      return {
-        ...m,
-        proposal: {
-          ...m.proposal,
-          applied: res.ok,
-          applyError: res.error,
-          results: res.results,
-          undoSnapshot: res.undoSnapshot,
-          appliedToNewScenario: res.ok ? res.scenarioName : undefined,
-        },
-      };
-    }));
-  }, [data, selectedWeek, setMessages]);
-
-  const undoProposal = useCallback((msgId: string) => {
-    setMessages(ms => ms.map(m => {
-      if (m.id !== msgId || !m.proposal?.undoSnapshot) return m;
-      undoPlanChanges(m.proposal.undoSnapshot);
-      return { ...m, proposal: { ...m.proposal, applied: false, results: undefined, appliedToNewScenario: undefined } };
-    }));
-  }, [setMessages]);
-
   const clearChat = useCallback(() => {
     setState({ messages: [], contents: [] });
     try { localStorage.removeItem(STORE_KEY); } catch { /* ignore */ }
@@ -395,7 +312,7 @@ export function PlanAssistantPanel({ onClose, initialPrompt, onPromptConsumed }:
 
   const empty = messages.length === 0;
   const sources = useMemo(() => {
-    const s = ["Wochenplan", "Board-Analyse"];
+    const s = ["Wochenplan", "Plating-Plan", "Kochplan"];
     if (data?.productionPlan?.rows?.length) s.push("Production Plan");
     if (reconciliation?.bySeverityRecipe.size) s.push("WO-Abgleich");
     if (backfills?.combined.length) s.push("Backfills");
@@ -460,13 +377,6 @@ export function PlanAssistantPanel({ onClose, initialPrompt, onPromptConsumed }:
                 {m.issues ? <IssueList issues={m.issues} /> : null}
                 {m.role === "assistant" && !m.pending && m.sources ? <SourceList sources={m.sources} /> : null}
                 {m.role === "assistant" && !m.pending ? <FeedbackControls submitted={m.feedback} onSubmit={(score, correction) => submitFeedback(m.id, score, correction)} /> : null}
-                {m.proposal ? (
-                  <ProposalCard
-                    proposal={m.proposal}
-                    onApply={(newScenario) => applyProposal(m.id, newScenario)}
-                    onUndo={() => undoProposal(m.id)}
-                  />
-                ) : null}
                 {m.platingProposal ? (
                   <PlatingProposalCard proposal={m.platingProposal} onApply={() => applyPlating(m.id)} />
                 ) : null}

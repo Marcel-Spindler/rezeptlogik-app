@@ -2,12 +2,13 @@
 // Live-Kontext, schickt einen Gemini-Turn an den Relay-Endpunkt, führt die
 // zurückgegebenen (Lese-/Simulations-)Werkzeuge lokal gegen die App-Daten aus,
 // speist die Ergebnisse zurück und wiederholt, bis das Modell final antwortet
-// oder ein terminales Werkzeug (propose_plan_change / check_plan_issues) ruft.
+// oder ein terminales Werkzeug (propose_plating_plan / propose_day_plating_change
+// / check_plan_issues) ruft.
 
 import type { DataBundle } from "../../core/types";
 import { buildPlanContext } from "./planAssistantContext";
 import { TOOL_DECLARATIONS, TERMINAL_TOOLS, executeClientTool, type ToolContext } from "./planAssistantTools";
-import type { DayPlatingProposal, PlanIssue, PlanProposal, PlatingProposal } from "./planAssistantTypes";
+import type { DayPlatingProposal, PlanIssue, PlatingProposal } from "./planAssistantTypes";
 import { buildPlanAssistantSources, type PlanAssistantSource } from "./planAssistantSources";
 
 const CHAT_URL = "/api/local-db/gemini-planning-chat";
@@ -37,7 +38,6 @@ export interface AgentStep {
 export interface AgentOutcome {
   text: string;
   issues?: PlanIssue[];
-  proposal?: PlanProposal;
   platingProposal?: PlatingProposal;
   dayPlatingProposal?: DayPlatingProposal;
   steps: AgentStep[];
@@ -73,8 +73,6 @@ function asResponseObject(v: unknown): Record<string, unknown> {
 function shortSummary(name: string, result: unknown): string {
   const o = asResponseObject(result);
   if (o.error) return String(o.error);
-  if (name === "simulate_plan_change") return String(o.verdict ?? "simuliert");
-  if (name === "suggest_assignments") return `${o.count ?? 0} Vorschläge`;
   if (name === "get_recipe_detail") return String(o.name ?? o.code ?? "geladen");
   return "ok";
 }
@@ -173,12 +171,8 @@ export async function runPlanAgent(params: {
           steps, contents, sources: sources(),
         };
       }
-      const changes = Array.isArray(terminal.args.changes) ? terminal.args.changes : [];
-      return {
-        text: lastText || "Vorschlag:",
-        proposal: { changes: changes as PlanProposal["changes"], summary: String(terminal.args.summary ?? "") },
-        steps, contents, sources: sources(),
-      };
+      // Unbekanntes terminales Werkzeug — als Text zurückgeben.
+      return { text: lastText || String(terminal.args.summary ?? "(Vorschlag)"), steps, contents, sources: sources() };
     }
 
     // Lese-/Simulations-Werkzeuge lokal ausführen und zurückspeisen

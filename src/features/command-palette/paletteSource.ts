@@ -27,9 +27,10 @@ export const GROUP_PRIORITY: Record<PaletteGroup, number> = {
 const VIEW_ALIASES: Partial<Record<AppView, string>> = {
   recipe: "rezept detail zutaten",
   catalog: "meal katalog bilder database",
-  planning: "oase cockpit kapazitaet auslastung",
+  planning: "oase linienplanung vorstellungsplan rack",
   "plating-plan": "plaiten wochenplanung sheet runs besetzung",
   "plating-day": "plaiten linienplan tagesplan changeover reinigung highrunner",
+  kochplan: "kueche kochplan kochtag vorbereitung cook schedule submeal batches",
   "artikel-woche": "artikel sku pro woche",
   whatif: "was waere wenn rechner rohware portionen simulation",
   wo: "work order ket breakdown kochanweisungen",

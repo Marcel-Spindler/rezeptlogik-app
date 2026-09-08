@@ -5,12 +5,12 @@
 import type { DataBundle } from "../../core/types";
 import { currentHfWeek } from "../../lib/hfWeek";
 import { codeDigits, fmtNum } from "../../lib/helpers";
-import { getBaseVerdenVolume, loadStationDeviceCounts, loadStationPools, DEFAULT_SHIFT_MIN } from "../../lib/equipment";
-import { analyzePlan, getActiveScenario, loadPlannerStorage, PLANNER_DAYS } from "../../lib/planner";
+import { getBaseVerdenVolume } from "../../lib/equipment";
 import type { WoReconciliationState } from "../wo-reconciliation/WoReconciliationContext";
 import type { BackfillsState } from "../backfills/BackfillsContext";
-import { effectiveDayHours, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
+import { effectiveDayHours, PLATING_DAYS, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
 import { summarizePlatingPlan } from "../plating-plan/platingPlanLogic";
+import { describeKitchenPlan, generateKitchenPlan } from "../kitchen-plan/kitchenPlanLogic";
 
 export interface PlanContextInput {
   data: DataBundle;
@@ -38,9 +38,6 @@ export function buildPlanContext({ data, week, upliftPercent, reconciliation, ba
 
   // ── Meals der Woche ─────────────────────────────────────────────────────────
   const weekRecipes = data.weekRecipes.filter(wr => wr.hfWeek === week);
-  const storage = loadPlannerStorage();
-  const scenario = getActiveScenario(storage, week);
-  const assignById = scenario.assignments;
 
   if (weekRecipes.length) {
     const totalPortions = weekRecipes.reduce((s, wr) => s + Math.round(getBaseVerdenVolume(wr) * mult), 0);
@@ -49,14 +46,12 @@ export function buildPlanContext({ data, week, upliftPercent, reconciliation, ba
       .sort((a, b) => a.code.localeCompare(b.code))
       .map(wr => {
         const base = Math.round(getBaseVerdenVolume(wr) * mult);
-        const a = assignById[wr.code];
-        const plan = a ? `${a.day}/${a.shift}${a.targetPortions ? ` @${fmtNum(a.targetPortions)}` : ""}${a.note && /split=/.test(a.note) ? " (Split)" : ""}` : "—ungeplant—";
         const mk = [
           wr.verdenVolume.BENL ? `BENL ${fmtNum(wr.verdenVolume.BENL)}` : "",
           wr.verdenVolume.DKSE ? `DKSE ${fmtNum(wr.verdenVolume.DKSE)}` : "",
           wr.verdenVolume.DE ? `DE ${fmtNum(wr.verdenVolume.DE)}` : "",
         ].filter(Boolean).join(" ");
-        return `- ${wr.code} ${wr.recipeName} · ${wr.preference} · Σ ${fmtNum(base)} (${mk}) · Plan: ${plan}`;
+        return `- ${wr.code} ${wr.recipeName} · ${wr.preference} · Σ ${fmtNum(base)} (${mk})`;
       });
     lines.push(section(
       `Meals in ${week} (${weekRecipes.length}, Σ ${fmtNum(totalPortions)} Portionen inkl. Uplift)`,
@@ -66,38 +61,14 @@ export function buildPlanContext({ data, week, upliftPercent, reconciliation, ba
     lines.push(section(`Meals in ${week}`, "Keine WeekRecipes für diese KW geladen."));
   }
 
-  // ── Wochenboard / Planner-Analyse ──────────────────────────────────────────
-  try {
-    const analysis = analyzePlan(data, week, scenario, {
-      portionMultiplier: mult,
-      shiftCapacityMin: DEFAULT_SHIFT_MIN,
-      stationDeviceCounts: loadStationDeviceCounts(),
-      stationPools: loadStationPools(),
-    });
-    const planLines: string[] = [];
-    planLines.push(`Szenario: „${scenario.name}" · geplant ${analysis.plannedCount} · ungeplant ${analysis.unplannedCount}`);
-
-    if (analysis.conflicts.length) {
-      planLines.push(`\nStations-Engpässe (Auslastung > 100%):`);
-      for (const c of analysis.conflicts.slice(0, 15)) {
-        planLines.push(`- ${c.station} ${c.day}/${c.shift}: ${Math.round(c.utilizationPct)}% (${fmtNum(c.totalMin)}/${fmtNum(c.capacityMin)} min, ${c.deviceCount} Gerät(e), bräuchte ${c.requiredDevices}) — ${c.assignments.map(a => a.recipeCode).join(", ")}`);
-      }
-    } else {
-      planLines.push(`Keine Stations-Engpässe.`);
+  // ── Kochplan (aus Plating-Plan + Cook Schedule abgeleitet) ─────────────────
+  if (platingPlan) {
+    try {
+      const kp = generateKitchenPlan(data, platingPlan);
+      lines.push(section("Kochplan (Küchentage Mo–Fr)", describeKitchenPlan(kp)));
+    } catch (e) {
+      lines.push(section("Kochplan", `(nicht verfügbar: ${e instanceof Error ? e.message : String(e)})`));
     }
-    if (analysis.poolConflicts.length) {
-      planLines.push(`\nPool-Engpässe:`);
-      for (const p of analysis.poolConflicts.slice(0, 10)) {
-        planLines.push(`- Pool ${p.poolName} ${p.day}/${p.shift}: ${Math.round(p.utilizationPct)}% — ${p.assignments.map(a => `${a.recipeCode}(${a.station})`).join(", ")}`);
-      }
-    }
-    const unplanned = analysis.recipes.filter(r => !r.assigned && !r.subRecipes.some(s => s.assigned));
-    if (unplanned.length) {
-      planLines.push(`\nUngeplante Meals: ${unplanned.map(r => r.recipeCode).join(", ")}`);
-    }
-    lines.push(section("Wochenboard-Analyse", planLines.join("\n")));
-  } catch (e) {
-    lines.push(section("Wochenboard-Analyse", `(nicht verfügbar: ${e instanceof Error ? e.message : String(e)})`));
   }
 
   // ── Production Plan (Firestore / KET) ──────────────────────────────────────
@@ -218,7 +189,7 @@ export function buildPlanContext({ data, week, upliftPercent, reconciliation, ba
     "   - Minimale Reinigungen im Tagesplan",
   ].join("\n")));
 
-  lines.push(`\n(Tage: ${PLANNER_DAYS.join(" ")}. Nur Fakten aus diesem Kontext verwenden. Küchen-Wochenboard ändern: propose_plan_change. Wochen-Plating-Plan: generate_plating_plan → simulate_plating_change → propose_plating_plan. Risiko-Übersichten: check_plan_issues. BEI PLATING-ANFRAGEN IMMER: 1) generate_plating_plan, 2) Ergebnis prüfen, 3) simulate_plating_change mit Verbesserungen, 4) propose_plating_plan mit Zusammenfassung.)`);
+  lines.push(`\n(Tage: ${PLATING_DAYS.join(" ")}. Küche Mo–Fr. Nur Fakten aus diesem Kontext verwenden. Kochplan lesen: get_kitchen_plan (abgeleitet aus dem Plating-Plan). Wochen-Plating-Plan: generate_plating_plan → simulate_plating_change → propose_plating_plan. Risiko-Übersichten: check_plan_issues. BEI PLATING-ANFRAGEN IMMER: 1) generate_plating_plan, 2) Ergebnis prüfen, 3) simulate_plating_change mit Verbesserungen, 4) propose_plating_plan mit Zusammenfassung.)`);
 
   return lines.join("\n");
 }

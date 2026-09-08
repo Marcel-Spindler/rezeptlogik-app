@@ -14,9 +14,9 @@
 // Forecast. Run 1 und Run 2 können an komplett unterschiedlichen Tagen UND
 // Schichten liegen (Beispiel Marcel: "Run 1 am Montag in der Spätschicht,
 // Run 2 des Meals am Donnerstag früh"). Die reale Zuteilung wird an anderer
-// Stelle geplant (Planning OASE hat dafür bereits einen firstRunPct-Regler,
-// Default 70 — siehe src/features/planning-oasis/cockpit/planningRules.ts);
-// KET-Plan bekommt davon aktuell keinen verlässlichen Wert durchgereicht
+// Stelle geplant (Plating-Plan: firstRunPct-Regler, Default 70 %; Kochplan
+// leitet die Küchentage daraus ab). KET-Plan bekommt davon aktuell keinen
+// verlässlichen Wert durchgereicht
 // (WorkOrderEntry.run existiert, ist in der Praxis aber lückenhaft: nur 0/1,
 // nie explizit 2). Diese Funktion SCHÄTZT die Run-Zuteilung daher selbst rein
 // aus den KET-Zeilen (kumulierte Ziel-Portionen je Tag, chronologisch) — klar
