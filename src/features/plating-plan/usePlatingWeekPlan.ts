@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DataBundle } from "../../core/types";
-import { buildDefaultParams, generatePlatingPlan } from "./platingPlanLogic";
+import { buildDefaultParams, assignRunsToShifts, generatePlatingPlan, nextRunIndex } from "./platingPlanLogic";
 import { generateAllDayPlans, recomputeDayPlan } from "./platingDayLogic";
 import { savePlatingWeekPlan, subscribePlatingWeekPlan } from "./platingWeekPlanFirestore";
 import {
@@ -50,12 +50,39 @@ export function usePlatingWeekPlan(data: DataBundle | null, week: string) {
   const update = useCallback((updater: (prev: PlatingWeekPlan) => PlatingWeekPlan) => {
     setPlan(prev => {
       if (!prev) return prev;
-      const next = { ...updater(prev), updatedAt: new Date().toISOString(), source: "edited" as const };
+      const edited = { ...updater(prev), updatedAt: new Date().toISOString(), source: "edited" as const };
+      const next = assignRunsToShifts(edited);
       setDirty(true);
       persist(next);
       return next;
     });
   }, [persist]);
+
+  /** Einen Run auf einen anderen Tag verschieben (Drag-and-Drop im Plating-
+   *  Linien-Bot / Tag-Dropdown in PlatingPlanView) — Schicht wird über update()
+   *  automatisch neu zugewiesen, NIE hier manuell setzen. */
+  const moveRun = useCallback((code: string, runIndex: number, toDay: PlatingDay) => {
+    update(prev => ({
+      ...prev,
+      meals: prev.meals.map(m => m.code !== code ? m : {
+        ...m, runs: m.runs.map(r => r.runIndex === runIndex ? { ...r, day: toDay } : r),
+      }),
+    }));
+  }, [update]);
+
+  /** Einen erkannten Backfill-Bedarf (Plating-Linien-Bot) als neuen Run an ein
+   *  Meal anhängen. Der Live-Bedarf selbst bleibt unverändert — nur der Plan
+   *  bekommt einen zusätzlichen, als Backfill markierten Run. */
+  const addBackfillRun = useCallback((code: string, portions: number, day: PlatingDay) => {
+    update(prev => ({
+      ...prev,
+      meals: prev.meals.map(m => {
+        if (m.code !== code) return m;
+        const runs = [...m.runs, { runIndex: nextRunIndex(m), portions, day, isBackfill: true }];
+        return { ...m, runs, runCount: runs.length };
+      }),
+    }));
+  }, [update]);
 
   const regenerate = useCallback((opts?: {
     params?: Partial<PlatingPlanParams>;
@@ -64,11 +91,29 @@ export function usePlatingWeekPlan(data: DataBundle | null, week: string) {
     if (!data) return;
     const base = plan?.params ?? buildDefaultParams(week);
     const dayCapacity = opts?.dayCapacity ?? plan?.dayCapacity ?? undefined;
-    const fresh = generatePlatingPlan(data, week, { ...base, ...(opts?.params ?? {}) }, dayCapacity);
-    // manuelle Notizen übernehmen
+    let fresh = generatePlatingPlan(data, week, { ...base, ...(opts?.params ?? {}) }, dayCapacity);
     if (plan) {
+      // manuelle Notizen übernehmen
       const noteByCode = new Map(plan.meals.filter(m => m.note).map(m => [m.code, m.note]));
       for (const m of fresh.meals) if (noteByCode.has(m.code)) m.note = noteByCode.get(m.code);
+
+      // Backfill-Runs (manuell via Drag-and-Drop hinzugefügt) über eine
+      // Neu-Generierung hinweg erhalten — sonst geht diese Arbeit bei jedem
+      // Parameter-Feintuning verloren.
+      let hasBackfillRuns = false;
+      fresh = {
+        ...fresh,
+        meals: fresh.meals.map(m => {
+          const oldBackfillRuns = plan.meals.find(om => om.code === m.code)?.runs.filter(r => r.isBackfill) ?? [];
+          if (!oldBackfillRuns.length) return m;
+          hasBackfillRuns = true;
+          let idx = nextRunIndex(m);
+          const runs = [...m.runs, ...oldBackfillRuns.map(r => ({ ...r, runIndex: idx++ }))];
+          return { ...m, runs, runCount: runs.length };
+        }),
+      };
+      // generatePlatingPlan hat die Schichten schon VOR dem Anhängen zugewiesen.
+      if (hasBackfillRuns) fresh = assignRunsToShifts(fresh);
     }
     setPlan(fresh);
     setDirty(true);
@@ -108,5 +153,5 @@ export function usePlatingWeekPlan(data: DataBundle | null, week: string) {
     });
   }, [persist]);
 
-  return { plan, loading, dirty, update, regenerate, regenerateDailyPlans, updateDayPlan };
+  return { plan, loading, dirty, update, moveRun, addBackfillRun, regenerate, regenerateDailyPlans, updateDayPlan };
 }

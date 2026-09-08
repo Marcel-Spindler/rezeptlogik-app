@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DataBundle } from "../../core/types";
 import { fmtNum } from "../../lib/helpers";
 import { usePlatingWeekPlan } from "./usePlatingWeekPlan";
 import { buildDefaultParams, computeDayLoads, DEFAULT_DAY_CAPACITY } from "./platingPlanLogic";
+import { PLATING_OPTIMIZE_EVENT } from "../plan-assistant/PlanAssistant";
 import {
-  PLATING_DAYS,
+  PLATING_DAYS, PRODUCTION_SHIFT_HOURS,
   type PlatingDay, type PlatingDayCapacity, type PlatingMealPlan, type PlatingPlanParams,
 } from "./platingPlanTypes";
 
@@ -49,25 +50,29 @@ function RunCell({ meal, day, onMove, onEdit }: {
   if (!runs.length) return <td className="border-b border-slate-100 px-1 py-1" />;
   return (
     <td className="border-b border-slate-100 px-1 py-1 align-top">
-      {runs.map(r => (
-        <div key={r.runIndex} className="mb-0.5 flex items-center gap-0.5 rounded bg-blue-50 px-1 py-0.5 text-[10px]">
-          <span className="text-[8px] font-bold text-blue-400">R{r.runIndex}</span>
-          <input
-            type="number"
-            defaultValue={r.portions}
-            onBlur={e => { const v = Math.round(Number(e.target.value) || 0); if (v !== r.portions) onEdit(r.runIndex, v); }}
-            className="w-12 bg-transparent text-right font-mono font-semibold text-blue-900 focus:outline-none"
-          />
-          <select
-            value={day}
-            onChange={e => onMove(r.runIndex, e.target.value as PlatingDay)}
-            className="bg-transparent text-[9px] text-blue-500"
-            title="Tag ändern"
-          >
-            {PLATING_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-      ))}
+      {runs.map(r => {
+        const shiftTone = r.shift === "spät" ? "bg-amber-50 border-amber-200" : r.shift === "früh" ? "bg-blue-50 border-blue-200" : "bg-blue-50";
+        return (
+          <div key={r.runIndex} className={`mb-0.5 flex items-center gap-0.5 rounded border px-1 py-0.5 text-[10px] ${shiftTone}`}>
+            <span className="text-[8px] font-bold text-blue-400">R{r.runIndex}</span>
+            {r.shift && <span className={`text-[7px] font-bold ${r.shift === "spät" ? "text-amber-500" : "text-blue-400"}`}>{r.shift === "früh" ? "F" : "S"}</span>}
+            <input
+              type="number"
+              defaultValue={r.portions}
+              onBlur={e => { const v = Math.round(Number(e.target.value) || 0); if (v !== r.portions) onEdit(r.runIndex, v); }}
+              className="w-12 bg-transparent text-right font-mono font-semibold text-blue-900 focus:outline-none"
+            />
+            <select
+              value={day}
+              onChange={e => onMove(r.runIndex, e.target.value as PlatingDay)}
+              className="bg-transparent text-[9px] text-blue-500"
+              title="Tag ändern"
+            >
+              {PLATING_DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+        );
+      })}
     </td>
   );
 }
@@ -85,7 +90,7 @@ function CxChip({ cx }: { cx: number | null }) {
 }
 
 export function PlatingPlanView({ data, week }: { data: DataBundle; week: string }) {
-  const { plan, loading, dirty, update, regenerate } = usePlatingWeekPlan(data, week);
+  const { plan, loading, dirty, update, moveRun, regenerate } = usePlatingWeekPlan(data, week);
   const [showParams, setShowParams] = useState(false);
   const [draftParams, setDraftParams] = useState<PlatingPlanParams>(() => buildDefaultParams(week));
   const [draftCap, setDraftCap] = useState<Partial<Record<PlatingDay, PlatingDayCapacity>>>(() => ({ ...DEFAULT_DAY_CAPACITY }));
@@ -102,7 +107,12 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
 
   const setParam = (k: keyof PlatingPlanParams, v: number) => setDraftParams(p => ({ ...p, [k]: v }));
   const setCap = (d: PlatingDay, k: keyof PlatingDayCapacity, v: number) =>
-    setDraftCap(c => ({ ...c, [d]: { lines: c[d]?.lines ?? 0, hours: c[d]?.hours ?? 0, [k]: v } }));
+    setDraftCap(c => {
+      const next: PlatingDayCapacity = { lines: c[d]?.lines ?? 0, hours: c[d]?.hours ?? 0, shifts: c[d]?.shifts ?? 1, [k]: v };
+      // 2 Schichten = fix 2×7,5h — das Stundenfeld wird dafür nicht mehr frei getippt.
+      if (k === "shifts" && v === 2) next.hours = 2 * PRODUCTION_SHIFT_HOURS;
+      return { ...c, [d]: next };
+    });
   const applyParams = () => regenerate({ params: draftParams, dayCapacity: draftCap });
 
   const loads = useMemo(() => (plan ? computeDayLoads(plan) : []), [plan]);
@@ -111,14 +121,6 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
     [plan],
   );
 
-  const moveRun = (code: string, runIndex: number, toDay: PlatingDay) => {
-    update(prev => ({
-      ...prev,
-      meals: prev.meals.map(m => m.code !== code ? m : {
-        ...m, runs: m.runs.map(r => r.runIndex === runIndex ? { ...r, day: toDay } : r),
-      }),
-    }));
-  };
   const editRun = (code: string, runIndex: number, portions: number) => {
     update(prev => ({
       ...prev,
@@ -130,6 +132,35 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
   const setNote = (code: string, note: string) => {
     update(prev => ({ ...prev, meals: prev.meals.map(m => m.code === code ? { ...m, note } : m) }));
   };
+
+  const triggerAI = useCallback((mode: "fill" | "optimize") => {
+    const p = plan?.params ?? draftParams;
+    const paramInfo = `Parameter: First Run ${Math.round(p.firstRunPct * 100)}%, Puffer 1-Run +${Math.round(p.singleRunBuffer * 100)}%, Puffer 2-Runs +${Math.round(p.multiRunBuffer * 100)}%, Rate ${p.platingRatePerLineHour}/L/h.`;
+    const shiftInfo = Object.entries(plan?.dayCapacity ?? draftCap)
+      .filter(([, c]) => c && (c.shifts ?? 1) >= 2)
+      .map(([d]) => d);
+    const shiftNote = shiftInfo.length ? ` Tage mit 2 Schichten: ${shiftInfo.join(", ")}.` : "";
+
+    const prompt = mode === "fill"
+      ? `Erstelle den vollständigen Wochen-Plating-Plan für ${week}. ${paramInfo}${shiftNote} `
+        + `Gehe systematisch vor: 1) generate_plating_plan aufrufen, 2) das Ergebnis auf ALLE Regeln prüfen `
+        + `(Seafood so spät wie möglich, komplexe Meals früh, Tage gleichmäßig, keine Überkapazität, Schichtbalance), `
+        + `3) simulate_plating_change mit Verbesserungen wo nötig, 4) propose_plating_plan mit detaillierter Zusammenfassung. `
+        + `Der Plan muss 100% regelkonform sein.`
+      : `Optimiere den bestehenden Wochen-Plating-Plan für ${week}. ${paramInfo}${shiftNote} `
+        + `Prüfe den aktuellen Plan auf: 1) Tagesverteilung balanciert? 2) Seafood so spät wie möglich? `
+        + `3) Komplexe Meals (cx≥1.15) früh genug? 4) Keine Überkapazität pro Schicht? 5) Alle Meals verplant? `
+        + `Simuliere Verbesserungen und schlage den optimierten Plan vor.`;
+
+    window.dispatchEvent(new CustomEvent(PLATING_OPTIMIZE_EVENT, { detail: prompt }));
+  }, [plan, draftParams, draftCap, week]);
+
+  // KPI summaries
+  const kpiTotalMeals = plan?.meals.length ?? 0;
+  const kpiTotalPortions = plan?.meals.reduce((s, m) => s + m.bufferedTotal, 0) ?? 0;
+  const kpiSeafood = plan?.meals.filter(m => m.seafood).length ?? 0;
+  const kpiOverDays = loads.filter(l => l.overCapacity).length;
+  const kpi2Shifts = loads.filter(l => l.shifts > 1).length;
 
   return (
     <div className="space-y-3">
@@ -153,9 +184,64 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
           >
             {plan ? "Neu generieren" : "Plan generieren"}
           </button>
+          <button
+            type="button"
+            onClick={() => triggerAI(plan ? "optimize" : "fill")}
+            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 font-semibold text-emerald-800 hover:bg-emerald-100"
+          >
+            {plan ? "KI optimieren" : "KI befüllen"}
+          </button>
           {dirty && <span className="text-amber-600">speichert…</span>}
         </div>
       </div>
+
+      {/* ── Kennzahlen-Dashboard (immer sichtbar) ── */}
+      {plan && (
+        <div className="flex flex-wrap gap-2 text-[11px]">
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5">
+            <div className="text-[9px] font-bold uppercase text-slate-400">Meals</div>
+            <div className="font-mono font-bold text-slate-800">{kpiTotalMeals}</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5">
+            <div className="text-[9px] font-bold uppercase text-slate-400">Portionen</div>
+            <div className="font-mono font-bold text-slate-800">{fmtNum(kpiTotalPortions)}</div>
+          </div>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5">
+            <div className="text-[9px] font-bold uppercase text-blue-500">First Run</div>
+            <div className="font-mono font-bold text-blue-800">{Math.round(plan.params.firstRunPct * 100)}%</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5">
+            <div className="text-[9px] font-bold uppercase text-slate-400">Puffer 1R</div>
+            <div className="font-mono font-bold text-slate-800">+{Math.round(plan.params.singleRunBuffer * 100)}%</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5">
+            <div className="text-[9px] font-bold uppercase text-slate-400">Puffer 2R</div>
+            <div className="font-mono font-bold text-slate-800">+{Math.round(plan.params.multiRunBuffer * 100)}%</div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white px-3 py-1.5">
+            <div className="text-[9px] font-bold uppercase text-slate-400">Rate/L/h</div>
+            <div className="font-mono font-bold text-slate-800">{fmtNum(plan.params.platingRatePerLineHour)}</div>
+          </div>
+          {kpiSeafood > 0 && (
+            <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5">
+              <div className="text-[9px] font-bold uppercase text-sky-500">Seafood</div>
+              <div className="font-mono font-bold text-sky-800">{kpiSeafood} Meals</div>
+            </div>
+          )}
+          {kpi2Shifts > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5">
+              <div className="text-[9px] font-bold uppercase text-amber-500">2 Schichten</div>
+              <div className="font-mono font-bold text-amber-800">{kpi2Shifts} Tage</div>
+            </div>
+          )}
+          {kpiOverDays > 0 && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5">
+              <div className="text-[9px] font-bold uppercase text-rose-500">Über Kapazität</div>
+              <div className="font-mono font-bold text-rose-800">{kpiOverDays} Tage</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {showParams && (
         <div className="card space-y-3 border-cyan-200 bg-cyan-50/40 p-3 text-[11px]">
@@ -171,7 +257,7 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
             <ParamNum label="Helfer je Linie" value={draftParams.platingHelpers} step={1} onCommit={v => setParam("platingHelpers", v)} />
           </div>
           <div>
-            <div className="mb-1 font-semibold text-slate-600">Kapazität je Tag (Linien · Stunden)</div>
+            <div className="mb-1 font-semibold text-slate-600">Kapazität je Tag (Linien · Stunden gesamt · Schichten)</div>
             <div className="flex flex-wrap gap-2">
               {PARAM_DAYS.map(d => (
                 <div key={d} className="rounded border border-slate-200 bg-white px-2 py-1">
@@ -179,11 +265,26 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
                   <div className="flex items-center gap-1">
                     <input type="number" min={0} value={draftCap[d]?.lines ?? 0}
                       onChange={e => setCap(d, "lines", Math.max(0, Math.round(Number(e.target.value) || 0)))}
-                      className="w-9 rounded border border-slate-200 px-1 text-right font-mono" />
+                      className="w-9 rounded border border-slate-200 px-1 text-right font-mono" title="Linien" />
                     <span className="text-slate-300">·</span>
-                    <input type="number" min={0} value={draftCap[d]?.hours ?? 0}
-                      onChange={e => setCap(d, "hours", Math.max(0, Number(e.target.value) || 0))}
-                      className="w-9 rounded border border-slate-200 px-1 text-right font-mono" />
+                    {(draftCap[d]?.shifts ?? 1) === 2 ? (
+                      <span className="w-16 text-right font-mono text-[10px] font-bold text-amber-700"
+                        title="2 Schichten à fix 7,5h — Produktionsmitarbeiter-Schichtlänge, nicht editierbar">
+                        2×7,5h
+                      </span>
+                    ) : (
+                      <input type="number" min={0} value={draftCap[d]?.hours ?? 0}
+                        onChange={e => setCap(d, "hours", Math.max(0, Number(e.target.value) || 0))}
+                        className="w-9 rounded border border-slate-200 px-1 text-right font-mono" title="Stunden gesamt" />
+                    )}
+                    <span className="text-slate-300">·</span>
+                    <select value={draftCap[d]?.shifts ?? 1}
+                      onChange={e => setCap(d, "shifts", Number(e.target.value) as 1 | 2)}
+                      className={`w-10 rounded border px-0.5 text-right font-mono text-[10px] ${(draftCap[d]?.shifts ?? 1) === 2 ? "border-amber-300 bg-amber-50 font-bold text-amber-700" : "border-slate-200"}`}
+                      title="Schichten (1=nur Früh, 2=Früh+Spät)">
+                      <option value={1}>1S</option>
+                      <option value={2}>2S</option>
+                    </select>
                   </div>
                 </div>
               ))}
@@ -203,8 +304,29 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
       {loading && <div className="card p-8 text-center text-slate-400">Lädt Plating-Plan…</div>}
 
       {!loading && !plan && (
-        <div className="card p-8 text-center text-slate-500">
-          Noch kein Plating-Plan für {week}. „Plan generieren" erzeugt den Rohbau aus dem Ramp-Up.
+        <div className="card space-y-3 p-8 text-center">
+          <div className="text-slate-500">
+            Noch kein Plating-Plan für {week}.
+          </div>
+          <div className="flex justify-center gap-3">
+            <button
+              type="button"
+              onClick={applyParams}
+              className="rounded-lg bg-verden-600 px-4 py-2 text-sm font-semibold text-white hover:bg-verden-500"
+            >
+              Plan generieren (Algorithmus)
+            </button>
+            <button
+              type="button"
+              onClick={() => triggerAI("fill")}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+            >
+              KI befüllen (Gemini)
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            „Plan generieren" nutzt den Algorithmus (schnell). „KI befüllen" lässt Gemini den Plan erstellen, prüfen und optimieren (gründlicher).
+          </p>
         </div>
       )}
 
@@ -277,10 +399,34 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
                 <td colSpan={10} className="px-2 py-1 text-right text-slate-400">Linien · Std · ~/h/Linie</td>
                 {activeDays.map(d => {
                   const l = loads.find(x => x.day === d);
-                  return <td key={d} className="px-1 py-1 text-center text-[9px] text-slate-500">{l?.lines ?? 0}·{l?.hours ?? 0}h·{fmtNum(l?.perHourPerLine ?? 0)}{l?.overCapacity ? " ⚠" : ""}</td>;
+                  return <td key={d} className="px-1 py-1 text-center text-[9px] text-slate-500">{l?.lines ?? 0}·{l?.availableHours ?? 0}h·{fmtNum(l?.perHourPerLine ?? 0)}{l?.overCapacity ? " ⚠" : ""}</td>;
                 })}
                 <td />
               </tr>
+              {loads.some(l => l.shiftLoads) && (
+                <>
+                  <tr className="border-t border-amber-200 bg-amber-50/40">
+                    <td colSpan={10} className="px-2 py-1 text-right font-semibold text-blue-600">Frühschicht</td>
+                    {activeDays.map(d => {
+                      const l = loads.find(x => x.day === d);
+                      const sl = l?.shiftLoads?.find(s => s.shift === "früh");
+                      if (!sl) return <td key={d} className="px-1 py-1 text-center text-[9px] text-slate-400">—</td>;
+                      return <td key={d} className={`px-1 py-1 text-center text-[9px] font-mono ${sl.overCapacity ? "font-bold text-rose-600" : "text-blue-700"}`}>{fmtNum(sl.portions)} · {sl.neededHours}/{sl.availableHours}h</td>;
+                    })}
+                    <td />
+                  </tr>
+                  <tr className="bg-amber-50/40">
+                    <td colSpan={10} className="px-2 py-1 text-right font-semibold text-amber-600">Spätschicht</td>
+                    {activeDays.map(d => {
+                      const l = loads.find(x => x.day === d);
+                      const sl = l?.shiftLoads?.find(s => s.shift === "spät");
+                      if (!sl) return <td key={d} className="px-1 py-1 text-center text-[9px] text-slate-400">—</td>;
+                      return <td key={d} className={`px-1 py-1 text-center text-[9px] font-mono ${sl.overCapacity ? "font-bold text-rose-600" : sl.portions > 0 ? "text-amber-700" : "text-slate-400"}`}>{sl.portions > 0 ? `${fmtNum(sl.portions)} · ${sl.neededHours}/${sl.availableHours}h` : "—"}</td>;
+                    })}
+                    <td />
+                  </tr>
+                </>
+              )}
             </tfoot>
           </table>
         </div>

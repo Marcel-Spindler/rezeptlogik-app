@@ -16,7 +16,7 @@ import { buildBoardNote, composeBoardNotes } from "../planning-oasis/cockpit/slo
 import type { WoReconciliationState } from "../wo-reconciliation/WoReconciliationContext";
 import type { BackfillsState } from "../backfills/BackfillsContext";
 import {
-  computeDayLoads, generatePlatingPlan, summarizePlatingPlan,
+  assignRunsToShifts, computeDayLoads, generatePlatingPlan, summarizePlatingPlan,
 } from "../plating-plan/platingPlanLogic";
 import {
   applyDayPlanMoves, describeDayPlan, generateAllDayPlans, summarizeDayPlan,
@@ -64,7 +64,9 @@ export function buildPlatingPlanWithMoves(
     const meal = plan.meals.find(m => codeDigits(m.code) === codeDigits(nt.code));
     if (meal) meal.note = nt.note;
   }
-  const out: PlatingWeekPlan = { ...plan, updatedAt: new Date().toISOString() };
+  // Re-run shift assignment after manual moves
+  const withShifts = assignRunsToShifts(plan);
+  const out: PlatingWeekPlan = { ...withShifts, updatedAt: new Date().toISOString() };
   if (withDailyPlans || basePlan?.dailyPlans) out.dailyPlans = generateAllDayPlans(out);
   return out;
 }
@@ -151,7 +153,7 @@ export const TOOL_DECLARATIONS = [{
     },
     {
       name: "generate_plating_plan",
-      description: "Erzeugt den Wochen-Plating-Plan aus dem Ramp-Up nach den Regeln (Demand=BENL+NORD+DE; ≤2250 → 1 Run +10%; >2250 → 2 Runs +5%, Run 1 = First-Run%; Seafood 1. Run ≥ Mi; bis Do jedes Meal 1×; Fr/Sa reduziert; Complexity Score cx: komplex → 1. Run früh, einfach → flexibel/Montag). Speichert NICHT — nur zur Ansicht/Bewertung.",
+      description: "Erzeugt den Wochen-Plating-Plan aus dem Ramp-Up nach den Regeln (Demand=BENL+NORD+DE; ≤2250 → 1 Run +10%; >2250 → 2 Runs +5%, Run 1 = First-Run%; Seafood 1. Run so SPÄT wie möglich (Do); bis Do jedes Meal 1×; Fr/Sa reduziert; Complexity Score cx: komplex→früh, einfach→flexibel/Montag). Bei Tagen mit 2 Schichten wird automatisch Früh-/Spätschicht zugewiesen (Frühschicht füllen, Spätschicht = Rest). Speichert NICHT — nur zur Ansicht/Bewertung. NACH DEM GENERIEREN: Ergebnis prüfen (Überkapazität, Seafood-Platzierung, Balance), dann simulate_plating_change für Verbesserungen, dann propose_plating_plan.",
       parameters: {
         type: "OBJECT",
         properties: { firstRunPct: { type: "NUMBER", description: "0.62–0.72; leer = KW-Default (meist 0.70)" } },
@@ -514,8 +516,15 @@ function toolSimulatePlating(args: Record<string, unknown>, ctx: ToolContext) {
   const loads = computeDayLoads(plan);
   return {
     appliedMoves: moves.length,
-    dayLoads: loads.filter(l => l.lines > 0 || l.portions > 0).map(l =>
-      `${l.day}: ${l.portions} P · ${l.meals} Runs · ${l.lines}L/${l.hours}h · ~${l.perHourPerLine}/h/L${l.overCapacity ? " ⚠ ÜBER" : ""}`),
+    dayLoads: loads.filter(l => l.lines > 0 || l.portions > 0).map(l => {
+      let line = `${l.day}: ${l.portions} P · ${l.meals} Runs · ${l.lines}L/${l.availableHours}h${l.shifts > 1 ? ` (${l.shifts}S)` : ""} · ~${l.perHourPerLine}/h/L${l.overCapacity ? " ⚠ ÜBER" : ""}`;
+      if (l.shiftLoads) {
+        for (const sl of l.shiftLoads) {
+          if (sl.portions > 0) line += ` | ${sl.shift === "früh" ? "Früh" : "Spät"}: ${sl.portions}P ${sl.neededHours}/${sl.availableHours}h${sl.overCapacity ? " ⚠" : ""}`;
+        }
+      }
+      return line;
+    }),
     overCapacityDays: loads.filter(l => l.overCapacity).map(l => l.day),
     unassigned: plan.meals.filter(m => m.runs.some(r => !r.day && r.portions > 0)).map(m => m.code),
   };

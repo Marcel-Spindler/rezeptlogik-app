@@ -1,5 +1,7 @@
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
+
+export const PLATING_OPTIMIZE_EVENT = "rezeptlogik:plating-optimize";
 
 // Der Launcher-Button ist winzig und bleibt eager im Header. Panel + Agent +
 // Kontext-Assembler + Werkzeuge kommen erst beim ersten Öffnen als eigener Chunk.
@@ -24,12 +26,24 @@ export function PlanAssistantLauncher({ onOpen }: { onOpen: () => void }) {
 
 export function PlanAssistant() {
   const [open, setOpen] = useState(false);
+  const [initialPrompt, setInitialPrompt] = useState<string | undefined>();
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const prompt = (e as CustomEvent<string>).detail;
+      setInitialPrompt(prompt);
+      setOpen(true);
+    };
+    window.addEventListener(PLATING_OPTIMIZE_EVENT, handler);
+    return () => window.removeEventListener(PLATING_OPTIMIZE_EVENT, handler);
+  }, []);
+
   return (
     <>
       <PlanAssistantLauncher onOpen={() => setOpen(true)} />
       {open && (
         <Suspense fallback={<div className="fixed right-4 top-16 z-50 rounded-lg bg-white px-3 py-2 text-xs text-slate-500 shadow-lg">Assistent lädt …</div>}>
-          <PlanAssistantPanel onClose={() => setOpen(false)} />
+          <PlanAssistantPanel onClose={() => { setOpen(false); setInitialPrompt(undefined); }} initialPrompt={initialPrompt} onPromptConsumed={() => setInitialPrompt(undefined)} />
         </Suspense>
       )}
     </>

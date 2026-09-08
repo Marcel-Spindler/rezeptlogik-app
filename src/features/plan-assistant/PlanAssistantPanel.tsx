@@ -233,7 +233,7 @@ function DayPlatingProposalCard({ proposal, onApply }: { proposal: DayPlatingPro
   );
 }
 
-export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
+export function PlanAssistantPanel({ onClose, initialPrompt, onPromptConsumed }: { onClose: () => void; initialPrompt?: string; onPromptConsumed?: () => void }) {
   const { data, selectedWeek, upliftPercent } = useAppState();
   const reconciliation = useWoReconciliation();
   const backfills = useBackfillsOptional();
@@ -310,6 +310,16 @@ export function PlanAssistantPanel({ onClose }: { onClose: () => void }) {
     }));
     setBusy(false);
   }, [busy, data, selectedWeek, upliftPercent, reconciliation, backfills, platingPlan, contents, model, setMessages]);
+
+  // Auto-send initial prompt (e.g. from "KI optimieren" button in PlatingPlanView)
+  const promptSent = useRef(false);
+  useEffect(() => {
+    if (initialPrompt && data && !busy && !promptSent.current) {
+      promptSent.current = true;
+      void send(initialPrompt);
+      onPromptConsumed?.();
+    }
+  }, [initialPrompt, data, busy, send, onPromptConsumed]);
 
   const submitFeedback = useCallback((messageId: string, score: PlanAssistantFeedbackScore, correction?: string) => {
     const message = messages.find((entry) => entry.id === messageId);

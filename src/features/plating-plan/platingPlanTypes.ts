@@ -14,10 +14,14 @@ export interface PlatingRun {
   runIndex: number;            // 1, 2, (3)
   portions: number;            // gepufferte Portionszahl für diesen Run
   day: PlatingDay | null;      // null = noch nicht verplant
+  shift?: PlatingShift;        // Früh-/Spätschicht (nur bei shifts=2 am Tag)
   /** true, sobald der Run als produziert markiert ist (Phase 2 / manuell). */
   done?: boolean;
   /** Rest, der am nächsten Tag nachgeholt werden muss (Phase 2). */
   carryOver?: number;
+  /** true = dieser Run entstand aus einem gedroppten Backfill-Bedarf (Plating-
+   *  Linien-Bot), nicht aus der normalen Wochenplan-Generierung. */
+  isBackfill?: boolean;
 }
 
 export interface PlatingMealPlan {
@@ -45,9 +49,34 @@ export interface PlatingMealPlan {
   note?: string;
 }
 
+export type PlatingShift = "früh" | "spät";
+
 export interface PlatingDayCapacity {
   lines: number;               // Plating-Linien an dem Tag
-  hours: number;               // verfügbare Plating-Stunden
+  /** Verfügbare Plating-Stunden — immer TAGES-GESAMT, nie pro Schicht.
+   *  Bei shifts=2 ist der Tagesgesamtwert fix shifts × PRODUCTION_SHIFT_HOURS
+   *  (siehe unten) — das Feld wird dann automatisch gesetzt, nicht frei getippt. */
+  hours: number;
+  shifts?: 1 | 2;              // Anzahl Schichten, Default 1
+}
+
+/** Länge EINER realen Produktions-Schicht (Marcel: Produktionsmitarbeiter
+ *  arbeiten 7,5 Stunden/Tag) — fix, unabhängig vom `hours`-Feld eines Tages.
+ *  Bei shifts=2 gilt für jede Schicht (Früh/Spät) genau dieser Wert. */
+export const PRODUCTION_SHIFT_HOURS = 7.5;
+
+/** Tages-Gesamtstunden aus der Kapazität ableiten — bei shifts=2 IMMER
+ *  shifts × PRODUCTION_SHIFT_HOURS (das `hours`-Feld wird dabei ignoriert,
+ *  robust auch gegen ältere/veraltete Firestore-Dokumente). */
+export function effectiveDayHours(cap: PlatingDayCapacity | undefined): number {
+  const shifts = cap?.shifts ?? 1;
+  return shifts >= 2 ? shifts * PRODUCTION_SHIFT_HOURS : (cap?.hours ?? 0);
+}
+
+/** Verfügbare Stunden EINER Schicht — fix PRODUCTION_SHIFT_HOURS bei shifts=2,
+ *  sonst die Tages-Gesamtstunden (1 Schicht = der ganze Tag). */
+export function shiftHours(cap: PlatingDayCapacity | undefined): number {
+  return (cap?.shifts ?? 1) === 2 ? PRODUCTION_SHIFT_HOURS : effectiveDayHours(cap);
 }
 
 /** Stellschrauben des Wochen-Plating-Plans — im Sheet pro KW gepflegt, in der App
@@ -142,3 +171,12 @@ export interface PlatingWeekPlan {
 }
 
 export const PLATING_PLAN_CHANGED_EVENT = "rezeptlogik:plating-plan-changed";
+
+export interface PlatingShiftLoad {
+  shift: PlatingShift;
+  portions: number;
+  neededHours: number;
+  availableHours: number;
+  overCapacity: boolean;
+  meals: number;
+}

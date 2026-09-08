@@ -42,6 +42,7 @@ const VIEW_ALIASES: Partial<Record<AppView, string>> = {
   "redzone-live": "kueche live monitoring redzone plating now",
   "blast-chiller": "chiller bot kuehl zuteilung",
   "allergen-plating": "allergen bot linien",
+  "plating-line-bot": "plating linien bot vorplanung schicht frueh spaet kapazitaet",
   rundmail: "email mail rundschreiben pet info",
   import: "csv upload datei",
 };

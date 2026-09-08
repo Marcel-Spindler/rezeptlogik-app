@@ -15,10 +15,12 @@
 import type { DataBundle, RecipeProfile, WeekRecipe } from "../../core/types";
 import { fmtNum } from "../../lib/helpers";
 import {
-  PLATING_DAYS, type PlatingDay, type PlatingDayCapacity, type PlatingMealPlan,
-  type PlatingPlanParams, type PlatingRun, type PlatingWeekPlan,
+  PLATING_DAYS, effectiveDayHours, shiftHours, type PlatingDay, type PlatingDayCapacity,
+  type PlatingMealPlan, type PlatingPlanParams, type PlatingRun, type PlatingShift,
+  type PlatingShiftLoad, type PlatingWeekPlan,
 } from "./platingPlanTypes";
 import { describeDayPlan } from "./platingDayLogic";
+import type { CombinedBackfillNeed } from "../backfills/backfillTypes";
 
 /** Default-Stellschrauben ohne den KW-abhängigen First-Run-Anteil. */
 export const DEFAULT_PLATING_PARAMS: Omit<PlatingPlanParams, "firstRunPct"> = {
@@ -68,13 +70,13 @@ export function resolvePlatingParams(week: string, override?: Partial<PlatingPla
 }
 
 export const DEFAULT_DAY_CAPACITY: Partial<Record<PlatingDay, PlatingDayCapacity>> = {
-  Mo: { lines: 0, hours: 0 },   // Montag nur Spätschicht — im Sheet meist 0 geplant
-  Di: { lines: 3, hours: 22 },
-  Mi: { lines: 3, hours: 22 },
-  Do: { lines: 3, hours: 22 },
-  Fr: { lines: 2, hours: 14 },
-  Sa: { lines: 2, hours: 10 },  // Fr/Sa reduziert (Backfilling)
-  So: { lines: 0, hours: 0 },
+  Mo: { lines: 0, hours: 0, shifts: 1 },
+  Di: { lines: 3, hours: 22, shifts: 1 },
+  Mi: { lines: 3, hours: 22, shifts: 1 },
+  Do: { lines: 3, hours: 22, shifts: 1 },
+  Fr: { lines: 2, hours: 14, shifts: 1 },
+  Sa: { lines: 2, hours: 10, shifts: 1 },
+  So: { lines: 0, hours: 0, shifts: 1 },
 };
 
 const SEAFOOD_RE = /\b(fish|salmon|shrimp|barramundi|crustacean|prawn|seafood|tuna|molluscs|shellfish)\b/i;
@@ -207,9 +209,20 @@ const COMPLEX_CX = 1.15;
 const SIMPLE_CX = 0.80;
 const COMPLEX_EARLINESS_PENALTY = 0.20;                      // je späterer Tag, desto schlechter für komplexe Meals
 
+/** Gesamte Tages-Kapazität (alle Schichten). Bei 2 Schichten ist der
+ *  Tagesgesamtwert fix shifts × PRODUCTION_SHIFT_HOURS (siehe effectiveDayHours). */
 function dayCapacityPortions(cap: PlatingDayCapacity | undefined, ratePerLineHour: number): number {
-  if (!cap || cap.lines <= 0 || cap.hours <= 0) return 0;
-  return cap.lines * cap.hours * ratePerLineHour;
+  const hours = effectiveDayHours(cap);
+  if (!cap || cap.lines <= 0 || hours <= 0) return 0;
+  return cap.lines * hours * ratePerLineHour;
+}
+
+/** Kapazität EINER Schicht: fix PRODUCTION_SHIFT_HOURS bei 2 Schichten,
+ *  sonst die Tages-Gesamtstunden (1 Schicht = der ganze Tag). */
+function singleShiftPortions(cap: PlatingDayCapacity | undefined, ratePerLineHour: number): number {
+  const hours = shiftHours(cap);
+  if (!cap || cap.lines <= 0 || hours <= 0) return 0;
+  return cap.lines * hours * ratePerLineHour;
 }
 
 /** Verteilt die Runs auf Tage — greedy, kapazitäts- und regelbewusst:
@@ -288,6 +301,54 @@ export function assignRunsToDays(plan: PlatingWeekPlan): PlatingWeekPlan {
   return { ...plan, meals, updatedAt: new Date().toISOString(), source: "generated" };
 }
 
+/** Weist bei Tagen mit 2 Schichten die Runs einer Schicht (früh/spät) zu.
+ *  Frühschicht wird gefüllt bis zur Einzelschicht-Kapazität, Rest → Spätschicht.
+ *  Größere Runs zuerst in die Frühschicht (Stabilität). */
+export function assignRunsToShifts(plan: PlatingWeekPlan): PlatingWeekPlan {
+  const rate = plan.params.platingRatePerLineHour || 900;
+  const meals = plan.meals.map(m => ({
+    ...m,
+    runs: m.runs.map(r => ({ ...r, shift: undefined as PlatingShift | undefined })),
+  }));
+
+  for (const day of PLATING_DAYS) {
+    const cap = plan.dayCapacity[day];
+    const shifts = cap?.shifts ?? 1;
+    if (shifts < 2) {
+      // Single shift: clear any shift assignments
+      for (const m of meals) for (const r of m.runs) if (r.day === day) r.shift = undefined;
+      continue;
+    }
+
+    const shiftCap = singleShiftPortions(cap, rate);
+    // Collect all runs for this day, sorted by portions descending
+    const dayRuns: { mealIdx: number; runIdx: number; portions: number }[] = [];
+    for (let mi = 0; mi < meals.length; mi++) {
+      for (let ri = 0; ri < meals[mi].runs.length; ri++) {
+        const r = meals[mi].runs[ri];
+        if (r.day === day && r.portions > 0) {
+          dayRuns.push({ mealIdx: mi, runIdx: ri, portions: r.portions });
+        }
+      }
+    }
+    dayRuns.sort((a, b) => b.portions - a.portions);
+
+    // Fill Frühschicht first, then Spätschicht
+    let fruehLoad = 0;
+    for (const dr of dayRuns) {
+      const run = meals[dr.mealIdx].runs[dr.runIdx];
+      if (fruehLoad + dr.portions <= shiftCap) {
+        run.shift = "früh";
+        fruehLoad += dr.portions;
+      } else {
+        run.shift = "spät";
+      }
+    }
+  }
+
+  return { ...plan, meals, updatedAt: new Date().toISOString() };
+}
+
 export function generatePlatingPlan(
   data: DataBundle, week: string,
   paramsOverride?: Partial<PlatingPlanParams>,
@@ -297,7 +358,8 @@ export function generatePlatingPlan(
   if (dayCapacityOverride && Object.keys(dayCapacityOverride).length) {
     skeleton.dayCapacity = { ...DEFAULT_DAY_CAPACITY, ...dayCapacityOverride };
   }
-  return assignRunsToDays(skeleton);
+  const withDays = assignRunsToDays(skeleton);
+  return assignRunsToShifts(withDays);
 }
 
 // ── Auswertung: Tages-Auslastung ─────────────────────────────────────────────
@@ -308,10 +370,12 @@ export interface PlatingDayLoad {
   portions: number;
   lines: number;
   hours: number;
+  shifts: number;
   perHourPerLine: number;
   neededHours: number;
   availableHours: number;
   overCapacity: boolean;
+  shiftLoads?: PlatingShiftLoad[];
 }
 
 export function computeDayLoads(plan: PlatingWeekPlan): PlatingDayLoad[] {
@@ -326,17 +390,141 @@ export function computeDayLoads(plan: PlatingWeekPlan): PlatingDayLoad[] {
       }
     }
     const lines = cap?.lines ?? 0;
-    const hours = cap?.hours ?? 0;
+    const hours = effectiveDayHours(cap);
+    const shifts = cap?.shifts ?? 1;
+    const hoursPerShift = shiftHours(cap);
     const perHourPerLine = lines > 0 && hours > 0 ? portions / (lines * hours) : 0;
     const neededHours = lines > 0 ? portions / (lines * rate) : (portions > 0 ? Infinity : 0);
+
+    let shiftLoads: PlatingShiftLoad[] | undefined;
+    if (shifts === 2) {
+      const frueh = { portions: 0, meals: 0 };
+      const spaet = { portions: 0, meals: 0 };
+      for (const m of plan.meals) {
+        for (const r of m.runs) {
+          if (r.day !== day || r.portions <= 0) continue;
+          if (r.shift === "spät") { spaet.portions += r.portions; spaet.meals++; }
+          else { frueh.portions += r.portions; frueh.meals++; }
+        }
+      }
+      const fruehNeeded = lines > 0 ? frueh.portions / (lines * rate) : 0;
+      const spaetNeeded = lines > 0 ? spaet.portions / (lines * rate) : 0;
+      shiftLoads = [
+        { shift: "früh", portions: frueh.portions, neededHours: Math.round(fruehNeeded * 10) / 10, availableHours: hoursPerShift, overCapacity: fruehNeeded > hoursPerShift + 0.01, meals: frueh.meals },
+        { shift: "spät", portions: spaet.portions, neededHours: Math.round(spaetNeeded * 10) / 10, availableHours: hoursPerShift, overCapacity: spaetNeeded > hoursPerShift + 0.01, meals: spaet.meals },
+      ];
+    }
+
     return {
-      day, meals, portions, lines, hours,
+      day, meals, portions, lines, hours, shifts,
       perHourPerLine: Math.round(perHourPerLine),
       neededHours: Math.round(neededHours * 10) / 10,
       availableHours: hours,
       overCapacity: neededHours > hours + 0.01,
+      shiftLoads,
     };
   });
+}
+
+export interface RunFeasibility {
+  /** true = dieser Run passt vollständig in die Kapazität seiner Schicht/seines Tages. */
+  fits: boolean;
+  /** Wie viele Portionen DIESES Runs die Kapazität sprengen (0 = passt komplett). */
+  overflowPortions: number;
+}
+
+/** Kapazitäts-Ampel je Run eines Tages — rein aus Linien × Stunden × Rate,
+ *  KEIN Ersatz für den vollen Linienplan (platingDayLogic.ts, Changeover/
+ *  Besetzung/Carry-over). Prüft kumulativ in Anzeige-Reihenfolge (Portionen
+ *  absteigend, wie die Bot-Tageskarte sortiert) je Schicht-Bucket (oder den
+ *  ganzen Tag bei shifts=1) gegen shiftHours(cap) — sobald die laufende Summe
+ *  die Kapazität übersteigt, trägt der auslösende Run den Überschuss. */
+export function computeRunFeasibility(plan: PlatingWeekPlan, day: PlatingDay): Map<string, RunFeasibility> {
+  const rate = plan.params.platingRatePerLineHour || 900;
+  const cap = plan.dayCapacity[day];
+  const lines = cap?.lines ?? 0;
+  const capacityPortions = lines > 0 ? lines * shiftHours(cap) * rate : 0;
+  const result = new Map<string, RunFeasibility>();
+
+  const buckets = new Map<string, { code: string; runIndex: number; portions: number }[]>();
+  for (const m of plan.meals) {
+    for (const r of m.runs) {
+      if (r.day !== day || r.portions <= 0) continue;
+      const bucketKey = cap?.shifts === 2 ? (r.shift ?? "früh") : "day";
+      const arr = buckets.get(bucketKey) ?? [];
+      arr.push({ code: m.code, runIndex: r.runIndex, portions: r.portions });
+      buckets.set(bucketKey, arr);
+    }
+  }
+
+  for (const items of buckets.values()) {
+    items.sort((a, b) => b.portions - a.portions);
+    let cum = 0;
+    for (const item of items) {
+      const before = Math.max(0, cum - capacityPortions);
+      cum += item.portions;
+      const after = Math.max(0, cum - capacityPortions);
+      const overflowPortions = Math.round(after - before);
+      result.set(`${item.code}-R${item.runIndex}`, { fits: overflowPortions <= 0, overflowPortions });
+    }
+  }
+  return result;
+}
+
+// ── Backfill-Erkennung (Plating-Linien-Bot) ─────────────────────────────────
+// Verknüpft die bereits live berechneten Backfill-Bedarfe (src/features/backfills,
+// aus Postblast/LinePlating-GSheet/RTI zusammengeführt) mit dem Wochenplan —
+// rein additiv/gelesen, ändert das Live-Signal selbst nicht.
+
+/** Nur die 4 Ziffern eines Meal-Codes (Buchstaben-Suffix ignorieren, z.B.
+ *  FV4063A ≙ FV4063B — dieselbe Meal-Identität mit anderem Sleeve-Druck). */
+function codeDigits(code: string): string {
+  return String(code || "").replace(/\D/g, "");
+}
+
+/** Vergleicht zwei Meal-Codes über ihre 4-stellige Kernidentität. */
+function codesMatch(a: string, b: string): boolean {
+  const da = codeDigits(a);
+  const db = codeDigits(b);
+  return da.length > 0 && da === db;
+}
+
+/** true, wenn `entry` (recipeCode + codeVariants) sich auf dasselbe Meal bezieht. */
+function matchesMealCode(meal: PlatingMealPlan, entry: Pick<CombinedBackfillNeed, "recipeCode" | "codeVariants">): boolean {
+  return codesMatch(meal.code, entry.recipeCode) || entry.codeVariants.some(v => codesMatch(meal.code, v));
+}
+
+/** Wie viele Portionen eines Backfill-Bedarfs noch NICHT als Backfill-Run im
+ *  Plan liegen. Der Live-Bedarf (`recommendedPortions`) bleibt unangetastet —
+ *  nur diese abgeleitete Zahl schrumpft, sobald Backfill-Runs platziert werden. */
+export function openBackfillPortions(meal: PlatingMealPlan, recommendedPortions: number): number {
+  const placed = meal.runs.filter(r => r.isBackfill).reduce((s, r) => s + r.portions, 0);
+  return Math.max(0, Math.round(recommendedPortions - placed));
+}
+
+export interface OpenBackfill {
+  meal: PlatingMealPlan;
+  entry: CombinedBackfillNeed;
+  openPortions: number;
+}
+
+/** Offene Backfill-Bedarfe für Meals, die diese KW tatsächlich geplant sind —
+ *  Grundlage für die "Offene Backfills"-Chips im Plating-Linien-Bot. */
+export function computeOpenBackfills(plan: PlatingWeekPlan, combined: readonly CombinedBackfillNeed[]): OpenBackfill[] {
+  const out: OpenBackfill[] = [];
+  for (const entry of combined) {
+    if (entry.recommendedBackfillPortions <= 0) continue;
+    const meal = plan.meals.find(m => matchesMealCode(m, entry));
+    if (!meal) continue; // kein Backfill-Chip für ein Meal, das diese KW nicht geplant ist
+    const openPortions = openBackfillPortions(meal, entry.recommendedBackfillPortions);
+    if (openPortions > 0) out.push({ meal, entry, openPortions });
+  }
+  return out;
+}
+
+/** Nächster freier runIndex für ein Meal (für neu angehängte Backfill-Runs). */
+export function nextRunIndex(meal: PlatingMealPlan): number {
+  return meal.runs.reduce((max, r) => Math.max(max, r.runIndex), 0) + 1;
 }
 
 /** Kurztext-Zusammenfassung für den KI-Kontext / Tool-Ausgabe. */
@@ -351,11 +539,15 @@ export function summarizePlatingPlan(plan: PlatingWeekPlan): string {
   lines.push("Tageslast:");
   for (const l of loads) {
     if (l.lines === 0 && l.portions === 0) continue;
-    lines.push(`  ${l.day}: ${fmtNum(l.portions)} P · ${l.meals} Runs · ${l.lines} Linien/${l.hours}h · ~${fmtNum(l.perHourPerLine)}/h/Linie${l.overCapacity ? " ⚠ ÜBER KAPAZITÄT" : ""}`);
-  }
+    lines.push(`  ${l.day}: ${fmtNum(l.portions)} P · ${l.meals} Runs · ${l.lines} Linien/${l.availableHours}h${l.shifts > 1 ? ` (${l.shifts} Schichten)` : ""} · ~${fmtNum(l.perHourPerLine)}/h/Linie${l.overCapacity ? " ⚠ ÜBER KAPAZITÄT" : ""}`);
+    if (l.shiftLoads) {
+      for (const sl of l.shiftLoads) {
+        if (sl.portions > 0) lines.push(`    ${sl.shift === "früh" ? "Frühschicht" : "Spätschicht"}: ${fmtNum(sl.portions)} P · ${sl.neededHours}/${sl.availableHours}h${sl.overCapacity ? " ⚠" : ""}`);
+      }
+    }  }
   lines.push("Meals (cx = Complexity Score, Median-Meal = 1.0):");
   for (const m of plan.meals.slice(0, 60)) {
-    const runs = m.runs.filter(r => r.portions > 0).map(r => `${r.day ?? "?"}:${fmtNum(r.portions)}`).join(" + ");
+    const runs = m.runs.filter(r => r.portions > 0).map(r => `${r.day ?? "?"}${r.shift ? `(${r.shift === "früh" ? "F" : "S"})` : ""}:${fmtNum(r.portions)}`).join(" + ");
     const cx = m.complexity != null ? ` · cx ${m.complexity.toFixed(2)}${m.complexity >= 1.15 ? " KOMPLEX" : m.complexity <= 0.80 ? " einfach" : ""}` : "";
     lines.push(`  ${m.code} ${m.name} · ${m.preference}${m.seafood ? " · SEAFOOD" : ""}${cx} · Demand ${fmtNum(m.totalDemand)} → ${runs}`);
   }

@@ -9,7 +9,7 @@ import { getBaseVerdenVolume, loadStationDeviceCounts, loadStationPools, DEFAULT
 import { analyzePlan, getActiveScenario, loadPlannerStorage, PLANNER_DAYS } from "../../lib/planner";
 import type { WoReconciliationState } from "../wo-reconciliation/WoReconciliationContext";
 import type { BackfillsState } from "../backfills/BackfillsContext";
-import type { PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
+import { effectiveDayHours, type PlatingWeekPlan } from "../plating-plan/platingPlanTypes";
 import { summarizePlatingPlan } from "../plating-plan/platingPlanLogic";
 
 export interface PlanContextInput {
@@ -166,7 +166,59 @@ export function buildPlanContext({ data, week, upliftPercent, reconciliation, ba
     lines.push(section("Wochen-Plating-Plan", `Noch keiner für ${week}. generate_plating_plan erzeugt den Rohbau, propose_plating_plan legt ihn dem Nutzer vor.`));
   }
 
-  lines.push(`\n(Tage: ${PLANNER_DAYS.join(" ")}. Nur Fakten aus diesem Kontext verwenden. Küchen-Wochenboard ändern: propose_plan_change. Wochen-Plating-Plan: generate_plating_plan → simulate_plating_change → propose_plating_plan. Risiko-Übersichten: check_plan_issues.)`);
+  // ── Plating-Regelwerk (für KI-Befüllung) ─────────────────────────────────
+  const pRules = platingPlan?.params;
+  const capEntries = platingPlan?.dayCapacity ?? {};
+  const shiftDays = Object.entries(capEntries).filter(([, c]) => c && (c.shifts ?? 1) >= 2).map(([d]) => d);
+  lines.push(section("Plating-Regelwerk", [
+    "REGELN FÜR DEN WOCHEN-PLATING-PLAN (beim Generieren und Optimieren IMMER einhalten):",
+    "",
+    "1. DEMAND & RUNS:",
+    `   - Demand = BENL + NORD + DE (3 Märkte, Verden-Volumen)`,
+    `   - Demand ≤ ${pRules?.singleRunMaxDemand ?? 2250} → 1 Run, Puffer +${Math.round((pRules?.singleRunBuffer ?? 0.10) * 100)}%`,
+    `   - Demand > ${pRules?.singleRunMaxDemand ?? 2250} → 2 Runs, Puffer +${Math.round((pRules?.multiRunBuffer ?? 0.05) * 100)}%`,
+    `   - Bei 2 Runs: Run 1 (Hauptlauf) = ${Math.round((pRules?.firstRunPct ?? 0.70) * 100)}% des gepufferten Totals, Run 2 (Refire) = Rest`,
+    "",
+    "2. TAG-ZUWEISUNG:",
+    "   - Hauptlauf (Run 1): Di/Mi/Do (3 Linien, hohe Kapazität)",
+    "   - Refire (Run 2): nach dem Hauptlauf-Tag, Fr/Sa bevorzugt (2 Linien)",
+    "   - Tage gleichmäßig belasten (niedrigste Auslastung bevorzugen)",
+    "   - Bis Donnerstag muss jedes Meal mind. 1× verplant sein (CPT-Deadline)",
+    "",
+    "3. SEAFOOD-REGEL:",
+    "   - Seafood (Fisch/Meeresfrüchte): Run 1 SO SPÄT WIE MÖGLICH (Do bevorzugt, dann Mi)",
+    "   - Wenn beide Runs auf einen Tag passen (≤115% Auslastung): Seafood an EINEM Tag (Allergen-Minimierung)",
+    "",
+    "4. COMPLEXITY-REGEL:",
+    "   - Komplexe Meals (cx ≥ 1.15): Run 1 FRÜH (Di bevorzugt) — mehr Zeit für Nacharbeit",
+    "   - Einfache Meals (cx ≤ 0.80): flexibel, auch Montag (Spätschicht-Fill-up) erlaubt",
+    "",
+    "5. SCHICHTEN (Früh/Spätschicht):",
+    `   - Tage mit 2 Schichten: ${shiftDays.length ? shiftDays.join(", ") : "keine (alle 1 Schicht)"}`,
+    `   - Plating-Rate: ${fmtNum(pRules?.platingRatePerLineHour ?? 900)} Portionen/Linie/Stunde`,
+    "   - Eine Schicht ist FIX 7,5 Stunden (Produktionsmitarbeiter-Schichtlänge), unabhängig vom hours-Feld eines Tages",
+    "   - Bei 2 Schichten: Frühschicht füllen bis 7,5h × lines × rate, Spätschicht = Differenz (Tagesgesamt = 2 × 7,5h)",
+    "   - Große Runs zuerst in die Frühschicht (Stabilität)",
+    "   Kapazitäten je Tag (Gesamtstunden — bei 2 Schichten fix 2×7,5h, unabhängig vom gespeicherten hours-Wert):",
+    ...Object.entries(capEntries)
+      .filter(([, c]) => c && (c.lines ?? 0) > 0)
+      .map(([d, c]) => `   - ${d}: ${c!.lines} Linien × ${effectiveDayHours(c)}h${(c!.shifts ?? 1) >= 2 ? " (2 Schichten × 7,5h)" : ""} gesamt`),
+    "",
+    "6. ALLERGEN-SEQUENZIERUNG (Phase 2, Tagesplan):",
+    "   - Aufsteigend: wenige Allergene → viele (keine Reinigung bei nur Zufügen)",
+    "   - Allergen-Wegfall = volle Reinigung (30 min) — minimieren!",
+    "   - L1 (Highrunner): größter sauberer Block ohne Reinigung",
+    "   - L2 (Flex): nimmt die Reinigungen auf",
+    "",
+    "7. QUALITÄTSKRITERIEN (ein guter Plan erfüllt ALLE):",
+    "   - Kein Tag über Kapazität (Portionen ≤ lines × hours × shifts × rate)",
+    "   - Seafood am spätestmöglichen Tag",
+    "   - Tage gleichmäßig belastet (max. Abweichung < 15%)",
+    "   - Alle Meals verplant (keine ungeplanten)",
+    "   - Minimale Reinigungen im Tagesplan",
+  ].join("\n")));
+
+  lines.push(`\n(Tage: ${PLANNER_DAYS.join(" ")}. Nur Fakten aus diesem Kontext verwenden. Küchen-Wochenboard ändern: propose_plan_change. Wochen-Plating-Plan: generate_plating_plan → simulate_plating_change → propose_plating_plan. Risiko-Übersichten: check_plan_issues. BEI PLATING-ANFRAGEN IMMER: 1) generate_plating_plan, 2) Ergebnis prüfen, 3) simulate_plating_change mit Verbesserungen, 4) propose_plating_plan mit Zusammenfassung.)`);
 
   return lines.join("\n");
 }

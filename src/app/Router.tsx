@@ -33,6 +33,7 @@ const RundmailView        = lazyWithRetry(() => import("../RundmailView").then(m
 const WmsKwOverviewView   = lazyWithRetry(() => import("../WmsKwOverviewView").then(m => ({ default: m.WmsKwOverviewView })), "wms-kw");
 const BlastChillerView    = lazyWithRetry(() => import("../features/blast-chiller/BlastChillerView").then(m => ({ default: m.BlastChillerView })), "blast-chiller");
 const AllergenPlatingView = lazyWithRetry(() => import("../features/allergen-plating/AllergenPlatingView").then(m => ({ default: m.AllergenPlatingView })), "allergen-plating");
+const PlatingLineBotView  = lazyWithRetry(() => import("../features/plating-line-bot/PlatingLineBotView").then(m => ({ default: m.PlatingLineBotView })), "plating-line-bot");
 const PostblastLiveView   = lazyWithRetry(() => import("../features/gsheet-monitor/PostblastLiveView").then(m => ({ default: m.PostblastLiveView })), "postblast-live");
 const TransparencyPlanView = lazyWithRetry(() => import("../features/gsheet-monitor/TransparencyPlanView").then(m => ({ default: m.TransparencyPlanView })), "transparency-plan");
 const BackfillsView       = lazyWithRetry(() => import("../features/backfills/BackfillsView").then(m => ({ default: m.BackfillsView })), "backfills");
@@ -135,6 +136,9 @@ function MainPaneSwitch({ view }: { view: AppView }) {
     case "allergen-plating":
       return <AllergenPlatingView data={data} />;
 
+    case "plating-line-bot":
+      return <PlatingLineBotView data={data} />;
+
     case "postblast-live":
       return <PostblastLiveView data={data} />;
 
@@ -175,7 +179,7 @@ function MainPaneSwitch({ view }: { view: AppView }) {
   }
 }
 
-const BOT_VIEWS = new Set<AppView>(["blast-chiller", "allergen-plating"]);
+const BOT_VIEWS = new Set<AppView>(["blast-chiller", "allergen-plating", "plating-line-bot"]);
 
 function FullApp() {
   const state = useAppState();

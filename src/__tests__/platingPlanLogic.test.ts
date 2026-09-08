@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   splitMealIntoRuns, DEFAULT_PLATING_PARAMS, firstRunPctForWeek, resolvePlatingParams,
-  generatePlatingPlan, computeDayLoads,
+  generatePlatingPlan, computeDayLoads, computeRunFeasibility, computeOpenBackfills, nextRunIndex,
 } from "../features/plating-plan/platingPlanLogic";
 import type { DataBundle } from "../core/types";
+import type { PlatingDay, PlatingDayCapacity, PlatingRun, PlatingWeekPlan } from "../features/plating-plan/platingPlanTypes";
+import type { CombinedBackfillNeed } from "../features/backfills/backfillTypes";
 
 const params = (firstRunPct: number) => ({ ...DEFAULT_PLATING_PARAMS, firstRunPct });
 
@@ -213,5 +215,178 @@ describe("Complexity Score", () => {
     const plan = generatePlatingPlan(fakeData(), "2026-W37", undefined, cap);
     expect(plan.meals.find(m => m.code === "FV0651A")!.runs[0].day).toBe("Mo");
     expect(["Di", "Mi", "Do"]).toContain(plan.meals.find(m => m.code === "FV0257A")!.runs[0].day);
+  });
+});
+
+/** Minimaler, handgebauter Wochenplan für Kapazitäts-/Feasibility-Tests, ohne
+ *  über den vollen generatePlatingPlan-Weg zu gehen (Fokus rein auf
+ *  computeDayLoads/computeRunFeasibility). */
+function fakeWeekPlan(
+  dayCapacity: Partial<Record<PlatingDay, PlatingDayCapacity>>,
+  meals: { code: string; runs: Pick<PlatingRun, "runIndex" | "day" | "portions" | "shift" | "isBackfill">[] }[],
+): PlatingWeekPlan {
+  return {
+    week: "2026-W37",
+    params: { ...DEFAULT_PLATING_PARAMS, firstRunPct: 0.7 },
+    generatedAt: "", updatedAt: "", source: "generated",
+    dayCapacity,
+    meals: meals.map(m => ({
+      code: m.code, name: m.code, preference: "Keto",
+      demand: { benl: 0, nord: 0, de: 0 }, totalDemand: 0,
+      bufferedTotal: m.runs.reduce((s, r) => s + r.portions, 0),
+      runCount: m.runs.length, runs: m.runs,
+      allergens: "", seafood: false, stations: [], complexity: null, subMealCount: 0,
+    })),
+  };
+}
+
+describe("Schicht-Kapazität (7,5h fix)", () => {
+  it("computeDayLoads ignoriert einen veralteten hours-Wert bei shifts=2 — fix 2×7,5h", () => {
+    const plan = fakeWeekPlan(
+      { Di: { lines: 3, hours: 999, shifts: 2 } }, // hours bewusst falsch/veraltet
+      [{ code: "FV0001A", runs: [{ runIndex: 1, day: "Di", portions: 1000, shift: "früh" }] }],
+    );
+    const di = computeDayLoads(plan).find(l => l.day === "Di")!;
+    expect(di.availableHours).toBe(15); // 2 × 7,5, NICHT der gespeicherte 999-Wert
+    expect(di.shiftLoads?.[0].availableHours).toBe(7.5);
+    expect(di.shiftLoads?.[1].availableHours).toBe(7.5);
+  });
+
+  it("Tagesgesamt-Kapazität bei shifts=2 bleibt lines × 2×7,5h × rate, unabhängig vom hours-Feld", () => {
+    const rate = DEFAULT_PLATING_PARAMS.platingRatePerLineHour; // 900
+    const capacityPortions = 3 * 15 * rate; // lines × (2×7,5h) × rate = 40500
+    const plan = fakeWeekPlan(
+      { Di: { lines: 3, hours: 22, shifts: 2 } }, // hours = alter 1-Schicht-Wert, muss ignoriert werden
+      [{ code: "FV0001A", runs: [{ runIndex: 1, day: "Di", portions: capacityPortions + 1000 }] }],
+    );
+    const di = computeDayLoads(plan).find(l => l.day === "Di")!;
+    expect(di.overCapacity).toBe(true);
+    expect(di.neededHours).toBeGreaterThan(15);
+  });
+});
+
+describe("computeRunFeasibility", () => {
+  it("alles passt → fits für jeden Run", () => {
+    // Kapazität Di = 1 Linie × 10h × 900/h = 9000 Portionen
+    const plan = fakeWeekPlan(
+      { Di: { lines: 1, hours: 10, shifts: 1 } },
+      [
+        { code: "FV0001A", runs: [{ runIndex: 1, day: "Di", portions: 3000 }] },
+        { code: "FV0002A", runs: [{ runIndex: 1, day: "Di", portions: 2000 }] },
+      ],
+    );
+    const feas = computeRunFeasibility(plan, "Di");
+    expect(feas.get("FV0001A-R1")?.fits).toBe(true);
+    expect(feas.get("FV0002A-R1")?.fits).toBe(true);
+  });
+
+  it("der die Kapazität sprengende Run trägt den exakten Überschuss", () => {
+    // Kapazität = 1 × 10h × 900/h = 9000; 6000 (größter, zuerst) + 4000 = 10000 → 1000 zu viel
+    const plan = fakeWeekPlan(
+      { Di: { lines: 1, hours: 10, shifts: 1 } },
+      [
+        { code: "FV0001A", runs: [{ runIndex: 1, day: "Di", portions: 6000 }] },
+        { code: "FV0002A", runs: [{ runIndex: 1, day: "Di", portions: 4000 }] },
+      ],
+    );
+    const feas = computeRunFeasibility(plan, "Di");
+    expect(feas.get("FV0001A-R1")).toEqual({ fits: true, overflowPortions: 0 });
+    expect(feas.get("FV0002A-R1")).toEqual({ fits: false, overflowPortions: 1000 });
+  });
+
+  it("Früh-/Spätschicht teilen sich keine Kapazität (kein Leak zwischen Buckets)", () => {
+    // shifts=2 → je Schicht fix 7,5h × 1 Linie × 900/h = 6750 Kapazität
+    const plan = fakeWeekPlan(
+      { Di: { lines: 1, hours: 15, shifts: 2 } },
+      [
+        { code: "FV0001A", runs: [{ runIndex: 1, day: "Di", portions: 6000, shift: "früh" }] },
+        { code: "FV0002A", runs: [{ runIndex: 1, day: "Di", portions: 6000, shift: "spät" }] },
+      ],
+    );
+    const feas = computeRunFeasibility(plan, "Di");
+    // 12000 Portionen gesamt würden eine einzelne 6750er-Kapazität sprengen —
+    // auf zwei getrennte Schichten verteilt passt aber jeweils 6000 ≤ 6750.
+    expect(feas.get("FV0001A-R1")?.fits).toBe(true);
+    expect(feas.get("FV0002A-R1")?.fits).toBe(true);
+  });
+
+  it("computeDayLoads/computeRunFeasibility haben keine versteckte 2-Run-Annahme (3. Run = Backfill)", () => {
+    const plan = fakeWeekPlan(
+      { Di: { lines: 1, hours: 10, shifts: 1 } }, // Kapazität = 9000
+      [{ code: "FV0001A", runs: [
+        { runIndex: 1, day: "Di", portions: 3000 },
+        { runIndex: 2, day: "Di", portions: 3000 },
+        { runIndex: 3, day: "Di", portions: 3000, isBackfill: true },
+      ] }],
+    );
+    const loads = computeDayLoads(plan);
+    const di = loads.find(l => l.day === "Di")!;
+    expect(di.portions).toBe(9000);
+    expect(di.overCapacity).toBe(false);
+    const feas = computeRunFeasibility(plan, "Di");
+    expect(feas.get("FV0001A-R1")?.fits).toBe(true);
+    expect(feas.get("FV0001A-R2")?.fits).toBe(true);
+    expect(feas.get("FV0001A-R3")?.fits).toBe(true);
+  });
+});
+
+function fakeBackfillNeed(overrides: Partial<CombinedBackfillNeed> & { recipeCode: string }): CombinedBackfillNeed {
+  return {
+    codeVariants: [], recipeName: overrides.recipeCode,
+    kitchenMissingKg: 0, kitchenMissingPortions: 0, kitchenPriority: null, kitchenSubRecipes: [],
+    platingPlannedPortions: 0, platingShortagePortions: 0, platingShortageReasons: [], platingDaysAffected: [],
+    lpShortfallPortions: 0, lpWeek: "W37", lpStatusText: "",
+    minNeededPortions: null, backfillResultPortions: null, backfillResultComments: [],
+    rtiHoldingKg: 0, rtiPlannedTarget: null, rtiActuals: null, rtiShortfallPortions: 0,
+    rtiKitchenDone: false, rtiHasOpenSubs: false, rtiVetoed: false, rtiBackfillCandidateSubs: [],
+    liveWmsHoldingKg: null, liveRedzonePortions: null, liveRedzoneStatus: null,
+    recommendedBackfillPortions: 0, recommendedSource: "none", confidence: "kitchen-only", priority: "on-track",
+    ...overrides,
+  };
+}
+
+describe("computeOpenBackfills", () => {
+  it("matcht über recipeCode und liefert die offene Menge", () => {
+    const plan = fakeWeekPlan({}, [{ code: "FV0001A", runs: [] }]);
+    const need = fakeBackfillNeed({ recipeCode: "FV0001A", recommendedBackfillPortions: 500, priority: "critical" });
+    const open = computeOpenBackfills(plan, [need]);
+    expect(open).toHaveLength(1);
+    expect(open[0].openPortions).toBe(500);
+  });
+
+  it("matcht auch über codeVariants (anderer Buchstaben-Suffix, gleiche 4 Ziffern)", () => {
+    const plan = fakeWeekPlan({}, [{ code: "FV0001B", runs: [] }]);
+    const need = fakeBackfillNeed({ recipeCode: "FV0001A", codeVariants: ["FV0001A"], recommendedBackfillPortions: 300 });
+    expect(computeOpenBackfills(plan, [need])).toHaveLength(1);
+  });
+
+  it("überspringt Meals, die diese KW nicht geplant sind", () => {
+    const plan = fakeWeekPlan({}, [{ code: "FV0001A", runs: [] }]);
+    const need = fakeBackfillNeed({ recipeCode: "FV9999A", recommendedBackfillPortions: 300 });
+    expect(computeOpenBackfills(plan, [need])).toHaveLength(0);
+  });
+
+  it("offene Menge sinkt mit vorhandenen isBackfill-Runs und wird bei Erreichen des Bedarfs auf 0 geklemmt", () => {
+    const plan = fakeWeekPlan({}, [
+      { code: "FV0001A", runs: [{ runIndex: 1, day: "Di", portions: 400, isBackfill: true }] },
+    ]);
+    const need = fakeBackfillNeed({ recipeCode: "FV0001A", recommendedBackfillPortions: 500 });
+    const open = computeOpenBackfills(plan, [need]);
+    expect(open[0].openPortions).toBe(100);
+
+    const covered = fakeWeekPlan({}, [
+      { code: "FV0001A", runs: [{ runIndex: 1, day: "Di", portions: 500, isBackfill: true }] },
+    ]);
+    expect(computeOpenBackfills(covered, [need])).toHaveLength(0); // voll gedeckt → kein Chip mehr
+  });
+});
+
+describe("nextRunIndex", () => {
+  it("liefert den nächsten freien Index für 1-, 2- und 3-Run-Meals", () => {
+    expect(nextRunIndex({ ...fakeWeekPlan({}, [{ code: "X", runs: [] }]).meals[0] })).toBe(1);
+    expect(nextRunIndex(fakeWeekPlan({}, [{ code: "X", runs: [{ runIndex: 1, day: "Di", portions: 100 }] }]).meals[0])).toBe(2);
+    expect(nextRunIndex(fakeWeekPlan({}, [{ code: "X", runs: [
+      { runIndex: 1, day: "Di", portions: 100 }, { runIndex: 2, day: "Mi", portions: 100 },
+    ] }]).meals[0])).toBe(3);
   });
 });

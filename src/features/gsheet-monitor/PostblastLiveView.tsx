@@ -21,6 +21,7 @@ import { recipeWeightKey, type RecipeWeightLookup } from "./parsers/parseExportR
 import { useBackfillsOptional } from "../backfills/BackfillsContext";
 import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
 import { useRedzoneOptional, type RedzoneState } from "../redzone-live/RedzoneContext";
+import { buildPlatedByCodeMap } from "../redzone-live/redzoneHelpers";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -682,20 +683,17 @@ function MinimumNeedsPanel({
 }) {
   const [expandedDay, setExpandedDay] = useState<"thu" | "fri" | "sat" | null>(() => todayCheckpoint());
 
-  // Platierte Portionen je Rezept-Code aus abgeschlossenen Redzone-Runs (letzte 24h)
+  // Platierte Portionen je Rezept-Code aus abgeschlossenen + laufenden Redzone-Runs.
+  // Auf platingDone/platingNow statt dem ganzen redzone-Objekt hören: das
+  // Redzone-Context-`value` wird jede Sekunde (Countdown-Timer) neu erzeugt,
+  // platingDone/platingNow selbst ändern sich nur alle 60s (Poll).
   const platingDone = redzone?.platingDone;
   const platingNow = redzone?.platingNow;
-  const platedByCode = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const run of platingDone ?? []) {
-      if (run.mealCode) map.set(run.mealCode, (map.get(run.mealCode) ?? 0) + (run.outCount ?? 0));
-    }
-    // Aktive Runs miteinrechnen (outCount wird live aktualisiert)
-    for (const run of platingNow ? [...platingNow.values()] : []) {
-      if (run.mealCode && run.outCount) map.set(run.mealCode, (map.get(run.mealCode) ?? 0) + run.outCount);
-    }
-    return map;
-  }, [platingDone, platingNow]);
+  const platedByCode = useMemo(
+    () => buildPlatedByCodeMap(redzone),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [platingDone, platingNow],
+  );
 
   const byDay = useMemo(() => {
     const result = new Map<"thu" | "fri" | "sat", MinNeedsMealStatus[]>();
@@ -869,7 +867,9 @@ function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
 
   const { activeLineCount, platingNow, cookingNow, totalPlated, loading, error, lastUpdate, secondsUntilRefresh } = redzone;
 
-  const activeRuns = [...platingNow.values()];
+  // platingNow trägt jeden aktiven Run unter ZWEI Keys (mealCode + SKU) auf
+  // demselben Objekt — über Set dedupen, sonst zählt/zeigt sich ein Run doppelt.
+  const activeRuns = [...new Set(platingNow.values())];
 
   // Kompakte Zeitdarstellung: "seit X min" / "seit Xh Ym"
   function sinceMin(start: string | null): string {

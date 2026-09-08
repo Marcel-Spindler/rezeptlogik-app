@@ -76,6 +76,7 @@ const NAV_CATEGORIES: readonly NavCategory[] = [
     items: [
       { view: "blast-chiller", label: "Blast Chiller" },
       { view: "allergen-plating", label: "Allergen Plating" },
+      { view: "plating-line-bot", label: "Plating-Linien" },
     ],
   },
   {
