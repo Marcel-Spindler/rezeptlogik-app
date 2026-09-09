@@ -527,6 +527,110 @@ export function nextRunIndex(meal: PlatingMealPlan): number {
   return meal.runs.reduce((max, r) => Math.max(max, r.runIndex), 0) + 1;
 }
 
+// ── „An dem Tag nicht geschafft" → Rest auf einen anderen Tag ────────────────
+// Reine Umschichtung im gespeicherten Wochenplan (kein Neu-Generieren): der
+// Ursprungs-Run wird auf die Ist-Menge reduziert und als erledigt markiert, der
+// nicht geschaffte Rest wandert als isCarryForward-Run auf den gewählten Tag.
+
+/** Zieltag-Vorschlag für eine nicht geschaffte Menge: der nächste Produktionstag
+ *  nach `fromDay` mit noch freier Kapazität; ist keiner frei, der am wenigsten
+ *  ausgelastete Tag ab `fromDay` (Sonntag bleibt außen vor). */
+export function suggestCarryForwardDay(
+  plan: PlatingWeekPlan, fromDay: PlatingDay | null, portions: number,
+): PlatingDay {
+  const rate = plan.params.platingRatePerLineHour || 900;
+  const prodDays: PlatingDay[] = ["Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+  const startIdx = fromDay ? prodDays.indexOf(fromDay) : -1;
+  const after = prodDays.slice(startIdx + 1);
+  const order = after.length ? after : prodDays;
+
+  const load: Record<string, number> = {};
+  for (const d of PLATING_DAYS) load[d] = 0;
+  for (const m of plan.meals) for (const r of m.runs) {
+    if (r.day && r.portions > 0) load[r.day] += r.portions;
+  }
+  const capOf = (d: PlatingDay) => {
+    const c = plan.dayCapacity[d];
+    const hours = effectiveDayHours(c);
+    return c && c.lines > 0 && hours > 0 ? c.lines * hours * rate : 0;
+  };
+
+  let best: PlatingDay | null = null;
+  let bestUtil = Infinity;
+  for (const d of order) {
+    const cap = capOf(d);
+    if (cap <= 0) continue;
+    const util = (load[d] + portions) / cap;
+    if (util <= 1) return d;          // erster Tag, der die Menge noch fasst
+    if (util < bestUtil) { bestUtil = util; best = d; }
+  }
+  return best ?? order.find(d => capOf(d) > 0) ?? "Do";
+}
+
+/** Splittet einen Run: `producedPortions` bleiben am Ursprungstag (Run als
+ *  erledigt markiert), der Rest wird als isCarryForward-Run auf `toDay` gelegt.
+ *  Idempotent — ein erneuter Aufruf rechnet gegen die ursprünglich geplante
+ *  Menge (`plannedPortions`) und ersetzt den bestehenden Nachhol-Run.
+ *  Gibt die neue `runs`-Liste des Meals zurück (kein State). */
+export function splitUnfinishedRun(
+  meal: PlatingMealPlan, runIndex: number, producedPortions: number, toDay: PlatingDay,
+): PlatingRun[] {
+  const src = meal.runs.find(r => r.runIndex === runIndex);
+  if (!src || src.isCarryForward) return meal.runs;
+
+  const planned = src.plannedPortions ?? src.portions;
+  const done = Math.max(0, Math.min(Math.round(producedPortions), planned));
+  const remainder = planned - done;
+
+  // bestehenden Nachhol-Run dieses Ursprungs entfernen (Re-Edit / Undo-vor-Neu)
+  const rest = meal.runs.filter(r => !(r.isCarryForward && r.carryFromRun === runIndex));
+
+  const updated = rest.map(r => r.runIndex !== runIndex ? r : {
+    ...r,
+    portions: done,
+    plannedPortions: planned,
+    donePortions: done,
+    done: true,
+  });
+
+  if (remainder <= 0) return updated;
+
+  const maxIdx = updated.reduce((mx, r) => Math.max(mx, r.runIndex), 0);
+  updated.push({
+    runIndex: maxIdx + 1,
+    portions: remainder,
+    day: toDay,
+    isCarryForward: true,
+    carryFromRun: runIndex,
+    ...(src.day ? { carryFromDay: src.day } : {}),
+  });
+  return updated;
+}
+
+/** Macht splitUnfinishedRun rückgängig: Ursprungs-Run zurück auf die geplante
+ *  Menge, Nachhol-Run entfernt. */
+export function clearUnfinishedRun(meal: PlatingMealPlan, runIndex: number): PlatingRun[] {
+  return meal.runs
+    .filter(r => !(r.isCarryForward && r.carryFromRun === runIndex))
+    .map(r => {
+      if (r.runIndex !== runIndex) return r;
+      const next: PlatingRun = { ...r, portions: r.plannedPortions ?? r.portions };
+      delete next.donePortions;
+      delete next.plannedPortions;
+      delete next.done;
+      return next;
+    });
+}
+
+/** Alle Runs eines Plans, die eine offene „nicht geschafft"-Nachführung tragen. */
+export function countUnfinishedMarkers(plan: PlatingWeekPlan): number {
+  let n = 0;
+  for (const m of plan.meals) for (const r of m.runs) {
+    if (r.isCarryForward || r.donePortions != null) n++;
+  }
+  return n;
+}
+
 /** Kurztext-Zusammenfassung für den KI-Kontext / Tool-Ausgabe. */
 export function summarizePlatingPlan(plan: PlatingWeekPlan): string {
   const loads = computeDayLoads(plan);

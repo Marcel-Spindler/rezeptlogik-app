@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   splitMealIntoRuns, DEFAULT_PLATING_PARAMS, firstRunPctForWeek, resolvePlatingParams,
   generatePlatingPlan, computeDayLoads, computeRunFeasibility, computeOpenBackfills, nextRunIndex,
+  splitUnfinishedRun, clearUnfinishedRun, suggestCarryForwardDay, countUnfinishedMarkers,
 } from "../features/plating-plan/platingPlanLogic";
 import type { DataBundle } from "../core/types";
 import type { PlatingDay, PlatingDayCapacity, PlatingRun, PlatingWeekPlan } from "../features/plating-plan/platingPlanTypes";
@@ -378,6 +379,106 @@ describe("computeOpenBackfills", () => {
       { code: "FV0001A", runs: [{ runIndex: 1, day: "Di", portions: 500, isBackfill: true }] },
     ]);
     expect(computeOpenBackfills(covered, [need])).toHaveLength(0); // voll gedeckt → kein Chip mehr
+  });
+});
+
+describe("splitUnfinishedRun / clearUnfinishedRun (nicht geschafft)", () => {
+  const mealWith = (runs: PlatingRun[]) =>
+    fakeWeekPlan({}, [{ code: "FV0001A", runs }]).meals[0];
+
+  it("reduziert den Ursprungs-Run auf die Ist-Menge und legt den Rest als Nachhol-Run an", () => {
+    const meal = mealWith([{ runIndex: 1, day: "Di", portions: 6894 }]);
+    const runs = splitUnfinishedRun(meal, 1, 4000, "Do");
+    expect(runs).toHaveLength(2);
+    const orig = runs.find(r => r.runIndex === 1)!;
+    expect(orig.portions).toBe(4000);
+    expect(orig.donePortions).toBe(4000);
+    expect(orig.plannedPortions).toBe(6894);
+    expect(orig.done).toBe(true);
+    const carry = runs.find(r => r.isCarryForward)!;
+    expect(carry.portions).toBe(2894);
+    expect(carry.day).toBe("Do");
+    expect(carry.carryFromDay).toBe("Di");
+    expect(carry.carryFromRun).toBe(1);
+    expect(carry.runIndex).toBe(2);
+  });
+
+  it("Ist ≥ geplant → kein Nachhol-Run, Run bleibt bei der geplanten Menge", () => {
+    const meal = mealWith([{ runIndex: 1, day: "Di", portions: 5000 }]);
+    const runs = splitUnfinishedRun(meal, 1, 9999, "Do");
+    expect(runs).toHaveLength(1);
+    expect(runs[0].portions).toBe(5000);
+    expect(runs[0].donePortions).toBe(5000);
+  });
+
+  it("Ist = 0 → der ganze Run wandert auf den anderen Tag", () => {
+    const meal = mealWith([{ runIndex: 1, day: "Di", portions: 5000 }]);
+    const runs = splitUnfinishedRun(meal, 1, 0, "Fr");
+    const orig = runs.find(r => r.runIndex === 1)!;
+    expect(orig.portions).toBe(0);
+    expect(runs.find(r => r.isCarryForward)!.portions).toBe(5000);
+  });
+
+  it("erneuter Aufruf rechnet gegen die ursprünglich geplante Menge und ersetzt den Nachhol-Run", () => {
+    const meal = mealWith([{ runIndex: 1, day: "Di", portions: 6894 }]);
+    const once = splitUnfinishedRun(meal, 1, 4000, "Do");
+    const twice = splitUnfinishedRun({ ...meal, runs: once }, 1, 3000, "Fr");
+    expect(twice.filter(r => r.isCarryForward)).toHaveLength(1);
+    const carry = twice.find(r => r.isCarryForward)!;
+    expect(carry.portions).toBe(3894); // 6894 - 3000, nicht 6894 - 4000 - 3000
+    expect(carry.day).toBe("Fr");
+    expect(twice.find(r => r.runIndex === 1)!.portions).toBe(3000);
+  });
+
+  it("ein Nachhol-Run selbst kann nicht gesplittet werden", () => {
+    const meal = mealWith([{ runIndex: 1, day: "Di", portions: 6894 }]);
+    const runs = splitUnfinishedRun(meal, 1, 4000, "Do");
+    const carry = runs.find(r => r.isCarryForward)!;
+    expect(splitUnfinishedRun({ ...meal, runs }, carry.runIndex, 100, "Sa")).toEqual(runs);
+  });
+
+  it("clearUnfinishedRun stellt die geplante Menge wieder her und entfernt den Nachhol-Run", () => {
+    const meal = mealWith([{ runIndex: 1, day: "Di", portions: 6894 }, { runIndex: 2, day: "Fr", portions: 2000 }]);
+    const split = splitUnfinishedRun(meal, 1, 4000, "Do");
+    const cleared = clearUnfinishedRun({ ...meal, runs: split }, 1);
+    expect(cleared.filter(r => r.isCarryForward)).toHaveLength(0);
+    const orig = cleared.find(r => r.runIndex === 1)!;
+    expect(orig.portions).toBe(6894);
+    expect(orig.donePortions).toBeUndefined();
+    expect(orig.plannedPortions).toBeUndefined();
+    expect(orig.done).toBeUndefined();
+    expect(cleared.find(r => r.runIndex === 2)!.portions).toBe(2000); // anderer Run unberührt
+  });
+
+  it("countUnfinishedMarkers zählt Ursprungs- und Nachhol-Runs", () => {
+    const meal = mealWith([{ runIndex: 1, day: "Di", portions: 6894 }]);
+    const runs = splitUnfinishedRun(meal, 1, 4000, "Do");
+    const plan = fakeWeekPlan({}, []);
+    plan.meals = [{ ...meal, runs }];
+    expect(countUnfinishedMarkers(plan)).toBe(2);
+    expect(countUnfinishedMarkers(fakeWeekPlan({}, [{ code: "X", runs: [{ runIndex: 1, day: "Di", portions: 100 }] }]))).toBe(0);
+  });
+});
+
+describe("suggestCarryForwardDay", () => {
+  it("nimmt den nächsten Tag nach fromDay, der die Menge noch fasst", () => {
+    const plan = fakeWeekPlan(
+      { Di: { lines: 1, hours: 10, shifts: 1 }, Mi: { lines: 1, hours: 10, shifts: 1 }, Do: { lines: 1, hours: 10, shifts: 1 } },
+      [{ code: "A", runs: [{ runIndex: 1, day: "Di", portions: 3000 }] }],
+    );
+    expect(suggestCarryForwardDay(plan, "Di", 2000)).toBe("Mi");
+  });
+
+  it("sind alle Folgetage voll → der am wenigsten ausgelastete", () => {
+    const plan = fakeWeekPlan(
+      {
+        Do: { lines: 1, hours: 10, shifts: 1 },
+        Fr: { lines: 1, hours: 1, shifts: 1 },   // Kapazität 900
+        Sa: { lines: 1, hours: 2, shifts: 1 },   // Kapazität 1800
+      },
+      [{ code: "A", runs: [{ runIndex: 1, day: "Fr", portions: 900 }] }],
+    );
+    expect(suggestCarryForwardDay(plan, "Do", 2000)).toBe("Sa");
   });
 });
 

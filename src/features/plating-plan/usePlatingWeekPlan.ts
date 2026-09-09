@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DataBundle } from "../../core/types";
-import { buildDefaultParams, assignRunsToShifts, generatePlatingPlan, nextRunIndex } from "./platingPlanLogic";
+import {
+  buildDefaultParams, assignRunsToShifts, generatePlatingPlan, nextRunIndex,
+  splitUnfinishedRun, clearUnfinishedRun,
+} from "./platingPlanLogic";
 import { generateAllDayPlans, recomputeDayPlan } from "./platingDayLogic";
 import { savePlatingWeekPlan, subscribePlatingWeekPlan } from "./platingWeekPlanFirestore";
 import {
@@ -84,6 +87,34 @@ export function usePlatingWeekPlan(data: DataBundle | null, week: string) {
     }));
   }, [update]);
 
+  /** „An dem Tag nicht geschafft": `producedPortions` bleiben am Ursprungstag
+   *  (Run wird als erledigt markiert), der Rest wandert als Nachhol-Run auf
+   *  `toDay`. Schicht wird über update() neu zugewiesen. */
+  const markRunUnfinished = useCallback(
+    (code: string, runIndex: number, producedPortions: number, toDay: PlatingDay) => {
+      update(prev => ({
+        ...prev,
+        meals: prev.meals.map(m => {
+          if (m.code !== code) return m;
+          const runs = splitUnfinishedRun(m, runIndex, producedPortions, toDay);
+          return { ...m, runs, runCount: runs.filter(r => r.portions > 0).length };
+        }),
+      }));
+    }, [update]);
+
+  /** „nicht geschafft" zurücknehmen — Ursprungs-Run zurück auf die geplante
+   *  Menge, Nachhol-Run entfernen. */
+  const clearRunUnfinished = useCallback((code: string, runIndex: number) => {
+    update(prev => ({
+      ...prev,
+      meals: prev.meals.map(m => {
+        if (m.code !== code) return m;
+        const runs = clearUnfinishedRun(m, runIndex);
+        return { ...m, runs, runCount: runs.filter(r => r.portions > 0).length };
+      }),
+    }));
+  }, [update]);
+
   const regenerate = useCallback((opts?: {
     params?: Partial<PlatingPlanParams>;
     dayCapacity?: Partial<Record<PlatingDay, PlatingDayCapacity>>;
@@ -153,5 +184,9 @@ export function usePlatingWeekPlan(data: DataBundle | null, week: string) {
     });
   }, [persist]);
 
-  return { plan, loading, dirty, update, moveRun, addBackfillRun, regenerate, regenerateDailyPlans, updateDayPlan };
+  return {
+    plan, loading, dirty, update, moveRun, addBackfillRun,
+    markRunUnfinished, clearRunUnfinished,
+    regenerate, regenerateDailyPlans, updateDayPlan,
+  };
 }

@@ -22,6 +22,23 @@ export interface PlatingRun {
   /** true = dieser Run entstand aus einem gedroppten Backfill-Bedarf (Plating-
    *  Linien-Bot), nicht aus der normalen Wochenplan-Generierung. */
   isBackfill?: boolean;
+
+  // ── Ist-Nachführung: „an dem Tag nicht geschafft" ─────────────────────────
+  /** Wie viele Portionen dieses Runs an seinem Tag tatsächlich geplatet wurden.
+   *  Gesetzt, sobald der Run als (teil-)erledigt markiert wurde. `portions` ist
+   *  dann auf diesen Ist-Wert reduziert; der Rest liegt als isCarryForward-Run
+   *  auf einem anderen Tag. */
+  donePortions?: number;
+  /** Ursprünglich für diesen Run geplante Menge (vor dem „nicht geschafft"-
+   *  Split). Nur für Anzeige + „zurücksetzen". */
+  plannedPortions?: number;
+  /** true = Nachhol-Run für eine an ihrem Tag nicht geschaffte Menge
+   *  (Schwester-Flag zu isBackfill). */
+  isCarryForward?: boolean;
+  /** Tag, an dem der Ursprungs-Run lief (Anzeige „aus Di"). */
+  carryFromDay?: PlatingDay;
+  /** runIndex des Ursprungs-Runs — paart Nachhol-Run und Ursprung für Undo. */
+  carryFromRun?: number;
 }
 
 export interface PlatingMealPlan {

@@ -4,7 +4,8 @@ import { useAppState } from "../../app/AppContext";
 import { fmtNum } from "../../lib/helpers";
 import { usePlatingWeekPlan } from "../plating-plan/usePlatingWeekPlan";
 import {
-  buildDefaultParams, computeDayLoads, computeOpenBackfills, computeRunFeasibility, DEFAULT_DAY_CAPACITY,
+  buildDefaultParams, computeDayLoads, computeOpenBackfills, computeRunFeasibility, countUnfinishedMarkers,
+  DEFAULT_DAY_CAPACITY, suggestCarryForwardDay,
   type PlatingDayLoad, type RunFeasibility,
 } from "../plating-plan/platingPlanLogic";
 import {
@@ -89,12 +90,71 @@ function ShiftBar({ load }: { load: PlatingDayLoad }) {
   );
 }
 
+/** „An diesem Tag nicht geschafft" — Ist-Menge erfassen, Rest auf einen anderen
+ *  Tag legen. Eigener Input-State, initialisiert aus Redzone-Hinweis + Vorschlag. */
+function UnfinishedPanel({
+  code, runIndex, fromDay, plannedPortions, platedHint, suggestedDay, onCancel, onSubmit,
+}: {
+  code: string; runIndex: number; fromDay: PlatingDay; plannedPortions: number;
+  platedHint: number; suggestedDay: PlatingDay;
+  onCancel: () => void; onSubmit: (producedPortions: number, toDay: PlatingDay) => void;
+}) {
+  const [done, setDone] = useState<number>(() => Math.max(0, Math.min(Math.round(platedHint), plannedPortions)));
+  const [toDay, setToDay] = useState<PlatingDay>(suggestedDay);
+  const clamped = Math.max(0, Math.min(done, plannedPortions));
+  const remainder = plannedPortions - clamped;
+  return (
+    <div className="mt-0.5 rounded border border-rose-200 bg-rose-50/70 p-1.5 text-[9px]">
+      <div className="mb-1 font-bold text-rose-700">
+        {code} R{runIndex} · {DAY_LABELS[fromDay]} nicht geschafft
+      </div>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <label className="flex items-center gap-1">
+          <span className="text-slate-500">geplatet</span>
+          <input type="number" min={0} max={plannedPortions} value={done}
+            onChange={e => setDone(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+            className="w-16 rounded border border-slate-300 px-1 text-right font-mono" />
+          <span className="text-slate-400">/ {fmtNum(plannedPortions)}</span>
+        </label>
+        {platedHint > 0 && Math.round(platedHint) !== done && (
+          <button type="button" onClick={() => setDone(Math.max(0, Math.min(Math.round(platedHint), plannedPortions)))}
+            className="text-[8px] text-slate-400 underline hover:text-slate-600">
+            Redzone: {fmtNum(platedHint)}
+          </button>
+        )}
+        <span className="text-slate-500">
+          Rest <span className="font-bold text-rose-700">{fmtNum(remainder)}</span> P →
+        </span>
+        <select value={toDay} onChange={e => setToDay(e.target.value as PlatingDay)}
+          className="rounded border border-slate-300 px-1 font-mono">
+          {(["Mo", "Di", "Mi", "Do", "Fr", "Sa"] as PlatingDay[]).map(dd => (
+            <option key={dd} value={dd}>{DAY_LABELS[dd]}{dd === suggestedDay ? " · Vorschlag" : ""}</option>
+          ))}
+        </select>
+        <button type="button" onClick={onCancel}
+          className="rounded border border-slate-300 px-1.5 py-0.5 font-semibold text-slate-500 hover:bg-white">
+          Abbrechen
+        </button>
+        <button type="button" onClick={() => onSubmit(clamped, toDay)} disabled={remainder <= 0}
+          className="rounded bg-rose-600 px-1.5 py-0.5 font-semibold text-white hover:bg-rose-500 disabled:opacity-40">
+          Rest auf {DAY_LABELS[toDay]}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PlatingLineBotView({ data }: { data: DataBundle }) {
   const { selectedWeek } = useAppState();
   const week = selectedWeek;
-  const { plan, loading, dirty, moveRun, addBackfillRun, regenerate } = usePlatingWeekPlan(data, week);
+  const {
+    plan, loading, dirty, moveRun, addBackfillRun, regenerate,
+    markRunUnfinished, clearRunUnfinished,
+  } = usePlatingWeekPlan(data, week);
 
   const [editMode, setEditMode] = useState(false);
+  // Run, für den gerade das „nicht geschafft"-Panel offen ist.
+  const [splitRun, setSplitRun] = useState<{ code: string; runIndex: number } | null>(null);
   const [dragging, setDragging] = useState<DragPayload | null>(null);
   const [dropTarget, setDropTarget] = useState<PlatingDay | null>(null);
   // Ref, damit onDrop die Quelle auch kennt, wenn zwischen dragstart und drop
@@ -126,7 +186,13 @@ export function PlatingLineBotView({ data }: { data: DataBundle }) {
       if (k === "shifts" && v === 2) next.hours = 2 * PRODUCTION_SHIFT_HOURS;
       return { ...c, [d]: next };
     });
-  const applyAndGenerate = () => regenerate({ params: draftParams, dayCapacity: draftCap });
+  const applyAndGenerate = () => {
+    // „Neu generieren" baut den Wochenplan frisch — die Ist-Nachführung
+    // (nicht geschafft / Nachhol-Runs) geht dabei verloren.
+    if (plan && countUnfinishedMarkers(plan) > 0
+      && !window.confirm("Der Plan enthält „nicht geschafft\"-Markierungen und Nachhol-Runs.\nNeu generieren verwirft sie. Fortfahren?")) return;
+    regenerate({ params: draftParams, dayCapacity: draftCap });
+  };
 
   // Kapazitäts-Ampel je Run (Teil des KI-unabhängigen Dashboards, reine Ableitung
   // aus plan/loads — läuft bei jedem Render neu, kein zusätzliches Polling nötig).
@@ -228,6 +294,8 @@ export function PlatingLineBotView({ data }: { data: DataBundle }) {
   const seafoodCount = plan?.meals.filter(m => m.seafood).length ?? 0;
   const overDays = loads.filter(l => l.overCapacity).length;
   const shiftDays = loads.filter(l => l.shifts > 1).length;
+  const carryForwardRuns = plan?.meals.reduce((n, m) => n + m.runs.filter(r => r.isCarryForward && r.portions > 0).length, 0) ?? 0;
+  const carryForwardPortions = plan?.meals.reduce((s, m) => s + m.runs.filter(r => r.isCarryForward).reduce((x, r) => x + r.portions, 0), 0) ?? 0;
 
   return (
     <div className="space-y-4">
@@ -356,6 +424,7 @@ export function PlatingLineBotView({ data }: { data: DataBundle }) {
             <KpiCard label="Puffer 2R" value={`+${Math.round(plan.params.multiRunBuffer * 100)}%`} />
             {seafoodCount > 0 && <KpiCard label="Seafood" value={`${seafoodCount} Meals`} tone="blue" />}
             {shiftDays > 0 && <KpiCard label="2 Schichten" value={`${shiftDays} Tage`} tone="amber" />}
+            {carryForwardRuns > 0 && <KpiCard label="Nachhol-Runs" value={`${carryForwardRuns} · ${fmtNum(carryForwardPortions)} P`} tone="amber" />}
             {overDays > 0 && <KpiCard label="Über Kapazität" value={`${overDays} Tage`} tone="rose" />}
             {overDays === 0 && <KpiCard label="Status" value="OK" tone="green" />}
           </div>
@@ -442,36 +511,82 @@ export function PlatingLineBotView({ data }: { data: DataBundle }) {
                       const prod = producibility.byRecipeCode.get(code);
                       const headcount = subMealCount > 0 ? subMealCount + 1 : null;
                       const isDragged = dragging?.kind === "run" && dragging.code === code && dragging.runIndex === run.runIndex;
+                      const isDone = run.donePortions != null;
+                      const isCF = run.isCarryForward === true;
+                      const panelOpen = editMode && splitRun?.code === code && splitRun.runIndex === run.runIndex;
                       return (
-                        <div key={`${code}-R${run.runIndex}`}
-                          draggable={editMode}
-                          onDragStart={editMode ? onDragStart({ kind: "run", code, runIndex: run.runIndex, fromDay: d }) : undefined}
-                          onDragEnd={editMode ? onDragEnd : undefined}
-                          className={`flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-[10px] ${shiftTone} ${editMode ? "cursor-grab active:cursor-grabbing" : ""} ${isDragged ? "opacity-40" : ""}`}>
-                          {editMode && <span className="text-slate-300">⠿</span>}
-                          {shiftLabel && <span className={`rounded px-1 py-0.5 text-[8px] font-bold ${run.shift === "spät" ? "bg-amber-200 text-amber-800" : "bg-blue-200 text-blue-800"}`}>{shiftLabel}</span>}
-                          {run.isBackfill && <span className="rounded bg-violet-200 px-1 py-0.5 text-[8px] font-bold text-violet-800" title="Aus einem Backfill-Bedarf angelegt">BF</span>}
-                          <span className="font-bold text-blue-500 text-[8px]">R{run.runIndex}</span>
-                          <span className="font-mono font-semibold">{code}</span>
-                          <span className="truncate text-slate-600">{name}</span>
-                          {seafood && <span className="text-sky-500">🐟</span>}
-                          <span className="ml-auto font-mono font-bold">{fmtNum(run.portions)}</span>
-                          {headcount != null && (
-                            <span className="font-mono text-slate-500" title={`Besetzung: ${subMealCount} Sub-Meals + 1 Person = ${headcount}`}>
-                              👤{headcount}
-                            </span>
-                          )}
-                          {feas && (feas.fits
-                            ? <span className="text-emerald-600" title="Passt in die Kapazität dieser Schicht/dieses Tages">✓</span>
-                            : <span className="font-bold text-rose-600" title={`${fmtNum(feas.overflowPortions)} Portionen sprengen die Kapazität dieser Schicht/dieses Tages`}>⚠−{fmtNum(feas.overflowPortions)}</span>
-                          )}
-                          {isActive && <span className="animate-pulse text-rose-500" title="Wird laut Redzone Live gerade plaitiert">🔴</span>}
-                          {!isActive && plated > 0 && (
-                            <span className="font-mono text-slate-400" title="Laut Redzone Live heute bereits plaitiert">{fmtNum(plated)}✓</span>
-                          )}
-                          {prod && (
-                            <span className={PROD_STATUS_TONE[prod.status]}
-                              title={`Transparency Plan: ${prod.status}${prod.blockedReasons.length ? " — " + prod.blockedReasons.join(", ") : ""}`}>●</span>
+                        <div key={`${code}-R${run.runIndex}`}>
+                          <div
+                            draggable={editMode}
+                            onDragStart={editMode ? onDragStart({ kind: "run", code, runIndex: run.runIndex, fromDay: d }) : undefined}
+                            onDragEnd={editMode ? onDragEnd : undefined}
+                            className={`flex items-center gap-1.5 rounded border px-1.5 py-0.5 text-[10px] ${shiftTone} ${editMode ? "cursor-grab active:cursor-grabbing" : ""} ${isDragged ? "opacity-40" : ""}`}>
+                            {editMode && <span className="text-slate-300">⠿</span>}
+                            {shiftLabel && <span className={`rounded px-1 py-0.5 text-[8px] font-bold ${run.shift === "spät" ? "bg-amber-200 text-amber-800" : "bg-blue-200 text-blue-800"}`}>{shiftLabel}</span>}
+                            {run.isBackfill && <span className="rounded bg-violet-200 px-1 py-0.5 text-[8px] font-bold text-violet-800" title="Aus einem Backfill-Bedarf angelegt">BF</span>}
+                            {isCF && <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] font-bold text-amber-800" title={`Nachhol-Run${run.carryFromDay ? ` — aus ${DAY_LABELS[run.carryFromDay]} nicht geschafft` : ""}`}>↪</span>}
+                            <span className="font-bold text-blue-500 text-[8px]">R{run.runIndex}</span>
+                            <span className="font-mono font-semibold">{code}</span>
+                            <span className="truncate text-slate-600">{name}</span>
+                            {seafood && <span className="text-sky-500">🐟</span>}
+                            {isDone ? (
+                              <span className="ml-auto font-mono" title={`Ist ${fmtNum(run.portions)} von ${fmtNum(run.plannedPortions ?? run.portions)} geplant`}>
+                                <span className="font-bold text-emerald-600">{fmtNum(run.portions)}</span>
+                                {run.plannedPortions != null && run.plannedPortions !== run.portions && (
+                                  <span className="ml-0.5 text-slate-300 line-through">{fmtNum(run.plannedPortions)}</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="ml-auto font-mono font-bold">{fmtNum(run.portions)}</span>
+                            )}
+                            {headcount != null && (
+                              <span className="font-mono text-slate-500" title={`Besetzung: ${subMealCount} Sub-Meals + 1 Person = ${headcount}`}>
+                                👤{headcount}
+                              </span>
+                            )}
+                            {feas && (feas.fits
+                              ? <span className="text-emerald-600" title="Passt in die Kapazität dieser Schicht/dieses Tages">✓</span>
+                              : <span className="font-bold text-rose-600" title={`${fmtNum(feas.overflowPortions)} Portionen sprengen die Kapazität dieser Schicht/dieses Tages`}>⚠−{fmtNum(feas.overflowPortions)}</span>
+                            )}
+                            {isActive && <span className="animate-pulse text-rose-500" title="Wird laut Redzone Live gerade plaitiert">🔴</span>}
+                            {!isActive && plated > 0 && (
+                              <span className="font-mono text-slate-400" title="Laut Redzone Live heute bereits plaitiert">{fmtNum(plated)}✓</span>
+                            )}
+                            {prod && (
+                              <span className={PROD_STATUS_TONE[prod.status]}
+                                title={`Transparency Plan: ${prod.status}${prod.blockedReasons.length ? " — " + prod.blockedReasons.join(", ") : ""}`}>●</span>
+                            )}
+                            {editMode && !isCF && !isDone && (
+                              <button type="button" onClick={() => setSplitRun({ code, runIndex: run.runIndex })}
+                                className="rounded border border-slate-300 px-1 text-[8px] font-semibold text-slate-500 hover:border-rose-300 hover:text-rose-600"
+                                title="An diesem Tag nicht geschafft — Rest auf einen anderen Tag legen">
+                                nicht geschafft
+                              </button>
+                            )}
+                            {editMode && isDone && (
+                              <button type="button" onClick={() => clearRunUnfinished(code, run.runIndex)}
+                                className="rounded border border-slate-300 px-1 text-[8px] font-semibold text-slate-500 hover:text-slate-700"
+                                title="Nicht-geschafft-Markierung zurücknehmen — Run zurück auf die geplante Menge">
+                                ↩
+                              </button>
+                            )}
+                            {editMode && isCF && run.carryFromRun != null && (
+                              <button type="button" onClick={() => clearRunUnfinished(code, run.carryFromRun!)}
+                                className="rounded border border-amber-300 px-1 text-[8px] font-semibold text-amber-700 hover:bg-amber-100"
+                                title={`Nachhol-Run auflösen — zurück auf ${run.carryFromDay ? DAY_LABELS[run.carryFromDay] : "den Ursprungstag"}`}>
+                                ↩ auflösen
+                              </button>
+                            )}
+                          </div>
+                          {panelOpen && (
+                            <UnfinishedPanel
+                              code={code} runIndex={run.runIndex} fromDay={d}
+                              plannedPortions={run.plannedPortions ?? run.portions}
+                              platedHint={plated}
+                              suggestedDay={suggestCarryForwardDay(plan, d, run.portions)}
+                              onCancel={() => setSplitRun(null)}
+                              onSubmit={(produced, toDay) => { markRunUnfinished(code, run.runIndex, produced, toDay); setSplitRun(null); }}
+                            />
                           )}
                         </div>
                       );
@@ -487,6 +602,8 @@ export function PlatingLineBotView({ data }: { data: DataBundle }) {
             Regeln: Demand = BENL+NORD+DE · ≤{fmtNum(plan.params.singleRunMaxDemand)} → 1 Run (+{Math.round(plan.params.singleRunBuffer * 100)}%) · &gt;{fmtNum(plan.params.singleRunMaxDemand)} → 2 Runs (+{Math.round(plan.params.multiRunBuffer * 100)}%), Run 1 = {Math.round(plan.params.firstRunPct * 100)}%.
             Seafood so spät wie möglich · Komplex (cx≥1.15) → früh · Einfach (cx≤0.80) → flexibel/Mo.
             Bei 2 Schichten: Frühschicht füllen bis Kapazität, Spätschicht = Differenz.
+            <br />
+            <span className="text-amber-600">„nicht geschafft"</span> (Bearbeiten-Modus): Ist-Menge am Tag erfassen, der Rest wandert als <span className="font-bold text-amber-700">↪ Nachhol-Run</span> auf den gewählten Tag. „Neu generieren" verwirft diese Ist-Nachführung.
           </div>
         </>
       )}
