@@ -11,11 +11,25 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import sharp from "sharp";
 import { loadMealImageOverrides, isHidden, isPinned } from "./lib/mealImageOverrides.ts";
 
 const SOURCE_DIR = "G:/.shortcut-targets-by-id/1tSHOPlJpN0vslaIY2JyAEa3gJQT603IF/Factor EU Meal Images";
 const DEST_DIR = path.resolve("public/data/meal-images");
 const CATALOG_PATH = path.resolve("public/data/meal-catalog.json");
+
+// Die Drive-Originale sind 2–40 MB grosse Kamera-JPGs. Fuer die App (32px-Thumb
+// bis Detailbild) reicht 1400px / q82 locker und spart ~90 % Deploy-/Ladegewicht.
+const MAX_DIM = 1400;
+const JPEG_QUALITY = 82;
+
+async function writeResized(srcPath: string, destPath: string): Promise<void> {
+  await sharp(srcPath, { failOn: "none" })
+    .rotate()
+    .resize({ width: MAX_DIM, height: MAX_DIM, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: JPEG_QUALITY, mozjpeg: true })
+    .toFile(destPath);
+}
 
 // Manuell festgelegte Bild-Auswahl — gepinnte/ausgeblendete Meals fasst dieser
 // Lauf NICHT an (weder Datei ersetzen noch photoUrl ändern noch aufräumen).
@@ -64,7 +78,7 @@ function findBestImage(dir: string): string | null {
   return best.filePath;
 }
 
-function main() {
+async function main() {
   if (!fs.existsSync(SOURCE_DIR)) {
     console.error("Quellordner nicht gefunden:", SOURCE_DIR);
     process.exit(1);
@@ -103,7 +117,7 @@ function main() {
     }
 
     const destPath = path.join(DEST_DIR, `${code}.jpg`);
-    fs.copyFileSync(best, destPath);
+    await writeResized(best, destPath);
     console.log(`  ✓ ${code} ← ${path.basename(best)}`);
     copied++;
     copiedCodes.add(code);
@@ -156,4 +170,7 @@ function main() {
   console.log(`  ${noSA} Ordner ohne SA/Tray-Bild (übersprungen)`);
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

@@ -95,8 +95,10 @@ export function normalizeFactorSteps(raw: string): string {
   t = t.replace(/\s+([A-H][.:]\s+[A-ZÄÖÜ][A-ZÄÖÜ0-9 ()/&'"*-]{1,}?)(?=\s+\d+[.):]\s|\s+[A-H][.:]\s+[A-ZÄÖÜ]|$)/g, "\n$1");
   // Zeilenumbruch vor Schritt-Nummern "1." / "1)" / "1:" … "12.".
   t = t.replace(/\s+(\d{1,2}[.):]\s+)/g, "\n$1");
-  // Appearance-/Aussehen-Cue auf eigene Zeile.
-  t = t.replace(/\s+((?:Appearance|Aussehen)\s*[-:–])/gi, "\n$1");
+  // Appearance-/Aussehen-Cue auf eigene Zeile. Trenner: ":", en dash oder "-".
+  // Reihenfolge in der Zeichenklasse bewusst mit ":" zuerst — sonst liest
+  // Tailwinds JIT-Scanner sie als Arbitrary-Property und baut invalides CSS.
+  t = t.replace(/\s+((?:Appearance|Aussehen)\s*[:–-])/gi, "\n$1");
   // Stations-Header einheitlich "A." statt "A:" (Factor mischt beides).
   const out = t.split("\n")
     .map((l) => l.trim().replace(/^([A-H]):(\s)/, "$1.$2"))
