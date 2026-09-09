@@ -126,8 +126,8 @@ describe("computeEquipmentDemand (compat)", () => {
 describe("computeFullResourceDemand", () => {
   const gnSummary: GnTraySummary[] = [{ gnType: "GN 2/1", trays: 5 }];
   const scoop: ScoopInfo = { methodType: "SCOOP", methodColor: "grey", yieldGrams: 125, yieldUom: "grams" };
-  const chillerMilk: ChillerAssignment = { key: "4", allergen: "MILCH", cfg: { label: "Chiller 4", sub: "Milch", headBg: "", headColor: "", cntBg: "", cntColor: "" }, unknown: false };
-  const chillerFree: ChillerAssignment = { key: "1", allergen: "KEINE", cfg: { label: "Chiller 1 & 2", sub: "Allergenfrei", headBg: "", headColor: "", cntBg: "", cntColor: "" }, unknown: false };
+  const chillerMilk: ChillerAssignment = { key: "4", allergen: "MILCH", cfg: { label: "Chiller 4", sub: "Milch", headBg: "", headColor: "", cntBg: "", cntColor: "" }, unknown: false, precision: "sub" };
+  const chillerFree: ChillerAssignment = { key: "1", allergen: "KEINE", cfg: { label: "Chiller 1 & 2", sub: "Allergenfrei", headBg: "", headColor: "", cntBg: "", cntColor: "" }, unknown: false, precision: "sub" };
 
   const rows: KetRow[] = [
     makeRow({ key: "wo::1", woNumber: "34-1", dateNeeded: "2026-08-18 - 1" }),

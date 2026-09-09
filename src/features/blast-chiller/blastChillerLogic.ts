@@ -2,6 +2,7 @@
 // BlastChillerView.tsx, damit dieselbe Zuteilung auch pro einzelner KET-WO (ohne
 // separaten CSV-Upload) berechnet werden kann, z.B. im KET Plan / WO Breakdown.
 import type { DataBundle, DetailedSubRecipe } from "../../core/types";
+import { computeStatedOutputG } from "../whatif/whatIfAggregate";
 
 export type ChillerKey = "1" | "3" | "4" | "5" | "6";
 
@@ -48,6 +49,20 @@ export function normStr(s: string): string {
   return (s || "").toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Map "Recipe ID" (REC-013937-4-004, wie im KET-CSV) → FV-Struktur-Schlüssel.
+ * Fallback, wenn im CSV kein FV-Code in "Recipe Name" steht, aber die "Recipe ID"
+ * gefüllt ist — verhindert vermeidbare UNBEKANNT-Fälle.
+ */
+export function buildRecipeIdIndex(data: DataBundle): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const [key, s] of Object.entries(data.structures ?? {})) {
+    const id = s.recipeId?.trim().toUpperCase();
+    if (id) m.set(id, key);
+  }
+  return m;
+}
+
 export function searchSubRec(subs: DetailedSubRecipe[], targetNorm: string): DetailedSubRecipe | null {
   for (const sub of subs) {
     if (normStr(sub.name) === targetNorm) return sub;
@@ -57,50 +72,185 @@ export function searchSubRec(subs: DetailedSubRecipe[], targetNorm: string): Det
   return null;
 }
 
+// ── Unschärfe-Match: Sub-Rezept-Namen im KET-CSV weichen oft leicht von den
+// Strukturnamen ab ("S&P Roasted Green Beans 1" vs "S&P Roasted Green Beans LESS
+// FAT 1", "Batch 160g", "- REWORK", "- Fresh"). Ohne Fuzzy-Fallback landen die
+// betroffenen WOs fälschlich als UNBEKANNT im Rest-Pool. Wir vergleichen daher
+// zusätzlich token-basiert: identifizierende Wörter der einen Seite müssen ~alle
+// in der anderen vorkommen. Rein additiv — der exakte Match läuft immer zuerst.
+const SUB_NOISE_TOKENS = new Set([
+  "batch", "less", "fat", "oil", "salt", "fresh", "iqf", "ph", "rework", "use",
+  "new", "old", "g", "kg", "ml", "pcs", "fa", "the", "and", "with", "of", "a",
+]);
+
+export function subKeyTokens(name: string): string[] {
+  return normStr(name)
+    .split(" ")
+    .filter((t) => t.length > 1 && !SUB_NOISE_TOKENS.has(t) && !/^\d+$/.test(t));
+}
+
+export function searchSubRecLoose(subs: DetailedSubRecipe[], targetName: string): DetailedSubRecipe | null {
+  const target = new Set(subKeyTokens(targetName));
+  if (target.size === 0) return null;
+  let best: DetailedSubRecipe | null = null;
+  let bestScore = 0;
+  const walk = (list: DetailedSubRecipe[]): void => {
+    for (const sub of list) {
+      const st = subKeyTokens(sub.name);
+      let inter = 0;
+      for (const t of st) if (target.has(t)) inter++;
+      const smaller = Math.min(st.length, target.size);
+      const subsetMatch = smaller >= 2 && inter >= smaller;
+      const overlapMatch = inter >= 3 && smaller > 0 && inter / smaller >= 0.8;
+      if ((subsetMatch || overlapMatch) && inter > bestScore) {
+        best = sub;
+        bestScore = inter;
+      }
+      walk(sub.subRecipes);
+    }
+  };
+  walk(subs);
+  return best;
+}
+
 function collectIngredientAllergens(sub: DetailedSubRecipe, acc: Set<string>): void {
   for (const ing of sub.ingredients) if (ing.allergen) acc.add(ing.allergen.trim());
   for (const child of sub.subRecipes) collectIngredientAllergens(child, acc);
 }
 
+const ALLERGEN_MARKETS = ["DE", "BENL", "DKSE"] as const;
+
+/** Woher die Allergen-Angabe stammt — steuert die "bitte prüfen"-Markierung im Bot.
+ *  "sub"            = exakter Sub-Rezept-Treffer in der Struktur (bestmöglich)
+ *  "sub-fuzzy"      = Sub-Rezept token-basiert gematcht (leichte Namensabweichung)
+ *  "recipe"         = rezeptweite Union aller Struktur-Allergene (Sub nicht auffindbar)
+ *  "recipe-legacy"  = Allergen-Feld aus data.recipes (schwächste Quelle)
+ *  "none"           = keinerlei Datenpunkt — echter Unbekannt-Fall */
+export type AllergenPrecision = "sub" | "sub-fuzzy" | "recipe" | "recipe-legacy" | "none";
+
+function subAllergenString(found: DetailedSubRecipe): string {
+  const acc = new Set<string>();
+  collectIngredientAllergens(found, acc);
+  // Sub-Rezept gefunden, keine Ingredient-Allergene getaggt — bei vorhandener
+  // Struktur vertrauen wir den Daten: das Sub-Rezept ist allergenfrei.
+  return acc.size > 0 ? [...acc].join(", ") : "KEINE";
+}
+
+/**
+ * Deklarierter Allergen-String für ein Sub-Rezept (WO) + Angabe der Quelle.
+ * Priorität: exakter Sub-Treffer > Fuzzy-Sub-Treffer > rezeptweite Struktur-Union >
+ * data.recipes-Allergenfeld > null ("keine Daten gefunden").
+ */
+export function computeWoAllergenDetailed(
+  data: DataBundle,
+  recipeCode: string,
+  subRecipeName: string,
+): { allergen: string | null; precision: AllergenPrecision } {
+  const structure = data.structures?.[recipeCode];
+
+  if (structure) {
+    const targetNorm = normStr(subRecipeName);
+    // 1) Exakter Sub-Rezept-Treffer.
+    for (const market of ALLERGEN_MARKETS) {
+      const subs = structure.markets[market];
+      if (!subs?.length) continue;
+      const found = searchSubRec(subs, targetNorm);
+      if (found) return { allergen: subAllergenString(found), precision: "sub" };
+    }
+    // 2) Fuzzy-Sub-Rezept-Treffer (leichte Namensabweichung im KET-CSV).
+    for (const market of ALLERGEN_MARKETS) {
+      const subs = structure.markets[market];
+      if (!subs?.length) continue;
+      const found = searchSubRecLoose(subs, subRecipeName);
+      if (found) return { allergen: subAllergenString(found), precision: "sub-fuzzy" };
+    }
+    // 3) Sub nicht auffindbar — rezeptweite Allergen-Union aus der Struktur.
+    //    Sicher konservativ (eher zu breit als "unbekannt → Rest-Pool").
+    for (const market of ALLERGEN_MARKETS) {
+      const subs = structure.markets[market];
+      if (!subs?.length) continue;
+      const acc = new Set<string>();
+      for (const s of subs) collectIngredientAllergens(s, acc);
+      return { allergen: acc.size > 0 ? [...acc].join(", ") : "KEINE", precision: "recipe" };
+    }
+  }
+
+  const recipe = data.recipes[recipeCode];
+  if (recipe) {
+    for (const market of ALLERGEN_MARKETS) {
+      const a = recipe.markets[market]?.allergens;
+      if (a && a.toLowerCase() !== "null") return { allergen: a, precision: "recipe-legacy" };
+    }
+  }
+
+  return { allergen: null, precision: "none" };
+}
+
+/**
+ * Rezeptweiter Allergen-String: Union ALLER Struktur-Allergene des Rezepts plus
+ * das Allergen-Feld aus data.recipes. Dient als Sicherheitsnetz — eine Komponente,
+ * die "KEINE" meldet, darf trotzdem nicht in den Allergenfrei-Chiller, wenn das
+ * Rezept insgesamt ein Allergen führt (Struktur-Tagging kann lückenhaft sein).
+ * "" = das Rezept ist laut allen Quellen allergenfrei.
+ */
+export function computeRecipeWideAllergen(data: DataBundle, recipeCode: string): string {
+  const acc = new Set<string>();
+  const structure = data.structures?.[recipeCode];
+  if (structure) {
+    for (const market of ALLERGEN_MARKETS) {
+      const subs = structure.markets[market];
+      if (!subs?.length) continue;
+      for (const s of subs) collectIngredientAllergens(s, acc);
+    }
+  }
+  const recipe = data.recipes[recipeCode];
+  if (recipe) {
+    for (const market of ALLERGEN_MARKETS) {
+      const a = recipe.markets[market]?.allergens;
+      if (a && a.toLowerCase() !== "null" && a.trim().toUpperCase() !== "KEINE") acc.add(a.trim());
+    }
+  }
+  return [...acc].join(", ");
+}
+
 /**
  * Deklarierter Allergen-String für ein Sub-Rezept (WO), aus der bereits geladenen
- * Detailbaum-Struktur der App. Priorität: Ingredient-Ebene aus Struktur-Match >
- * Rezept-Ebene (RecipeMarketDetails) > null ("keine Daten gefunden" — ausdrücklich
- * NICHT "keine Allergene").
+ * Detailbaum-Struktur der App. Dünner Wrapper um computeWoAllergenDetailed für
+ * bestehende Aufrufer.
  */
 export function computeWoAllergen(
   data: DataBundle,
   recipeCode: string,
   subRecipeName: string,
 ): string | null {
+  return computeWoAllergenDetailed(data, recipeCode, subRecipeName).allergen;
+}
+
+/**
+ * Grobe kg-Menge einer WO an der Blast-Chiller-Station: gekochte Portionen ×
+ * g/Portion des Sub-Rezepts (MSKU-Menge bzw. aus den Zutaten hochgerechnet,
+ * `computeStatedOutputG`). 0 = keine Struktur-/Mengendaten gefunden.
+ */
+export function computeWoKg(
+  data: DataBundle,
+  recipeCode: string,
+  subRecipeName: string,
+  portions: number,
+): number {
+  if (!portions || portions <= 0) return 0;
   const structure = data.structures?.[recipeCode];
-
-  if (structure) {
-    const targetNorm = normStr(subRecipeName);
-    for (const market of ["DE", "BENL", "DKSE"] as const) {
-      const subs = structure.markets[market];
-      if (!subs?.length) continue;
-      const found = searchSubRec(subs, targetNorm);
-      if (found) {
-        const acc = new Set<string>();
-        collectIngredientAllergens(found, acc);
-        if (acc.size > 0) return [...acc].join(", ");
-        // Sub-Rezept gefunden, keine Ingredient-Allergene getaggt — bei vorhandener
-        // Struktur vertrauen wir den Daten: das Sub-Rezept ist allergenfrei.
-        return "KEINE";
-      }
+  if (!structure) return 0;
+  const targetNorm = normStr(subRecipeName);
+  for (const market of ALLERGEN_MARKETS) {
+    const subs = structure.markets[market];
+    if (!subs?.length) continue;
+    const found = searchSubRec(subs, targetNorm) ?? searchSubRecLoose(subs, subRecipeName);
+    if (found) {
+      const gPerPortion = computeStatedOutputG(found).statedOutputG;
+      if (gPerPortion > 0) return (portions * gPerPortion) / 1000;
     }
   }
-
-  const recipe = data.recipes[recipeCode];
-  if (recipe) {
-    for (const market of ["DE", "BENL", "DKSE"] as const) {
-      const a = recipe.markets[market]?.allergens;
-      if (a && a.toLowerCase() !== "null") return a;
-    }
-  }
-
-  return null;
+  return 0;
 }
 
 export interface ChillerAssignment {
@@ -110,6 +260,7 @@ export interface ChillerAssignment {
   // true wenn die Zuteilung NICHT auf einer echten Allergen-Angabe beruht (keinerlei
   // Datenpunkt gefunden) — UI sollte das sichtbar als "bitte manuell prüfen" markieren.
   unknown: boolean;
+  precision: AllergenPrecision;
 }
 
 // Gleiche Zuteilung wie der eigenständige Blast Chiller Bot, nur direkt aus den
@@ -119,7 +270,7 @@ export function computeWoChiller(
   recipeCode: string,
   subRecipeName: string,
 ): ChillerAssignment {
-  const allergen = computeWoAllergen(data, recipeCode, subRecipeName);
+  const { allergen, precision } = computeWoAllergenDetailed(data, recipeCode, subRecipeName);
   const key = assignChiller(allergen);
-  return { key, allergen, cfg: CHILLER_CFG[key], unknown: allergen == null };
+  return { key, allergen, cfg: CHILLER_CFG[key], unknown: allergen == null, precision };
 }
