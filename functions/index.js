@@ -30,7 +30,11 @@ const PLAN_WRITES = APP_ROOT.collection("planWrites");
 const RACK_WRITES = APP_ROOT.collection("rackWrites");
 const AGENT_ARTIFACTS = APP_ROOT.collection("agentRunArtifacts");
 const DEFAULT_GSHEET_ID = "1IEi_CB9KylW2MgjNiGax5EIvhhAtkIzm57uO1sSESj8";
-const SHEET_RANGE = "'Menu-Selection-LIVE'!A3:X1000";
+// Legacy-Fallback-Range: der Tab "Meal Selection" im Ramp-Up-Sheet
+// ("F_EU - 2026 Ramp Up V2.0"). Der frühere Name "Menu-Selection-LIVE" existiert
+// dort nicht mehr — dadurch las refreshRampUp seit dem Sheet-Rework 0 Zeilen und
+// war ein No-Op. Deckt sich jetzt mit scripts/import-gsheet.ts.
+const SHEET_RANGE = "'Meal Selection'!A3:X2000";
 
 function getSheetIds() {
   return [
@@ -1650,9 +1654,11 @@ async function readMealSelectionRows() {
       titles = (meta.data.sheets || [])
         .map((sheet) => sheet.properties?.title || "")
         .filter(Boolean);
-    } catch {
+    } catch (e) {
+      logger.warn(`readMealSelectionRows: meta.get(${spreadsheetId}) failed`, e?.message || String(e));
       titles = [];
     }
+    logger.info(`readMealSelectionRows: sheet ${spreadsheetId} tabs=${JSON.stringify(titles)}`);
 
     let addedFromRampUp = 0;
     const rampRanges = [
@@ -1677,9 +1683,11 @@ async function readMealSelectionRows() {
     if (addedFromRampUp === 0) {
       try {
         const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: SHEET_RANGE });
-        parseLegacyMealSelectionRows(response.data.values || [], upsertWeekRecipe);
-      } catch {
-        // ignore
+        const legacyRows = response.data.values || [];
+        const legacyAdded = parseLegacyMealSelectionRows(legacyRows, upsertWeekRecipe);
+        logger.info(`readMealSelectionRows: legacy ${SHEET_RANGE} -> ${legacyRows.length} rows, ${legacyAdded} accepted`);
+      } catch (e) {
+        logger.warn(`readMealSelectionRows: legacy ${SHEET_RANGE} failed`, e?.message || String(e));
       }
     }
   }
