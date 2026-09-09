@@ -179,19 +179,25 @@ function computeRtiBackfills(meals) {
 //  • Incoming Webhook   https://hooks.slack.com/services/…  → {"text": …} ist die Nachricht
 //  • Workflow-Builder   https://hooks.slack.com/triggers/…  → Workflow braucht eine
 //                       Text-Variable namens "text", die in die Kanal-Nachricht gemappt ist
+const _slackDebug = []; // letzte Post-Ergebnisse, landen im state-Doc
+
 async function postSlack(text) {
   const url = process.env.SLACK_WEBHOOK_URL;
-  if (!url) { logger.warn("SLACK_WEBHOOK_URL fehlt — kein Slack-Post"); return; }
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  if (res.status === 429) {
-    logger.warn("Slack rate-limited — nächster Lauf holt es nach", { retryAfter: res.headers.get("retry-after") });
-    return;
+  if (!url) { logger.warn("SLACK_WEBHOOK_URL fehlt — kein Slack-Post"); _slackDebug.push({ err: "no-url" }); return; }
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const body = await res.text().catch(() => "");
+    _slackDebug.push({ status: res.status, body: body.slice(0, 120) });
+    if (res.status === 429) { logger.warn("Slack rate-limited", { retryAfter: res.headers.get("retry-after") }); return; }
+    if (!res.ok) logger.error("Slack-Post fehlgeschlagen", { status: res.status, body });
+  } catch (e) {
+    _slackDebug.push({ err: String(e).slice(0, 120) });
+    logger.error("Slack-Post Exception", { error: String(e) });
   }
-  if (!res.ok) logger.error("Slack-Post fehlgeschlagen", { status: res.status, body: await res.text().catch(() => "") });
 }
 
 const nf = n => Math.round(n).toLocaleString("de-DE");
@@ -225,23 +231,36 @@ exports.rtiBackfillWatch = onSchedule(
     const prev = prevSnap.exists ? (prevSnap.data() || {}) : {};
     const prevSubs = prev.subs || {};       // key -> { min, since }
     const prevStaleWarn = prev.staleWarned || {}; // mealCode -> ts
+    // "wo|sub" -> ts: vom Wächter (rtiMarkDone) gesetzt, wenn "done" aus der App kam
+    const appMarks = prev.appMarks || {};
 
     const nextSubs = {};
     const nextStaleWarn = {};
     const newOpen = [];
     const nowEntered = [];
     const staleAlerts = [];
+    const grownSubs = [];
 
     for (const meal of meals) {
       for (const s of meal.openSubs) {
         const key = `${s.workOrder}|${s.subRecipeName}`;
         const wasOpen = prevSubs[key];
         nextSubs[key] = { min: s.minimumNeed, since: wasOpen?.since || now, meal: meal.mealCode };
-        if (!wasOpen) newOpen.push({ meal, s });
+        if (!wasOpen) {
+          newOpen.push({ meal, s });
+        } else if (s.minimumNeed >= (wasOpen.min || 0) + 100 && s.minimumNeed >= (wasOpen.min || 0) * 1.5) {
+          // schon offen, aber die Menge ist deutlich gestiegen (z.B. Rack kam
+          // jetzt ganz leer zurück) → erneut melden.
+          grownSubs.push({ meal, s, prevMin: wasOpen.min || 0 });
+        }
       }
       for (const s of meal.enteredSubs) {
         const key = `${s.workOrder}|${s.subRecipeName}`;
-        if (prevSubs[key]) nowEntered.push({ meal, s }); // war offen, jetzt "done"
+        if (prevSubs[key]) {
+          // war offen, jetzt "done" — kam es über den Wächter (< 25 min)?
+          const viaApp = appMarks[key] && now - appMarks[key] < 25 * 60 * 1000;
+          nowEntered.push({ meal, s, viaApp });
+        }
       }
       // Wiegung läuft, aber Subs ohne Status offen und schon > STALE_MIN alt
       if (meal.weighingStarted && meal.openSubs.length > 0) {
@@ -264,8 +283,12 @@ exports.rtiBackfillWatch = onSchedule(
     for (const { meal, s } of newOpen) {
       await postSlack(`🔴 *Backfill nötig — ${meal.mealCode} ${meal.mealName}*\n${meal.gap} Portionen fehlen (${nf(meal.actuals)}/${nf(meal.plannedTarget)} platiert)\n${subLine(s)}`);
     }
-    for (const { meal, s } of nowEntered) {
-      await postSlack(`✅ ${meal.mealCode} · ${s.subRecipeName} — ins System eingetragen (Sheet „done“).`);
+    for (const { meal, s, prevMin } of grownSubs) {
+      await postSlack(`📈 *Backfill-Menge gestiegen — ${meal.mealCode} ${meal.mealName}*\n${subLine(s)}   _(vorher ${nf(prevMin)})_`);
+    }
+    for (const { meal, s, viaApp } of nowEntered) {
+      const wer = viaApp ? "von *Planer Automatik* (Backfill-Wächter) erledigt" : "im RTI-Sheet als „done“ markiert";
+      await postSlack(`✅ ${meal.mealCode} · ${s.subRecipeName} — ${wer}.`);
     }
     for (const { meal, ageMin } of staleAlerts) {
       const open = meal.openSubs.map(x => x.subRecipeName).join(", ");
@@ -277,19 +300,29 @@ exports.rtiBackfillWatch = onSchedule(
     // gleichzeitig — unabhängig davon, wann sie geöffnet wurde oder ob der
     // Nutzer WMS/Snowflake-Zugang hat (der Backfill kommt rein aus dem Sheet).
     const prevFlash = prev.flash || {};
-    const flash = (!seeding && newOpen.length > 0)
-      ? { at: now, keys: newOpen.map(({ meal, s }) => `${s.workOrder}|${s.subRecipeName}`), meals: [...new Set(newOpen.map(x => x.meal.mealCode))] }
+    const flashSubs = [...newOpen, ...grownSubs];
+    const flash = (!seeding && flashSubs.length > 0)
+      ? { at: now, keys: flashSubs.map(({ s }) => `${s.workOrder}|${s.subRecipeName}`), meals: [...new Set(flashSubs.map(x => x.meal.mealCode))] }
       : prevFlash;
+
+    // appMarks weitertragen, aber Einträge > 30 min vergessen
+    const nextAppMarks = {};
+    for (const [k, ts] of Object.entries(appMarks)) if (now - ts < 30 * 60 * 1000) nextAppMarks[k] = ts;
 
     await stateDoc().set({
       subs: nextSubs,
       staleWarned: nextStaleWarn,
       flash,
+      appMarks: nextAppMarks,
       updatedAt: new Date().toISOString(),
       openCount: Object.keys(nextSubs).length,
     });
 
-    logger.info("rtiBackfillWatch", { seeding, meals: meals.length, newOpen: newOpen.length, entered: nowEntered.length, stale: staleAlerts.length });
+    logger.info("rtiBackfillWatch", {
+      seeding, meals: meals.length,
+      newOpen: newOpen.length, grown: grownSubs.length, entered: nowEntered.length, stale: staleAlerts.length,
+      slackConfigured: !!process.env.SLACK_WEBHOOK_URL, slackPosts: _slackDebug,
+    });
   },
 );
 
@@ -328,6 +361,12 @@ exports.rtiMarkDone = onRequest({ region: REGION, timeoutSeconds: 30 }, async (r
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [[cell]] },
     });
+    // dem Watcher mitteilen: dieses "done" kam aus der App → Slack sagt "Planer Automatik"
+    const b = String((rows[rowIndex] || [])[1] ?? "").trim();
+    await stateDoc().set(
+      { appMarks: { [`${String(wo).trim()}|${b}`]: Date.now() } },
+      { merge: true },
+    ).catch(() => {});
     res.json({ ok: true, cell: a1 });
   } catch (err) {
     const msg = err?.message || String(err);
