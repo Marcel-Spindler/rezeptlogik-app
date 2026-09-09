@@ -345,6 +345,7 @@ export function BackfillWatchView() {
   }, [entered, selectedWeekNum]);
 
   const withOpen = rtiMeals.filter(m => m.openSubs.length > 0);
+  const headerIncomplete = rtiMeals.filter(m => m.headerIncomplete);
   const openSubCount = withOpen.reduce((s, m) => s + m.openSubs.filter(sub => !isEntered(m, sub)).length, 0);
   const enteredCount = withOpen.reduce((s, m) => s + m.openSubs.filter(sub => isEntered(m, sub)).length, 0);
 
@@ -410,6 +411,14 @@ export function BackfillWatchView() {
       )}
 
       <Explainer open={explainerOpen} onToggle={() => setExplainerOpen(o => !o)} />
+
+      {headerIncomplete.length > 0 && (
+        <div className="rounded-xl p-3 bg-amber-50 ring-1 ring-amber-300 text-xs text-amber-800">
+          <b>⚠ RTI-Sheet-Kopf fehlt</b> bei {headerIncomplete.map(m => m.mealCode).join(", ")} — es wird schon gewogen,
+          aber <b>Planned Target / Actuals</b> sind oben noch nicht eingetragen. Ohne die beiden Zahlen kann der Backfill
+          nicht gerechnet werden — bitte im RTI-Sheet nachtragen.
+        </div>
+      )}
 
       {!rtiConnected ? (
         <div className="card p-10 text-center text-sm text-slate-400">Warte auf das RTI-Sheet …</div>

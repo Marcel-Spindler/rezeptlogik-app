@@ -187,6 +187,9 @@ export interface RtiBackfillAgg {
 function aggregateRtiBackfillByMeal(rti: RtiData | null | undefined): Map<string, RtiBackfillAgg> {
   const byMeal = new Map<string, RtiBackfillAgg>();
   for (const meal of computeRtiBackfills(rti)) {
+    // Kopf unvollständig → keine Zahl, kein Eintrag in der kombinierten Liste
+    // (der Wächter zeigt den Hinweis separat, Slack meldet es getrennt).
+    if (meal.headerIncomplete) continue;
     const key = codeKey(meal.mealCode);
     const hasOpenSubs = meal.openSubs.length > 0;
     byMeal.set(key, {

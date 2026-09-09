@@ -72,6 +72,9 @@ export interface RtiMealBackfill {
   weighingStarted: boolean;
   /** true = mind. ein offener Sub ist nur "gap-only" geschätzt (Sheet unvollständig). */
   hasGapOnly: boolean;
+  /** true = es wird schon gewogen, aber Planned Target / Actuals fehlen im
+   *  RTI-Sheet-Kopf → gap nicht rechenbar. openSubs ist leer, nur ein Hinweis. */
+  headerIncomplete: boolean;
   /** Namen der im RTI-Sheet bereits als eigene WO angelegten Backfill-Slots. */
   candidateSubNames: string[];
 }
@@ -149,17 +152,31 @@ export function computeRtiBackfills(rti: RtiData | null | undefined): RtiMealBac
     if (!cur || meal.plannedTarget > cur.plannedTarget) bestByKey.set(key, meal);
   }
 
+  const emptyMeal = (meal: RtiMealBlock, headerIncomplete: boolean, weighingStarted: boolean): RtiMealBackfill => ({
+    mealCode: meal.mealCode, mealName: meal.mealName,
+    plannedTarget: meal.plannedTarget, actuals: meal.actuals, gap: 0,
+    openSubs: [], enteredSubs: [], notNeededSubs: [],
+    recommendedMin: 0, recommendedBuffered: 0, allEntered: false,
+    weighingStarted, hasGapOnly: false, headerIncomplete, candidateSubNames: [],
+  });
+
   const out: RtiMealBackfill[] = [];
   for (const meal of bestByKey.values()) {
-    // plannedTarget 0 = leerer/vorbereiteter Block. actuals 0 = Plating hat für
-    // dieses Meal noch nichts erfasst → gap wäre das ganze Planned Target, kein
-    // echtes Backfill-Signal.
-    if (meal.plannedTarget <= 0 || meal.actuals <= 0) continue;
+    const realSubs = meal.subRecipes.filter(s => !s.isBackfillCandidate);
+    if (realSubs.length === 0) continue;
+    const weighingStarted = realSubs.some(s => num(s.weighedKg) !== 0 || s.status !== "open");
+
+    // plannedTarget/actuals sind Marcels Hand-Eintrag. Fehlen sie, kann kein gap
+    // gerechnet werden. Wird aber schon gewogen (mind. ein echtes Sub hat kg)
+    // und es sind nicht alle Subs auf "no" → EIN Hinweis, dass der Kopf fehlt.
+    if (meal.plannedTarget <= 0 || meal.actuals <= 0) {
+      const someWeighed = realSubs.some(s => num(s.weighedKg) > 0);
+      const allNo = realSubs.every(s => s.status === "not-needed");
+      if (someWeighed && !allNo) out.push(emptyMeal(meal, true, weighingStarted));
+      continue;
+    }
     const gap = Math.round(meal.plannedTarget - meal.actuals);
     if (gap < MIN_SUB_SHORTFALL) continue;
-
-    const realSubs = meal.subRecipes.filter(s => !s.isBackfillCandidate);
-    const weighingStarted = realSubs.some(s => num(s.weighedKg) !== 0 || s.status !== "open");
 
     const openSubs: RtiSubShortfall[] = [];
     const enteredSubs: RtiSubShortfall[] = [];
@@ -199,6 +216,7 @@ export function computeRtiBackfills(rti: RtiData | null | undefined): RtiMealBac
       allEntered: openSubs.length === 0 && enteredSubs.length > 0,
       weighingStarted,
       hasGapOnly: openSubs.some(s => s.basis === "gap-only"),
+      headerIncomplete: false,
       candidateSubNames: [...candidateSubNames].filter(n => shortNames.has(n)),
     });
   }

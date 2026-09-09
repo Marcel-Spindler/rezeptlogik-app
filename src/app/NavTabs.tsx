@@ -66,10 +66,11 @@ const NAV_CATEGORIES: readonly NavCategory[] = [
       { view: "postblast-live", label: "Postblast Live" },
       { view: "backfills", label: "Backfill-Wächter" },
       { view: "transparency-plan", label: "Transparency Plan" },
-      // Redzone Live braucht den lokalen WMS-Server (Browser-SSO-Auth zu Snowflake) —
-      // die deployte Cloud Function hat aktuell keinen gültigen Snowflake-Key und
-      // keinen Cache-Fallback, deshalb online ausgeblendet, lokal aber sichtbar.
-      { view: "redzone-live", label: "Redzone Live", localOnly: true },
+      // Redzone Live läuft online über die Cloud Function `redzoneStatus`
+      // (headless Snowflake-JWT). Solange der Public Key auf dem Snowflake-User
+      // registriert ist, funktioniert die View auch online — sonst zeigt sie
+      // einen Fehler statt Daten (kein Cache-Fallback).
+      { view: "redzone-live", label: "Redzone Live" },
     ],
   },
   {
@@ -343,7 +344,7 @@ export function NavTabs({ view, onChange }: { view: AppView; onChange: (v: AppVi
 
 /** Sub-Tab-Leiste zum Umschalten innerhalb einer Menü-Kategorie (z.B. "Produktion", "Bots"). */
 export function GroupSubTabs({ view, onChange }: { view: AppView; onChange: (v: AppView) => void }) {
-  const siblings = siblingViews(view).filter((v) => v !== "redzone-live" || import.meta.env.DEV);
+  const siblings = siblingViews(view);
   if (siblings.length < 2) return null;
   return (
     <div className="flex flex-wrap gap-1 mb-3">

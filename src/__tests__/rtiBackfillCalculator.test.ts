@@ -135,7 +135,7 @@ describe("computeRtiBackfills — nichts zu tun", () => {
     }))).toHaveLength(0);
   });
 
-  it("ohne erfasste Actuals (Plating noch nicht gelaufen)", () => {
+  it("ohne erfasste Actuals + noch nichts gewogen → gar kein Eintrag", () => {
     expect(computeRtiBackfills(rti({ actuals: 0, subRecipes: [sub({ minimumNeed: -915 })] }))).toHaveLength(0);
   });
 
@@ -154,5 +154,33 @@ describe("computeRtiBackfills — nichts zu tun", () => {
     });
     expect(result).toHaveLength(1);
     expect(result[0].recommendedMin).toBe(300);
+  });
+});
+
+describe("computeRtiBackfills — Kopf unvollständig (Planned Target/Actuals fehlen)", () => {
+  it("wird schon gewogen, aber kein Planned Target → headerIncomplete-Hinweis, keine openSubs", () => {
+    const [m] = computeRtiBackfills(rti({
+      plannedTarget: 0, actuals: 0,
+      subRecipes: [sub({ subRecipeName: "Sauce", weighedKg: 12.5, status: "open" })],
+    }));
+    expect(m.headerIncomplete).toBe(true);
+    expect(m.openSubs).toHaveLength(0);
+    expect(m.weighingStarted).toBe(true);
+  });
+
+  it("Actuals fehlt, aber ein Sub schon gewogen → Hinweis", () => {
+    const [m] = computeRtiBackfills(rti({ plannedTarget: 5000, actuals: 0, subRecipes: [sub({ weighedKg: 40 })] }));
+    expect(m?.headerIncomplete).toBe(true);
+  });
+
+  it("kein Planned Target UND alle Subs auf 'no' → still, kein Hinweis (bewusst nicht getrackt)", () => {
+    expect(computeRtiBackfills(rti({
+      plannedTarget: 0, actuals: 0,
+      subRecipes: [sub({ weighedKg: 5, status: "not-needed" }), sub({ subRecipeName: "B", weighedKg: 8, status: "not-needed" })],
+    }))).toHaveLength(0);
+  });
+
+  it("kein Planned Target UND noch nichts gewogen → still", () => {
+    expect(computeRtiBackfills(rti({ plannedTarget: 0, actuals: 0, subRecipes: [sub({ weighedKg: 0, status: "open" })] }))).toHaveLength(0);
   });
 });

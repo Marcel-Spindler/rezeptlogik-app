@@ -147,12 +147,26 @@ function computeRtiBackfills(meals) {
   }
   const out = [];
   for (const meal of bestByKey.values()) {
-    if (meal.plannedTarget <= 0 || meal.actuals <= 0) continue;
+    const realSubs = meal.subRecipes.filter(s => !s.isBackfillCandidate);
+    if (realSubs.length === 0) continue;
+    const weighingStarted = realSubs.some(s => num(s.weighedKg) !== 0 || s.status !== "open");
+
+    // Planned Target / Actuals fehlen (Marcels Hand-Eintrag) → gap nicht rechenbar.
+    // Wird aber schon gewogen und nicht alle Subs "no" → EIN Hinweis.
+    if (meal.plannedTarget <= 0 || meal.actuals <= 0) {
+      const someWeighed = realSubs.some(s => num(s.weighedKg) > 0);
+      const allNo = realSubs.every(s => s.status === "not-needed");
+      if (someWeighed && !allNo) {
+        out.push({ mealCode: meal.mealCode, mealName: meal.mealName, gap: 0,
+          plannedTarget: meal.plannedTarget, actuals: meal.actuals,
+          openSubs: [], enteredSubs: [], notNeededSubs: [], weighingStarted,
+          recommendedMin: 0, hasGapOnly: false, headerIncomplete: true });
+      }
+      continue;
+    }
     const gap = Math.round(meal.plannedTarget - meal.actuals);
     if (gap < MIN_SUB_SHORTFALL) continue;
 
-    const realSubs = meal.subRecipes.filter(s => !s.isBackfillCandidate);
-    const weighingStarted = realSubs.some(s => num(s.weighedKg) !== 0 || s.status !== "open");
     const openSubs = [], enteredSubs = [], notNeededSubs = [];
     for (const sub of meal.subRecipes) {
       if (sub.isBackfillCandidate) continue;
@@ -169,6 +183,7 @@ function computeRtiBackfills(meals) {
       openSubs, enteredSubs, notNeededSubs, weighingStarted,
       recommendedMin: openSubs.reduce((m, s) => Math.max(m, s.minimumNeed), 0),
       hasGapOnly: openSubs.some(s => s.basis === "gap-only"),
+      headerIncomplete: false,
     });
   }
   return out;
@@ -231,17 +246,29 @@ exports.rtiBackfillWatch = onSchedule(
     const prev = prevSnap.exists ? (prevSnap.data() || {}) : {};
     const prevSubs = prev.subs || {};       // key -> { min, since }
     const prevStaleWarn = prev.staleWarned || {}; // mealCode -> ts
+    const prevHeaderWarn = prev.headerWarn || {}; // mealCode -> ts
     // "wo|sub" -> ts: vom Wächter (rtiMarkDone) gesetzt, wenn "done" aus der App kam
     const appMarks = prev.appMarks || {};
 
     const nextSubs = {};
     const nextStaleWarn = {};
+    const nextHeaderWarn = {};
     const newOpen = [];
     const nowEntered = [];
     const staleAlerts = [];
     const grownSubs = [];
+    const headerAlerts = [];
 
     for (const meal of meals) {
+      if (meal.headerIncomplete) {
+        // Kopf fehlt → 1× melden, dann alle ~3 h erneut
+        nextHeaderWarn[meal.mealCode] = prevHeaderWarn[meal.mealCode] || now;
+        if (now - (prevHeaderWarn[meal.mealCode] || 0) > 3 * 3600 * 1000) {
+          nextHeaderWarn[meal.mealCode] = now;
+          headerAlerts.push({ meal });
+        }
+        continue;
+      }
       for (const s of meal.openSubs) {
         const key = `${s.workOrder}|${s.subRecipeName}`;
         const wasOpen = prevSubs[key];
@@ -286,6 +313,9 @@ exports.rtiBackfillWatch = onSchedule(
     for (const { meal, s, prevMin } of grownSubs) {
       await postSlack(`📈 *Backfill-Menge gestiegen — ${meal.mealCode} ${meal.mealName}*\n${subLine(s)}   _(vorher ${nf(prevMin)})_`);
     }
+    for (const { meal } of headerAlerts) {
+      await postSlack(`⚠️ *${meal.mealCode} ${meal.mealName}* — es wird schon gewogen, aber *Planned Target / Actuals* fehlen im RTI-Sheet-Kopf. Ohne die zwei Zahlen kann kein Backfill gerechnet werden — bitte oben eintragen.`);
+    }
     for (const { meal, s, viaApp } of nowEntered) {
       const wer = viaApp ? "von *Planer Automatik* (Backfill-Wächter) erledigt" : "im RTI-Sheet als „done“ markiert";
       await postSlack(`✅ ${meal.mealCode} · ${s.subRecipeName} — ${wer}.`);
@@ -312,6 +342,7 @@ exports.rtiBackfillWatch = onSchedule(
     await stateDoc().set({
       subs: nextSubs,
       staleWarned: nextStaleWarn,
+      headerWarn: nextHeaderWarn,
       flash,
       appMarks: nextAppMarks,
       updatedAt: new Date().toISOString(),
@@ -320,7 +351,7 @@ exports.rtiBackfillWatch = onSchedule(
 
     logger.info("rtiBackfillWatch", {
       seeding, meals: meals.length,
-      newOpen: newOpen.length, grown: grownSubs.length, entered: nowEntered.length, stale: staleAlerts.length,
+      newOpen: newOpen.length, grown: grownSubs.length, entered: nowEntered.length, stale: staleAlerts.length, header: headerAlerts.length,
       slackConfigured: !!process.env.SLACK_WEBHOOK_URL, slackPosts: _slackDebug,
     });
   },

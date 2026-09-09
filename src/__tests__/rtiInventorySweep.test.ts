@@ -12,7 +12,7 @@ function meal(overrides: Partial<RtiMealBackfill> = {}): RtiMealBackfill {
       availableMealcount: 0, minimumNeed: 400, bufferedNeed: 450, shortagePct: 12, basis: "sheet", status: "open",
     }],
     enteredSubs: [], notNeededSubs: [], recommendedMin: 400, recommendedBuffered: 450,
-    allEntered: false, weighingStarted: true, hasGapOnly: false, candidateSubNames: [],
+    allEntered: false, weighingStarted: true, hasGapOnly: false, headerIncomplete: false, candidateSubNames: [],
     ...overrides,
   };
 }
