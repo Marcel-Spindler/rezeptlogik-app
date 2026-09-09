@@ -64,7 +64,7 @@ const NAV_CATEGORIES: readonly NavCategory[] = [
     label: "Live-Monitoring",
     items: [
       { view: "postblast-live", label: "Postblast Live" },
-      { view: "backfills", label: "Backfills" },
+      { view: "backfills", label: "Backfill-Wächter" },
       { view: "transparency-plan", label: "Transparency Plan" },
       // Redzone Live braucht den lokalen WMS-Server (Browser-SSO-Auth zu Snowflake) —
       // die deployte Cloud Function hat aktuell keinen gültigen Snowflake-Key und

@@ -9,10 +9,11 @@ import type { WmsSkuInfo } from "../../lib/wmsSkuEnrichment";
 import { skuKey } from "../../lib/wmsSkuEnrichment";
 import { codeDigits } from "../../lib/helpers";
 import type { BackfillAlert, BackfillPriority, CombinedBackfillNeed } from "./backfillTypes";
+import { computeRtiBackfills, MIN_SUB_SHORTFALL, type RtiSubShortfall } from "./rtiBackfillCalculator";
 
 // Backfill-Menge zählt erst ab dieser Schwelle als echter Bedarf (Rauschfilter
 // gegen minimale Rundungs-/Zählabweichungen).
-const MIN_RTI_SHORTFALL = 30;
+const MIN_RTI_SHORTFALL = MIN_SUB_SHORTFALL;
 
 // Meal-Identität = die 4 Ziffern des Codes. FV4063A / FV4063B usw. sind dasselbe
 // Meal — der Buchstabe wechselt bei SKU-/Sleeve-Druckänderungen, und die drei
@@ -164,18 +165,20 @@ function aggregateRedzoneByMeal(runs: PlatingRunDisplay[] | undefined): Map<stri
   return byMeal;
 }
 
-// RTI Plating Tracker (gid=1486350915) — das Sheet, das den Backfill EXAKT
-// errechnet. Meal-Block: Planned Target (D) vs. Actuals (E). Backfill-Menge =
-// max(0, planned − actuals). Kandidaten-Zeilen (isBackfillCandidate — leere,
-// vorbereitete Backfill-WO-Slots) fließen NICHT in die Status-Bewertung ein.
+// RTI Plating Tracker (gid=1486350915) — das Sheet, das den Backfill EXAKT und
+// PRO SUB-REZEPT errechnet (siehe rtiBackfillCalculator.ts). Ein Meal ist nur
+// dort short, wo einzelne Sub-Rezepte leer laufen — die aus dem Plating-Holding
+// gedeckten Komponenten brauchen keinen Backfill.
 export interface RtiBackfillAgg {
   code: string;
   mealName: string;
   plannedTarget: number;
   actuals: number;
-  shortfallPortions: number;
-  vetoed: boolean;        // alle echten Sub-Rezepte "no" → kein Backfill nötig
-  kitchenDone: boolean;   // alle echten Sub-Rezepte "done"/"no" → Rückstand final
+  shortfallPortions: number;      // größter offener Sub-Engpass (Minimum need)
+  bufferedPortions: number;       // dito, mit dem %-Puffer des Sheets (Backfill Meals)
+  subShortfalls: RtiSubShortfall[];
+  vetoed: boolean;        // alle Engpass-Sub-Rezepte "no" → kein Backfill nötig
+  kitchenDone: boolean;   // Engpass-Subs vorhanden, aber alle "done" → Rückstand final
   hasOpenSubs: boolean;
   candidateSubs: string[];
   isBackfill: boolean;
@@ -183,44 +186,23 @@ export interface RtiBackfillAgg {
 
 function aggregateRtiBackfillByMeal(rti: RtiData | null | undefined): Map<string, RtiBackfillAgg> {
   const byMeal = new Map<string, RtiBackfillAgg>();
-  for (const meal of rti?.meals ?? []) {
+  for (const meal of computeRtiBackfills(rti)) {
     const key = codeKey(meal.mealCode);
-
-    // Das RTI-Tab führt pro Meal oft MEHRERE Blöcke: die echte Wiegung plus
-    // leere Vorbereitungs-/Zweitrun-Blöcke (Planned Target 0) — teils unter
-    // verschiedenen Code-Varianten. Ein leerer Block darf den echten NICHT
-    // überschreiben → den mit dem größten Planned Target behalten.
-    const existing = byMeal.get(key);
-    if (existing && meal.plannedTarget <= existing.plannedTarget) {
-      // Zweitblock kann trotzdem vorbereitete Backfill-WOs auflisten.
-      for (const s of meal.subRecipes) {
-        if (s.isBackfillCandidate && !existing.candidateSubs.includes(s.subRecipeName)) {
-          existing.candidateSubs.push(s.subRecipeName);
-        }
-      }
-      continue;
-    }
-
-    const real = meal.subRecipes.filter(s => !s.isBackfillCandidate);
-    const shortfallPortions = Math.max(0, meal.plannedTarget - meal.actuals);
-    const vetoed = real.length > 0 && real.every(s => s.status === "not-needed");
-    const kitchenDone = real.length > 0 && real.every(s => s.status === "done" || s.status === "not-needed");
-    const hasOpenSubs = real.some(s => s.status === "open" || s.status === "unknown");
-    const isBackfill = !vetoed && meal.plannedTarget > 0 && shortfallPortions >= MIN_RTI_SHORTFALL;
+    const hasOpenSubs = meal.openSubs.length > 0;
     byMeal.set(key, {
       code: meal.mealCode,
       mealName: meal.mealName,
       plannedTarget: meal.plannedTarget,
       actuals: meal.actuals,
-      shortfallPortions,
-      vetoed,
-      kitchenDone,
+      shortfallPortions: meal.recommendedMin,
+      bufferedPortions: meal.recommendedBuffered,
+      subShortfalls: meal.openSubs,
+      vetoed: !hasOpenSubs && meal.enteredSubs.length === 0 && meal.notNeededSubs.length > 0,
+      // "durch" = war kurz, alle Engpässe sind ins System eingetragen (Status "done")
+      kitchenDone: meal.allEntered,
       hasOpenSubs,
-      candidateSubs: [...new Set([
-        ...(existing?.candidateSubs ?? []),
-        ...meal.subRecipes.filter(s => s.isBackfillCandidate).map(s => s.subRecipeName),
-      ])],
-      isBackfill,
+      candidateSubs: meal.candidateSubNames,
+      isBackfill: hasOpenSubs && meal.recommendedMin >= MIN_RTI_SHORTFALL,
     });
   }
   return byMeal;
@@ -284,14 +266,12 @@ function derivePriority(
 // Die EINE Zahl, die zählt: wie viele Portionen dieses Meals noch nachproduziert
 // werden müssen. Reihenfolge nach Verlässlichkeit:
 //
-// 1) LinePlating "{Tag} needs" — der vom Plating-Team im Kitchen-Priority-Sheet
-//    täglich gepflegte Restbedarf. Kleiner als der rohe Σ(Planned−Actual), weil
-//    ein Teil des Rückstands Puffer war. Die maßgebliche Zahl, sobald gesetzt.
-// 2) RTI-Wiegung (Weight-Tracking) Planned Target − Actuals — wird nur gemacht,
-//    wenn wirklich was fehlt, also die gemessene Realität. Schlüsselt den Bedarf
-//    zusätzlich pro Sub-Rezept auf (rti* Felder).
-// 3) LinePlating Σ(Planned − Actual) über die KW — grober Rückfall, solange
-//    weder "{Tag} needs" noch RTI-Wiegung vorliegen (frühe Woche). Zu hoch.
+// 1) RTI Plating Tracker — die gemessene Wahrheit beim Zurückwiegen der Racks,
+//    pro Sub-Rezept aufgeschlüsselt (Spalte "Minimum need"). Sobald das Sheet
+//    einen offenen Sub-Engpass zeigt, ist das die maßgebliche Zahl.
+// 2) LinePlating "{Tag} needs" — der vom Plating-Team im Kitchen-Priority-Sheet
+//    täglich gepflegte Restbedarf. Rückfall, solange die RTI-Wiegung noch fehlt.
+// 3) LinePlating Σ(Planned − Actual) über die KW — grober Rückfall (frühe Woche).
 // 4) Küchen-Gewichts-Schätzung aus Pre-/Post-Blast — letzter Rückfall.
 //
 // WICHTIG: wird NICHT gegen die Sa-Zeile verrechnet. Anfangs war die Annahme,
@@ -300,14 +280,14 @@ function derivePriority(
 // (bei den meisten Meals liegen Sa.Planned und Fr-Bedarf Größenordnungen
 // auseinander). Das Sa-Ergebnis bleibt rein informativ (backfillResultPortions).
 function deriveRecommendedBackfill(
+  // nur gesetzt, wenn rti.isBackfill (offener Sub-Engpass über der Schwelle)
+  rtiShortfall: number | null,
   lpDayNeed: number | null,
   lpShortfall: number,
-  // nur gesetzt, wenn rti.isBackfill (nicht vetoed, Rückstand über Schwelle)
-  rtiShortfall: number | null,
   kitchenPortions: number,
 ): { portions: number; source: CombinedBackfillNeed["recommendedSource"] } {
-  if (lpDayNeed != null && lpDayNeed > 0) return { portions: lpDayNeed, source: "lineplating" };
   if (rtiShortfall != null && rtiShortfall > 0) return { portions: rtiShortfall, source: "rti" };
+  if (lpDayNeed != null && lpDayNeed > 0) return { portions: lpDayNeed, source: "lineplating" };
   if (lpShortfall >= MIN_RTI_SHORTFALL) return { portions: lpShortfall, source: "plating" };
   if (kitchenPortions > 0) return { portions: kitchenPortions, source: "kitchen" };
   return { portions: 0, source: "none" };
@@ -360,9 +340,9 @@ export function combineBackfillSignals(
       : k ? "kitchen-only"
       : "rti-only";
     const recommended = deriveRecommendedBackfill(
+      rb?.isBackfill ? rb.shortfallPortions : null,
       p?.minNeeded ?? null,
       lpShortfall,
-      rb?.isBackfill ? rb.shortfallPortions : null,
       k?.missingPortions ?? 0,
     );
     const priority = derivePriority(
@@ -396,10 +376,12 @@ export function combineBackfillSignals(
       rtiPlannedTarget: rb && rb.plannedTarget > 0 ? rb.plannedTarget : null,
       rtiActuals: rb && rb.plannedTarget > 0 ? rb.actuals : null,
       rtiShortfallPortions: rb?.shortfallPortions ?? 0,
+      rtiRecommendedBuffered: rb?.bufferedPortions ?? 0,
       rtiKitchenDone: rb?.kitchenDone ?? false,
       rtiHasOpenSubs: rb?.hasOpenSubs ?? false,
       rtiVetoed: rb?.vetoed ?? false,
       rtiBackfillCandidateSubs: rb?.candidateSubs ?? [],
+      rtiSubShortfalls: rb?.subShortfalls ?? [],
       liveWmsHoldingKg: wmsHoldingByMeal.get(key) ?? null,
       liveRedzonePortions: redzoneByMeal.get(key)?.portions ?? null,
       liveRedzoneStatus: redzoneByMeal.get(key)?.status ?? null,
@@ -439,17 +421,33 @@ export function detectCrossSourceAlerts(combined: CombinedBackfillNeed[]): Backf
   const alerts: BackfillAlert[] = [];
 
   for (const c of combined) {
-    // "final" = die reguläre Produktion für die KW ist durch. Nur dann ist ein
-    // Rückstand nicht mehr im Normalbetrieb aufholbar → App-weite Meldung.
-    // rtiKitchenDone zählt nur bei einer ECHTEN Wiegung (rtiPlannedTarget != null);
-    // ein leerer/vetoter RTI-Block (Planned Target 0) ist kein "durch".
-    // "Ready"/"blocked" heißt nur "Backfill vorbereitet/blockiert", nicht "durch".
-    const backfillFinal =
-      (c.rtiPlannedTarget != null && c.rtiKitchenDone && !c.rtiVetoed) ||
-      /\b(done|fertig)\b/i.test(c.lpStatusText);
+    const nf = (n: number) => Math.round(n).toLocaleString("de-DE");
 
-    // LinePlating meldet Bedarf, aber im RTI-Sheet sind alle Sub-Rezepte auf
-    // "no" (vetoed) — Widerspruch, muss geklärt werden.
+    // ── RTI-Rechner: der eigentliche Backfill-Alarm ────────────────────────
+    // Das RTI-Sheet wird nur befüllt, wenn beim Zurückwiegen wirklich etwas
+    // fehlt. Ein Sub-Engpass IST damit der handlungsrelevante Bedarf — pro
+    // Sub-Rezept benannt, mit Mindestmenge und gepufferter Empfehlung.
+    if (c.rtiSubShortfalls.length > 0) {
+      const planRef = c.rtiPlannedTarget || 0;
+      const ratio = planRef > 0 ? c.rtiShortfallPortions / planRef : 0;
+      const subList = c.rtiSubShortfalls
+        .map(s => `„${s.subRecipeName}" ${nf(s.minimumNeed)} (mit Puffer ${nf(s.bufferedNeed)})`)
+        .join(" · ");
+      const madeStr = c.rtiActuals != null
+        ? ` — RTI: ${nf(c.rtiActuals)} von ${nf(c.rtiPlannedTarget ?? 0)} Stk platiert`
+        : "";
+      alerts.push({
+        id: alertId(),
+        severity: ratio > 0.15 ? "critical" : "warning",
+        recipeCode: c.recipeCode,
+        recipeName: c.recipeName,
+        title: `Backfill nötig: ${c.recipeName}`,
+        message: `${subList} nachproduzieren${madeStr}.`,
+      });
+    }
+
+    // LinePlating meldet Bedarf, aber im RTI-Sheet sind alle Engpass-Sub-Rezepte
+    // auf "no" (vetoed) — Widerspruch, muss geklärt werden.
     if (
       (c.recommendedSource === "lineplating" || c.recommendedSource === "plating") &&
       c.recommendedBackfillPortions > 0 &&
@@ -461,28 +459,27 @@ export function detectCrossSourceAlerts(combined: CombinedBackfillNeed[]): Backf
         recipeCode: c.recipeCode,
         recipeName: c.recipeName,
         title: `Widerspruch: ${c.recipeName}`,
-        message: `LinePlating meldet ${Math.round(c.recommendedBackfillPortions).toLocaleString("de-DE")} Stk Restbedarf, im RTI-Sheet sind aber alle Sub-Rezepte auf „no" gesetzt (kein Backfill) — klären.`,
+        message: `LinePlating meldet ${nf(c.recommendedBackfillPortions)} Stk Restbedarf, im RTI-Sheet sind aber alle Sub-Rezepte auf „no" gesetzt (kein Backfill) — klären.`,
       });
     }
 
-    // Der Bedarf ist final und über der Schwelle → hier muss ein Backfill her.
+    // Kein RTI-Signal, aber LinePlating ist für die KW "durch" → weiterhin eine
+    // app-weite Meldung (ohne Sub-Aufschlüsselung).
     if (
-      (c.recommendedSource === "lineplating" || c.recommendedSource === "plating" || c.recommendedSource === "rti") &&
-      backfillFinal &&
+      c.rtiSubShortfalls.length === 0 &&
+      (c.recommendedSource === "lineplating" || c.recommendedSource === "plating") &&
+      /\b(done|fertig)\b/i.test(c.lpStatusText) &&
       c.recommendedBackfillPortions > 0
     ) {
-      const planRef = c.rtiPlannedTarget || c.platingPlannedPortions || 0;
+      const planRef = c.platingPlannedPortions || 0;
       const ratio = planRef > 0 ? c.recommendedBackfillPortions / planRef : 0;
-      const madeStr = c.rtiActuals != null
-        ? `${Math.round(c.rtiActuals).toLocaleString("de-DE")} von ${Math.round(c.rtiPlannedTarget ?? 0).toLocaleString("de-DE")} Stk produziert, `
-        : "";
       alerts.push({
         id: alertId(),
         severity: ratio > 0.15 ? "critical" : "warning",
         recipeCode: c.recipeCode,
         recipeName: c.recipeName,
         title: `Backfill nötig: ${c.recipeName}`,
-        message: `${madeStr}${Math.round(c.recommendedBackfillPortions).toLocaleString("de-DE")} Stk nachproduzieren (${SOURCE_SHORT[c.recommendedSource]}).`,
+        message: `${nf(c.recommendedBackfillPortions)} Stk nachproduzieren (${SOURCE_SHORT[c.recommendedSource]}).`,
       });
     }
 

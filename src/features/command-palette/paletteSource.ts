@@ -38,7 +38,7 @@ const VIEW_ALIASES: Partial<Record<AppView, string>> = {
   wms: "lager warehouse bestand uebersicht",
   "full-inventory": "lager komplett inventory bestand alle",
   "postblast-live": "wiegungen blast monitor gsheet",
-  backfills: "rti postblast holding nachschub",
+  backfills: "backfill waechter rti nachproduzieren engpass submeal nachschub holding",
   "transparency-plan": "transparency wo status freitext",
   "redzone-live": "kueche live monitoring redzone plating now",
   "blast-chiller": "chiller bot kuehl zuteilung",

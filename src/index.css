@@ -92,6 +92,21 @@
   .catalog-operations-summary span:first-child { @apply font-semibold text-cyan-800; }
 }
 
+/* Backfill-Wächter: hartes Alarm-Flackern für frisch aufgetauchte Backfills. */
+@keyframes backfill-flash {
+  0%, 100% { background-color: #fef2f2; box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+  50%      { background-color: #dc2626; box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.55); }
+}
+.backfill-flash { animation: backfill-flash 0.7s steps(1, end) infinite; }
+.backfill-flash .backfill-flash-ink { animation: backfill-flash-ink 0.7s steps(1, end) infinite; }
+@keyframes backfill-flash-ink {
+  0%, 100% { color: #991b1b; }
+  50%      { color: #ffffff; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .backfill-flash, .backfill-flash .backfill-flash-ink { animation-duration: 2s; }
+}
+
 @media print {
   body { font-size: 11px; }
   .print\:hidden { display: none !important; }

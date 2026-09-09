@@ -12,6 +12,7 @@ import { DataHealthBanner } from "../components/DataHealthBanner";
 import { CapacityWarningBanner } from "../components/CapacityWarningBanner";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { BackfillAlertBanner } from "../features/backfills/BackfillAlertBanner";
+import { BlastChillerReminderBanner } from "../features/blast-chiller/BlastChillerReminderBanner";
 import { CommandPalette } from "../features/command-palette/CommandPalette";
 import { PlanAssistant } from "../features/plan-assistant/PlanAssistant";
 import { resolveRecipeByCode } from "../lib/helpers";
@@ -36,7 +37,7 @@ const AllergenPlatingView = lazyWithRetry(() => import("../features/allergen-pla
 const PlatingLineBotView  = lazyWithRetry(() => import("../features/plating-line-bot/PlatingLineBotView").then(m => ({ default: m.PlatingLineBotView })), "plating-line-bot");
 const PostblastLiveView   = lazyWithRetry(() => import("../features/gsheet-monitor/PostblastLiveView").then(m => ({ default: m.PostblastLiveView })), "postblast-live");
 const TransparencyPlanView = lazyWithRetry(() => import("../features/gsheet-monitor/TransparencyPlanView").then(m => ({ default: m.TransparencyPlanView })), "transparency-plan");
-const BackfillsView       = lazyWithRetry(() => import("../features/backfills/BackfillsView").then(m => ({ default: m.BackfillsView })), "backfills");
+const BackfillWatchView   = lazyWithRetry(() => import("../features/backfills/BackfillWatchView").then(m => ({ default: m.BackfillWatchView })), "backfills");
 const ArtikelWocheView    = lazyWithRetry(() => import("../features/artikel-woche/ArtikelWocheView").then(m => ({ default: m.ArtikelWocheView })), "artikel-woche");
 const FullInventoryView   = lazyWithRetry(() => import("../features/full-inventory/FullInventoryView").then(m => ({ default: m.FullInventoryView })), "full-inventory");
 const PlatingPlanView     = lazyWithRetry(() => import("../features/plating-plan/PlatingPlanView").then(m => ({ default: m.PlatingPlanView })), "plating-plan");
@@ -142,7 +143,7 @@ function MainPaneSwitch({ view }: { view: AppView }) {
       return <PostblastLiveView data={data} />;
 
     case "backfills":
-      return <BackfillsView />;
+      return <BackfillWatchView />;
 
     case "transparency-plan":
       return <TransparencyPlanView />;
@@ -223,6 +224,7 @@ function FullApp() {
         <DataHealthBanner data={data} source={source} />
         <CapacityWarningBanner data={data} week={selectedWeek} upliftPercent={upliftPercent} />
         <BackfillAlertBanner onOpen={() => setView("backfills")} />
+        <BlastChillerReminderBanner onOpen={() => setView("blast-chiller")} />
       </ErrorBoundary>
       <div className={`grid grid-cols-12 gap-4 ${woView ? "items-start" : ""}`}>
         <aside className={`col-span-12 space-y-3 ${woView ? "md:col-span-4 lg:col-span-3 xl:col-span-2" : "md:col-span-4 lg:col-span-3"}`}>

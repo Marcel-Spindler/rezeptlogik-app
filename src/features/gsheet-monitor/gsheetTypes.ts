@@ -85,14 +85,21 @@ export interface PostblastData {
 // RTI-SPEZIFISCHE TYPEN
 // ════════════════════════════════════════════════════════════════════════════
 
+// Eine Sub-Rezept-Zeile im RTI-Rechner. Spaltenbelegung im Tab (0-indiziert):
+// A WO · B Sub-Rezept · C "Plating holding Kg" · D "RTI Plating Kg" ·
+// E "1 Meal gram" · F "Availble Mealcount" · G "Minimum need" · H "%" ·
+// I "Backfill Meals" · J Status. F/G/H/I liest das Sheet selbst (teils Live-
+// Import, teils Formel) — hier nur einlesen, nicht neu berechnen.
 export interface RtiSubRecipeEntry {
   workOrder: string;
   subRecipeName: string;
-  platingHoldingKg: number;
-  rtiPlatingKg: number;
-  producedQty: number;
-  delta: number;
-  deltaPct: number;
+  platingHoldingKg: number;   // C — manueller Holding-Eintrag (optional)
+  weighedKg: number;          // D "RTI Plating Kg" — zurückgewogene kg (0 = nichts kam zurück)
+  gramPerMeal: number;        // E "1 Meal gram"
+  availableMealcount: number; // F — wie viele Meals aus dem Holding noch platierbar sind
+  minimumNeed: number;        // G "Minimum need" = F − gap (negativ = Engpass, |G| = harter Mindestbedarf)
+  backfillMeals: number;      // I "Backfill Meals" = G × (1 + |H|) (negativ = Engpass, mit %-Sicherheitspuffer)
+  shortagePct: number;        // H — G / Planned Target
   // "done" = reguläre WO fertig gewogen (Kitchen hat abgeschlossen).
   // "not-needed" = Mensch hat im Sheet explizit "kein Backfill nötig" markiert (meist Überschuss).
   // "open" = noch keine Entscheidung/Wiegung. "unknown" = Status-Zelle mit unerwartetem Wert.

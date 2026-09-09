@@ -3970,3 +3970,13 @@ exports.generatePdf = onGuardedRequest(
     }
   },
 );
+// ═══════════════════════════════════════════════════════════════════════════════
+// RTI Backfill-Wächter — server-seitige Slack-Meldung + „done“-Rückschreiben.
+// Eigene Datei, damit index.js überschaubar bleibt. Braucht SLACK_WEBHOOK_URL
+// (Watcher) bzw. Bearbeiter-Rechte des Service-Accounts (rtiMarkDone).
+// ═══════════════════════════════════════════════════════════════════════════════
+{
+  const rtiWatch = require("./rtiBackfillWatch");
+  exports.rtiBackfillWatch = rtiWatch.rtiBackfillWatch;
+  exports.rtiMarkDone = rtiWatch.rtiMarkDone;
+}

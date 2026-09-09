@@ -189,7 +189,7 @@ export function TodayView({ data }: { data: DataBundle }) {
         tasks={tasks}
         taskState={taskState}
         onChange={(task, patch) => void updateTask(task.id, patch)}
-        onOpenRecipe={openRecipe}
+        onOpenTask={(task) => (task.source === "backfill" ? setView("backfills") : openRecipe(task.recipeCode))}
         teamSynced={teamSynced}
         syncError={syncError}
       />
@@ -205,14 +205,14 @@ function OperationsBoard({
   tasks,
   taskState,
   onChange,
-  onOpenRecipe,
+  onOpenTask,
   teamSynced,
   syncError,
 }: {
   tasks: OperationsTask[];
   taskState: TaskState;
   onChange: (task: OperationsTask, patch: Partial<TaskState[string]>) => void;
-  onOpenRecipe: (code: string) => void;
+  onOpenTask: (task: OperationsTask) => void;
   teamSynced: boolean;
   syncError: string | null;
 }) {
@@ -264,7 +264,7 @@ function OperationsBoard({
             const tone = task.severity === "critical" ? "border-rose-200 bg-rose-50" : "border-amber-200 bg-amber-50";
             return (
               <div key={task.id} className={`grid gap-2 border-l-4 p-3 sm:grid-cols-[minmax(0,1fr)_9rem_8rem] sm:items-center ${tone}`}>
-                <button type="button" onClick={() => onOpenRecipe(task.recipeCode)} className="min-w-0 text-left">
+                <button type="button" onClick={() => onOpenTask(task)} className="min-w-0 text-left">
                   <div className="text-xs font-semibold text-slate-800">{task.title}</div>
                   <div className="mt-0.5 truncate text-[11px] text-slate-600">{task.detail}</div>
                 </button>
@@ -336,7 +336,11 @@ function SectionCard({
       ) : (
         <div className="mt-2 space-y-1">
           {shown.map((item) => (
-            <DigestRow key={item.id} item={item} onClick={() => (item.recipeCode ? onOpenRecipe(item.recipeCode) : onOpenView())} />
+            <DigestRow
+              key={item.id}
+              item={item}
+              onClick={() => (item.stayInSection || !item.recipeCode ? onOpenView() : onOpenRecipe(item.recipeCode))}
+            />
           ))}
           {section.items.length > LIMIT && (
             <button

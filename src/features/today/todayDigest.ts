@@ -21,6 +21,8 @@ export interface DigestItem {
   sub?: string;
   /** Klick öffnet dieses Rezept (statt der Sektion-View). */
   recipeCode?: string;
+  /** true = Klick öffnet die Sektion-View selbst, nicht das Rezept-Detail. */
+  stayInSection?: boolean;
 }
 
 export interface DigestSection {
@@ -109,7 +111,8 @@ export function buildBackfillSection(input: {
       severity: a.severity,
       text: a.title,
       sub: a.message,
-      recipeCode: a.recipeCode || undefined,
+      // Backfill-Details stehen im Backfill-Wächter, nicht im Rezept-Detail.
+      stayInSection: true,
     });
   }
   if (input.isStaleWeek) {

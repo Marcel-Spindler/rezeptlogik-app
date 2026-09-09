@@ -3,7 +3,7 @@
 // zusammen und erkennt quellenübergreifende Frühwarnungen. Läuft IMMER (wie
 // RedzoneProvider/WoReconciliationProvider), unabhängig davon, welcher Tab
 // gerade offen ist — das ist die Grundlage für die app-weite Meldung.
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAppState } from "../../app/AppContext";
 import {
   useLinePlaitingGid,
@@ -21,6 +21,9 @@ import { currentHfWeek } from "../../lib/hfWeek";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWeeks";
 import { buildSkuInfoIndex } from "../../lib/wmsSkuEnrichment";
 import { combineBackfillSignals, detectCrossSourceAlerts } from "./combineBackfills";
+import { computeRtiBackfills, type RtiMealBackfill } from "./rtiBackfillCalculator";
+import { sweepRtiInventory, type SubStockElsewhere } from "./rtiInventorySweep";
+import { useSharedBackfillFlash } from "./sharedBackfillFlash";
 import { computeBackfillFeasibility } from "./backfillFeasibility";
 import type { BackfillAlert, BackfillFeasibility, CombinedBackfillNeed } from "./backfillTypes";
 
@@ -33,6 +36,11 @@ export interface BackfillsState {
   // Alerts, die zum Handeln auffordern (critical + warning) — speist das app-weite
   // Banner/Badge. "Backfill nötig"-Meldungen (RTI-Rückstand, Küche durch) landen hier.
   actionableAlertCount: number;
+  // Handlungs-Alerts, die in den letzten Minuten NEU aufgetaucht sind → hartes
+  // Flackern + Alarmton im app-weiten Banner. Nach FRESH-Fenster wieder normal.
+  freshAlertCount: number;
+  // monoton steigend bei jedem neuen frischen Alert — Trigger für den Alarmton.
+  freshAlertSeq: number;
   totalRecommendedPortions: number;
   // Rohware-Bestandsprüfung je Meal (recipeCode → Feasibility). Nur für Meals mit
   // recommendedBackfillPortions > 0 befüllt; leer, wenn der WMS-Vollbestand nicht
@@ -44,6 +52,16 @@ export interface BackfillsState {
   postblastConnected: boolean;
   preblastConnected: boolean;
   rtiConnected: boolean;
+  // RTI-Rechner pro Sub-Rezept (Backfill-Wächter-Grundlage) — enthält auch
+  // Meals, deren Engpass schon zurückgewogen ist. combined/alerts bleiben die
+  // app-weite Meldung, rtiMeals ist die volle Sub-Ebene für die Wächter-View.
+  rtiMeals: RtiMealBackfill[];
+  rtiLastUpdate: number | null;
+  rtiForceRefresh: () => Promise<void>;
+  // Pro offenem Engpass-Sub ("{mealCode}|{subName}"): steht die fertige
+  // Komponente schon woanders im WMS (Chiller/Staging/Bulk, ohne Plating
+  // Holding)? Leer ohne lokalen WMS-Server. Siehe rtiInventorySweep.ts.
+  inventoryElsewhere: Map<string, SubStockElsewhere>;
   linePlaitingConnected: boolean;
   wmsHoldingConnected: boolean;
   linePlaitingSource: LinePlaitingSource;
@@ -56,6 +74,17 @@ export interface BackfillsState {
   setSelectedWeekNum: (wn: number | null) => void;
   availableWeekNums: number[];
   isStaleWeek: boolean;
+}
+
+// Ein Handlungs-Alert gilt so lange als "frisch" (→ Flackern + Ton).
+const FRESH_MS = 15 * 60 * 1000;
+// Alerts, die in den ersten Sekunden nach App-Start auftauchen, waren schon da —
+// die lösen keinen Alarm aus. Erst danach neu Auftauchendes ist "frisch".
+const STARTUP_GRACE_MS = 25 * 1000;
+
+// Stabiler Schlüssel je Alert (die id wird bei jedem Render neu vergeben).
+function alertKey(a: BackfillAlert): string {
+  return `${a.recipeCode}|${a.title.split(":")[0].trim()}`;
 }
 
 const BackfillsContext = createContext<BackfillsState | null>(null);
@@ -150,13 +179,81 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
     [kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows, skuInfoIndex],
   );
 
+  const rtiMeals = useMemo(() => computeRtiBackfills(rti.data), [rti.data]);
+  const inventoryElsewhere = useMemo(
+    () => sweepRtiInventory(rtiMeals, data, fullInventory.rows ?? undefined, skuInfoIndex),
+    [rtiMeals, data, fullInventory.rows, skuInfoIndex],
+  );
   const alerts = useMemo(() => detectCrossSourceAlerts(combined), [combined]);
   const criticalCount = useMemo(() => alerts.filter(a => a.severity === "critical").length, [alerts]);
-  const actionableAlertCount = useMemo(
-    () => alerts.filter(a => a.severity === "critical" || a.severity === "warning").length,
+  const actionableAlerts = useMemo(
+    () => alerts.filter(a => a.severity === "critical" || a.severity === "warning"),
     [alerts],
   );
+  const actionableAlertCount = actionableAlerts.length;
   const totalRecommendedPortions = useMemo(() => combined.reduce((s, c) => s + c.recommendedBackfillPortions, 0), [combined]);
+
+  // ── Frisch-Erkennung → hartes Flackern + Alarmton im app-weiten Banner ─────
+  // "frisch" = lokal zum ersten Mal gesehen (nachdem die App > STARTUP_GRACE_MS
+  // läuft) ODER ein geteiltes Flacker-Signal aus Firestore (damit es bei ALLEN
+  // gleichzeitig flackert — siehe sharedBackfillFlash.ts). Beim App-Start
+  // vorhandene Alerts lösen nie den Alarm aus.
+  const { active: sharedActive, at: sharedAt, keys: sharedKeys, broadcast: sharedBroadcast } = useSharedBackfillFlash();
+  const mountedAtRef = useRef(Date.now());
+  const seenAtRef = useRef<Record<string, number>>({});
+  const freshSeqRef = useRef(0);
+  const lastSharedAtRef = useRef(0);
+  const [freshInfo, setFreshInfo] = useState<{ count: number; seq: number }>({ count: 0, seq: 0 });
+
+  const recomputeFresh = useCallback(() => {
+    const now = Date.now();
+    const seen = seenAtRef.current;
+    const liveKeys = new Set<string>();
+    const newKeys: string[] = [];
+    for (const a of actionableAlerts) {
+      const key = alertKey(a);
+      liveKeys.add(key);
+      if (seen[key] == null) {
+        seen[key] = now;
+        if (now > mountedAtRef.current + STARTUP_GRACE_MS) newKeys.push(key);
+      }
+    }
+    for (const k of Object.keys(seen)) if (!liveKeys.has(k)) delete seen[k];
+
+    // Lokal neu erkannt → für alle anderen Apps broadcasten.
+    if (newKeys.length > 0) sharedBroadcast(newKeys);
+
+    const localFresh = actionableAlerts.filter(a => {
+      const t = seen[alertKey(a)] ?? 0;
+      return now - t < FRESH_MS && t > mountedAtRef.current + STARTUP_GRACE_MS;
+    }).length;
+
+    // Alarmton (freshSeq bumpen) bei eigener neuer Erkennung …
+    if (newKeys.length > 0) freshSeqRef.current += 1;
+
+    // … oder bei einem FREMDEN geteilten Signal für einen Backfill, den diese
+    // App noch nicht selbst kennt (das eigene Echo hat nur bekannte Keys).
+    if (sharedAt > lastSharedAtRef.current) {
+      lastSharedAtRef.current = sharedAt;
+      const foreignNew = sharedKeys.filter(k => seen[k] == null);
+      if (sharedActive && foreignNew.length > 0) {
+        freshSeqRef.current += 1;
+        for (const k of foreignNew) seen[k] = sharedAt; // nicht nochmal lokal bumpen
+      }
+    }
+
+    // Geteiltes Signal aktiv → alle aktuellen Handlungs-Alerts flackern.
+    const count = sharedActive ? Math.max(localFresh, actionableAlerts.length) : localFresh;
+    setFreshInfo(prev => (prev.count === count && prev.seq === freshSeqRef.current ? prev : { count, seq: freshSeqRef.current }));
+  }, [actionableAlerts, sharedActive, sharedAt, sharedKeys, sharedBroadcast]);
+
+  useEffect(() => { recomputeFresh(); }, [recomputeFresh]);
+  // Frisch-Fenster läuft ohne neuen Alert einfach ab.
+  useEffect(() => {
+    if (freshInfo.count === 0) return;
+    const t = window.setInterval(recomputeFresh, 30_000);
+    return () => window.clearInterval(t);
+  }, [freshInfo.count, recomputeFresh]);
 
   const feasibilityByMeal = useMemo<Map<string, BackfillFeasibility>>(
     () => (data ? computeBackfillFeasibility(combined, data, fullInventory.rows ?? undefined, skuInfoIndex) : new Map()),
@@ -170,6 +267,8 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
     alerts,
     criticalCount,
     actionableAlertCount,
+    freshAlertCount: freshInfo.count,
+    freshAlertSeq: freshInfo.seq,
     totalRecommendedPortions,
     feasibilityByMeal,
     fullInventoryConnected: !!fullInventory.rows && fullInventory.rows.length > 0,
@@ -178,6 +277,10 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
     postblastConnected: !!postblast.data,
     preblastConnected: !!preblast.data,
     rtiConnected: !!rti.data,
+    rtiMeals,
+    rtiLastUpdate: rti.lastUpdate,
+    rtiForceRefresh: rti.forceRefresh,
+    inventoryElsewhere,
     linePlaitingConnected: !!linePlaitingData,
     wmsHoldingConnected: !!wmsHolding.rows,
     linePlaitingSource,

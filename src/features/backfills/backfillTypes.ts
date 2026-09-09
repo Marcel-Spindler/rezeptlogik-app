@@ -1,3 +1,5 @@
+import type { RtiSubShortfall } from "./rtiBackfillCalculator";
+
 // Backfills – Typen für die quellenübergreifende Zusammenführung.
 // Führt drei unabhängige Signale pro Meal (recipeCode) zusammen:
 // 1) Küche (Postblast Live: Pre-/Post-Blast-Gewicht je Sub-Rezept/WO)
@@ -63,11 +65,17 @@ export interface CombinedBackfillNeed {
   // null/false, wenn das Meal nicht im RTI-Sheet steht.
   rtiPlannedTarget: number | null;
   rtiActuals: number | null;
-  rtiShortfallPortions: number;      // max(0, plannedTarget − actuals)
+  rtiShortfallPortions: number;      // größter offener Sub-Engpass (≈ Planned − Actuals)
+  rtiRecommendedBuffered: number;    // dito, mit dem %-Sicherheitspuffer des Sheets (Spalte "Backfill Meals")
   rtiKitchenDone: boolean;
   rtiHasOpenSubs: boolean;
-  rtiVetoed: boolean;                // alle echten Sub-Rezepte "no" → kein Backfill
+  rtiVetoed: boolean;                // alle Engpass-Sub-Rezepte "no" → kein Backfill
   rtiBackfillCandidateSubs: string[];
+  // Pro Sub-Rezept, das laut RTI-Rechner nachgekocht werden muss (Spalten
+  // "Minimum need" / "Backfill Meals" / Status). Treibt die Backfill-Wächter-
+  // Ansicht und die app-weite "Backfill nötig"-Meldung. Leer, wenn das Meal
+  // nicht im RTI-Sheet steht oder der Rückstand komplett aus Holding gedeckt ist.
+  rtiSubShortfalls: RtiSubShortfall[];
 
   // WMS live: tatsächlicher Warenbestand in Plating-Holding-Locations (PLH),
   // direkt aus Snowflake — der physische Puffer zwischen Post-Blast und

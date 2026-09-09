@@ -8,8 +8,9 @@ import type { WmsSkuInfo } from "../lib/wmsSkuEnrichment";
 
 function rtiSub(status: RtiSubRecipeEntry["status"], overrides: Partial<RtiSubRecipeEntry> = {}): RtiSubRecipeEntry {
   return {
-    workOrder: "36-001", subRecipeName: "Sub A", platingHoldingKg: 0, rtiPlatingKg: 0,
-    producedQty: 0, delta: 0, deltaPct: 0, status, isBackfillCandidate: false,
+    workOrder: "36-001", subRecipeName: "Sub A", platingHoldingKg: 0, weighedKg: 0,
+    gramPerMeal: 100, availableMealcount: 0, minimumNeed: 0, backfillMeals: 0,
+    shortagePct: 0, status, isBackfillCandidate: false,
     ...overrides,
   };
 }
@@ -17,7 +18,7 @@ function rtiSub(status: RtiSubRecipeEntry["status"], overrides: Partial<RtiSubRe
 function rtiData(meal: Partial<RtiMealBlock>): RtiData {
   const block: RtiMealBlock = {
     mealCode: "FV0001A", mealName: "Test Meal", plannedTarget: 5000, actuals: 4200,
-    delta: -800, deltaPct: 16, subRecipes: [rtiSub("done")],
+    delta: -800, deltaPct: 16, subRecipes: [rtiSub("open")],
     ...meal,
   };
   return { week: "W36", meals: [block], lastUpdated: Date.now() };
@@ -249,89 +250,101 @@ describe("combineBackfillSignals — WMS Plating Holding enrichment", () => {
   });
 });
 
-describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf", () => {
-  it("creates an rti-only entry: recommendedBackfillPortions = plannedTarget − actuals", () => {
+describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept", () => {
+  it("creates an rti-only entry aus dem Sub-Engpass (Minimum need)", () => {
+    // gap = 800, ein Sub-Rezept ohne Holding → minimumNeed 800
     const combined = combineBackfillSignals([], null, rtiData({ plannedTarget: 5000, actuals: 4200 }));
     expect(combined).toHaveLength(1);
     expect(combined[0].confidence).toBe("rti-only");
     expect(combined[0].recommendedSource).toBe("rti");
     expect(combined[0].recommendedBackfillPortions).toBe(800);
     expect(combined[0].rtiActuals).toBe(4200);
-    expect(combined[0].rtiKitchenDone).toBe(true);
+    expect(combined[0].rtiSubShortfalls).toHaveLength(1);
+    expect(combined[0].rtiRecommendedBuffered).toBeGreaterThan(800); // mit %-Puffer
   });
 
-  it("does NOT create an entry when all real sub-recipes are 'no' (veto)", () => {
+  it("meldet nur die leergelaufenen Sub-Rezepte — aus Holding gedeckte nicht", () => {
+    const combined = combineBackfillSignals([], null, rtiData({
+      plannedTarget: 3763, actuals: 2848, // gap 915
+      subRecipes: [
+        rtiSub("open", { subRecipeName: "Creamy Leek", minimumNeed: 59 }),       // gedeckt
+        rtiSub("open", { subRecipeName: "Green beans", minimumNeed: 356 }),      // gedeckt
+        rtiSub("open", { subRecipeName: "Mash", minimumNeed: -915, backfillMeals: -1137, shortagePct: -24.32 }),
+        rtiSub("open", { subRecipeName: "Pork tenderloin", minimumNeed: -812, backfillMeals: -987, shortagePct: -21.58 }),
+      ],
+    }));
+    expect(combined[0].rtiSubShortfalls.map(s => s.subRecipeName).sort()).toEqual(["Mash", "Pork tenderloin"]);
+    expect(combined[0].rtiSubShortfalls.find(s => s.subRecipeName === "Mash")!.bufferedNeed).toBe(1137);
+    expect(combined[0].recommendedBackfillPortions).toBe(915);
+  });
+
+  it("does NOT create an entry when the shortfall sub-recipe is 'no' (veto)", () => {
     const combined = combineBackfillSignals([], null, rtiData({ subRecipes: [rtiSub("not-needed"), rtiSub("not-needed")] }));
     expect(combined).toHaveLength(0);
   });
 
   it("does NOT create an entry for a sub-threshold shortfall", () => {
-    const combined = combineBackfillSignals([], null, rtiData({ plannedTarget: 5000, actuals: 4980 })); // −20 < 30
+    const combined = combineBackfillSignals([], null, rtiData({ plannedTarget: 5000, actuals: 4980 })); // gap 20 < 30
     expect(combined).toHaveLength(0);
   });
 
-  it("creates an entry with kitchenDone=false while sub-recipes are still open", () => {
-    const combined = combineBackfillSignals([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("open")] }));
-    expect(combined).toHaveLength(1);
-    expect(combined[0].rtiKitchenDone).toBe(false);
+  it("ein Sub offen, einer schon eingetragen (Sheet 'done') → Alarm nur für den offenen", () => {
+    const combined = combineBackfillSignals([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("open", { subRecipeName: "Sub B" })] }));
     expect(combined[0].rtiHasOpenSubs).toBe(true);
-    const alerts = detectCrossSourceAlerts(combined);
-    expect(alerts.some(a => a.title.startsWith("Backfill nötig"))).toBe(false); // noch nicht final
+    expect(combined[0].rtiSubShortfalls.map(s => s.subRecipeName)).toEqual(["Sub B"]);
+    expect(detectCrossSourceAlerts(combined).some(a => a.title.startsWith("Backfill nötig"))).toBe(true);
   });
 
-  it("ignores prepared backfill-candidate rows for the status check", () => {
+  it("alle Engpass-Subs auf 'done' → kein combined-Eintrag (nichts mehr zu tun)", () => {
+    const combined = combineBackfillSignals([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("done")] }));
+    expect(combined).toHaveLength(0);
+  });
+
+  it("ignores prepared backfill-candidate rows", () => {
     const combined = combineBackfillSignals([], null, rtiData({
-      subRecipes: [rtiSub("done"), rtiSub("open", { isBackfillCandidate: true, subRecipeName: "Sub A" })],
+      subRecipes: [rtiSub("open"), rtiSub("open", { isBackfillCandidate: true, subRecipeName: "Sub A" })],
     }));
-    expect(combined[0].rtiKitchenDone).toBe(true);
+    expect(combined[0].rtiSubShortfalls).toHaveLength(1);
     expect(combined[0].rtiBackfillCandidateSubs).toEqual(["Sub A"]);
   });
 
-  it("LinePlating '{Tag} needs' beats the RTI weighing for the number", () => {
+  it("der RTI-Sub-Engpass schlägt LinePlating '{Tag} needs' für die Zahl", () => {
     const data = linePlaitingData([
       plaitingRow({ day: "Friday", phase: "min-needs", minNeededPortions: 300, dayNeedPortions: 300, shortageReason: "" }),
     ]);
     const combined = combineBackfillSignals([], data, rtiData({ plannedTarget: 5000, actuals: 4200 }));
-    expect(combined[0].recommendedSource).toBe("lineplating");
-    expect(combined[0].recommendedBackfillPortions).toBe(300);
-    // "{Tag} needs" (300) unter dem rohen RTI-Rückstand (800) = erwartet (Puffer), kein Alarm.
-    expect(detectCrossSourceAlerts(combined).some(a => a.title.includes("Abweichung"))).toBe(false);
-  });
-
-  it("flags it when '{Tag} needs' asks for MORE than the raw RTI Planned − Actual gap", () => {
-    const data = linePlaitingData([
-      plaitingRow({ day: "Friday", phase: "min-needs", minNeededPortions: 1200, dayNeedPortions: 1200, shortageReason: "" }),
-    ]);
-    const combined = combineBackfillSignals([], data, rtiData({ plannedTarget: 5000, actuals: 4200 })); // Δ nur 800
-    expect(combined[0].recommendedSource).toBe("lineplating");
-    expect(detectCrossSourceAlerts(combined).some(a => a.title.includes("Abweichung"))).toBe(true);
-  });
-
-  it("uses the RTI weighing shortfall when LinePlating has no signal for the meal", () => {
-    const combined = combineBackfillSignals([], null, rtiData({ plannedTarget: 5000, actuals: 4200 }));
     expect(combined[0].recommendedSource).toBe("rti");
     expect(combined[0].recommendedBackfillPortions).toBe(800);
+  });
+
+  it("nutzt LinePlating '{Tag} needs', wenn das RTI-Sheet für das Meal nichts hat", () => {
+    const data = linePlaitingData([
+      plaitingRow({ day: "Friday", phase: "min-needs", minNeededPortions: 300, dayNeedPortions: 300, shortageReason: "" }),
+    ]);
+    const combined = combineBackfillSignals([], data, null);
+    expect(combined[0].recommendedSource).toBe("lineplating");
+    expect(combined[0].recommendedBackfillPortions).toBe(300);
   });
 
   it("merges code variants (FV4063A ↔ FV4063B) into one entry via the 4-digit key", () => {
     const lp = linePlaitingData([
       plaitingRow({ recipeCode: "FV4063B", meal: "Cheddar pulled beef", day: "Friday", phase: "min-needs", minNeededPortions: 500, dayNeedPortions: 500 }),
     ]);
-    const rti = rtiData({ mealCode: "FV4063A", mealName: "Cheddar pulled beef", plannedTarget: 2300, actuals: 1472, subRecipes: [rtiSub("done")] });
+    const rti = rtiData({ mealCode: "FV4063A", mealName: "Cheddar pulled beef", plannedTarget: 2300, actuals: 1472, subRecipes: [rtiSub("open")] });
     const combined = combineBackfillSignals([], lp, rti);
     expect(combined).toHaveLength(1);
     expect(combined[0].codeVariants.sort()).toEqual(["FV4063A", "FV4063B"]);
     expect(combined[0].recipeCode).toBe("FV4063B"); // LinePlating gewinnt für die Anzeige
-    expect(combined[0].recommendedSource).toBe("lineplating");
-    expect(combined[0].recommendedBackfillPortions).toBe(500);
-    expect(combined[0].rtiPlannedTarget).toBe(2300); // RTI-Wiegung ist mit dran
+    expect(combined[0].recommendedSource).toBe("rti"); // RTI-Wiegung treibt die Zahl
+    expect(combined[0].recommendedBackfillPortions).toBe(828); // 2300 − 1472
+    expect(combined[0].rtiPlannedTarget).toBe(2300);
   });
 
   it("keeps the real weighing block when the RTI sheet also has empty prep blocks for the same code", () => {
     const rti: RtiData = {
       week: "W36", lastUpdated: Date.now(),
       meals: [
-        { mealCode: "FV0001A", mealName: "Test Meal", plannedTarget: 2000, actuals: 1700, delta: -300, deltaPct: 15, subRecipes: [rtiSub("done")] },
+        { mealCode: "FV0001A", mealName: "Test Meal", plannedTarget: 2000, actuals: 1700, delta: -300, deltaPct: 15, subRecipes: [rtiSub("open")] },
         { mealCode: "FV0001A", mealName: "Test Meal", plannedTarget: 0, actuals: 0, delta: 0, deltaPct: 0, subRecipes: [] },
         { mealCode: "FV0001A", mealName: "Test Meal", plannedTarget: 0, actuals: 0, delta: 0, deltaPct: 0, subRecipes: [] },
       ],
@@ -344,11 +357,16 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf", () => {
     expect(combined[0].recommendedBackfillPortions).toBe(300);
   });
 
-  it("raises an app-wide 'Backfill nötig' alert once the kitchen is done", () => {
-    const combined = combineBackfillSignals([], null, rtiData({ plannedTarget: 5000, actuals: 4200, subRecipes: [rtiSub("done")] }));
+  it("die app-weite 'Backfill nötig'-Meldung nennt die Sub-Rezepte", () => {
+    const combined = combineBackfillSignals([], null, rtiData({
+      plannedTarget: 5000, actuals: 4200,
+      subRecipes: [rtiSub("open", { subRecipeName: "Sauce X", minimumNeed: -800, backfillMeals: -928 })],
+    }));
     const a = detectCrossSourceAlerts(combined).find(x => x.title.startsWith("Backfill nötig"));
     expect(a).toBeTruthy();
     expect(a!.severity).toBe("critical"); // 800/5000 = 16% > 15%
+    expect(a!.message).toContain("Sauce X");
+    expect(a!.message).toContain("mit Puffer");
   });
 });
 

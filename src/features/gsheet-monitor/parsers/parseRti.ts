@@ -24,7 +24,16 @@ function detectWeek(rows: string[][]): string {
   return "";
 }
 
-const FV_HEADER_RE = /^(FV\d{4}[A-Z]?)\s*-\s*(.+)/i;
+// Der FV-Code steht mal am Anfang ("FV4048A - Creamy Leek …"), mal mit Präfix
+// ("[DE] - FV1351A - Cheddar …") — beide Varianten kommen in derselben KW vor.
+const FV_HEADER_RE = /(FV\d{4}[A-Z]?)\s*[-–]\s*(.+)/i;
+
+function cleanMealName(raw: string): string {
+  return raw
+    .replace(/^\[[^\]]*\]\s*[-–]\s*/, "")   // führendes "[DE] - "
+    .replace(/\s*\[[^\]]*\]\s*$/, "")       // abschließendes "[DE]"
+    .trim();
+}
 
 function isEndOfWeekMarker(row: string[]): boolean {
   return /end of week count/i.test((row[0] ?? "") + " " + (row[1] ?? ""));
@@ -50,7 +59,7 @@ export function parseRti(rows: string[][]): RtiData {
 
     if (fvMatch) {
       const mealCode = fvMatch[1].toUpperCase();
-      const mealName = fvMatch[2].replace(/\s*\[.*?\]\s*$/, "").trim();
+      const mealName = cleanMealName(fvMatch[2]);
       const planned = num(row[3] ?? "");
       const actuals = num(row[4] ?? "");
       const delta = num(row[5] ?? "");
@@ -74,16 +83,17 @@ export function parseRti(rows: string[][]): RtiData {
         if (!wo && !subName) { i++; break; }
 
         if (/^\d{2,3}-\d{2,4}$/.test(wo) && subName) {
-          const holding = num(sr[2] ?? "");
-          const rtiKgCol3 = num(sr[3] ?? "");
-          const rtiKgCol4 = num(sr[4] ?? "");
-          const rtiKg = (sr[3] ?? "").trim() !== "" ? rtiKgCol3 : rtiKgCol4;
-          const produced = num(sr[5] ?? "");
-          const subDeltaCol6 = (sr[6] ?? "").trim();
-          const subDelta = subDeltaCol6 !== "" ? num(subDeltaCol6) : num(sr[5] ?? "");
-          const subDeltaPct = pct(sr[7] ?? "");
-          const statusRaw = (sr[9] ?? sr[8] ?? "").trim().toLowerCase();
+          const platingHoldingKg = num(sr[2] ?? "");   // C
+          const weighedKg = num(sr[3] ?? "");           // D "RTI Plating Kg"
+          const gramPerMeal = num(sr[4] ?? "");         // E "1 Meal gram"
+          const availableMealcount = num(sr[5] ?? "");  // F "Availble Mealcount"
+          const minimumNeed = num(sr[6] ?? "");         // G "Minimum need"
+          const shortagePct = pct(sr[7] ?? "");         // H "%"
+          const backfillMeals = num(sr[8] ?? "");       // I "Backfill Meals"
+          // Status steht NUR in Spalte J. Spalte I ("Backfill Meals") ist eine Zahl
+          // und darf nicht als Status fehlinterpretiert werden.
           // "Done?" (mit Fragezeichen) kommt im Sheet real vor und meint "fertig-ish".
+          const statusRaw = (sr[9] ?? "").trim().toLowerCase();
           const status: RtiSubRecipeEntry["status"] =
             /^done/.test(statusRaw) ? "done" :
             statusRaw === "no" ? "not-needed" :
@@ -96,13 +106,15 @@ export function parseRti(rows: string[][]): RtiData {
           subRecipes.push({
             workOrder: wo,
             subRecipeName: subName,
-            platingHoldingKg: holding,
-            rtiPlatingKg: rtiKg,
-            producedQty: produced,
-            delta: subDelta,
-            deltaPct: subDeltaPct,
+            platingHoldingKg,
+            weighedKg,
+            gramPerMeal,
+            availableMealcount,
+            minimumNeed,
+            backfillMeals,
+            shortagePct,
             status,
-            isBackfillCandidate
+            isBackfillCandidate,
           });
         }
         i++;
