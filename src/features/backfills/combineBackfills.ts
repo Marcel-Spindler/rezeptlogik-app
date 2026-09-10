@@ -9,7 +9,7 @@ import type { WmsSkuInfo } from "../../lib/wmsSkuEnrichment";
 import { skuKey } from "../../lib/wmsSkuEnrichment";
 import { codeDigits } from "../../lib/helpers";
 import type { BackfillAlert, BackfillPriority, CombinedBackfillNeed } from "./backfillTypes";
-import { computeRtiBackfills, MIN_SUB_SHORTFALL, type RtiExternalTarget, type RtiSubShortfall } from "./rtiBackfillCalculator";
+import { MIN_SUB_SHORTFALL, type RtiMealBackfill, type RtiSubShortfall } from "./rtiBackfillCalculator";
 
 // Backfill-Menge zählt erst ab dieser Schwelle als echter Bedarf (Rauschfilter
 // gegen minimale Rundungs-/Zählabweichungen).
@@ -188,11 +188,10 @@ export interface RtiBackfillAgg {
 }
 
 function aggregateRtiBackfillByMeal(
-  rti: RtiData | null | undefined,
-  externalTargets?: Map<string, RtiExternalTarget>,
+  rtiMeals: RtiMealBackfill[],
 ): Map<string, RtiBackfillAgg> {
   const byMeal = new Map<string, RtiBackfillAgg>();
-  for (const meal of computeRtiBackfills(rti, externalTargets)) {
+  for (const meal of rtiMeals) {
     // Kopf unvollständig UND nicht aus App-Daten herleitbar → keine Zahl, kein
     // Eintrag in der kombinierten Liste (der Wächter zeigt den Hinweis separat).
     if (meal.headerIncomplete) continue;
@@ -308,15 +307,15 @@ export function combineBackfillSignals(
   kitchenBackfill: BackfillNeed[],
   linePlaiting: LinePlaitingData | null,
   rti: RtiData | null | undefined,
+  rtiMeals: RtiMealBackfill[],
   redzoneRuns?: PlatingRunDisplay[],
   wmsHoldingRows?: StoredRow[],
   skuInfoIndex?: Map<string, WmsSkuInfo>,
-  externalTargets?: Map<string, RtiExternalTarget>,
 ): CombinedBackfillNeed[] {
   const kitchenByMeal = aggregateKitchenByMeal(kitchenBackfill);
   const platingByMeal = aggregatePlatingByMeal(linePlaiting);
   const rtiHoldingByMeal = aggregateRtiHoldingByMeal(rti);
-  const rtiBackfillByMeal = aggregateRtiBackfillByMeal(rti, externalTargets);
+  const rtiBackfillByMeal = aggregateRtiBackfillByMeal(rtiMeals);
   const redzoneByMeal = aggregateRedzoneByMeal(redzoneRuns);
   const wmsHoldingByMeal = aggregateWmsHoldingByMeal(wmsHoldingRows, skuInfoIndex);
 

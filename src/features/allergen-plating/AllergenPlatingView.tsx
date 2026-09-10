@@ -59,7 +59,9 @@ interface IndexEntry {
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
 function normStr(s: string): string {
-  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
+  return (s || "").toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function cleanRecipeName(raw: string): string {

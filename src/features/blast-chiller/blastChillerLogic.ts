@@ -35,8 +35,8 @@ export function assignChiller(allergen: string | null): ChillerKey {
     .replace(/MILCH \(EINSCHLIESSLICH LAKTOSE\)/g, "")
     .replace(/SCHWEFELDIOXIDE UND SULFITE/g, "")
     .split(",").map(p => p.trim()).filter(p => p.length > 0);
-  const x = rest.length > 0;
-  if (x) return "6";
+  const hasOtherAllergens = rest.length > 0;
+  if (hasOtherAllergens) return "6";
   if (m && s) return "5";
   if (s) return "3";
   if (m) return "4";
@@ -46,7 +46,9 @@ export function assignChiller(allergen: string | null): ChillerKey {
 // Exportiert (statt privat), da BlastChillerView.tsx dieselbe Struktursuche
 // zusätzlich für seine eigene "Quelle: Struktur vs. Rezept-Fallback"-Statistik braucht.
 export function normStr(s: string): string {
-  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
+  return (s || "").toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -271,6 +273,14 @@ export function computeWoChiller(
   subRecipeName: string,
 ): ChillerAssignment {
   const { allergen, precision } = computeWoAllergenDetailed(data, recipeCode, subRecipeName);
-  const key = assignChiller(allergen);
+  let key = assignChiller(allergen);
+
+  // Sicherheitsnetz: Sub-Rezept sagt "KEINE", aber das Gesamtrezept führt Allergene
+  // → konservativ in den Rest-Pool (Chiller 6) statt allergenfrei (Chiller 1&2).
+  if (key === "1" && recipeCode) {
+    const recipeWide = computeRecipeWideAllergen(data, recipeCode);
+    if (recipeWide.length > 0) key = "6";
+  }
+
   return { key, allergen, cfg: CHILLER_CFG[key], unknown: allergen == null, precision };
 }

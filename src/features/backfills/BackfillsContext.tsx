@@ -130,7 +130,13 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
   );
 
   // ── KW-Auswahl mit Auto-Fallback ──────────────────────────────────────────
-  const currentWeekNum = useMemo(() => weekNumFromHfWeek(currentHfWeek()), []);
+  const [currentWeekNum, setCurrentWeekNum] = useState(() => weekNumFromHfWeek(currentHfWeek()));
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      setCurrentWeekNum(weekNumFromHfWeek(currentHfWeek()));
+    }, 60_000);
+    return () => window.clearInterval(t);
+  }, []);
 
   // Alle verfügbaren KW-Nummern aus dem Produktionsplan ermitteln
   const availableWeekNums = useMemo(() => {
@@ -203,12 +209,12 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
     [data, expectedWeekLabel, linePlaitingData, redzone?.runs],
   );
 
-  const combined = useMemo(
-    () => combineBackfillSignals(kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows ?? undefined, skuInfoIndex, rtiExternalTargets),
-    [kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows, skuInfoIndex, rtiExternalTargets],
-  );
-
   const rtiMeals = useMemo(() => computeRtiBackfills(rti.data, rtiExternalTargets), [rti.data, rtiExternalTargets]);
+
+  const combined = useMemo(
+    () => combineBackfillSignals(kitchenBackfill, linePlaitingData, rti.data, rtiMeals, redzone?.runs, wmsHolding.rows ?? undefined, skuInfoIndex),
+    [kitchenBackfill, linePlaitingData, rti.data, rtiMeals, redzone?.runs, wmsHolding.rows, skuInfoIndex],
+  );
 
   // ── „Schon plaitiert" je Meal: LinePlaiting-Actuals ⊕ Redzone-Output (max) ──
   const platingAgg = useMemo(() => aggregatePlatingByMeal(linePlaitingData), [linePlaitingData]);

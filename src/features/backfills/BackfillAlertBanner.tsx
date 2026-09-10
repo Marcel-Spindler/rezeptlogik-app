@@ -11,7 +11,7 @@ export function BackfillNavBadge() {
   const fresh = backfills.freshAlertCount > 0;
   if (count === 0 && !backfills.isStaleWeek) return null;
   return (
-    <span className="relative flex h-2 w-2 shrink-0" title={count > 0 ? `${count} Meal(s) brauchen einen Backfill` : "Backfills zeigt veraltete Daten"}>
+    <span className="relative flex h-2 w-2 shrink-0" role="status" aria-label={count > 0 ? `${count} Meal(s) brauchen einen Backfill` : "Backfills zeigt veraltete Daten"}>
       <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${count > 0 ? "bg-red-400" : "bg-amber-400"}`} />
       <span className={`relative inline-flex rounded-full h-2 w-2 ${fresh ? "bg-red-600" : count > 0 ? "bg-red-500" : "bg-amber-500"}`} />
     </span>
@@ -60,7 +60,7 @@ export function BackfillAlertBanner({ onOpen }: { onOpen: () => void }) {
     );
   }
 
-  const dismissKey = critical.map(a => a.recipeCode).sort().join(",");
+  const dismissKey = critical.map(a => `${a.recipeCode}|${a.severity}`).sort().join(",");
   if (dismissedKey === dismissKey) return null;
 
   const flashing = freshCount > 0 && !muted;
@@ -85,6 +85,7 @@ export function BackfillAlertBanner({ onOpen }: { onOpen: () => void }) {
             type="button"
             onClick={toggleMute}
             title={muted ? "Alarmton ist aus — einschalten" : "Alarmton aus"}
+            aria-label={muted ? "Alarmton einschalten" : "Alarmton ausschalten"}
             className={`text-sm px-1 ${flashing ? "backfill-flash-ink" : "text-red-500 hover:text-red-800"}`}
           >
             {muted ? "🔇" : "🔔"}
@@ -93,6 +94,7 @@ export function BackfillAlertBanner({ onOpen }: { onOpen: () => void }) {
             type="button"
             onClick={() => setDismissedKey(dismissKey)}
             title="Bis zur nächsten Änderung ausblenden"
+            aria-label="Backfill-Banner ausblenden"
             className={`text-xs font-semibold ${flashing ? "backfill-flash-ink" : "text-red-400 hover:text-red-800"}`}
           >
             ✕

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { combineBackfillSignals, detectCrossSourceAlerts } from "../features/backfills/combineBackfills";
+import { computeRtiBackfills } from "../features/backfills/rtiBackfillCalculator";
 import type { BackfillNeed } from "../features/gsheet-monitor/postblastMatch";
 import type { LinePlaitingData, LinePlaitingRow, RtiData, RtiMealBlock, RtiSubRecipeEntry } from "../features/gsheet-monitor/gsheetTypes";
 import type { PlatingRunDisplay } from "../features/redzone-live/redzoneTypes";
@@ -81,9 +82,20 @@ function linePlaitingData(rows: LinePlaitingRow[]): LinePlaitingData {
   return { week: "W36", rows, byRecipeCode, dayTotals: [], lastUpdated: Date.now() };
 }
 
+function combine(
+  kitchen: BackfillNeed[],
+  lp: LinePlaitingData | null,
+  rti: RtiData | null,
+  redzoneRuns?: PlatingRunDisplay[],
+  wmsRows?: StoredRow[],
+  skuIndex?: Map<string, WmsSkuInfo>,
+) {
+  return combineBackfillSignals(kitchen, lp, rti, computeRtiBackfills(rti), redzoneRuns, wmsRows, skuIndex);
+}
+
 describe("combineBackfillSignals", () => {
   it("marks a meal as confirmed when both kitchen and plating report a shortage", () => {
-    const combined = combineBackfillSignals(
+    const combined = combine(
       [kitchenNeed({})],
       linePlaitingData([plaitingRow({})]),
       null,
@@ -95,14 +107,14 @@ describe("combineBackfillSignals", () => {
   });
 
   it("marks a meal plating-only when only LinePlaiting sees a shortage", () => {
-    const combined = combineBackfillSignals([], linePlaitingData([plaitingRow({})]), null);
+    const combined = combine([], linePlaitingData([plaitingRow({})]), null);
     expect(combined).toHaveLength(1);
     expect(combined[0].confidence).toBe("plating-only");
     expect(combined[0].kitchenMissingKg).toBe(0);
   });
 
   it("marks a meal kitchen-only when only Postblast sees a shortage", () => {
-    const combined = combineBackfillSignals([kitchenNeed({})], null, null);
+    const combined = combine([kitchenNeed({})], null, null);
     expect(combined).toHaveLength(1);
     expect(combined[0].confidence).toBe("kitchen-only");
     expect(combined[0].platingShortagePortions).toBe(0);
@@ -114,7 +126,7 @@ describe("combineBackfillSignals", () => {
       plaitingRow({ day: "Friday", phase: "min-needs", deltaPortions: -50, minNeededPortions: 150, shortageReason: "" }),
       plaitingRow({ day: "Saturday", phase: "result", deltaPortions: 20, actualPortions: 220, comment: "Done", shortageReason: "" }),
     ]);
-    const combined = combineBackfillSignals([kitchenNeed({})], data, null);
+    const combined = combine([kitchenNeed({})], data, null);
     expect(combined[0].minNeededPortions).toBe(150);
     expect(combined[0].backfillResultPortions).toBe(220);
     expect(combined[0].backfillResultComments).toContain("Done");
@@ -122,7 +134,7 @@ describe("combineBackfillSignals", () => {
 
   it("does not invent a shortage for a meal with only positive deltas (surplus)", () => {
     const data = linePlaitingData([plaitingRow({ deltaPortions: 50, actualPortions: 1050, shortageReason: "" })]);
-    const combined = combineBackfillSignals([], data, null);
+    const combined = combine([], data, null);
     expect(combined[0].platingShortagePortions).toBe(0);
   });
 
@@ -131,45 +143,40 @@ describe("combineBackfillSignals", () => {
       plaitingRow({}), // Di: -200 shortage
       plaitingRow({ day: "Friday", phase: "min-needs", deltaPortions: -50, minNeededPortions: 260, shortageReason: "" }),
     ]);
-    const combined = combineBackfillSignals([kitchenNeed({ estimatedPortions: 999 })], data, null);
+    const combined = combine([kitchenNeed({ estimatedPortions: 999 })], data, null);
     expect(combined[0].recommendedBackfillPortions).toBe(260);
     expect(combined[0].recommendedSource).toBe("lineplating");
   });
 
   it("falls back to Σ(Planned − Actual) when no '{Tag} needs' exists yet", () => {
     const data = linePlaitingData([plaitingRow({})]); // nur Di, noch keine Fr/Sa-Zeilen
-    const combined = combineBackfillSignals([], data, null);
+    const combined = combine([], data, null);
     expect(combined[0].recommendedBackfillPortions).toBe(200);
     expect(combined[0].recommendedSource).toBe("plating");
   });
 
   it("falls back to the kitchen weight-based estimate when no plating data exists at all", () => {
-    const combined = combineBackfillSignals([kitchenNeed({ estimatedPortions: 150 })], null, null);
+    const combined = combine([kitchenNeed({ estimatedPortions: 150 })], null, null);
     expect(combined[0].recommendedBackfillPortions).toBe(150);
     expect(combined[0].recommendedSource).toBe("kitchen");
   });
 
   it("does NOT net a Saturday plating run against the recommendation — its meaning is unconfirmed", () => {
-    // FV0713A aus der echten W35-Auswertung: Fr Min Needs 260, Sa zeigt eigenes
-    // Planned/Actual (1160/1296) — das sieht wie ein regulärer Plating-Tag aus,
-    // nicht zwingend wie die gefahrene Backfill-Menge (siehe Kommentar in
-    // combineBackfills.ts). Verrechnen würde bei vielen echten Meals fälschlich
-    // "0 nötig" zeigen, deshalb bleibt Sa rein informativ.
     const data = linePlaitingData([
       plaitingRow({}),
       plaitingRow({ day: "Friday", phase: "min-needs", deltaPortions: -1216, minNeededPortions: 260, shortageReason: "Peppers-Short" }),
       plaitingRow({ day: "Saturday", phase: "result", deltaPortions: 136, actualPortions: 1296, comment: "Done", shortageReason: "" }),
     ]);
-    const combined = combineBackfillSignals([], data, null);
+    const combined = combine([], data, null);
     expect(combined[0].recommendedBackfillPortions).toBe(260);
     expect(combined[0].recommendedSource).toBe("lineplating");
-    expect(combined[0].backfillResultPortions).toBe(1296); // weiterhin sichtbar, nur nicht verrechnet
+    expect(combined[0].backfillResultPortions).toBe(1296);
   });
 });
 
 describe("combineBackfillSignals — Redzone enrichment", () => {
   it("attaches a live Redzone count to an existing kitchen/plating entry without changing the recommendation", () => {
-    const combined = combineBackfillSignals(
+    const combined = combine(
       [kitchenNeed({})],
       null,
       null,
@@ -177,11 +184,11 @@ describe("combineBackfillSignals — Redzone enrichment", () => {
     );
     expect(combined[0].liveRedzonePortions).toBe(75);
     expect(combined[0].liveRedzoneStatus).toBe("active");
-    expect(combined[0].recommendedBackfillPortions).toBe(100); // unveraendert von der Kueche
+    expect(combined[0].recommendedBackfillPortions).toBe(100);
   });
 
   it("sums multiple Redzone runs (e.g. two lines) for the same meal", () => {
-    const combined = combineBackfillSignals(
+    const combined = combine(
       [kitchenNeed({})],
       null,
       null,
@@ -191,7 +198,7 @@ describe("combineBackfillSignals — Redzone enrichment", () => {
   });
 
   it("ignores non-Plating areas (Ovens/Braisers) and runs without a resolved meal code", () => {
-    const combined = combineBackfillSignals(
+    const combined = combine(
       [kitchenNeed({})],
       null,
       null,
@@ -201,12 +208,12 @@ describe("combineBackfillSignals — Redzone enrichment", () => {
   });
 
   it("does not create a new meal entry purely from a Redzone run with no kitchen/plating signal", () => {
-    const combined = combineBackfillSignals([], null, null, [redzoneRun({})]);
+    const combined = combine([], null, null, [redzoneRun({})]);
     expect(combined).toHaveLength(0);
   });
 
   it("defaults to null when no Redzone data is passed (e.g. running online without the local WMS server)", () => {
-    const combined = combineBackfillSignals([kitchenNeed({})], null, null);
+    const combined = combine([kitchenNeed({})], null, null);
     expect(combined[0].liveRedzonePortions).toBeNull();
     expect(combined[0].liveRedzoneStatus).toBeNull();
   });
@@ -216,7 +223,7 @@ describe("combineBackfillSignals — WMS Plating Holding enrichment", () => {
   it("converts grams to kg and attaches the live Plating-Holding stock to a matching meal", () => {
     const rows = [storedRow({ itemNumber: "SUB-001", actualQty: 5000 })];
     const skuInfoIndex = skuInfoIndexWith([["SUB-001", {}]]);
-    const combined = combineBackfillSignals([kitchenNeed({})], null, null, undefined, rows, skuInfoIndex);
+    const combined = combine([kitchenNeed({})], null, null, undefined, rows, skuInfoIndex);
     expect(combined[0].liveWmsHoldingKg).toBe(5);
   });
 
@@ -226,49 +233,48 @@ describe("combineBackfillSignals — WMS Plating Holding enrichment", () => {
       storedRow({ itemNumber: "SUB-002", actualQty: 2000, locationId: "PLH-02" }),
     ];
     const skuInfoIndex = skuInfoIndexWith([["SUB-001", {}], ["SUB-002", {}]]);
-    const combined = combineBackfillSignals([kitchenNeed({})], null, null, undefined, rows, skuInfoIndex);
+    const combined = combine([kitchenNeed({})], null, null, undefined, rows, skuInfoIndex);
     expect(combined[0].liveWmsHoldingKg).toBe(5);
   });
 
   it("ignores non-SUB SKUs (e.g. finished packaged meals) to avoid mixing units", () => {
     const rows = [storedRow({ itemNumber: "MSKU-001", actualQty: 500 })];
     const skuInfoIndex = skuInfoIndexWith([["MSKU-001", { category: "MSKU" }]]);
-    const combined = combineBackfillSignals([kitchenNeed({})], null, null, undefined, rows, skuInfoIndex);
+    const combined = combine([kitchenNeed({})], null, null, undefined, rows, skuInfoIndex);
     expect(combined[0].liveWmsHoldingKg).toBeNull();
   });
 
   it("ignores rows whose SKU cannot be resolved to a recipe at all", () => {
     const rows = [storedRow({ itemNumber: "UNKNOWN-SKU", actualQty: 5000 })];
     const skuInfoIndex = skuInfoIndexWith([["SUB-001", {}]]);
-    const combined = combineBackfillSignals([kitchenNeed({})], null, null, undefined, rows, skuInfoIndex);
+    const combined = combine([kitchenNeed({})], null, null, undefined, rows, skuInfoIndex);
     expect(combined[0].liveWmsHoldingKg).toBeNull();
   });
 
   it("defaults to null when no WMS Holding data is passed (server unreachable)", () => {
-    const combined = combineBackfillSignals([kitchenNeed({})], null, null);
+    const combined = combine([kitchenNeed({})], null, null);
     expect(combined[0].liveWmsHoldingKg).toBeNull();
   });
 });
 
 describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept", () => {
   it("creates an rti-only entry aus dem Sub-Engpass (Minimum need)", () => {
-    // gap = 800, ein Sub-Rezept ohne Holding → minimumNeed 800
-    const combined = combineBackfillSignals([], null, rtiData({ plannedTarget: 5000, actuals: 4200 }));
+    const combined = combine([], null, rtiData({ plannedTarget: 5000, actuals: 4200 }));
     expect(combined).toHaveLength(1);
     expect(combined[0].confidence).toBe("rti-only");
     expect(combined[0].recommendedSource).toBe("rti");
     expect(combined[0].recommendedBackfillPortions).toBe(800);
     expect(combined[0].rtiActuals).toBe(4200);
     expect(combined[0].rtiSubShortfalls).toHaveLength(1);
-    expect(combined[0].rtiRecommendedBuffered).toBeGreaterThan(800); // mit %-Puffer
+    expect(combined[0].rtiRecommendedBuffered).toBeGreaterThan(800);
   });
 
   it("meldet nur die leergelaufenen Sub-Rezepte — aus Holding gedeckte nicht", () => {
-    const combined = combineBackfillSignals([], null, rtiData({
-      plannedTarget: 3763, actuals: 2848, // gap 915
+    const combined = combine([], null, rtiData({
+      plannedTarget: 3763, actuals: 2848,
       subRecipes: [
-        rtiSub("open", { subRecipeName: "Creamy Leek", minimumNeed: 59 }),       // gedeckt
-        rtiSub("open", { subRecipeName: "Green beans", minimumNeed: 356 }),      // gedeckt
+        rtiSub("open", { subRecipeName: "Creamy Leek", minimumNeed: 59 }),
+        rtiSub("open", { subRecipeName: "Green beans", minimumNeed: 356 }),
         rtiSub("open", { subRecipeName: "Mash", minimumNeed: -915, backfillMeals: -1137, shortagePct: -24.32 }),
         rtiSub("open", { subRecipeName: "Pork tenderloin", minimumNeed: -812, backfillMeals: -987, shortagePct: -21.58 }),
       ],
@@ -279,29 +285,29 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept
   });
 
   it("does NOT create an entry when the shortfall sub-recipe is 'no' (veto)", () => {
-    const combined = combineBackfillSignals([], null, rtiData({ subRecipes: [rtiSub("not-needed"), rtiSub("not-needed")] }));
+    const combined = combine([], null, rtiData({ subRecipes: [rtiSub("not-needed"), rtiSub("not-needed")] }));
     expect(combined).toHaveLength(0);
   });
 
   it("does NOT create an entry for a sub-threshold shortfall", () => {
-    const combined = combineBackfillSignals([], null, rtiData({ plannedTarget: 5000, actuals: 4980 })); // gap 20 < 30
+    const combined = combine([], null, rtiData({ plannedTarget: 5000, actuals: 4980 }));
     expect(combined).toHaveLength(0);
   });
 
   it("ein Sub offen, einer schon eingetragen (Sheet 'done') → Alarm nur für den offenen", () => {
-    const combined = combineBackfillSignals([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("open", { subRecipeName: "Sub B" })] }));
+    const combined = combine([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("open", { subRecipeName: "Sub B" })] }));
     expect(combined[0].rtiHasOpenSubs).toBe(true);
     expect(combined[0].rtiSubShortfalls.map(s => s.subRecipeName)).toEqual(["Sub B"]);
     expect(detectCrossSourceAlerts(combined).some(a => a.title.startsWith("Backfill nötig"))).toBe(true);
   });
 
   it("alle Engpass-Subs auf 'done' → kein combined-Eintrag (nichts mehr zu tun)", () => {
-    const combined = combineBackfillSignals([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("done")] }));
+    const combined = combine([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("done")] }));
     expect(combined).toHaveLength(0);
   });
 
   it("ignores prepared backfill-candidate rows", () => {
-    const combined = combineBackfillSignals([], null, rtiData({
+    const combined = combine([], null, rtiData({
       subRecipes: [rtiSub("open"), rtiSub("open", { isBackfillCandidate: true, subRecipeName: "Sub A" })],
     }));
     expect(combined[0].rtiSubShortfalls).toHaveLength(1);
@@ -312,7 +318,7 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept
     const data = linePlaitingData([
       plaitingRow({ day: "Friday", phase: "min-needs", minNeededPortions: 300, dayNeedPortions: 300, shortageReason: "" }),
     ]);
-    const combined = combineBackfillSignals([], data, rtiData({ plannedTarget: 5000, actuals: 4200 }));
+    const combined = combine([], data, rtiData({ plannedTarget: 5000, actuals: 4200 }));
     expect(combined[0].recommendedSource).toBe("rti");
     expect(combined[0].recommendedBackfillPortions).toBe(800);
   });
@@ -321,7 +327,7 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept
     const data = linePlaitingData([
       plaitingRow({ day: "Friday", phase: "min-needs", minNeededPortions: 300, dayNeedPortions: 300, shortageReason: "" }),
     ]);
-    const combined = combineBackfillSignals([], data, null);
+    const combined = combine([], data, null);
     expect(combined[0].recommendedSource).toBe("lineplating");
     expect(combined[0].recommendedBackfillPortions).toBe(300);
   });
@@ -331,12 +337,12 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept
       plaitingRow({ recipeCode: "FV4063B", meal: "Cheddar pulled beef", day: "Friday", phase: "min-needs", minNeededPortions: 500, dayNeedPortions: 500 }),
     ]);
     const rti = rtiData({ mealCode: "FV4063A", mealName: "Cheddar pulled beef", plannedTarget: 2300, actuals: 1472, subRecipes: [rtiSub("open")] });
-    const combined = combineBackfillSignals([], lp, rti);
+    const combined = combine([], lp, rti);
     expect(combined).toHaveLength(1);
     expect(combined[0].codeVariants.sort()).toEqual(["FV4063A", "FV4063B"]);
-    expect(combined[0].recipeCode).toBe("FV4063B"); // LinePlating gewinnt für die Anzeige
-    expect(combined[0].recommendedSource).toBe("rti"); // RTI-Wiegung treibt die Zahl
-    expect(combined[0].recommendedBackfillPortions).toBe(828); // 2300 − 1472
+    expect(combined[0].recipeCode).toBe("FV4063B");
+    expect(combined[0].recommendedSource).toBe("rti");
+    expect(combined[0].recommendedBackfillPortions).toBe(828);
     expect(combined[0].rtiPlannedTarget).toBe(2300);
   });
 
@@ -349,7 +355,7 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept
         { mealCode: "FV0001A", mealName: "Test Meal", plannedTarget: 0, actuals: 0, delta: 0, deltaPct: 0, subRecipes: [] },
       ],
     };
-    const combined = combineBackfillSignals([], null, rti);
+    const combined = combine([], null, rti);
     expect(combined).toHaveLength(1);
     expect(combined[0].rtiPlannedTarget).toBe(2000);
     expect(combined[0].rtiShortfallPortions).toBe(300);
@@ -358,32 +364,27 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept
   });
 
   it("die app-weite 'Backfill nötig'-Meldung nennt die Sub-Rezepte", () => {
-    const combined = combineBackfillSignals([], null, rtiData({
+    const combined = combine([], null, rtiData({
       plannedTarget: 5000, actuals: 4200,
       subRecipes: [rtiSub("open", { subRecipeName: "Sauce X", minimumNeed: -800, backfillMeals: -928 })],
     }));
     const a = detectCrossSourceAlerts(combined).find(x => x.title.startsWith("Backfill nötig"));
     expect(a).toBeTruthy();
-    expect(a!.severity).toBe("critical"); // 800/5000 = 16% > 15%
+    expect(a!.severity).toBe("critical");
     expect(a!.message).toContain("Sauce X");
     expect(a!.message).toContain("mit Puffer");
   });
 });
 
 describe("detectCrossSourceAlerts", () => {
-  // Post-Blast (Küche) und Plating sind zwei EIGENSTÄNDIGE Kontrollpunkte —
-  // ein plating-only-Fund ist deshalb KEINE Unstimmigkeit, die einen Alert
-  // braucht (das war der ursprüngliche Denkfehler). Er ist ein vollwertiger
-  // eigener Backfill-Bedarf, sichtbar über priority/recommendedBackfillPortions
-  // in der Meal-Liste selbst, nicht über einen separaten "Früherkennung"-Alert.
   it("does NOT raise a cross-source alert for a plating-only shortage — that's a normal, independent finding", () => {
-    const combined = combineBackfillSignals([], linePlaitingData([plaitingRow({})]), null);
+    const combined = combine([], linePlaitingData([plaitingRow({})]), null);
     const alerts = detectCrossSourceAlerts(combined);
     expect(alerts.some(a => a.recipeCode === "FV0001A")).toBe(false);
   });
 
   it("raises an info-level forward-looking note for a critical kitchen-only deficit not yet seen at plating", () => {
-    const combined = combineBackfillSignals([kitchenNeed({ priority: "critical" })], null, null);
+    const combined = combine([kitchenNeed({ priority: "critical" })], null, null);
     const alerts = detectCrossSourceAlerts(combined);
     expect(alerts.some(a => a.severity === "info" && a.recipeCode === "FV0001A")).toBe(true);
   });
@@ -392,7 +393,7 @@ describe("detectCrossSourceAlerts", () => {
     const data = linePlaitingData([
       plaitingRow({ day: "Friday", phase: "min-needs", minNeededPortions: 100, shortageReason: "" }),
     ]);
-    const combined = combineBackfillSignals([kitchenNeed({ estimatedPortions: 105 })], data, null);
+    const combined = combine([kitchenNeed({ estimatedPortions: 105 })], data, null);
     const alerts = detectCrossSourceAlerts(combined);
     expect(alerts.some(a => a.title.includes("Abweichung"))).toBe(false);
   });
@@ -401,7 +402,7 @@ describe("detectCrossSourceAlerts", () => {
     const data = linePlaitingData([
       plaitingRow({ day: "Friday", phase: "min-needs", minNeededPortions: 100, shortageReason: "" }),
     ]);
-    const combined = combineBackfillSignals([kitchenNeed({ estimatedPortions: 500 })], data, null);
+    const combined = combine([kitchenNeed({ estimatedPortions: 500 })], data, null);
     const alerts = detectCrossSourceAlerts(combined);
     expect(alerts.some(a => a.title.includes("Abweichung"))).toBe(true);
   });

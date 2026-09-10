@@ -442,12 +442,13 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
 
   // ── Print via window.open ────────────────────────────────────────────────
 
+  const esc = (s: string) => (s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+
   function printClassic() {
     const dayLabel = selLabel;
     const printedAt = new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
     const pages = classicLay.sections.filter(s => s.woCount > 0);
     if (!pages.length) { showToast("Keine Daten zum Drucken"); return; }
-    const esc = (s: string) => (s || "").replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
     const pageHtml = pages.map((sec, idx) => {
       const cfg = CHILLER_CFG[sec.chillerKey];
       const showGroupHeads = sec.chillerKey === "6" || sec.reassigned;
@@ -488,7 +489,7 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
     const w = window.open("", "_blank", "width=900,height=700");
     if (!w) { showToast("Popup blockiert — Popup-Blocker deaktivieren"); return; }
     w.document.write(html); w.document.close(); w.focus();
-    setTimeout(() => w.print(), 500);
+    w.onload = () => w.print();
   }
 
   function printChillers(onlyUnit?: number) {
@@ -509,22 +510,22 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
       const role = ROLE_STYLE[c.role];
       const fvCodes = [...new Set(c.groups.map(g => g.recipeCode).filter(Boolean))];
       const contains = c.role === "allergenfrei" ? "Allergenfrei"
-        : c.allergens.length ? `Kann enthalten: ${c.allergens.join(", ")}`
+        : c.allergens.length ? `Kann enthalten: ${esc(c.allergens.join(", "))}`
         : c.role === "unbekannt" ? "Unbekannt — bitte prüfen" : "Allergen-Pool";
       const groupHtml = [...c.groups].map(g => {
         const woRows = [...g.wos].sort((a, b) => woNum(a.wo) - woNum(b.wo)).map((wo, i) => `
           <tr style="background:${i % 2 === 0 ? "#fff" : "#f7f8fb"}">
-            <td style="padding:6px 9px;font-weight:800;color:#1F3864;font-size:11px;white-space:nowrap;border:1px solid #c5cde0">${wo.wo}</td>
-            <td style="padding:6px 9px;border:1px solid #c5cde0;font-size:11px">${wo.name}</td>
-            <td style="padding:6px 9px;border:1px solid #c5cde0;font-size:10px;color:${wo.unknown ? "#b45309" : "#555"}">${wo.unknown ? "UNBEKANNT" : (wo.allergens.join(", ") || "keine")}</td>
+            <td style="padding:6px 9px;font-weight:800;color:#1F3864;font-size:11px;white-space:nowrap;border:1px solid #c5cde0">${esc(wo.wo)}</td>
+            <td style="padding:6px 9px;border:1px solid #c5cde0;font-size:11px">${esc(wo.name)}</td>
+            <td style="padding:6px 9px;border:1px solid #c5cde0;font-size:10px;color:${wo.unknown ? "#b45309" : "#555"}">${wo.unknown ? "UNBEKANNT" : esc(wo.allergens.join(", ") || "keine")}</td>
             <td style="padding:6px 9px;border:1px solid #c5cde0;font-size:10px;text-align:right;white-space:nowrap">${wo.kg > 0 ? Math.round(wo.kg) + " kg" : "—"}</td>
           </tr>`).join("");
         const partTag = g.partCount && g.partCount > 1 ? ` <span style="color:#6A1B9A;font-weight:800">[Teil ${g.partIndex}/${g.partCount}]</span>` : "";
-        const codeTag = g.recipeCode ? `<span style="font-weight:900;font-size:13px">${g.recipeCode}</span> ` : "";
-        const nameTag = g.recipeName && g.recipeName !== g.recipeCode ? `<span style="font-weight:600;color:#5a6b8a">${g.recipeName}</span>` : "";
+        const codeTag = g.recipeCode ? `<span style="font-weight:900;font-size:13px">${esc(g.recipeCode)}</span> ` : "";
+        const nameTag = g.recipeName && g.recipeName !== g.recipeCode ? `<span style="font-weight:600;color:#5a6b8a">${esc(g.recipeName)}</span>` : "";
         return `
           <tr><td colspan="4" style="padding:7px 9px;background:#EEF2F9;font-weight:800;font-size:11px;color:#1F3864;border:1px solid #c5cde0">
-            ${codeTag}${nameTag}${partTag}${g.allergens.length ? ` · <span style="font-weight:600;color:#666">${g.allergens.join(", ")}</span>` : ""}
+            ${codeTag}${nameTag}${partTag}${g.allergens.length ? ` · <span style="font-weight:600;color:#666">${esc(g.allergens.join(", "))}</span>` : ""}
             <span style="float:right;font-weight:700;color:#888">${g.racks} Rack${g.racks > 1 ? "s" : ""}${g.kg > 0 ? ` · ${Math.round(g.kg)} kg` : ""}</span>
           </td></tr>${woRows}`;
       }).join("");
@@ -536,7 +537,7 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
               <div>
                 <div style="font-size:11px;font-weight:700;color:${role.color};opacity:.7;text-transform:uppercase;letter-spacing:1px">HelloFresh Verden — Produktionsküche</div>
                 <div style="font-size:27px;font-weight:900;color:${role.color};line-height:1.1">❄️ Blast Chiller ${c.unit}</div>
-                ${fvCodes.length ? `<div style="font-size:20px;font-weight:900;color:${role.color};margin-top:4px;letter-spacing:.5px">${fvCodes.join(" · ")}</div>` : ""}
+                ${fvCodes.length ? `<div style="font-size:20px;font-weight:900;color:${role.color};margin-top:4px;letter-spacing:.5px">${fvCodes.map(esc).join(" · ")}</div>` : ""}
                 <div style="font-size:15px;font-weight:700;color:${role.color};margin-top:3px;opacity:.9">${contains}</div>
               </div>
               <div style="text-align:right">
@@ -572,7 +573,7 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
     w.document.write(html);
     w.document.close();
     w.focus();
-    setTimeout(() => w.print(), 500);
+    w.onload = () => w.print();
   }
 
   // ── Drag & Drop ───────────────────────────────────────────────────────────
@@ -992,9 +993,12 @@ function ChillerCard({
   const fvCodes = [...new Set(c.groups.map(g => g.recipeCode).filter(Boolean))];
   return (
     <div style={{ borderRadius: 9, border: "0.5px solid #dde3ee", overflow: "hidden", opacity: empty ? .6 : 1 }}>
-      <div
+      <button
+        type="button"
         onClick={empty ? undefined : onToggle}
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: role.bg, color: role.color, cursor: empty ? "default" : "pointer", userSelect: "none" }}
+        aria-expanded={empty ? undefined : open}
+        disabled={empty}
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: role.bg, color: role.color, cursor: empty ? "default" : "pointer", userSelect: "none", width: "100%", border: "none", textAlign: "left", font: "inherit" }}
       >
         <span style={{ fontSize: 13, fontWeight: 800 }}>❄️ Chiller {c.unit}</span>
         {fvCodes.length > 0 && (
@@ -1019,7 +1023,7 @@ function ChillerCard({
           </span>
         )}
         {empty && <span style={{ marginLeft: "auto", fontSize: 10, opacity: .6 }}>frei</span>}
-      </div>
+      </button>
 
       {open && !empty && (
         <div style={{ borderTop: "1px solid rgba(0,0,0,.07)" }}>

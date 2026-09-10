@@ -35,9 +35,17 @@ function readStore(): SeenStore {
   }
 }
 
+const MAX_WEEKS = 8;
+
 function writeStore(next: SeenStore): void {
   const ls = store();
   if (!ls) return;
+  // Alte Wochen aufräumen: nur die letzten MAX_WEEKS behalten.
+  const keys = Object.keys(next);
+  if (keys.length > MAX_WEEKS) {
+    keys.sort((a, b) => (next[a].updatedAt ?? "").localeCompare(next[b].updatedAt ?? ""));
+    for (const k of keys.slice(0, keys.length - MAX_WEEKS)) delete next[k];
+  }
   try {
     ls.setItem(SEEN_KEY, JSON.stringify(next));
   } catch {

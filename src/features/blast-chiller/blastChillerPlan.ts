@@ -688,7 +688,7 @@ export function classicLayout(wos: ChillerWo[], useEmptyChillers = true): Classi
   const CFG_SUB: Record<ChillerKey, string> = { "1": "Allergenfrei", "3": "Sulfite", "4": "Milch", "5": "Milch + Sulfite", "6": "Rest-Pool" };
   const sections: ClassicSection[] = (["1", "3", "4", "5", "6"] as ChillerKey[]).map((k) => {
     if (k === "6") {
-      const ordered = groups.sort((a, b) => (a.unknown ? -1 : b.unknown ? 1 : b.wos.length - a.wos.length));
+      const ordered = [...groups].sort((a, b) => (a.unknown ? -1 : b.unknown ? 1 : b.wos.length - a.wos.length));
       const flat = ordered.flatMap((g) => g.wos);
       return { chillerKey: k, label: "Chiller 6", sub: "Rest-Pool", reassigned: false, groups: ordered, woCount: flat.length, kg: sumKg(flat) };
     }
