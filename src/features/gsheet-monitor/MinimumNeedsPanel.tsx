@@ -70,29 +70,50 @@ function buildMeals(
   return out;
 }
 
-// ── Kompakte Gesamtvolumen-Aufstellung ──────────────────────────────────────
-export function VolumeSummary({
-  volumeOverview,
-  holdingMealsByCode,
-  redzone,
-}: {
-  volumeOverview: VolumeOverviewData | null;
-  holdingMealsByCode?: Map<string, number>;
-  redzone?: RedzoneState | null;
-}) {
-  const meals = useMemo(() => buildMeals(volumeOverview, holdingMealsByCode, redzone), [volumeOverview, holdingMealsByCode, redzone]);
+// ── Eine Quelle für alle „wie weit sind wir"-Zahlen ─────────────────────────
+// Header-KPIs, Gesamtvolumen-Karte und Minimum-Needs-Kacheln lesen ALLE hier —
+// damit die Zahlen zusammenpassen. „komplett" = Forecast-Nachfrage aller Märkte
+// bis Samstag ist gedeckt (Volume-Overview „Actual Target" Sa ≥ 0).
+export interface VolumeStats {
+  total: number;
+  forecast: number;
+  production: number;
+  pct: number;
+  complete: number;
+  open: number;
+  missByDay: { thu: number; fri: number; sat: number };
+  okByDay: { thu: number; fri: number; sat: number };
+}
+
+export function volumeStats(volumeOverview: VolumeOverviewData | null): VolumeStats | null {
+  const meals = buildMeals(volumeOverview, undefined, undefined);
   if (meals.length === 0) return null;
-
-  const forecastTotal = meals.reduce((s, m) => s + m.forecastTotal, 0);
+  const forecast = meals.reduce((s, m) => s + m.forecastTotal, 0);
   const production = meals.reduce((s, m) => s + m.production, 0);
-  const pct = forecastTotal > 0 ? Math.min(100, (production / forecastTotal) * 100) : 0;
-  const throughSat = meals.filter(m => m.reachedThrough === "sat").length;
+  const missByDay = { thu: 0, fri: 0, sat: 0 };
+  const okByDay = { thu: 0, fri: 0, sat: 0 };
+  for (const m of meals) for (const { key } of DAYS) {
+    const g = gapVal(m.gaps[key]);
+    if (g >= 0) okByDay[key]++; else missByDay[key] += -g;
+  }
+  const complete = meals.filter(m => m.reachedThrough === "sat").length;
+  return {
+    total: meals.length,
+    forecast,
+    production,
+    pct: forecast > 0 ? Math.min(100, (production / forecast) * 100) : 0,
+    complete,
+    open: meals.length - complete,
+    missByDay,
+    okByDay,
+  };
+}
 
-  const dayMiss = DAYS.map(({ key, label }) => {
-    const miss = meals.reduce((s, m) => { const g = gapVal(m.gaps[key]); return s + (g < 0 ? -g : 0); }, 0);
-    const ok = meals.filter(m => gapVal(m.gaps[key]) >= 0).length;
-    return { label, miss, ok };
-  });
+// ── Kompakte Gesamtvolumen-Aufstellung ──────────────────────────────────────
+export function VolumeSummary({ volumeOverview }: { volumeOverview: VolumeOverviewData | null }) {
+  const st = useMemo(() => volumeStats(volumeOverview), [volumeOverview]);
+  if (!st) return null;
+  const { total, forecast, production, pct } = st;
 
   return (
     <div className="card p-5 border-0 shadow-md">
@@ -112,12 +133,12 @@ export function VolumeSummary({
             {Math.round(pct)}%
           </div>
           <div className="text-[11px] text-slate-500 mt-0.5">
-            {production.toLocaleString("de-DE")} von {forecastTotal.toLocaleString("de-DE")} Portionen plaitiert
+            {production.toLocaleString("de-DE")} von {forecast.toLocaleString("de-DE")} Portionen plaitiert
           </div>
         </div>
         <div className="text-[11px] text-slate-600 flex flex-col gap-0.5">
-          <span><span className="font-bold text-emerald-600">{throughSat}</span> / {meals.length} Meals komplett (Sa-Checkpoint)</span>
-          <span><span className="font-bold text-red-600">{meals.length - throughSat}</span> noch offen</span>
+          <span><span className="font-bold text-emerald-600">{st.complete}</span> / {total} Meals decken die Wochen-Nachfrage</span>
+          <span><span className="font-bold text-red-600">{st.open}</span> brauchen noch Menge</span>
         </div>
       </div>
 
@@ -126,15 +147,19 @@ export function VolumeSummary({
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        {dayMiss.map(d => (
-          <div key={d.label} className={`rounded-xl px-3 py-2 ring-1 text-center ${d.miss === 0 ? "bg-emerald-50 ring-emerald-200" : "bg-red-50 ring-red-200"}`}>
-            <div className="text-[10px] font-bold uppercase text-slate-500">bis {d.label}</div>
-            <div className={`text-lg font-black font-mono ${d.miss === 0 ? "text-emerald-600" : "text-red-600"}`}>
-              {d.miss === 0 ? "✓" : `−${Math.round(d.miss).toLocaleString("de-DE")}`}
+        {DAYS.map(({ key, label }) => {
+          const miss = st.missByDay[key];
+          const ok = st.okByDay[key];
+          return (
+          <div key={label} className={`rounded-xl px-3 py-2 ring-1 text-center ${miss === 0 ? "bg-emerald-50 ring-emerald-200" : "bg-red-50 ring-red-200"}`}>
+            <div className="text-[10px] font-bold uppercase text-slate-500">bis {label}</div>
+            <div className={`text-lg font-black font-mono ${miss === 0 ? "text-emerald-600" : "text-red-600"}`}>
+              {miss === 0 ? "✓" : `−${Math.round(miss).toLocaleString("de-DE")}`}
             </div>
-            <div className="text-[9px] text-slate-400">{d.ok}/{meals.length} Meals ok</div>
+            <div className="text-[9px] text-slate-400">{ok}/{total} Meals ok</div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

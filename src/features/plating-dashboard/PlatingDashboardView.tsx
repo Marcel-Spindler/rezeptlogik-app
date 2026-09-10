@@ -10,7 +10,7 @@ import {
 import { matchPostblastToWorkOrders, type BackfillNeed, type MealProgress } from "../gsheet-monitor/postblastMatch";
 import { platedForMeal } from "../gsheet-monitor/plateableNet";
 import { mealReadiness } from "../gsheet-monitor/mealProgress";
-import { MinimumNeedsPanel, VolumeSummary } from "../gsheet-monitor/MinimumNeedsPanel";
+import { MinimumNeedsPanel, VolumeSummary, volumeStats } from "../gsheet-monitor/MinimumNeedsPanel";
 import { estimatePlannedKg } from "../gsheet-monitor/PostblastLiveView";
 import { currentHfWeek } from "../../lib/hfWeek";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWeeks";
@@ -223,14 +223,12 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
     return m;
   }, [meals, recipeWeights, plaitedByCode]);
 
-  // „Platierbar"-Highlight: netto platierbar > 0 ODER RTI-Holding-Puffer da.
+  // „Platierbar"-Highlight: nur wenn wirklich netto etwas übrig ist.
   const platableMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const meal of meals) {
-      const meta = mealMeta.get(meal.recipeCode)!;
-      const holdingKg = meal.workOrders.reduce((s, w) => s + w.platingHoldingKg, 0);
-      const net = meta.net?.netMeals ?? 0;
-      if (net > 0 || holdingKg > 0) map.set(meal.recipeCode, net);
+      const net = mealMeta.get(meal.recipeCode)!.net?.netMeals ?? 0;
+      if (net > 0) map.set(meal.recipeCode, net);
     }
     return map;
   }, [meals, mealMeta]);
@@ -271,10 +269,9 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
   const isConnected = monitor.isPolling;
   const lastUpdate = monitor.lastUpdate ? new Date(monitor.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
 
-  // KPI
-  const totalPlannedKg = meals.reduce((s, m) => s + m.totalPlannedKg, 0);
-  const totalActualKg = meals.reduce((s, m) => s + m.totalActualKg, 0);
-  const overallPct = totalPlannedKg > 0 ? Math.min((totalActualKg / totalPlannedKg) * 100, 100) : 0;
+  // KPI — dieselbe Quelle wie Gesamtvolumen / Minimum Needs, damit die Zahlen
+  // im Header und in den Karten darunter zusammenpassen.
+  const vol = useMemo(() => volumeStats(volumeOverview.data), [volumeOverview.data]);
 
   // Loading
   if (!monitor.data && !monitor.error) {
@@ -322,22 +319,26 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
           </div>
         </div>
 
-        {/* KPI Tiles — nur 3 */}
+        {/* KPI Tiles — aus dem Volume Overview, damit sie zu den Karten unten passen */}
         <div className="grid grid-cols-3 gap-3 mb-3">
           <div className="bg-white/10 backdrop-blur rounded-xl p-3 ring-1 ring-white/10">
-            <div className="text-[10px] text-slate-400 uppercase font-bold">Gesamt</div>
-            <div className="text-2xl font-black font-mono mt-0.5">{Math.round(overallPct)}%</div>
-            <div className="text-[10px] text-slate-400">{totalActualKg.toFixed(0)} / {totalPlannedKg.toFixed(0)} kg</div>
+            <div className="text-[10px] text-slate-400 uppercase font-bold">Wochenvolumen</div>
+            <div className="text-2xl font-black font-mono mt-0.5">{vol ? Math.round(vol.pct) : "—"}%</div>
+            <div className="text-[10px] text-slate-400">
+              {vol ? `${vol.production.toLocaleString("de-DE")} / ${vol.forecast.toLocaleString("de-DE")} Portionen` : "lädt …"}
+            </div>
           </div>
           <div className="bg-emerald-500/20 backdrop-blur rounded-xl p-3 ring-1 ring-emerald-400/30">
-            <div className="text-[10px] text-emerald-300 uppercase font-bold">Fertig</div>
-            <div className="text-2xl font-black font-mono mt-0.5 text-emerald-300">{mealDone}</div>
-            <div className="text-[10px] text-emerald-400/70">von {meals.length} Meals</div>
+            <div className="text-[10px] text-emerald-300 uppercase font-bold">Nachfrage gedeckt</div>
+            <div className="text-2xl font-black font-mono mt-0.5 text-emerald-300">{vol?.complete ?? "—"}</div>
+            <div className="text-[10px] text-emerald-400/70">von {vol?.total ?? meals.length} Meals (bis Sa)</div>
           </div>
-          <div className="bg-sky-500/20 backdrop-blur rounded-xl p-3 ring-1 ring-sky-400/30">
-            <div className="text-[10px] text-sky-300 uppercase font-bold">Laufend</div>
-            <div className="text-2xl font-black font-mono mt-0.5 text-sky-300">{mealRunning}</div>
-            <div className="text-[10px] text-sky-400/70">in Produktion</div>
+          <div className="bg-red-500/20 backdrop-blur rounded-xl p-3 ring-1 ring-red-400/30">
+            <div className="text-[10px] text-red-300 uppercase font-bold">Fehlt bis Samstag</div>
+            <div className="text-2xl font-black font-mono mt-0.5 text-red-300">
+              {vol ? `−${Math.round(vol.missByDay.sat).toLocaleString("de-DE")}` : "—"}
+            </div>
+            <div className="text-[10px] text-red-400/70">{vol?.open ?? "—"} Meals offen</div>
           </div>
         </div>
 
@@ -356,12 +357,6 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
         </div>
       </div>
 
-      {/* ── Gesamtvolumen ── */}
-      <VolumeSummary volumeOverview={volumeOverview.data} holdingMealsByCode={holdingMealsByCode} redzone={redzone} />
-
-      {/* ── Minimum Needs (Do → Fr → Sa je Meal) ── */}
-      <MinimumNeedsPanel volumeOverview={volumeOverview.data} redzone={redzone} holdingMealsByCode={holdingMealsByCode} />
-
       {/* ── Fortschritt je Meal ── */}
       <div className="card p-5 border-0 shadow-md">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -374,7 +369,7 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
               { key: "offen", label: `Offen · ${mealCritical + mealRunning}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
               { key: "critical", label: `⚠ Kritisch · ${mealCritical}`, active: "bg-red-600 text-white", inactive: "bg-white ring-1 ring-red-200 text-red-600" },
               { key: "running", label: `◌ Laufend · ${mealRunning}`, active: "bg-sky-600 text-white", inactive: "bg-white ring-1 ring-sky-200 text-sky-600" },
-              { key: "done", label: `✓ Fertig · ${mealDone}`, active: "bg-emerald-600 text-white", inactive: "bg-white ring-1 ring-emerald-200 text-emerald-700" },
+              { key: "done", label: `✓ Plaitiert · ${mealDone}`, active: "bg-emerald-600 text-white", inactive: "bg-white ring-1 ring-emerald-200 text-emerald-700" },
               { key: "all", label: `Alle · ${meals.length}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
             ] as const).map(f => (
               <button
@@ -422,6 +417,12 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
           )}
         </div>
       </div>
+
+      {/* ── Gesamtvolumen ── */}
+      <VolumeSummary volumeOverview={volumeOverview.data} />
+
+      {/* ── Minimum Needs (Do → Fr → Sa je Meal) ── */}
+      <MinimumNeedsPanel volumeOverview={volumeOverview.data} redzone={redzone} holdingMealsByCode={holdingMealsByCode} />
 
       {/* ── Plating Action Board (UNTEN) ── */}
       <div className="card p-5 border-0 shadow-md">

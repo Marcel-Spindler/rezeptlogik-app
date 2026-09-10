@@ -1606,7 +1606,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                 { key: "offen", label: `Offen · ${mealCritical + mealRunning}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
                 { key: "critical", label: `⚠ Kritisch · ${mealCritical}`, active: "bg-red-600 text-white", inactive: "bg-white ring-1 ring-red-200 text-red-600" },
                 { key: "running", label: `◌ Laufend · ${mealRunning}`, active: "bg-sky-600 text-white", inactive: "bg-white ring-1 ring-sky-200 text-sky-600" },
-                { key: "done", label: `✓ Fertig · ${mealDone}`, active: "bg-emerald-600 text-white", inactive: "bg-white ring-1 ring-emerald-200 text-emerald-700" },
+                { key: "done", label: `✓ Plaitiert · ${mealDone}`, active: "bg-emerald-600 text-white", inactive: "bg-white ring-1 ring-emerald-200 text-emerald-700" },
                 { key: "all", label: `Alle · ${meals.length}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
               ] as const).map(f => (
                 <button
@@ -1959,7 +1959,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
       <PlatingNowPanel meals={meals} recipeWeights={recipeWeights} wmsRows={liveWmsRows} redzone={redzone} plaitedByCode={plaitedByCode} />
 
       {/* ══ GESAMTVOLUMEN ════════════════════════════════════════════════ */}
-      <VolumeSummary volumeOverview={volumeOverview.data} holdingMealsByCode={holdingMealsByCode} redzone={redzone} />
+      <VolumeSummary volumeOverview={volumeOverview.data} />
 
       {/* ══ MINIMUM NEEDS ════════════════════════════════════════════════ */}
       <MinimumNeedsPanel
