@@ -44,6 +44,7 @@ const PlatingPlanView     = lazyWithRetry(() => import("../features/plating-plan
 const PlatingDayView      = lazyWithRetry(() => import("../features/plating-plan/PlatingDayView").then(m => ({ default: m.PlatingDayView })), "plating-day");
 const KitchenPlanView     = lazyWithRetry(() => import("../features/kitchen-plan/KitchenPlanView").then(m => ({ default: m.KitchenPlanView })), "kitchen-plan");
 const RedzoneLiveView     = lazyWithRetry(() => import("../features/redzone-live/RedzoneLiveView").then(m => ({ default: m.RedzoneLiveView })), "redzone-live");
+const PlatingDashboardView = lazyWithRetry(() => import("../features/plating-dashboard/PlatingDashboardView").then(m => ({ default: m.PlatingDashboardView })), "plating-dashboard");
 
 function ViewLoading() {
   return <div className="card p-8 text-center text-slate-400 text-sm">Lade Ansicht …</div>;
@@ -171,6 +172,9 @@ function MainPaneSwitch({ view }: { view: AppView }) {
 
     case "kochplan":
       return <KitchenPlanView data={data} week={selectedWeek} />;
+
+    case "plating-dashboard":
+      return <PlatingDashboardView data={data} />;
   }
 }
 
@@ -321,6 +325,19 @@ export function Router() {
       <ErrorBoundary label="shopfloor">
         <ShopfloorKioskSurface data={data} selectedWeek={selectedWeek} />
       </ErrorBoundary>
+    );
+  }
+
+  // Plating surface: teilbares Dashboard ohne Sidebar/Navigation
+  if (surface === "plating") {
+    return (
+      <Shell>
+        <ErrorBoundary label="plating-dashboard">
+          <Suspense fallback={<LoadingCard />}>
+            <PlatingDashboardView data={data} />
+          </Suspense>
+        </ErrorBoundary>
+      </Shell>
     );
   }
 

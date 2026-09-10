@@ -8,10 +8,10 @@ import { useRecipeSelection, type RecipeSelection } from "./useRecipeSelection";
 import type { DataBundle } from "../core/types";
 import type { DataSourceStatus } from "../core/dataSource";
 
-export type AppView = "heute" | "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live" | "backfills" | "redzone-live" | "transparency-plan" | "artikel-woche" | "full-inventory" | "plating-plan" | "plating-day" | "kochplan" | "plating-line-bot";
-export type AppSurface = "full" | "kitchen" | "rundmail" | "redzone" | "shopfloor";
+export type AppView = "heute" | "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live" | "backfills" | "redzone-live" | "transparency-plan" | "artikel-woche" | "full-inventory" | "plating-plan" | "plating-day" | "kochplan" | "plating-line-bot" | "plating-dashboard";
+export type AppSurface = "full" | "kitchen" | "rundmail" | "redzone" | "shopfloor" | "plating";
 
-export const ALL_VIEWS: readonly AppView[] = ["heute", "recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating", "plating-line-bot", "postblast-live", "backfills", "redzone-live", "transparency-plan", "artikel-woche", "full-inventory", "plating-plan", "plating-day", "kochplan"];
+export const ALL_VIEWS: readonly AppView[] = ["heute", "recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating", "plating-line-bot", "postblast-live", "backfills", "redzone-live", "transparency-plan", "artikel-woche", "full-inventory", "plating-plan", "plating-day", "kochplan", "plating-dashboard"];
 
 export interface AppState extends RecipeSelection {
   surface: AppSurface;
@@ -42,6 +42,7 @@ function resolveSurface(): AppSurface {
   if (s === "rundmail") return "rundmail";
   if (s === "redzone") return "redzone";
   if (s === "shopfloor") return "shopfloor";
+  if (s === "plating") return "plating";
   return "full";
 }
 

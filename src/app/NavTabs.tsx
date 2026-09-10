@@ -63,6 +63,7 @@ const NAV_CATEGORIES: readonly NavCategory[] = [
   {
     label: "Live-Monitoring",
     items: [
+      { view: "plating-dashboard", label: "Plating Dashboard" },
       { view: "postblast-live", label: "Postblast Live" },
       { view: "backfills", label: "Backfill-Wächter" },
       { view: "transparency-plan", label: "Transparency Plan" },
