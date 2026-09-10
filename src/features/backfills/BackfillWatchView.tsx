@@ -67,49 +67,64 @@ function CopyButton({ text, label = "kopieren" }: { text: string; label?: string
   );
 }
 
-function Pill({ head, value, tone }: { head: string; value: string; tone: "hard" | "buffer" }) {
-  const cls = tone === "hard"
-    ? "bg-slate-900 text-white"
-    : "bg-amber-100 text-amber-800 ring-1 ring-amber-300";
+// Die zwei Zahlen als klare Einheit: „mindestens" (die harte Zahl) groß + dunkel,
+// „mit Puffer" als Empfehlung daneben.
+function NeedPills({ min, buffered }: { min: number; buffered: number }) {
   return (
-    <span className={`inline-flex flex-col items-center rounded-lg px-3 py-1 ${cls}`}>
-      <span className="text-[9px] uppercase tracking-wide opacity-70">{head}</span>
-      <span className="text-base font-bold font-mono leading-tight">{value}</span>
-    </span>
+    <div className="flex items-stretch shrink-0 rounded-lg overflow-hidden border border-slate-200">
+      <div className="bg-slate-900 text-white px-3 py-1.5 text-center leading-none">
+        <div className="text-[8px] uppercase tracking-wider text-white/50 mb-0.5">mindestens</div>
+        <div className="text-lg font-bold font-mono">{fmt(min)}</div>
+      </div>
+      <div className="bg-amber-50 text-amber-800 px-3 py-1.5 text-center leading-none border-l border-amber-200">
+        <div className="text-[8px] uppercase tracking-wider text-amber-500 mb-0.5">+ Puffer</div>
+        <div className="text-lg font-bold font-mono">{fmt(buffered)}</div>
+      </div>
+    </div>
   );
 }
 
-function RohwareLine({ f }: { f: BackfillFeasibility | undefined }) {
-  if (!f || f.verdict === "unknown") return null;
-  if (f.verdict === "feasible") return <div className="text-[11px] text-emerald-700">🟢 Rohware im Lager reicht</div>;
-  if (f.verdict === "partial") return <div className="text-[11px] text-amber-700">🟡 Rohware reicht für {fmt(f.maxProduciblePortions)} Portionen</div>;
-  return <div className="text-[11px] text-red-700">🔴 Rohware fehlt{f.bottleneck[0] ? ` — ${f.bottleneck[0].ingredientName}` : ""}</div>;
+function shorten(s: string, n = 32): string {
+  return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
 }
 
-// Steht die fertige Komponente schon woanders im System?
-function ElsewhereLine({ e }: { e: SubStockElsewhere | undefined }) {
+// Rohware-Ampel des GANZEN Meals (feasibility ist meal-, nicht sub-Ebene) — als
+// ein Streifen unter dem Meal-Kopf, nicht pro Sub wiederholt.
+function RohwareStrip({ f }: { f: BackfillFeasibility | undefined }) {
+  if (!f || f.verdict === "unknown") return null;
+  const [cls, text] =
+    f.verdict === "feasible" ? ["bg-emerald-50 text-emerald-700", "🟢 Rohware im Lager reicht für den Backfill"] :
+    f.verdict === "partial" ? ["bg-amber-50 text-amber-800", `🟡 Rohware reicht nur für ${fmt(f.maxProduciblePortions)} Portionen`] :
+    ["bg-rose-50 text-rose-700", `🔴 Rohware fehlt${f.bottleneck[0] ? ` — ${shorten(f.bottleneck[0].ingredientName, 40)}` : ""}`];
+  return <div className={`pl-5 pr-4 py-1.5 text-[11px] font-medium ${cls}`}>{text}</div>;
+}
+
+// „Steht schon woanders im System" — nur wenn es den Bedarf DECKT ist es
+// handlungsrelevant (amber-Chip). Sonst nur eine leise Info-Zeile.
+function elsewhereNote(e: SubStockElsewhere | undefined) {
   if (!e || e.totalPortions <= 0) return null;
-  const locs = e.byLocation.slice(0, 3).map(l => `${l.location} ${fmt(l.portions)}`).join(" · ");
+  const locs = e.byLocation.slice(0, 2).map(l => `${l.location} ${fmt(l.portions)}`).join(" · ");
+  if (e.covered) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 text-amber-800 px-1.5 py-0.5 text-[11px] font-semibold ring-1 ring-amber-300">
+        📦 {fmt(e.totalPortions)} liegen schon woanders — erst dort prüfen ({locs})
+      </span>
+    );
+  }
   return (
-    <div className={`text-[11px] mt-0.5 ${e.covered ? "text-amber-700 font-semibold" : "text-slate-500"}`}>
-      📦 Woanders im System: <b>{fmt(e.totalPortions)}</b> Portionen ({locs}{e.byLocation.length > 3 ? " …" : ""})
-      {e.covered
-        ? " — erst dort prüfen, evtl. kein Backfill nötig"
-        : e.shared
-          ? " — SKU auch in anderen Meals, nur zur Info"
-          : " — vor dem Nachkochen kurz prüfen"}
-    </div>
+    <span className="text-[11px] text-slate-400">
+      📦 {fmt(e.totalPortions)} woanders{e.shared ? " · SKU in mehreren Meals" : ""} ({locs})
+    </span>
   );
 }
 
 // ── Sub-Zeile ───────────────────────────────────────────────────────────────
 
 function SubRow({
-  meal, sub, feasibility, elsewhere, entered, flash, onEnter, onUndo,
+  meal, sub, elsewhere, entered, flash, onEnter, onUndo,
 }: {
   meal: RtiMealBackfill;
   sub: RtiSubShortfall;
-  feasibility: BackfillFeasibility | undefined;
   elsewhere: SubStockElsewhere | undefined;
   entered: EnteredMark | undefined;
   flash: boolean;
@@ -117,56 +132,57 @@ function SubRow({
   onUndo: () => void;
 }) {
   const grew = entered != null && sub.minimumNeed > entered.min + 20;
-  const dot = elsewhere?.covered ? "🟡" : "🔴";
+  const covered = elsewhere?.covered ?? false;
 
   if (entered && !grew) {
     return (
-      <div className="flex items-center justify-between gap-2 py-1.5 text-[11px] text-slate-400">
-        <span>✓ eingetragen: <span className="line-through">{sub.subRecipeName}</span> ({fmt(entered.min)})</span>
+      <div className="flex items-center justify-between gap-2 pl-5 pr-4 py-2 text-[12px] text-slate-400">
+        <span className="truncate">✓ eingetragen · <span className="line-through">{sub.subRecipeName}</span> ({fmt(entered.min)})</span>
         <button type="button" onClick={onUndo} className="shrink-0 text-slate-400 hover:text-slate-700 underline">rückgängig</button>
       </div>
     );
   }
 
+  const note = elsewhereNote(elsewhere);
+  const holdingInfo = sub.weighedKg > 0
+    ? `${fmt(sub.weighedKg, 1)} kg zurückgewogen · deckt noch ${fmt(sub.availableMealcount)}`
+    : sub.basis === "sheet"
+      ? sub.availableMealcount > 0 ? `Holding: noch ${fmt(sub.availableMealcount)} — Rest fehlt` : "Plating-Holding leer"
+      : null;
+
   return (
-    <div className={`rounded-lg border p-3 transition-colors ${flash ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white"}`}>
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="font-semibold text-sm text-slate-900">{dot} {sub.subRecipeName}</div>
-          <div className="text-[11px] text-slate-500 mt-0.5">
-            {sub.weighedKg > 0
-              ? `Zurückgewogen: ${fmt(sub.weighedKg, 1)} kg → reicht noch für ${fmt(sub.availableMealcount)} Meals`
-              : sub.basis === "sheet"
-                ? sub.availableMealcount > 0
-                  ? `Im Holding noch ${fmt(sub.availableMealcount)} Meals — Rest fehlt`
-                  : "Nichts mehr im Plating-Holding"
-                : "⚠ Im RTI-Sheet noch nicht pro Sub erfasst"}
+    <div className={`pl-5 pr-4 py-2.5 transition-colors ${flash ? "bg-amber-50" : ""}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 font-semibold text-[13px] text-slate-900">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${covered ? "bg-amber-400" : "bg-rose-500"}`} />
+            <span className="truncate">{sub.subRecipeName}</span>
           </div>
-          <div className={`text-[10px] mt-0.5 ${sub.basis === "sheet" ? "text-emerald-600" : "text-amber-600"}`}>
-            {sub.basis === "sheet"
-              ? "✓ aus dem RTI-Sheet gerechnet"
-              : "⧗ nur aus dem Meal-Rückstand geschätzt — im Sheet nachtragen lassen"}
-          </div>
-          {grew && (
-            <div className="text-[10px] text-amber-700 mt-0.5 font-semibold">
-              ⚠ Zahl gestiegen (eingetragen mit {fmt(entered!.min)}, jetzt {fmt(sub.minimumNeed)}) — nachtragen
+          {(holdingInfo || sub.basis === "gap-only") && (
+            <div className="mt-0.5 text-[11px] text-slate-500">
+              {holdingInfo}
+              {sub.basis === "gap-only" && (
+                <span className="text-amber-600">{holdingInfo ? " · " : ""}⧗ noch nicht pro Sub im Sheet — geschätzt</span>
+              )}
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Pill head="mindestens" value={fmt(sub.minimumNeed)} tone="hard" />
-          <Pill head="mit Puffer" value={fmt(sub.bufferedNeed)} tone="buffer" />
-        </div>
+        <NeedPills min={sub.minimumNeed} buffered={sub.bufferedNeed} />
       </div>
 
-      <ElsewhereLine e={elsewhere} />
-      <RohwareLine f={feasibility} />
+      {grew && (
+        <div className="mt-1.5 text-[11px] text-amber-700 font-semibold">
+          ⚠ Menge gestiegen — eingetragen mit {fmt(entered!.min)}, jetzt {fmt(sub.minimumNeed)}
+        </div>
+      )}
 
-      <div className="flex items-center gap-2 mt-2">
+      {note && <div className="mt-1.5">{note}</div>}
+
+      <div className="mt-2 flex items-center gap-3">
         <button
           type="button"
           onClick={async () => { await toClipboard(copyLine(meal, sub)); onEnter(); }}
-          className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+          className="px-3 py-1 rounded-lg text-[11px] font-semibold bg-slate-800 hover:bg-slate-900 text-white transition"
           title="Kopiert die Zeile UND setzt Spalte J im RTI-Sheet auf „done“"
         >
           📋 kopieren &amp; erledigt
@@ -174,14 +190,14 @@ function SubRow({
         <button
           type="button"
           onClick={onEnter}
-          className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-teal-600 hover:bg-teal-700 text-white transition"
+          className="text-[11px] font-medium text-slate-400 hover:text-slate-700 hover:underline transition"
         >
-          ✓ nur als erledigt markieren
+          nur abhaken
         </button>
+        {entered?.synced === false && (
+          <span className="text-[10px] text-amber-700 ml-auto">⚠ Sheet „done" fehlgeschlagen — manuell setzen</span>
+        )}
       </div>
-      {entered?.synced === false && (
-        <div className="text-[10px] text-amber-700 mt-1">⚠ Sheet-Eintrag „done“ hat nicht geklappt — bitte im RTI-Sheet manuell setzen</div>
-      )}
     </div>
   );
 }
@@ -189,7 +205,7 @@ function SubRow({
 // ── Meal-Karte ──────────────────────────────────────────────────────────────
 
 function MealCard({
-  meal, weekNum, feasibility, elsewhere, entered, flashKeys, setEntered,
+  meal, weekNum, feasibility, elsewhere, entered, flashKeys, setEntered, openCount,
 }: {
   meal: RtiMealBackfill;
   weekNum: number | null;
@@ -198,6 +214,7 @@ function MealCard({
   entered: EnteredMap;
   flashKeys: Set<string>;
   setEntered: Dispatch<SetStateAction<EnteredMap>>;
+  openCount: number;
 }) {
   const mark = useCallback((sub: RtiSubShortfall, on: boolean) => {
     const key = subKey(weekNum, meal.mealCode, sub);
@@ -220,28 +237,41 @@ function MealCard({
   }, [weekNum, meal.mealCode, setEntered]);
 
   return (
-    <div className="card p-4 space-y-2">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <span className="font-mono font-bold text-sm text-slate-900">{meal.mealCode}</span>
-          <span className="text-xs text-slate-500 ml-2">{meal.mealName}</span>
-        </div>
-        <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold shrink-0">
-          {fmt(meal.gap)} Portionen fehlen
-        </span>
-      </div>
-      <div className="text-[11px] text-slate-400">
-        Geplant {fmt(meal.plannedTarget)} − platiert {fmt(meal.actuals)} = {fmt(meal.gap)}
-        {meal.hasGapOnly && " · ⚠ RTI-Sheet pro Sub unvollständig"}
-      </div>
-      {meal.targetEstimated && (
-        <div className="text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-2 py-1">
-          ⧗ <b>Ziel / Ist aus App-Daten</b> ({meal.targetSourceLabel}) — im RTI-Sheet-Kopf
-          steht noch nichts. Der Bot trägt Planned Target / Actuals dort automatisch nach.
-        </div>
-      )}
+    <div className="relative rounded-xl bg-white ring-1 ring-slate-200 shadow-sm overflow-clip">
+      {/* Farb-Spine über die volle Höhe = „alles hier drunter gehört zu dem Meal" */}
+      <div className="absolute inset-y-0 left-0 w-[5px] bg-rose-500 z-20" />
 
-      <div className="space-y-2">
+      {/* Meal-Kopf — bleibt beim Scrollen oben stehen, damit immer klar ist,
+          zu welchem Meal die Sub-Rezepte darunter gehören. */}
+      <div className="sticky top-[52px] z-[8] bg-slate-100 pl-5 pr-4 py-3 border-b border-slate-200">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="font-mono font-bold text-base text-slate-900">{meal.mealCode}</span>
+              <span className="text-sm text-slate-700">{meal.mealName}</span>
+            </div>
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500 flex-wrap">
+              <span>geplant {fmt(meal.plannedTarget)} · platiert {fmt(meal.actuals)}</span>
+              <span className="text-slate-300">·</span>
+              <span className="font-medium text-slate-600">{openCount} nachkochen</span>
+              {meal.targetEstimated && (
+                <span className="text-amber-600" title={`Ziel/Ist aus App-Daten (${meal.targetSourceLabel}) — Bot trägt es im RTI-Sheet nach`}>
+                  ⧗ Ziel/Ist geschätzt
+                </span>
+              )}
+              {meal.hasGapOnly && !meal.targetEstimated && <span className="text-amber-600">⧗ Sheet pro Sub unvollständig</span>}
+            </div>
+          </div>
+          <div className="shrink-0 text-center rounded-lg bg-rose-600 text-white px-3 py-1 leading-none">
+            <div className="text-xl font-bold font-mono">{fmt(meal.gap)}</div>
+            <div className="text-[8px] uppercase tracking-wider text-rose-100">fehlen</div>
+          </div>
+        </div>
+      </div>
+
+      <RohwareStrip f={feasibility} />
+
+      <div className="divide-y divide-slate-100">
         {meal.openSubs.map(sub => {
           const key = subKey(weekNum, meal.mealCode, sub);
           return (
@@ -249,7 +279,6 @@ function MealCard({
               key={key}
               meal={meal}
               sub={sub}
-              feasibility={feasibility}
               elsewhere={elsewhere.get(`${meal.mealCode}|${sub.subRecipeName}`)}
               entered={entered[key]}
               flash={flashKeys.has(key)}
@@ -260,19 +289,19 @@ function MealCard({
         })}
       </div>
 
-      {meal.enteredSubs.length > 0 && (
-        <div className="text-[10px] text-emerald-600">
-          ✓ im System eingetragen (Sheet „done"): {meal.enteredSubs.map(s => `${s.subRecipeName} (${fmt(s.minimumNeed)})`).join(" · ")}
-        </div>
-      )}
-      {meal.notNeededSubs.length > 0 && (
-        <div className="text-[10px] text-slate-400">
-          Laut Sheet kein Backfill („no"): {meal.notNeededSubs.map(s => s.subRecipeName).join(", ")}
-        </div>
-      )}
-      {meal.candidateSubNames.length > 0 && (
-        <div className="text-[10px] text-slate-400">
-          Backfill-WO im RTI-Sheet bereits angelegt: {meal.candidateSubNames.join(", ")}
+      {(meal.enteredSubs.length > 0 || meal.notNeededSubs.length > 0 || meal.candidateSubNames.length > 0) && (
+        <div className="pl-5 pr-4 py-2 bg-slate-50 border-t border-slate-100 space-y-0.5 text-[10px]">
+          {meal.enteredSubs.length > 0 && (
+            <div className="text-emerald-600">
+              ✓ im Sheet „done": {meal.enteredSubs.map(s => `${s.subRecipeName} (${fmt(s.minimumNeed)})`).join(" · ")}
+            </div>
+          )}
+          {meal.notNeededSubs.length > 0 && (
+            <div className="text-slate-400">kein Backfill („no"): {meal.notNeededSubs.map(s => s.subRecipeName).join(", ")}</div>
+          )}
+          {meal.candidateSubNames.length > 0 && (
+            <div className="text-slate-400">Backfill-WO im Sheet angelegt: {meal.candidateSubNames.join(", ")}</div>
+          )}
         </div>
       )}
     </div>
@@ -369,7 +398,7 @@ export function BackfillWatchView() {
   const stale = rtiLastUpdate != null && Date.now() - rtiLastUpdate > 5 * 60 * 1000;
 
   return (
-    <div className="space-y-4 pb-8">
+    <div className="space-y-4 pb-8 max-w-4xl">
       {/* Kopf */}
       <div className="card p-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -453,7 +482,7 @@ export function BackfillWatchView() {
           {visible.length === 0 ? (
             <div className="card p-10 text-center text-sm text-slate-400">Alles eingetragen. 🎉</div>
           ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="space-y-4">
               {visible.map(meal => (
                 <MealCard
                   key={meal.mealCode}
@@ -464,6 +493,7 @@ export function BackfillWatchView() {
                   entered={entered}
                   flashKeys={flashKeys}
                   setEntered={setEntered}
+                  openCount={meal.openSubs.filter(sub => !isEntered(meal, sub)).length}
                 />
               ))}
             </div>
