@@ -391,7 +391,9 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
           : c.role === "unbekannt" ? "Unbekannt — prüfen"
           : c.allergens.length ? `kann enthalten: ${c.allergens.join(", ")}` : "Allergen-Pool";
         for (const g of c.groups) {
-          const recipeLabel = g.partCount && g.partCount > 1 ? `${g.recipeName} (Teil ${g.partIndex}/${g.partCount})` : g.recipeName;
+          const nameLabel = g.recipeName && g.recipeName !== g.recipeCode ? g.recipeName : "";
+          const base = [g.recipeCode, nameLabel].filter(Boolean).join(" ") || g.recipeName;
+          const recipeLabel = g.partCount && g.partCount > 1 ? `${base} (Teil ${g.partIndex}/${g.partCount})` : base;
           for (const wo of [...g.wos].sort((a, b) => woNum(a.wo) - woNum(b.wo))) {
             rows.push([
               dayLabel, `Chiller ${c.unit}`, role, `${c.racks}/${c.capRacks}`,
@@ -505,6 +507,7 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
 
     const pageHtml = pages.map(({ c, dayLabel }, idx) => {
       const role = ROLE_STYLE[c.role];
+      const fvCodes = [...new Set(c.groups.map(g => g.recipeCode).filter(Boolean))];
       const contains = c.role === "allergenfrei" ? "Allergenfrei"
         : c.allergens.length ? `Kann enthalten: ${c.allergens.join(", ")}`
         : c.role === "unbekannt" ? "Unbekannt — bitte prüfen" : "Allergen-Pool";
@@ -517,9 +520,11 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
             <td style="padding:6px 9px;border:1px solid #c5cde0;font-size:10px;text-align:right;white-space:nowrap">${wo.kg > 0 ? Math.round(wo.kg) + " kg" : "—"}</td>
           </tr>`).join("");
         const partTag = g.partCount && g.partCount > 1 ? ` <span style="color:#6A1B9A;font-weight:800">[Teil ${g.partIndex}/${g.partCount}]</span>` : "";
+        const codeTag = g.recipeCode ? `<span style="font-weight:900;font-size:13px">${g.recipeCode}</span> ` : "";
+        const nameTag = g.recipeName && g.recipeName !== g.recipeCode ? `<span style="font-weight:600;color:#5a6b8a">${g.recipeName}</span>` : "";
         return `
           <tr><td colspan="4" style="padding:7px 9px;background:#EEF2F9;font-weight:800;font-size:11px;color:#1F3864;border:1px solid #c5cde0">
-            ${g.recipeName}${partTag}${g.allergens.length ? ` · <span style="font-weight:600;color:#666">${g.allergens.join(", ")}</span>` : ""}
+            ${codeTag}${nameTag}${partTag}${g.allergens.length ? ` · <span style="font-weight:600;color:#666">${g.allergens.join(", ")}</span>` : ""}
             <span style="float:right;font-weight:700;color:#888">${g.racks} Rack${g.racks > 1 ? "s" : ""}${g.kg > 0 ? ` · ${Math.round(g.kg)} kg` : ""}</span>
           </td></tr>${woRows}`;
       }).join("");
@@ -531,6 +536,7 @@ export function BlastChillerView({ data }: { data: DataBundle }) {
               <div>
                 <div style="font-size:11px;font-weight:700;color:${role.color};opacity:.7;text-transform:uppercase;letter-spacing:1px">HelloFresh Verden — Produktionsküche</div>
                 <div style="font-size:27px;font-weight:900;color:${role.color};line-height:1.1">❄️ Blast Chiller ${c.unit}</div>
+                ${fvCodes.length ? `<div style="font-size:20px;font-weight:900;color:${role.color};margin-top:4px;letter-spacing:.5px">${fvCodes.join(" · ")}</div>` : ""}
                 <div style="font-size:15px;font-weight:700;color:${role.color};margin-top:3px;opacity:.9">${contains}</div>
               </div>
               <div style="text-align:right">
@@ -981,6 +987,9 @@ function ChillerCard({
 }) {
   const role = ROLE_STYLE[c.role];
   const empty = c.groups.length === 0;
+  // FV-Nummer(n) der Rezepte in diesem Chiller — groß im Kopf, damit die Küche
+  // auf einen Blick sieht "Chiller 1 = FV0849A", ohne aufklappen zu müssen.
+  const fvCodes = [...new Set(c.groups.map(g => g.recipeCode).filter(Boolean))];
   return (
     <div style={{ borderRadius: 9, border: "0.5px solid #dde3ee", overflow: "hidden", opacity: empty ? .6 : 1 }}>
       <div
@@ -988,6 +997,11 @@ function ChillerCard({
         style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: role.bg, color: role.color, cursor: empty ? "default" : "pointer", userSelect: "none" }}
       >
         <span style={{ fontSize: 13, fontWeight: 800 }}>❄️ Chiller {c.unit}</span>
+        {fvCodes.length > 0 && (
+          <span style={{ fontSize: 16, fontWeight: 900, letterSpacing: .5, padding: "2px 11px", borderRadius: 7, background: "rgba(255,255,255,.75)", color: role.color, border: `1px solid ${role.color}44`, whiteSpace: "nowrap" }}>
+            {fvCodes.join(" · ")}
+          </span>
+        )}
         <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: "rgba(255,255,255,.55)" }}>{role.label}</span>
         {c.role !== "allergenfrei" && c.allergens.length > 0 && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, opacity: .9 }}>
@@ -1012,7 +1026,12 @@ function ChillerCard({
           {[...c.groups].map((g: RecipeGroup) => (
             <div key={g.key} style={{ borderBottom: "1px solid #eef1f6" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", background: "#f7f8fb", fontSize: 11 }}>
-                <strong style={{ color: "#1F3864" }}>{g.recipeName}</strong>
+                {g.recipeCode && (
+                  <strong style={{ color: "#1F3864", fontSize: 13, letterSpacing: .3 }}>{g.recipeCode}</strong>
+                )}
+                {g.recipeName && g.recipeName !== g.recipeCode && (
+                  <span style={{ color: "#5a6b8a", fontWeight: 600 }}>{g.recipeName}</span>
+                )}
                 {g.partCount && g.partCount > 1 && (
                   <span style={{ fontSize: 9.5, fontWeight: 800, padding: "1px 7px", borderRadius: 20, background: "#E1BEE7", color: "#6A1B9A" }}>
                     Teil {g.partIndex}/{g.partCount}
@@ -1065,6 +1084,7 @@ function ClassicWoRow({ w, fmtKg }: { w: ChillerWo; fmtKg: (kg: number) => strin
       </td>
       <td style={{ padding: "5px 8px", borderTop: "1px solid #f0f2f6" }}>
         {w.name}
+        {w.recipeCode && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#1F3864", marginLeft: 6, letterSpacing: .3 }}>{w.recipeCode}</span>}
         <span style={{ fontSize: 9.5, color: "#9aa3b2", marginLeft: 6 }}>{cleanRecipeName(w.recipeName)}</span>
         {w.blasted && <span style={{ fontSize: 9, fontWeight: 700, color: "#2E7D32", marginLeft: 6 }}>✓ geblastet</span>}
       </td>
