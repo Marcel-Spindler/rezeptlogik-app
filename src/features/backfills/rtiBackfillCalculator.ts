@@ -28,6 +28,22 @@ export const MIN_SUB_SHORTFALL = 30;
 
 export type RtiShortfallBasis = "sheet" | "gap-only";
 
+// Ersatz-Kopfzahlen aus App-Daten (Forecast / Redzone / LinePlaiting), wenn
+// Marcel Planned Target / Actuals im RTI-Sheet-Kopf noch nicht eingetragen hat.
+// Key = codeDigits(mealCode) (4-stellig). Siehe buildRtiExternalTargets.ts.
+export interface RtiExternalTarget {
+  plannedTarget: number;
+  actuals: number;
+  /** Menschenlesbare Herkunft, z.B. "Forecast + Redzone". */
+  source: string;
+}
+
+// Sheet-Kopf gewinnt immer; ein externer Wert wird nur für die FEHLENDE Zahl
+// eingesetzt und nur, wenn er in sich plausibel ist (Ist ≤ Ziel + Puffer).
+function usableExternalTarget(ext: RtiExternalTarget | undefined): ext is RtiExternalTarget {
+  return !!ext && ext.plannedTarget > 0 && ext.actuals >= 0 && ext.actuals <= ext.plannedTarget * 1.15;
+}
+
 export interface RtiSubShortfall {
   workOrder: string;
   subRecipeName: string;
@@ -73,8 +89,17 @@ export interface RtiMealBackfill {
   /** true = mind. ein offener Sub ist nur "gap-only" geschätzt (Sheet unvollständig). */
   hasGapOnly: boolean;
   /** true = es wird schon gewogen, aber Planned Target / Actuals fehlen im
-   *  RTI-Sheet-Kopf → gap nicht rechenbar. openSubs ist leer, nur ein Hinweis. */
+   *  RTI-Sheet-Kopf UND ließen sich auch nicht aus App-Daten herleiten → gap
+   *  nicht rechenbar. openSubs ist leer, nur ein Hinweis. */
   headerIncomplete: boolean;
+  /** "sheet" = plannedTarget/actuals kamen aus dem RTI-Sheet-Kopf ·
+   *  "app" = eine oder beide Zahlen aus App-Daten ergänzt (targetEstimated). */
+  targetSource: "sheet" | "app";
+  /** true = plannedTarget und/oder actuals stammen aus App-Daten statt aus dem
+   *  RTI-Sheet-Kopf (Forecast/Redzone/LinePlaiting). Anzeige als „geschätzt". */
+  targetEstimated: boolean;
+  /** Herkunft der ergänzten Kopfzahlen, wenn targetEstimated (sonst ""). */
+  targetSourceLabel: string;
   /** Namen der im RTI-Sheet bereits als eigene WO angelegten Backfill-Slots. */
   candidateSubNames: string[];
 }
@@ -141,8 +166,16 @@ function classify(sub: RtiSubRecipeEntry, gap: number, plannedTarget: number): C
  * Wertet jeden Meal-Block des RTI-Tabs aus und liefert die Sub-Rezept-Engpässe.
  * Nur Meals mit mindestens einem Engpass-Sub kommen in die Liste — ein Meal,
  * dessen gesamter Rückstand aus dem Holding gedeckt ist, braucht keinen Backfill.
+ *
+ * `externalTargets` (optional): Ersatz-Kopfzahlen aus App-Daten je 4-Ziffer-Code.
+ * Fehlt im Sheet-Kopf Planned Target ODER Actuals, wird die fehlende Zahl daraus
+ * ergänzt (Sheet gewinnt immer) und das Meal als `targetEstimated` markiert —
+ * statt nur den „bitte eintragen"-Hinweis zu werfen.
  */
-export function computeRtiBackfills(rti: RtiData | null | undefined): RtiMealBackfill[] {
+export function computeRtiBackfills(
+  rti: RtiData | null | undefined,
+  externalTargets?: Map<string, RtiExternalTarget>,
+): RtiMealBackfill[] {
   // Mehrere Blöcke je Meal-Code (echte Wiegung + leere Prep-/Zweitrun-Blöcke,
   // teils unter Code-Varianten) — den mit dem größten Planned Target behalten.
   const bestByKey = new Map<string, RtiMealBlock>();
@@ -157,7 +190,9 @@ export function computeRtiBackfills(rti: RtiData | null | undefined): RtiMealBac
     plannedTarget: meal.plannedTarget, actuals: meal.actuals, gap: 0,
     openSubs: [], enteredSubs: [], notNeededSubs: [],
     recommendedMin: 0, recommendedBuffered: 0, allEntered: false,
-    weighingStarted, hasGapOnly: false, headerIncomplete, candidateSubNames: [],
+    weighingStarted, hasGapOnly: false, headerIncomplete,
+    targetSource: "sheet", targetEstimated: false, targetSourceLabel: "",
+    candidateSubNames: [],
   });
 
   const out: RtiMealBackfill[] = [];
@@ -165,17 +200,36 @@ export function computeRtiBackfills(rti: RtiData | null | undefined): RtiMealBac
     const realSubs = meal.subRecipes.filter(s => !s.isBackfillCandidate);
     if (realSubs.length === 0) continue;
     const weighingStarted = realSubs.some(s => num(s.weighedKg) !== 0 || s.status !== "open");
+    // Echte Zurückwiegung dieses Meals (Rack kam zurück). Erst dann ist der
+    // App-Daten-Fallback sinnvoll — sonst gälte früh in der Woche jedes Meal mit
+    // Forecast > Redzone-Output als „Backfill nötig".
+    const someWeighed = realSubs.some(s => num(s.weighedKg) > 0);
 
-    // plannedTarget/actuals sind Marcels Hand-Eintrag. Fehlen sie, kann kein gap
-    // gerechnet werden. Wird aber schon gewogen (mind. ein echtes Sub hat kg)
-    // und es sind nicht alle Subs auf "no" → EIN Hinweis, dass der Kopf fehlt.
-    if (meal.plannedTarget <= 0 || meal.actuals <= 0) {
-      const someWeighed = realSubs.some(s => num(s.weighedKg) > 0);
+    // Kopfzahlen: der Sheet-Eintrag gewinnt, fehlt einer → aus App-Daten
+    // (externalTargets) ergänzen. Nur die tatsächlich fehlende Zahl wird ersetzt,
+    // und nur wenn dieses Meal schon zurückgewogen wird.
+    let plannedTarget = num(meal.plannedTarget);
+    let actuals = num(meal.actuals);
+    let targetEstimated = false;
+    let targetSourceLabel = "";
+    if ((plannedTarget <= 0 || actuals <= 0) && someWeighed) {
+      const ext = externalTargets?.get(codeDigits(meal.mealCode).toUpperCase());
+      if (usableExternalTarget(ext)) {
+        if (plannedTarget <= 0) plannedTarget = ext.plannedTarget;
+        if (actuals <= 0) actuals = ext.actuals;
+        targetEstimated = true;
+        targetSourceLabel = ext.source;
+      }
+    }
+
+    // Immer noch keine rechenbaren Kopfzahlen. Wird schon gewogen (mind. ein
+    // echtes Sub hat kg) und nicht alle Subs auf "no" → EIN Hinweis.
+    if (plannedTarget <= 0 || actuals <= 0) {
       const allNo = realSubs.every(s => s.status === "not-needed");
       if (someWeighed && !allNo) out.push(emptyMeal(meal, true, weighingStarted));
       continue;
     }
-    const gap = Math.round(meal.plannedTarget - meal.actuals);
+    const gap = Math.round(plannedTarget - actuals);
     if (gap < MIN_SUB_SHORTFALL) continue;
 
     const openSubs: RtiSubShortfall[] = [];
@@ -185,7 +239,7 @@ export function computeRtiBackfills(rti: RtiData | null | undefined): RtiMealBac
 
     for (const sub of meal.subRecipes) {
       if (sub.isBackfillCandidate) { candidateSubNames.add(sub.subRecipeName); continue; }
-      const c = classify(sub, gap, meal.plannedTarget);
+      const c = classify(sub, gap, plannedTarget);
       if (!c) continue;
       const { vetoed, ...shortfall } = c;
       if (vetoed) notNeededSubs.push(shortfall);
@@ -205,8 +259,8 @@ export function computeRtiBackfills(rti: RtiData | null | undefined): RtiMealBac
     out.push({
       mealCode: meal.mealCode,
       mealName: meal.mealName,
-      plannedTarget: meal.plannedTarget,
-      actuals: meal.actuals,
+      plannedTarget,
+      actuals,
       gap,
       openSubs,
       enteredSubs,
@@ -217,6 +271,9 @@ export function computeRtiBackfills(rti: RtiData | null | undefined): RtiMealBac
       weighingStarted,
       hasGapOnly: openSubs.some(s => s.basis === "gap-only"),
       headerIncomplete: false,
+      targetSource: targetEstimated ? "app" : "sheet",
+      targetEstimated,
+      targetSourceLabel,
       candidateSubNames: [...candidateSubNames].filter(n => shortNames.has(n)),
     });
   }

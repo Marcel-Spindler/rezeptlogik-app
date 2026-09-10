@@ -22,6 +22,8 @@ import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWe
 import { buildSkuInfoIndex } from "../../lib/wmsSkuEnrichment";
 import { combineBackfillSignals, detectCrossSourceAlerts } from "./combineBackfills";
 import { computeRtiBackfills, type RtiMealBackfill } from "./rtiBackfillCalculator";
+import { buildRtiExternalTargets } from "./buildRtiExternalTargets";
+import { pushRtiTargets } from "./rtiTargetsRelay";
 import { sweepRtiInventory, type SubStockElsewhere } from "./rtiInventorySweep";
 import { useSharedBackfillFlash } from "./sharedBackfillFlash";
 import { computeBackfillFeasibility } from "./backfillFeasibility";
@@ -174,12 +176,29 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
     [postblast.data, preblast.data, weekPlan, rti.data],
   );
 
-  const combined = useMemo(
-    () => combineBackfillSignals(kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows ?? undefined, skuInfoIndex),
-    [kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows, skuInfoIndex],
+  // Ersatz-Kopfzahlen (Planned Target / Actuals) aus App-Daten, falls sie im
+  // RTI-Sheet-Kopf fehlen — Forecast + Redzone/LinePlaiting. Siehe
+  // buildRtiExternalTargets.ts / rtiBackfillCalculator.ts.
+  const rtiExternalTargets = useMemo(
+    () => buildRtiExternalTargets({
+      data,
+      weekShort: expectedWeekLabel,
+      linePlaiting: linePlaitingData,
+      redzoneRuns: redzone?.runs,
+    }),
+    [data, expectedWeekLabel, linePlaitingData, redzone?.runs],
   );
 
-  const rtiMeals = useMemo(() => computeRtiBackfills(rti.data), [rti.data]);
+  const combined = useMemo(
+    () => combineBackfillSignals(kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows ?? undefined, skuInfoIndex, rtiExternalTargets),
+    [kitchenBackfill, linePlaitingData, rti.data, redzone?.runs, wmsHolding.rows, skuInfoIndex, rtiExternalTargets],
+  );
+
+  const rtiMeals = useMemo(() => computeRtiBackfills(rti.data, rtiExternalTargets), [rti.data, rtiExternalTargets]);
+
+  // Ersatz-Kopfzahlen an die Cloud Function relayen (Firestore) — die nutzt sie,
+  // wenn ihre eigene Online-Redzone-Verbindung (Snowflake-JWT) gerade aus ist.
+  useEffect(() => { pushRtiTargets(rtiExternalTargets); }, [rtiExternalTargets]);
   const inventoryElsewhere = useMemo(
     () => sweepRtiInventory(rtiMeals, data, fullInventory.rows ?? undefined, skuInfoIndex),
     [rtiMeals, data, fullInventory.rows, skuInfoIndex],

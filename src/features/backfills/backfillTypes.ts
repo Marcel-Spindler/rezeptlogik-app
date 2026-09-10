@@ -70,6 +70,11 @@ export interface CombinedBackfillNeed {
   rtiKitchenDone: boolean;
   rtiHasOpenSubs: boolean;
   rtiVetoed: boolean;                // alle Engpass-Sub-Rezepte "no" → kein Backfill
+  // true = Planned Target / Actuals standen NICHT im RTI-Sheet-Kopf, sondern
+  // wurden aus App-Daten hergeleitet (Forecast/Redzone/LinePlaiting). Der
+  // Backfill ist dann eine Schätzung — im RTI-Sheet-Kopf nachtragen.
+  rtiTargetEstimated: boolean;
+  rtiTargetSourceLabel: string;      // z.B. "Forecast + Redzone" (leer wenn aus dem Sheet)
   rtiBackfillCandidateSubs: string[];
   // Pro Sub-Rezept, das laut RTI-Rechner nachgekocht werden muss (Spalten
   // "Minimum need" / "Backfill Meals" / Status). Treibt die Backfill-Wächter-

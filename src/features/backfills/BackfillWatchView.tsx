@@ -234,6 +234,12 @@ function MealCard({
         Geplant {fmt(meal.plannedTarget)} − platiert {fmt(meal.actuals)} = {fmt(meal.gap)}
         {meal.hasGapOnly && " · ⚠ RTI-Sheet pro Sub unvollständig"}
       </div>
+      {meal.targetEstimated && (
+        <div className="text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded-lg px-2 py-1">
+          ⧗ <b>Ziel / Ist aus App-Daten</b> ({meal.targetSourceLabel}) — im RTI-Sheet-Kopf
+          steht noch nichts. Der Bot trägt Planned Target / Actuals dort automatisch nach.
+        </div>
+      )}
 
       <div className="space-y-2">
         {meal.openSubs.map(sub => {
@@ -415,8 +421,8 @@ export function BackfillWatchView() {
       {headerIncomplete.length > 0 && (
         <div className="rounded-xl p-3 bg-amber-50 ring-1 ring-amber-300 text-xs text-amber-800">
           <b>⚠ RTI-Sheet-Kopf fehlt</b> bei {headerIncomplete.map(m => m.mealCode).join(", ")} — es wird schon gewogen,
-          aber <b>Planned Target / Actuals</b> sind oben noch nicht eingetragen. Ohne die beiden Zahlen kann der Backfill
-          nicht gerechnet werden — bitte im RTI-Sheet nachtragen.
+          aber <b>Planned Target / Actuals</b> sind oben noch nicht eingetragen und liessen sich auch nicht aus
+          App-Daten herleiten (kein Forecast-Wert / keine Redzone-Zählung für diese KW). Bitte im RTI-Sheet nachtragen.
         </div>
       )}
 

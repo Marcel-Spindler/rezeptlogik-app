@@ -7,8 +7,15 @@
 //         • neuer offener Engpass          → 🔴
 //         • Engpass ins System eingetragen → ✅
 //         • Wiegung läuft > STALE_MIN, aber Subs noch ohne Status → ⏰
+//         • Planned Target/Actuals fehlten → Ziel aus Forecast (weekRecipes),
+//           Ist aus Kaskade Redzone → Firestore-Relay (Browser-Redzone) →
+//           LinePlaiting Σ Actual; beide in den Sheet-Kopf (Spalte D/E) → 🤖
+//       Nur im Wiege-Fenster (RTI_PLATING_START/END_HOUR, Europe/Berlin) wird
+//       ausgefüllt und proaktiv gemeldet — nach Feierabend kein Gemecker.
 //       Nötig:  SLACK_WEBHOOK_URL in functions/.env
-//               (RTI_SHEET_ID / RTI_SHEET_TAB optional, Defaults unten)
+//               (RTI_SHEET_ID / RTI_SHEET_TAB / RTI_AUTOFILL_HEADER /
+//                RTI_PLATING_*_HOUR / REDZONE_STATUS_URL / LINEPLAITING_SHEET_ID
+//                optional, Defaults unten)
 //
 //  2) rtiMarkDone (onRequest, POST { wo, subRecipe })
 //       Schreibt "done" in Spalte J der passenden WO-Zeile. Der Backfill-Wächter
@@ -29,6 +36,36 @@ const RTI_SHEET_TAB = process.env.RTI_SHEET_TAB || "RTI";
 const STALE_MIN = Number(process.env.RTI_STALE_MIN || 30);
 const MIN_SUB_SHORTFALL = 30;
 const REGION = "europe-west3";
+
+// Planned Target / Actuals selbst in den RTI-Sheet-Kopf schreiben, wenn sie
+// fehlen (Forecast + Redzone). "0" = aus → nur intern rechnen + alter Hinweis.
+const RTI_AUTOFILL_HEADER = process.env.RTI_AUTOFILL_HEADER !== "0";
+// Redzone-Plating-Output (Ist-Zahl). Hosting-Rewrite, Server-zu-Server ohne
+// Origin-Header ist erlaubt (siehe guardRequest in index.js).
+const REDZONE_STATUS_URL = process.env.REDZONE_STATUS_URL
+  || "https://rezeptlogik-verden-factor.web.app/api/redzone-plating-status";
+// Ein externer Kopf-Wert wird nur übernommen, wenn er in sich plausibel ist.
+const EXT_ACTUALS_MAX_RATIO = 1.15;
+
+// Wiege-/Plating-Fenster (Europe/Berlin). AUSSERHALB: keine proaktiven Nag-Posts
+// (Kopf fehlt / Wiegung hängt) und kein Auto-Ausfüllen — nach Feierabend wird
+// nicht mehr gewogen, da braucht niemand alle 2 h eine Erinnerung. Ab der
+// Spätschicht (nächste KW) einfach RTI_PLATING_END_HOUR=23 setzen, kein Deploy
+// der Logik nötig. Änderungs-Meldungen (neuer Backfill, „done", Menge gestiegen)
+// laufen weiter rund um die Uhr.
+const PLATING_START_HOUR = Number(process.env.RTI_PLATING_START_HOUR || 6);
+const PLATING_END_HOUR = Number(process.env.RTI_PLATING_END_HOUR || 15);
+
+function berlinHour(now) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin", hour: "2-digit", hour12: false,
+  }).formatToParts(now || new Date());
+  return parseInt(parts.find(p => p.type === "hour")?.value || "0", 10) % 24;
+}
+function withinPlatingHours(now) {
+  const h = berlinHour(now);
+  return h >= PLATING_START_HOUR && h < PLATING_END_HOUR;
+}
 
 function stateDoc() {
   return admin.firestore().collection("apps").doc("rezeptlogik").collection("backfillWatch").doc("state");
@@ -65,6 +102,17 @@ function cleanMealName(raw) {
 function isEndOfWeek(row) {
   return /end of week count/i.test(`${row[0] ?? ""} ${row[1] ?? ""}`);
 }
+function codeDigits(code) {
+  const m = /(\d{4,5})/.exec(String(code || ""));
+  return m ? m[1] : String(code || "");
+}
+function detectWeek(rows) {
+  for (const row of rows) {
+    const m = /^KW\s*(\d+)/i.exec(String((row || [])[0] ?? "").trim());
+    if (m) return `W${m[1].padStart(2, "0")}`;
+  }
+  return "";
+}
 
 function parseRti(rows) {
   const meals = [];
@@ -78,6 +126,7 @@ function parseRti(rows) {
       const mealName = cleanMealName(m[2]);
       const plannedTarget = num(row[3]);
       const actuals = num(row[4]);
+      const headerRow = i; // 0-basiert; Spalte D/E dieser Zeile = Planned/Actuals
       i += 1;
       if (i < rows.length && String((rows[i] || [])[0] ?? "").includes("WO")) i++;
       const subRecipes = [];
@@ -102,7 +151,7 @@ function parseRti(rows) {
         }
         i++;
       }
-      meals.push({ mealCode, mealName, plannedTarget, actuals, subRecipes });
+      meals.push({ mealCode, mealName, plannedTarget, actuals, subRecipes, headerRow });
       continue;
     }
     i++;
@@ -138,7 +187,15 @@ function classify(sub, gap, plannedTarget) {
   };
 }
 
-function computeRtiBackfills(meals) {
+// externalTargets: Map<4-Ziffer-Code, { plannedTarget, actuals, source }> —
+// Ersatz-Kopfzahlen aus App-Daten (Forecast + Redzone), 1:1 mit
+// src/features/backfills/rtiBackfillCalculator.ts.
+function usableExternalTarget(ext) {
+  return !!ext && ext.plannedTarget > 0 && ext.actuals >= 0
+    && ext.actuals <= ext.plannedTarget * EXT_ACTUALS_MAX_RATIO;
+}
+
+function computeRtiBackfills(meals, externalTargets) {
   const bestByKey = new Map();
   for (const meal of meals) {
     const key = String(meal.mealCode).replace(/\D/g, "");
@@ -150,27 +207,43 @@ function computeRtiBackfills(meals) {
     const realSubs = meal.subRecipes.filter(s => !s.isBackfillCandidate);
     if (realSubs.length === 0) continue;
     const weighingStarted = realSubs.some(s => num(s.weighedKg) !== 0 || s.status !== "open");
+    const someWeighed = realSubs.some(s => num(s.weighedKg) > 0);
 
-    // Planned Target / Actuals fehlen (Marcels Hand-Eintrag) → gap nicht rechenbar.
-    // Wird aber schon gewogen und nicht alle Subs "no" → EIN Hinweis.
-    if (meal.plannedTarget <= 0 || meal.actuals <= 0) {
-      const someWeighed = realSubs.some(s => num(s.weighedKg) > 0);
+    // Kopfzahlen: Sheet gewinnt; fehlt eine → aus App-Daten ergänzen, aber nur
+    // wenn dieses Meal schon zurückgewogen wird (sonst gälte früh in der Woche
+    // jedes Meal mit Forecast > Redzone-Output als „Backfill nötig").
+    let plannedTarget = num(meal.plannedTarget);
+    let actuals = num(meal.actuals);
+    let targetEstimated = false;
+    let targetSourceLabel = "";
+    if ((plannedTarget <= 0 || actuals <= 0) && someWeighed) {
+      const ext = externalTargets && externalTargets.get(codeDigits(meal.mealCode));
+      if (usableExternalTarget(ext)) {
+        if (plannedTarget <= 0) plannedTarget = ext.plannedTarget;
+        if (actuals <= 0) actuals = ext.actuals;
+        targetEstimated = true;
+        targetSourceLabel = ext.source;
+      }
+    }
+
+    if (plannedTarget <= 0 || actuals <= 0) {
       const allNo = realSubs.every(s => s.status === "not-needed");
       if (someWeighed && !allNo) {
         out.push({ mealCode: meal.mealCode, mealName: meal.mealName, gap: 0,
-          plannedTarget: meal.plannedTarget, actuals: meal.actuals,
+          plannedTarget, actuals, headerRow: meal.headerRow,
           openSubs: [], enteredSubs: [], notNeededSubs: [], weighingStarted,
-          recommendedMin: 0, hasGapOnly: false, headerIncomplete: true });
+          recommendedMin: 0, hasGapOnly: false, headerIncomplete: true,
+          targetEstimated: false, targetSourceLabel: "" });
       }
       continue;
     }
-    const gap = Math.round(meal.plannedTarget - meal.actuals);
+    const gap = Math.round(plannedTarget - actuals);
     if (gap < MIN_SUB_SHORTFALL) continue;
 
     const openSubs = [], enteredSubs = [], notNeededSubs = [];
     for (const sub of meal.subRecipes) {
       if (sub.isBackfillCandidate) continue;
-      const c = classify(sub, gap, meal.plannedTarget);
+      const c = classify(sub, gap, plannedTarget);
       if (!c) continue;
       if (c.vetoed) notNeededSubs.push(c);
       else if (c.status === "done") enteredSubs.push(c);
@@ -179,14 +252,250 @@ function computeRtiBackfills(meals) {
     if (!openSubs.length && !enteredSubs.length && !notNeededSubs.length) continue;
     out.push({
       mealCode: meal.mealCode, mealName: meal.mealName, gap,
-      plannedTarget: meal.plannedTarget, actuals: meal.actuals,
+      plannedTarget, actuals, headerRow: meal.headerRow,
       openSubs, enteredSubs, notNeededSubs, weighingStarted,
       recommendedMin: openSubs.reduce((m, s) => Math.max(m, s.minimumNeed), 0),
       hasGapOnly: openSubs.some(s => s.basis === "gap-only"),
       headerIncomplete: false,
+      targetEstimated, targetSourceLabel,
     });
   }
   return out;
+}
+
+// ── Ersatz-Kopfzahlen (Planned Target / Actuals aus App-Daten) ──────────────
+// Ziel  = Forecast der KW (apps/rezeptlogik/weekRecipes, totalVerdenVolume) —
+//         dieselbe Quelle wie das „Wochen-Kontingent" in der Redzone-Live-View.
+// Ist   = Redzone-Plating-Output der KW (Maschinenzählung), Fallback: nichts.
+
+async function readWeekRecipeTargets(weekShort) {
+  const coll = admin.firestore()
+    .collection("apps").doc("rezeptlogik").collection("weekRecipes");
+  // weekShort ist ein einfaches Feld → automatischer Single-Field-Index.
+  const snap = weekShort
+    ? await coll.where("weekShort", "==", weekShort).get()
+    : await coll.get();
+  const byCode = new Map(); // 4-Ziffer → { target }
+  snap.forEach(doc => {
+    const wr = doc.data() || {};
+    const total = Number(wr.totalVerdenVolume) || 0;
+    if (total <= 0 || !wr.code) return;
+    const k = codeDigits(wr.code);
+    // größten Wert je 4-Ziffer behalten (Code-Varianten)
+    if ((byCode.get(k)?.target ?? 0) < total) byCode.set(k, { target: total });
+  });
+  return byCode;
+}
+
+// Stunden von Montag 00:00 (Europe/Berlin) bis jetzt, geklemmt auf [24, 168].
+function lookbackHoursSinceMonday(now) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(now || new Date());
+  const get = t => parts.find(p => p.type === t)?.value || "";
+  const dowIdx = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 }[get("weekday")] ?? 0;
+  const h = parseInt(get("hour"), 10) || 0;
+  const min = parseInt(get("minute"), 10) || 0;
+  const hrs = dowIdx * 24 + h + min / 60;
+  return Math.min(168, Math.max(24, Math.ceil(hrs)));
+}
+
+const RZ_MEAL_RE = /\b(F[A-Z]\d{4}[A-Z])\b/;
+
+async function fetchRedzoneActuals(lookbackHours) {
+  const url = `${REDZONE_STATUS_URL}?hours=${lookbackHours}`;
+  let body;
+  try {
+    const res = await fetch(url, { headers: { "Content-Type": "application/json" } });
+    if (!res.headers.get("content-type")?.includes("application/json")) return null;
+    body = await res.json();
+  } catch (e) {
+    logger.warn("Redzone-Fetch fehlgeschlagen", { error: String(e).slice(0, 160) });
+    return null;
+  }
+  if (!body || body.ok === false || !Array.isArray(body.rows)) return null;
+  const byCode = new Map(); // 4-Ziffer → Σ outCount (nur Plating)
+  for (const r of body.rows) {
+    if (String(r.areaName || "") !== "Plating") continue;
+    const m = RZ_MEAL_RE.exec(String(r.productTypeName || ""));
+    if (!m) continue;
+    const add = Number(r.outCount) || 0;
+    if (add <= 0) continue;
+    const k = codeDigits(m[1]);
+    byCode.set(k, (byCode.get(k) || 0) + add);
+  }
+  return byCode;
+}
+
+// Firestore-Relay: eine offene App mit funktionierender Redzone (lokaler
+// WMS-Server) schreibt ihre errechneten Kopfzahlen hierher (siehe
+// src/features/backfills/rtiTargetsRelay.ts). Nur nutzen, wenn frisch (< 45 min).
+async function readRelayActuals(now) {
+  try {
+    const snap = await admin.firestore()
+      .collection("apps").doc("rezeptlogik").collection("backfillWatch").doc("rtiTargets").get();
+    if (!snap.exists) return null;
+    const d = snap.data() || {};
+    const age = (now ? now.getTime() : Date.now()) - (Number(d.updatedAt) || 0);
+    if (!(age >= 0) || age > 45 * 60 * 1000) return null;
+    const byCode = new Map();
+    for (const [k, v] of Object.entries(d.targets || {})) {
+      const a = Math.round(Number(v && v.actuals) || 0);
+      if (a > 0) byCode.set(codeDigits(k), a);
+    }
+    return byCode.size > 0 ? byCode : null;
+  } catch (e) {
+    logger.warn("Relay-Read fehlgeschlagen", { error: String(e).slice(0, 160) });
+    return null;
+  }
+}
+
+// Portionen ganzzahlig; "," / "." vor genau 3 Ziffern = Tausender-Trenner
+// (1:1 mit parseWholeNumber aus src/.../parsers/parseLinePlaiting.ts).
+function parseWholeNumber(raw) {
+  const t = String(raw ?? "").trim();
+  if (!t) return 0;
+  const n = parseInt(t.replace(/[.,](\d{3})(?!\d)/g, "$1").replace(/[^\d.\-]/g, ""), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [], field = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(field); field = ""; }
+    else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else if (c !== "\r") field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+// LinePlaiting-Tab (anonymes gviz-CSV, KEIN Snowflake): Σ Planned / Σ Actual je
+// Meal über die ganze KW. Das Sheet labelt Planned/Actual/Delta NICHT sauber
+// (gviz-Export), aber die Struktur je Meal-Zeile ist stabil: nach „Code" +
+// Meal-Name folgen ein paar Zahlen, darunter eine kleine „Run"-Zahl (< 50) und
+// das Tripel Planned / Actual / Delta mit Delta = Actual − Planned. Darüber
+// wird das Tripel eindeutig erkannt — kein voller Parser-Port nötig.
+const LINEPLAITING_SHEET_ID = process.env.LINEPLAITING_SHEET_ID
+  || "13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U";
+
+const NUMERIC_CELL = /^-?[\d.,\s]+$/;
+const RUN_COUNT_CELL = /^\d{1,2}\.\d$/; // „3.0" = Run-Zähler, keine Portionszahl
+
+// Aus einer Meal-Zeile das (Planned, Actual)-Paar ziehen. Fenster codeCol+2 …
+// codeCol+12 — die rechts anschließenden „Rolling Progress"-Wochensummen (ab
+// ~Spalte 22) NICHT mitnehmen. Run-Zähler ("3.0") rausfiltern, dann das Tripel
+// Planned/Actual/Delta mit Delta = Actual − Planned suchen.
+function plannedActualFromRow(cells, startIdx) {
+  const nums = [];
+  for (let i = startIdx; i < Math.min(cells.length, startIdx + 11); i++) {
+    const raw = String(cells[i] ?? "").trim();
+    if (raw && NUMERIC_CELL.test(raw) && !RUN_COUNT_CELL.test(raw)) nums.push(parseWholeNumber(raw));
+  }
+  for (let i = 0; i + 2 < nums.length; i++) {
+    const [p, a, d] = [nums[i], nums[i + 1], nums[i + 2]];
+    if (p > 100 && a >= 0 && Math.abs(d - (a - p)) <= 2) return { planned: p, actual: a };
+  }
+  return null;
+}
+
+async function fetchLinePlaitingTotals(weekShort) {
+  const wk = /^W(\d{1,2})$/.exec(weekShort || "");
+  if (!wk) return null;
+  const tab = `LinePlating W${Number(wk[1])}`;
+  const url = `https://docs.google.com/spreadsheets/d/${LINEPLAITING_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
+  let text;
+  try {
+    const res = await fetch(url);
+    if (!res.ok || !(res.headers.get("content-type") || "").includes("csv")) return null;
+    text = await res.text();
+  } catch (e) {
+    logger.warn("LinePlaiting-Fetch fehlgeschlagen", { error: String(e).slice(0, 160) });
+    return null;
+  }
+  const rows = parseCsv(text);
+  let codeCol = -1;
+  const actual = new Map(); // nur Ist — Σ Planned aus LinePlaiting ist unzuverlässig
+                            // (mischt Erst-Plan + Backfill-Runs), Ziel kommt vom Forecast.
+  for (const row of rows) {
+    const lower = row.map(c => String(c ?? "").trim().toLowerCase());
+    const ci = lower.indexOf("code");
+    if (ci >= 0) { codeCol = ci; continue; } // „Comms"-Kopfzeile
+    if (codeCol < 0) continue;
+    const code = String(row[codeCol] ?? "").trim();
+    if (!/^F[A-Z]\d{4}[A-Z]?$/i.test(code)) continue;
+    const pa = plannedActualFromRow(row, codeCol + 2); // +1 Meal-Name überspringen
+    if (!pa || pa.actual <= 0) continue;
+    const k = codeDigits(code);
+    actual.set(k, (actual.get(k) || 0) + pa.actual);
+  }
+  return actual.size ? { actual } : null;
+}
+
+// Baut die externalTargets-Map (4-Ziffer → { plannedTarget, actuals, source }).
+// Ziel: Forecast (weekRecipes) — die einzige verlässliche Plan-Quelle.
+// Ist  (Kaskade): Online-Redzone → Firestore-Relay (Browser-Redzone) → LinePlaiting Σ Actual.
+// Nur Einträge mit Ziel UND Ist — ohne beides ist kein gap rechenbar.
+async function deriveHeaderTargets(weekShort, now) {
+  const [targets, redzone, relay, lp] = await Promise.all([
+    readWeekRecipeTargets(weekShort).catch(() => new Map()),
+    fetchRedzoneActuals(lookbackHoursSinceMonday(now)).catch(() => null),
+    readRelayActuals(now).catch(() => null),
+    fetchLinePlaitingTotals(weekShort).catch(() => null),
+  ]);
+
+  const out = new Map();
+  for (const [k, t] of targets) {
+    if (!(t.target > 0)) continue;
+    const target = Math.round(t.target);
+
+    let actuals = 0, actSrc = "";
+    const rz = redzone ? Math.round(redzone.get(k) || 0) : 0;
+    const rl = relay ? Math.round(relay.get(k) || 0) : 0;
+    const la = lp && lp.actual ? Math.round(lp.actual.get(k) || 0) : 0;
+    if (rz > 0) { actuals = rz; actSrc = "Redzone"; }
+    else if (rl > 0) { actuals = rl; actSrc = "Redzone (Browser)"; }
+    else if (la > 0 && la <= target) { actuals = la; actSrc = "LinePlaiting"; }
+    else continue;
+
+    out.set(k, {
+      plannedTarget: target,
+      actuals: Math.min(actuals, target),
+      source: `Forecast + ${actSrc}`,
+    });
+  }
+  return { targets: out, redzoneOk: redzone != null, relayOk: relay != null, lpOk: lp != null };
+}
+
+// Guarded Writer: trägt Planned Target (D) / Actuals (E) in die FV-Kopfzeile ein.
+// Schreibt nur, wenn BEIDE Zellen leer sind (nie einen vorhandenen Wert — egal ob
+// von Hand oder von uns — überschreiben) und die Zahlen plausibel sind.
+async function fillRtiHeader(sheetsRw, rows, meal, planned, actuals) {
+  const hr = meal.headerRow;
+  if (hr == null || hr < 0 || hr >= rows.length) return { ok: false, reason: "no-row" };
+  const row = rows[hr] || [];
+  // Kopfzeile gegenprüfen: Spalte B muss den FV-Code tragen.
+  if (codeDigits(String(row[1] ?? "")) !== codeDigits(meal.mealCode)) return { ok: false, reason: "row-mismatch" };
+  const curD = num(row[3]);
+  const curE = num(row[4]);
+  if (curD > 0 || curE > 0) return { ok: false, reason: "not-empty" };
+  if (!(planned > 0) || actuals < 0 || actuals > planned * 1.05) return { ok: false, reason: "implausible" };
+  if (planned < 100 || planned > 60000) return { ok: false, reason: "out-of-range" };
+
+  const a1 = `'${RTI_SHEET_TAB}'!D${hr + 1}:E${hr + 1}`;
+  await sheetsRw.spreadsheets.values.update({
+    spreadsheetId: RTI_SHEET_ID,
+    range: a1,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[Math.round(planned), Math.round(actuals)]] },
+  });
+  return { ok: true, cell: a1, planned: Math.round(planned), actuals: Math.round(actuals) };
 }
 
 // ── Slack ──────────────────────────────────────────────────────────────────
@@ -238,8 +547,26 @@ exports.rtiBackfillWatch = onSchedule(
       return;
     }
 
-    const meals = computeRtiBackfills(parseRti(rows));
     const now = Date.now();
+    const nowDate = new Date(now);
+    const plating = withinPlatingHours(nowDate);
+
+    // Ersatz-Kopfzahlen aus App-Daten — nur im Wiege-Fenster herleiten (nach
+    // Feierabend wird nicht mehr gewogen). Ist-Kaskade: Redzone → Browser-Relay
+    // → LinePlaiting.
+    let externalTargets = new Map();
+    let sourcesOk = { redzoneOk: false, relayOk: false, lpOk: false };
+    if (plating && RTI_AUTOFILL_HEADER) {
+      try {
+        const derived = await deriveHeaderTargets(detectWeek(rows), nowDate);
+        externalTargets = derived.targets;
+        sourcesOk = derived;
+      } catch (e) {
+        logger.warn("deriveHeaderTargets fehlgeschlagen", { error: String(e).slice(0, 160) });
+      }
+    }
+
+    const meals = computeRtiBackfills(parseRti(rows), externalTargets);
 
     const prevSnap = await stateDoc().get();
     const seeding = !prevSnap.exists; // erster Lauf → Ist-Zustand merken, nichts posten
@@ -247,21 +574,52 @@ exports.rtiBackfillWatch = onSchedule(
     const prevSubs = prev.subs || {};       // key -> { min, since }
     const prevStaleWarn = prev.staleWarned || {}; // mealCode -> ts
     const prevHeaderWarn = prev.headerWarn || {}; // mealCode -> ts
+    const prevHeaderFilled = prev.headerFilled || {}; // mealCode -> ts (von uns eingetragen)
     // "wo|sub" -> ts: vom Wächter (rtiMarkDone) gesetzt, wenn "done" aus der App kam
     const appMarks = prev.appMarks || {};
 
     const nextSubs = {};
     const nextStaleWarn = {};
     const nextHeaderWarn = {};
+    const nextHeaderFilled = { ...prevHeaderFilled };
     const newOpen = [];
     const nowEntered = [];
     const staleAlerts = [];
     const grownSubs = [];
     const headerAlerts = [];
+    const headerFilledAlerts = [];
+
+    // ── Planned Target / Actuals selbst in den Sheet-Kopf schreiben ──────────
+    // Nur Meals, deren Kopf wir gerade aus App-Daten geschätzt haben (D & E leer,
+    // Zahlen plausibel). fillRtiHeader überschreibt nie einen vorhandenen Wert.
+    if (plating && RTI_AUTOFILL_HEADER) {
+      const toFill = meals.filter(m => m.targetEstimated && m.headerRow != null);
+      if (toFill.length > 0) {
+        let sheetsRw;
+        try { sheetsRw = await sheetsClient(false); } catch (e) {
+          logger.warn("Sheets-RW-Client fehlgeschlagen", { error: String(e).slice(0, 160) });
+        }
+        for (const m of toFill) {
+          if (!sheetsRw) break;
+          try {
+            const r = await fillRtiHeader(sheetsRw, rows, m, m.plannedTarget, m.actuals);
+            if (r.ok) {
+              if (!prevHeaderFilled[m.mealCode]) headerFilledAlerts.push({ meal: m, ...r });
+              nextHeaderFilled[m.mealCode] = now;
+            } else {
+              logger.info("fillRtiHeader übersprungen", { meal: m.mealCode, reason: r.reason });
+            }
+          } catch (e) {
+            logger.error("fillRtiHeader fehlgeschlagen", { meal: m.mealCode, error: e?.message || String(e) });
+          }
+        }
+      }
+    }
 
     for (const meal of meals) {
       if (meal.headerIncomplete) {
-        // Kopf fehlt → 1× melden, dann alle ~3 h erneut
+        if (!plating) continue; // nach Feierabend nicht meckern
+        // Kopf fehlt UND nicht aus App-Daten herleitbar → 1× melden, dann alle ~3 h
         nextHeaderWarn[meal.mealCode] = prevHeaderWarn[meal.mealCode] || now;
         if (now - (prevHeaderWarn[meal.mealCode] || 0) > 3 * 3600 * 1000) {
           nextHeaderWarn[meal.mealCode] = now;
@@ -290,7 +648,7 @@ exports.rtiBackfillWatch = onSchedule(
         }
       }
       // Wiegung läuft, aber Subs ohne Status offen und schon > STALE_MIN alt
-      if (meal.weighingStarted && meal.openSubs.length > 0) {
+      if (plating && meal.weighingStarted && meal.openSubs.length > 0) {
         const oldest = Math.min(...meal.openSubs.map(s => nextSubs[`${s.workOrder}|${s.subRecipeName}`]?.since ?? now));
         const ageMin = (now - oldest) / 60000;
         if (ageMin >= STALE_MIN) {
@@ -307,14 +665,26 @@ exports.rtiBackfillWatch = onSchedule(
     // Slack-Posts — auf dem allerersten Lauf NICHT (sonst Nachricht für jeden
     // aktuell offenen Backfill). Ab dann nur echte Änderungen.
     if (!seeding) {
+    for (const { meal, planned, actuals } of headerFilledAlerts) {
+      await postSlack(`🤖 *${meal.mealCode} ${meal.mealName}* — *Planned Target ${nf(planned)}* / *Actuals ${nf(actuals)}* automatisch in den RTI-Sheet-Kopf eingetragen (Forecast + Redzone-Zählung). Zahlen bitte kurz gegenprüfen.`);
+    }
     for (const { meal, s } of newOpen) {
-      await postSlack(`🔴 *Backfill nötig — ${meal.mealCode} ${meal.mealName}*\n${meal.gap} Portionen fehlen (${nf(meal.actuals)}/${nf(meal.plannedTarget)} platiert)\n${subLine(s)}`);
+      const est = meal.targetEstimated ? `  _(Ziel/Ist geschätzt: ${meal.targetSourceLabel})_` : "";
+      await postSlack(`🔴 *Backfill nötig — ${meal.mealCode} ${meal.mealName}*\n${meal.gap} Portionen fehlen (${nf(meal.actuals)}/${nf(meal.plannedTarget)} platiert)${est}\n${subLine(s)}`);
     }
     for (const { meal, s, prevMin } of grownSubs) {
       await postSlack(`📈 *Backfill-Menge gestiegen — ${meal.mealCode} ${meal.mealName}*\n${subLine(s)}   _(vorher ${nf(prevMin)})_`);
     }
     for (const { meal } of headerAlerts) {
-      await postSlack(`⚠️ *${meal.mealCode} ${meal.mealName}* — es wird schon gewogen, aber *Planned Target / Actuals* fehlen im RTI-Sheet-Kopf. Ohne die zwei Zahlen kann kein Backfill gerechnet werden — bitte oben eintragen.`);
+      const dead = [
+        !sourcesOk.redzoneOk && "Redzone",
+        !sourcesOk.relayOk && "Browser-Relay",
+        !sourcesOk.lpOk && "LinePlaiting",
+      ].filter(Boolean).join(" / ");
+      const why = dead
+        ? `keine Ist-Quelle erreichbar (${dead})`
+        : "kein Forecast-Wert und keine Ist-Zahl für dieses Meal gefunden";
+      await postSlack(`⚠️ *${meal.mealCode} ${meal.mealName}* — es wird schon gewogen, aber *Planned Target / Actuals* fehlen im RTI-Sheet-Kopf und liessen sich nicht automatisch füllen (${why}). Bitte oben eintragen.`);
     }
     for (const { meal, s, viaApp } of nowEntered) {
       const wer = viaApp ? "von *Planer Automatik* (Backfill-Wächter) erledigt" : "im RTI-Sheet als „done“ markiert";
@@ -339,10 +709,16 @@ exports.rtiBackfillWatch = onSchedule(
     const nextAppMarks = {};
     for (const [k, ts] of Object.entries(appMarks)) if (now - ts < 30 * 60 * 1000) nextAppMarks[k] = ts;
 
+    // headerFilled: Einträge > 5 Tage vergessen (KW-Wechsel → nächste Woche darf
+    // dieselbe 4-Ziffer erneut gemeldet werden).
+    const prunedHeaderFilled = {};
+    for (const [k, ts] of Object.entries(nextHeaderFilled)) if (now - ts < 5 * 24 * 3600 * 1000) prunedHeaderFilled[k] = ts;
+
     await stateDoc().set({
       subs: nextSubs,
       staleWarned: nextStaleWarn,
       headerWarn: nextHeaderWarn,
+      headerFilled: prunedHeaderFilled,
       flash,
       appMarks: nextAppMarks,
       updatedAt: new Date().toISOString(),
@@ -350,7 +726,9 @@ exports.rtiBackfillWatch = onSchedule(
     });
 
     logger.info("rtiBackfillWatch", {
-      seeding, meals: meals.length,
+      seeding, plating, meals: meals.length,
+      redzoneOk: sourcesOk.redzoneOk, relayOk: sourcesOk.relayOk, lpOk: sourcesOk.lpOk,
+      externalTargets: externalTargets.size, headerFilled: headerFilledAlerts.length,
       newOpen: newOpen.length, grown: grownSubs.length, entered: nowEntered.length, stale: staleAlerts.length, header: headerAlerts.length,
       slackConfigured: !!process.env.SLACK_WEBHOOK_URL, slackPosts: _slackDebug,
     });
@@ -407,4 +785,8 @@ exports.rtiMarkDone = onRequest({ region: REGION, timeoutSeconds: 30 }, async (r
 });
 
 // für lokale Tests (nicht als Function deployen — siehe index.js-Einbindung)
-module.exports._internal = { parseRti, computeRtiBackfills };
+module.exports._internal = {
+  parseRti, computeRtiBackfills, detectWeek, codeDigits,
+  usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
+  parseCsv, parseWholeNumber, fetchLinePlaitingTotals, deriveHeaderTargets,
+};

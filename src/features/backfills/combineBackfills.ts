@@ -9,7 +9,7 @@ import type { WmsSkuInfo } from "../../lib/wmsSkuEnrichment";
 import { skuKey } from "../../lib/wmsSkuEnrichment";
 import { codeDigits } from "../../lib/helpers";
 import type { BackfillAlert, BackfillPriority, CombinedBackfillNeed } from "./backfillTypes";
-import { computeRtiBackfills, MIN_SUB_SHORTFALL, type RtiSubShortfall } from "./rtiBackfillCalculator";
+import { computeRtiBackfills, MIN_SUB_SHORTFALL, type RtiExternalTarget, type RtiSubShortfall } from "./rtiBackfillCalculator";
 
 // Backfill-Menge zählt erst ab dieser Schwelle als echter Bedarf (Rauschfilter
 // gegen minimale Rundungs-/Zählabweichungen).
@@ -57,7 +57,7 @@ function aggregateKitchenByMeal(kitchenBackfill: BackfillNeed[]): Map<string, Ki
   return byMeal;
 }
 
-interface PlatingAgg {
+export interface PlatingAgg {
   code: string;
   meal: string;
   plannedPortions: number;    // Σ Planned, nur Di–Do-Zeilen (Detail-Anzeige)
@@ -78,7 +78,7 @@ const DAY_RANK: Record<string, number> = {
   Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6, Sunday: 7,
 };
 
-function aggregatePlatingByMeal(linePlaiting: LinePlaitingData | null): Map<string, PlatingAgg> {
+export function aggregatePlatingByMeal(linePlaiting: LinePlaitingData | null): Map<string, PlatingAgg> {
   const byMeal = new Map<string, PlatingAgg>();
   if (!linePlaiting) return byMeal;
 
@@ -182,13 +182,19 @@ export interface RtiBackfillAgg {
   hasOpenSubs: boolean;
   candidateSubs: string[];
   isBackfill: boolean;
+  // true = Planned Target / Actuals kamen aus App-Daten, nicht aus dem Sheet-Kopf.
+  targetEstimated: boolean;
+  targetSourceLabel: string;
 }
 
-function aggregateRtiBackfillByMeal(rti: RtiData | null | undefined): Map<string, RtiBackfillAgg> {
+function aggregateRtiBackfillByMeal(
+  rti: RtiData | null | undefined,
+  externalTargets?: Map<string, RtiExternalTarget>,
+): Map<string, RtiBackfillAgg> {
   const byMeal = new Map<string, RtiBackfillAgg>();
-  for (const meal of computeRtiBackfills(rti)) {
-    // Kopf unvollständig → keine Zahl, kein Eintrag in der kombinierten Liste
-    // (der Wächter zeigt den Hinweis separat, Slack meldet es getrennt).
+  for (const meal of computeRtiBackfills(rti, externalTargets)) {
+    // Kopf unvollständig UND nicht aus App-Daten herleitbar → keine Zahl, kein
+    // Eintrag in der kombinierten Liste (der Wächter zeigt den Hinweis separat).
     if (meal.headerIncomplete) continue;
     const key = codeKey(meal.mealCode);
     const hasOpenSubs = meal.openSubs.length > 0;
@@ -206,6 +212,8 @@ function aggregateRtiBackfillByMeal(rti: RtiData | null | undefined): Map<string
       hasOpenSubs,
       candidateSubs: meal.candidateSubNames,
       isBackfill: hasOpenSubs && meal.recommendedMin >= MIN_RTI_SHORTFALL,
+      targetEstimated: meal.targetEstimated,
+      targetSourceLabel: meal.targetSourceLabel,
     });
   }
   return byMeal;
@@ -303,11 +311,12 @@ export function combineBackfillSignals(
   redzoneRuns?: PlatingRunDisplay[],
   wmsHoldingRows?: StoredRow[],
   skuInfoIndex?: Map<string, WmsSkuInfo>,
+  externalTargets?: Map<string, RtiExternalTarget>,
 ): CombinedBackfillNeed[] {
   const kitchenByMeal = aggregateKitchenByMeal(kitchenBackfill);
   const platingByMeal = aggregatePlatingByMeal(linePlaiting);
   const rtiHoldingByMeal = aggregateRtiHoldingByMeal(rti);
-  const rtiBackfillByMeal = aggregateRtiBackfillByMeal(rti);
+  const rtiBackfillByMeal = aggregateRtiBackfillByMeal(rti, externalTargets);
   const redzoneByMeal = aggregateRedzoneByMeal(redzoneRuns);
   const wmsHoldingByMeal = aggregateWmsHoldingByMeal(wmsHoldingRows, skuInfoIndex);
 
@@ -383,6 +392,8 @@ export function combineBackfillSignals(
       rtiKitchenDone: rb?.kitchenDone ?? false,
       rtiHasOpenSubs: rb?.hasOpenSubs ?? false,
       rtiVetoed: rb?.vetoed ?? false,
+      rtiTargetEstimated: rb?.targetEstimated ?? false,
+      rtiTargetSourceLabel: rb?.targetSourceLabel ?? "",
       rtiBackfillCandidateSubs: rb?.candidateSubs ?? [],
       rtiSubShortfalls: rb?.subShortfalls ?? [],
       liveWmsHoldingKg: wmsHoldingByMeal.get(key) ?? null,
@@ -439,13 +450,17 @@ export function detectCrossSourceAlerts(combined: CombinedBackfillNeed[]): Backf
       const madeStr = c.rtiActuals != null
         ? ` — RTI: ${nf(c.rtiActuals)} von ${nf(c.rtiPlannedTarget ?? 0)} Stk platiert`
         : "";
+      // Kopfzahlen kamen aus App-Daten, nicht aus dem Sheet → als Schätzung kennzeichnen.
+      const estStr = c.rtiTargetEstimated
+        ? ` _(Ziel/Ist aus App-Daten geschätzt: ${c.rtiTargetSourceLabel} — im RTI-Sheet-Kopf nachtragen)_`
+        : "";
       alerts.push({
         id: alertId(),
         severity: ratio > 0.15 ? "critical" : "warning",
         recipeCode: c.recipeCode,
         recipeName: c.recipeName,
         title: `Backfill nötig: ${c.recipeName}`,
-        message: `${subList} nachproduzieren${madeStr}.`,
+        message: `${subList} nachproduzieren${madeStr}.${estStr}`,
       });
     }
 

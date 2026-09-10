@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeRtiBackfills, MIN_SUB_SHORTFALL } from "../features/backfills/rtiBackfillCalculator";
+import { computeRtiBackfills, MIN_SUB_SHORTFALL, type RtiExternalTarget } from "../features/backfills/rtiBackfillCalculator";
 import type { RtiData, RtiMealBlock, RtiSubRecipeEntry } from "../features/gsheet-monitor/gsheetTypes";
 
 function sub(overrides: Partial<RtiSubRecipeEntry>): RtiSubRecipeEntry {
@@ -154,6 +154,91 @@ describe("computeRtiBackfills — nichts zu tun", () => {
     });
     expect(result).toHaveLength(1);
     expect(result[0].recommendedMin).toBe(300);
+  });
+});
+
+describe("computeRtiBackfills — Kopf aus App-Daten ergänzt (externalTargets)", () => {
+  const targets = (t: Partial<RtiExternalTarget>): Map<string, RtiExternalTarget> =>
+    new Map([["0001", { plannedTarget: 3000, actuals: 2600, source: "Forecast + Redzone", ...t }]]);
+
+  // Bottleneck-Sub kam leer zurück (weighedKg 0), ein anderes Sub wurde gewogen
+  // → someWeighed=true, aber der Engpass-Sub deckt nichts aus dem Holding.
+  const emptyBottleneck = (name: string) => [
+    sub({ subRecipeName: "Beilage", weighedKg: 40, gramPerMeal: 100 }),
+    sub({ subRecipeName: name, weighedKg: 0, gramPerMeal: 100 }),
+  ];
+
+  it("Planned Target fehlt → aus externalTargets, targetEstimated=true, gap gerechnet", () => {
+    const [m] = computeRtiBackfills(rti({
+      plannedTarget: 0, actuals: 2600,
+      subRecipes: emptyBottleneck("Mash"),
+    }), targets({ plannedTarget: 3000 }));
+    expect(m.targetEstimated).toBe(true);
+    expect(m.targetSource).toBe("app");
+    expect(m.targetSourceLabel).toBe("Forecast + Redzone");
+    expect(m.headerIncomplete).toBe(false);
+    expect(m.plannedTarget).toBe(3000);
+    expect(m.actuals).toBe(2600);
+    expect(m.gap).toBe(400);
+    const mash = m.openSubs.find(s => s.subRecipeName === "Mash")!;
+    expect(mash.minimumNeed).toBe(400);
+    expect(mash.basis).toBe("gap-only");
+  });
+
+  it("Actuals fehlt → aus externalTargets, Sheet-Planned bleibt", () => {
+    const [m] = computeRtiBackfills(rti({
+      plannedTarget: 3200, actuals: 0,
+      subRecipes: emptyBottleneck("Beef"),
+    }), targets({ actuals: 2900 }));
+    expect(m.targetEstimated).toBe(true);
+    expect(m.plannedTarget).toBe(3200);
+    expect(m.actuals).toBe(2900);
+    expect(m.gap).toBe(300);
+  });
+
+  it("beide fehlen → beide aus externalTargets", () => {
+    const [m] = computeRtiBackfills(rti({
+      plannedTarget: 0, actuals: 0,
+      subRecipes: emptyBottleneck("Rice"),
+    }), targets({ plannedTarget: 5000, actuals: 4000 }));
+    expect(m.targetEstimated).toBe(true);
+    expect(m.gap).toBe(1000);
+  });
+
+  it("noch nichts zurückgewogen → KEINE Substitution (sonst floodet die Liste)", () => {
+    const res = computeRtiBackfills(rti({
+      plannedTarget: 0, actuals: 0,
+      subRecipes: [sub({ subRecipeName: "Mash", weighedKg: 0, status: "open" })],
+    }), targets({ plannedTarget: 3000, actuals: 100 }));
+    expect(res).toHaveLength(0);
+  });
+
+  it("unplausibler externer Wert (Ist ≫ Ziel) → verworfen, wieder headerIncomplete", () => {
+    const [m] = computeRtiBackfills(rti({
+      plannedTarget: 0, actuals: 0,
+      subRecipes: emptyBottleneck("X"),
+    }), targets({ plannedTarget: 3000, actuals: 3600 }));
+    expect(m.headerIncomplete).toBe(true);
+    expect(m.targetEstimated).toBe(false);
+  });
+
+  it("Sheet-Kopf vollständig → externalTargets werden ignoriert", () => {
+    const [m] = computeRtiBackfills(rti({
+      plannedTarget: 3763, actuals: 2848,
+      subRecipes: [sub({ subRecipeName: "Mash", minimumNeed: -915, status: "open" })],
+    }), targets({ plannedTarget: 9999, actuals: 1 }));
+    expect(m.targetEstimated).toBe(false);
+    expect(m.plannedTarget).toBe(3763);
+    expect(m.gap).toBe(915);
+  });
+
+  it("kein externalTargets-Argument → Verhalten unverändert (Nag)", () => {
+    const [m] = computeRtiBackfills(rti({
+      plannedTarget: 0, actuals: 0,
+      subRecipes: [sub({ subRecipeName: "Sauce", weighedKg: 12.5, status: "open" })],
+    }));
+    expect(m.headerIncomplete).toBe(true);
+    expect(m.targetEstimated).toBe(false);
   });
 });
 
