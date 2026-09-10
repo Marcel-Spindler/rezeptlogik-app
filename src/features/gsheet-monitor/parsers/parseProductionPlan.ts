@@ -102,8 +102,26 @@ function parseHeaderDayLayout(headerRow: string[]): DayLayout {
     dayColumns,
     shiftColumns,
     readyStart,
-    minNeedsStart: readyStart + 4, // 3 Ready-Spalten + 1 Leerspalte
+    // Der Min-Needs-Block trägt IMMER die vollen Wochentagsnamen als Kopf
+    // ("Thursday"/"Friday"/"Saturday"), der Ready-Block die Abkürzungen
+    // ("Thu"/"Fri"/"Sat"). Zwischen W36 und W37 wurde im Einschicht-Layout ein
+    // zusätzlicher "Thu/Fri/Sat"-Split-Block + "Total"-Spalte eingeschoben und
+    // hat Min Needs von Spalte 34 auf 38 geschoben — der feste Offset
+    // (readyStart + 4) traf danach den Split-Block statt Min Needs. Deshalb den
+    // Block über den Header suchen statt über einen festen Abstand.
+    minNeedsStart: findFullWeekdayBlockStart(headerRow, readyStart) ?? readyStart + 4,
   };
+}
+
+// Erste Spalte eines zusammenhängenden "Thursday"/"Friday"/"Saturday"-Kopf-Trios
+// ab Spalte `from`. Die Tages-Matrix-Header ("Thursday 03.09.") matchen NICHT,
+// weil hier auf exakte Gleichheit (getrimmt, case-insensitiv) geprüft wird.
+function findFullWeekdayBlockStart(headerRow: string[], from: number): number | null {
+  const eq = (raw: string | undefined, name: string) => (raw ?? "").trim().toLowerCase() === name;
+  for (let c = Math.max(0, from); c + 2 < headerRow.length; c++) {
+    if (eq(headerRow[c], "thursday") && eq(headerRow[c + 1], "friday") && eq(headerRow[c + 2], "saturday")) return c;
+  }
+  return null;
 }
 
 // Zahlen im Sheet mischen Tausender-Kommas ("31,851") und reine Ziffern

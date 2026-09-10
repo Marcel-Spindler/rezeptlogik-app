@@ -9,6 +9,7 @@ import { parsePreblast } from "./parsers/parsePreblast";
 import { parseEt } from "./parsers/parseEt";
 import { parseLinePlaiting } from "./parsers/parseLinePlaiting";
 import { parseProductionPlan } from "./parsers/parseProductionPlan";
+import { parseVolumeOverview, type VolumeOverviewData } from "./parsers/parseVolumeOverview";
 import { parseForecast } from "./parsers/parseForecast";
 import { parseRecipeProfil } from "./parsers/parseRecipeProfil";
 import { parseShortsTracker } from "./parsers/parseShortsTracker";
@@ -209,6 +210,25 @@ export function useLinePlaitingMonitor(
   }, [activeTab]);
   const state = useConfiguredGSheetMonitor<LinePlaitingData>(config, parseLinePlaiting, "Keine KW für LinePlaiting bekannt");
   return { ...state, activeTab };
+}
+
+// ─── Volume Overview: Minimum-Needs-Tabelle der F_VE Transparency Plan ────────
+// Tab "Volume Overview" (gid 1602943717) im Transparency-Sheet. Gesamt-Block
+// oben = alle Märkte zusammengerechnet: Forecast/Tag, schon plaitiert
+// ("Production"), Lücke/Checkpoint ("Actual Target" Do/Fr/Sa). Anonym per
+// gviz-CSV lesbar wie LinePlaiting — kein Service Account / functions nötig.
+const TRANSPARENCY_SHEET_ID = "1BEaL3ggpHGS5TbncUM5OLMUbVgRx-ADKOtRr_Sc8xXY";
+const VOLUME_OVERVIEW_GID = "1602943717";
+
+export function useVolumeOverviewMonitor(): GSheetMonitorState<VolumeOverviewData> {
+  const config = useMemo<GSheetConfig>(() => ({
+    id: TRANSPARENCY_SHEET_ID,
+    name: "Volume Overview (Minimum Needs)",
+    sheetTab: `gid=${VOLUME_OVERVIEW_GID}`,
+    pollIntervalMs: 60_000,
+    parser: "volume-overview",
+  }), []);
+  return useConfiguredGSheetMonitor<VolumeOverviewData>(config, parseVolumeOverview, "Volume Overview nicht erreichbar");
 }
 
 // ─── Production Plan: eigenes Sheet, Tab (gid) wechselt jede KW ────────────

@@ -1,15 +1,17 @@
 // Postblast Live View — Echtzeit-Dashboard: GSheet-Wiegungen vs. geplante Work Orders.
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import type { DataBundle, WorkOrderEntry } from "../../core/types";
-import type { PostblastData, ProductionPlanRow } from "./gsheetTypes";
+import type { PostblastData } from "./gsheetTypes";
 import {
-  useEtMonitor, usePostblastMonitor, usePreblastMonitor, useProductionPlanMonitor, useProductionPlanWeeks,
-  useRtiMonitor, useShortsTrackerMonitor,
+  useEtMonitor, usePostblastMonitor, usePreblastMonitor,
+  useRtiMonitor, useShortsTrackerMonitor, useVolumeOverviewMonitor,
 } from "./useGSheetMonitor";
 import { matchPostblastToWorkOrders, type BackfillNeed, type MealProgress, type WoMatchedStatus } from "./postblastMatch";
+import { netPlateable, platedForMeal } from "./plateableNet";
+import { useCombinedPlaited } from "./useCombinedPlaited";
+import { MinimumNeedsPanel, VolumeSummary } from "./MinimumNeedsPanel";
+import { mealReadiness } from "./mealProgress";
 import { findEquipmentForSubRecipe } from "./backfillGenerator";
-import { analyzeProduction, type AlertSeverity } from "./productionAgent";
-import { respondToChat, type ChatMessage, type ChatContext } from "./postblastChat";
 import { correlateShortages, describeShortageImpact } from "./shortageAlerts";
 import { fmt, fmtMass } from "../whatif/whatIfFormat";
 import { currentHfWeek } from "../../lib/hfWeek";
@@ -18,10 +20,8 @@ import { fetchWmsWorkorderCache, filterRowsToWeekWindow, wmsWorkorderRowToEntry 
 import { parseKetCsv } from "../ket-plan/ketLogic";
 import type { KetRow } from "../ket-plan/ketTypes";
 import { recipeWeightKey, type RecipeWeightLookup } from "./parsers/parseExportRecipes";
-import { useBackfillsOptional } from "../backfills/BackfillsContext";
 import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
 import { useRedzoneOptional, type RedzoneState } from "../redzone-live/RedzoneContext";
-import { buildPlatedByCodeMap } from "../redzone-live/redzoneHelpers";
 
 // ─── Typen ───────────────────────────────────────────────────────────────────
 
@@ -101,13 +101,6 @@ function PriorityBadge({ priority }: { priority: BackfillNeed["priority"] }) {
     "bg-emerald-100 text-emerald-700";
   const label = priority === "critical" ? "⚠ KRITISCH" : priority === "behind" ? "HINTER PLAN" : "OK";
   return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${cls}`}>{label}</span>;
-}
-
-function AlertIcon({ severity }: { severity: AlertSeverity }) {
-  if (severity === "critical") return <span className="text-red-600 text-base leading-none">●</span>;
-  if (severity === "warning") return <span className="text-amber-500 text-base leading-none">●</span>;
-  if (severity === "info") return <span className="text-sky-500 text-base leading-none">●</span>;
-  return <span className="text-emerald-500 text-base leading-none">●</span>;
 }
 
 function StatusBadge({ wo }: { wo: WoMatchedStatus }) {
@@ -323,11 +316,16 @@ function PlatingNowPanel({
   recipeWeights,
   wmsRows,
   redzone,
+  plaitedByCode,
 }: {
   meals: MealProgress[];
   recipeWeights: RecipeWeightLookup | null;
   wmsRows?: WorkOrderEntry[] | null;
   redzone?: RedzoneState | null;
+  // Schon plaitierte Portionen je 4-Ziffer-Meal-Identität (LinePlaiting ⊕
+  // Redzone). Wird von der Brutto-Menge abgezogen — sonst zeigt "bereit" Runs
+  // an, die längst raus sind (siehe plateableNet.ts / useCombinedPlaited.ts).
+  plaitedByCode?: Map<string, number>;
 }) {
   const [showAllReady, setShowAllReady] = useState(false);
   const [showAllChiller, setShowAllChiller] = useState(false);
@@ -342,13 +340,15 @@ function PlatingNowPanel({
 
   const dayName = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
 
-  type ReadyEntry = { meal: MealProgress; maxMeals: number; bottleneckPct: number; bottleneckSubRecipe: string | null };
+  type ReadyEntry = { meal: MealProgress; maxMeals: number; platedMeals: number; exact: boolean; bottleneckPct: number; bottleneckSubRecipe: string | null };
   type ChillerEntry = { meal: MealProgress; kgInChiller: number; maxAfterChiller: number };
+  type PlatedOutEntry = { meal: MealProgress; platedMeals: number };
 
   const readyList: ReadyEntry[] = [];
   const chillerList: ChillerEntry[] = [];
   const runningMeals: MealProgress[] = [];
   const criticalMeals: MealProgress[] = [];
+  const platedOutList: PlatedOutEntry[] = [];
 
   for (const meal of meals) {
     if (meal.totalWOs === 0) continue;
@@ -357,11 +357,27 @@ function PlatingNowPanel({
     const hasHolding = wos.some(w => w.platingHoldingKg > 0);
     const hasChillerWo = wos.some(w => w.awaitingPostBlast);
 
-    if (!cap.hasBlockingZeroWo && (cap.maxMeals > 0 || hasHolding)) {
-      readyList.push({ meal, maxMeals: cap.maxMeals, bottleneckPct: cap.bottleneckPct, bottleneckSubRecipe: cap.bottleneckSubRecipe });
+    // Brutto-platierbar (exakt aus Gramm/Portion, sonst Planverhältnis) minus
+    // die schon platierten Portionen aus Redzone — nur der Rest ist wirklich
+    // "bereit".
+    const grossExact = computeMaxPlateable(meal, recipeWeights);
+    const grossMeals = grossExact?.meals ?? cap.maxMeals;
+    const net = netPlateable(meal, grossMeals, platedForMeal(plaitedByCode, meal.recipeCode));
+
+    if (!cap.hasBlockingZeroWo && (net.netMeals > 0 || hasHolding)) {
+      readyList.push({
+        meal,
+        maxMeals: net.netMeals,
+        platedMeals: net.platedMeals,
+        exact: grossExact?.exact ?? false,
+        bottleneckPct: cap.bottleneckPct,
+        bottleneckSubRecipe: grossExact?.bottleneckSubRecipe ?? cap.bottleneckSubRecipe,
+      });
     } else if (hasChillerWo) {
       const kgInChiller = wos.filter(w => w.awaitingPostBlast).reduce((s, w) => s + w.preBlastKg, 0);
-      chillerList.push({ meal, kgInChiller, maxAfterChiller: cap.maxMeals });
+      chillerList.push({ meal, kgInChiller, maxAfterChiller: net.netMeals });
+    } else if (net.fullyPlated) {
+      platedOutList.push({ meal, platedMeals: net.platedMeals });
     } else if (cap.hasBlockingZeroWo || wos.some(w => w.isCritical && w.hasPlan)) {
       criticalMeals.push(meal);
     } else {
@@ -370,6 +386,7 @@ function PlatingNowPanel({
   }
 
   readyList.sort((a, b) => b.maxMeals - a.maxMeals);
+  platedOutList.sort((a, b) => b.platedMeals - a.platedMeals);
   chillerList.sort((a, b) => b.meal.progressPct - a.meal.progressPct);
   runningMeals.sort((a, b) => a.progressPct - b.progressPct);
 
@@ -434,6 +451,14 @@ function PlatingNowPanel({
               🔵 {totalInProd} in Produktion
             </button>
           )}
+          {platedOutList.length > 0 && (
+            <span
+              title="Ganze Wochenmenge dieses Meals ist ist schon komplett plaitiert — kein Rest mehr"
+              className="text-[11px] px-3 py-1.5 rounded-full bg-slate-100 text-slate-500 font-semibold ring-1 ring-slate-200 select-none"
+            >
+              ✓ {platedOutList.length} komplett platiert
+            </span>
+          )}
         </div>
       </div>
 
@@ -447,16 +472,15 @@ function PlatingNowPanel({
             <div className="text-[10px] text-slate-300 italic">Noch kein Meal vollständig produziert</div>
           ) : (
             <div className="space-y-1.5">
-              {(showAllReady ? readyList : readyList.slice(0, MAX)).map(({ meal: m, bottleneckPct }) => {
+              {(showAllReady ? readyList : readyList.slice(0, MAX)).map(({ meal: m, bottleneckPct, maxMeals, platedMeals, exact, bottleneckSubRecipe }) => {
                 const holdKg = m.workOrders.reduce((s, w) => s + w.platingHoldingKg, 0);
-                const cap = computeMaxPlateable(m, recipeWeights);
                 return (
                   <div key={m.recipeCode} className={`rounded-xl px-3 py-2.5 ring-1 ${redzone?.isPlatingNow(m.recipeCode) ? "bg-red-50 ring-red-200" : "bg-emerald-50 ring-emerald-200"}`}>
                     <div className="flex items-baseline justify-between gap-1">
                       <span className="font-mono text-[11px] font-bold text-slate-900">{m.recipeCode}</span>
-                      {cap != null ? (
+                      {maxMeals > 0 ? (
                         <span className="text-[11px] font-bold font-mono text-emerald-700">
-                          {cap.exact ? "" : "~"}{cap.meals.toLocaleString("de-DE")} Meals
+                          {exact ? "" : "~"}{maxMeals.toLocaleString("de-DE")} Meals
                         </span>
                       ) : (
                         <span className="text-[11px] font-bold font-mono text-slate-500">{Math.round(bottleneckPct)}%</span>
@@ -474,12 +498,17 @@ function PlatingNowPanel({
                       <span>{m.totalActualKg.toFixed(0)} / {m.totalPlannedKg > 0 ? m.totalPlannedKg.toFixed(0) : "—"} kg</span>
                       <span>{m.completedWOs}/{m.totalWOs} WOs</span>
                     </div>
-                    {cap?.bottleneckSubRecipe && (
-                      <div className="text-[9px] text-amber-600 font-medium mt-0.5 truncate">
-                        ⚡ Engpass: {cap.bottleneckSubRecipe}
+                    {platedMeals > 0 && (
+                      <div className="text-[9px] text-slate-500 font-medium mt-0.5">
+                        {platedMeals.toLocaleString("de-DE")} schon plaitiert abgezogen
                       </div>
                     )}
-                    {!cap?.exact && cap != null && (
+                    {bottleneckSubRecipe && (
+                      <div className="text-[9px] text-amber-600 font-medium mt-0.5 truncate">
+                        ⚡ Engpass: {bottleneckSubRecipe}
+                      </div>
+                    )}
+                    {!exact && maxMeals > 0 && (
                       <div className="text-[9px] text-amber-600 mt-0.5">≈ Schätzung — KET-Plan mit aktuellen WOs neu exportieren</div>
                     )}
                     {holdKg > 0 && (
@@ -496,6 +525,24 @@ function PlatingNowPanel({
                   {showAllReady ? "▲ Weniger anzeigen" : `▼ +${readyList.length - MAX} weitere anzeigen`}
                 </button>
               )}
+            </div>
+          )}
+          {platedOutList.length > 0 && (
+            <div className="mt-3 pt-2 border-t border-slate-100">
+              <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400 mb-1">
+                ✓ Komplett platiert ({platedOutList.length})
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {platedOutList.map(({ meal: m, platedMeals }) => (
+                  <span
+                    key={m.recipeCode}
+                    title={`${m.recipeName} — ${platedMeals.toLocaleString("de-DE")} Portionen plaitiert — gesamte produzierte Menge raus`}
+                    className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-500"
+                  >
+                    {m.recipeCode}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -651,197 +698,6 @@ function PlatingNowPanel({
   );
 }
 
-// ─── Minimum-Needs-Panel ─────────────────────────────────────────────────────
-
-const MIN_NEEDS_DAYS = [
-  { key: "thu" as const, label: "Do", fullLabel: "Donnerstag" },
-  { key: "fri" as const, label: "Fr", fullLabel: "Freitag" },
-  { key: "sat" as const, label: "Sa", fullLabel: "Samstag" },
-];
-
-interface MinNeedsMealStatus {
-  code: string;
-  recipeName: string;
-  minNeeds: number | null;
-  readyTarget: number | null;
-  met: boolean;
-}
-
-function todayCheckpoint(): "thu" | "fri" | "sat" {
-  const d = new Date().getDay();
-  if (d === 5) return "fri";
-  if (d === 6) return "sat";
-  return "thu";
-}
-
-function MinimumNeedsPanel({
-  planRows,
-  redzone,
-}: {
-  planRows: ProductionPlanRow[];
-  redzone?: RedzoneState | null;
-}) {
-  const [expandedDay, setExpandedDay] = useState<"thu" | "fri" | "sat" | null>(() => todayCheckpoint());
-
-  // Platierte Portionen je Rezept-Code aus abgeschlossenen + laufenden Redzone-Runs.
-  // Auf platingDone/platingNow statt dem ganzen redzone-Objekt hören: das
-  // Redzone-Context-`value` wird jede Sekunde (Countdown-Timer) neu erzeugt,
-  // platingDone/platingNow selbst ändern sich nur alle 60s (Poll).
-  const platingDone = redzone?.platingDone;
-  const platingNow = redzone?.platingNow;
-  const platedByCode = useMemo(
-    () => buildPlatedByCodeMap(redzone),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [platingDone, platingNow],
-  );
-
-  const byDay = useMemo(() => {
-    const result = new Map<"thu" | "fri" | "sat", MinNeedsMealStatus[]>();
-    for (const { key } of MIN_NEEDS_DAYS) {
-      const statuses: MinNeedsMealStatus[] = [];
-      for (const row of planRows) {
-        const minNeeds = row.minNeedsByDay[key];
-        const readyTarget = row.readyByDay[key];
-        if (minNeeds == null && readyTarget == null) continue;
-        statuses.push({
-          code: row.code,
-          recipeName: row.recipeName,
-          minNeeds,
-          readyTarget,
-          met: minNeeds != null ? minNeeds <= 0 : readyTarget != null,
-        });
-      }
-      // Unerfüllte (größter Bedarf) zuerst, dann Überschüsse
-      statuses.sort((a, b) => (b.minNeeds ?? 0) - (a.minNeeds ?? 0));
-      result.set(key, statuses);
-    }
-    return result;
-  }, [planRows]);
-
-  const hasAnyData = [...byDay.values()].some(list => list.length > 0);
-  if (!hasAnyData) return null;
-
-  return (
-    <div className="card p-5 shadow-md border-0">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <div>
-          <div className="font-bold text-slate-900 text-sm">Minimum Needs</div>
-          <div className="text-[10px] text-slate-400">
-            Plan-Ziele Do · Fr · Sa · Negativ = Überschuss ✓ · Positiv = noch fehlend ✗
-          </div>
-        </div>
-        <a
-          href="https://docs.google.com/spreadsheets/d/13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U/edit?gid=591593997#gid=591593997"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-[11px] px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition font-medium ring-1 ring-slate-200"
-        >
-          ↗ Kitchen Priority Sheet
-        </a>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        {MIN_NEEDS_DAYS.map(({ key, label, fullLabel }) => {
-          const statuses = byDay.get(key) ?? [];
-          if (statuses.length === 0) return (
-            <div key={key} className="rounded-xl p-4 bg-slate-50 ring-1 ring-slate-200 text-center">
-              <div className="text-xs font-bold text-slate-400 uppercase">{label}</div>
-              <div className="text-[10px] text-slate-300 mt-1">Kein Plan</div>
-            </div>
-          );
-
-          const metCount = statuses.filter(s => s.met).length;
-          const totalCount = statuses.length;
-          const allMet = metCount === totalCount;
-          const noneMet = metCount === 0;
-          const isOpen = expandedDay === key;
-
-          const ringCls = allMet ? "ring-emerald-200" : noneMet ? "ring-red-200" : "ring-amber-200";
-          const bgCls = allMet ? "bg-emerald-50" : noneMet ? "bg-red-50" : "bg-amber-50";
-          const textCls = allMet ? "text-emerald-700" : noneMet ? "text-red-700" : "text-amber-700";
-          const barCls = allMet ? "bg-emerald-500" : noneMet ? "bg-red-500" : "bg-amber-500";
-          const badgeCls = allMet
-            ? "bg-emerald-100 text-emerald-700"
-            : noneMet ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700";
-
-          return (
-            <div key={key} className={`rounded-xl overflow-hidden ring-1 ${ringCls} ${bgCls}`}>
-              <button
-                onClick={() => setExpandedDay(e => e === key ? null : key)}
-                className="w-full p-4 text-left"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className={`text-xs font-bold uppercase tracking-wide ${textCls}`}>
-                    {label} · {fullLabel}
-                  </span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeCls}`}>
-                    {allMet ? "✓ ALLE OK" : `${metCount}/${totalCount} OK`}
-                  </span>
-                </div>
-                <div className={`text-2xl font-bold font-mono ${textCls}`}>
-                  {metCount}
-                  <span className="text-sm font-normal opacity-50">/{totalCount}</span>
-                </div>
-                <div className={`text-[10px] mt-0.5 mb-2 ${textCls}`}>
-                  {allMet ? "Alle Minimum Needs erfüllt ✓" : `${totalCount - metCount} unter Minimum`}
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-white/60 overflow-hidden">
-                  <div
-                    className={`h-1.5 rounded-full transition-all duration-700 ${barCls}`}
-                    style={{ width: `${totalCount > 0 ? (metCount / totalCount) * 100 : 0}%` }}
-                  />
-                </div>
-                <div className={`text-[9px] mt-1.5 ${textCls} opacity-70`}>
-                  {isOpen ? "▲ Zuklappen" : "▼ Details anzeigen"}
-                </div>
-              </button>
-
-              {isOpen && (
-                <div className="px-4 pb-4 space-y-1 border-t border-white/40 pt-2 max-h-72 overflow-y-auto">
-                  {statuses.map(s => {
-                    const plated = platedByCode.get(s.code);
-                    const isActivePlating = redzone?.isPlatingNow(s.code) ?? false;
-                    return (
-                      <div key={s.code} className="text-[10px] space-y-0.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`shrink-0 font-bold ${s.met ? "text-emerald-600" : "text-red-600"}`}>
-                            {s.met ? "✓" : "✗"}
-                          </span>
-                          <span className="font-mono font-bold text-slate-900 shrink-0">{s.code}</span>
-                          <span className="text-slate-500 truncate flex-1 min-w-0 text-[9px]">{s.recipeName}</span>
-                          {s.minNeeds != null && (
-                            <span className={`font-mono font-bold shrink-0 tabular-nums ${
-                              s.minNeeds <= 0 ? "text-emerald-600" : "text-red-600"
-                            }`}>
-                              {s.minNeeds <= 0
-                                ? `+${Math.abs(Math.round(s.minNeeds)).toLocaleString("de-DE")}`
-                                : `−${Math.round(s.minNeeds).toLocaleString("de-DE")}`}
-                            </span>
-                          )}
-                        </div>
-                        {(plated != null || isActivePlating) && (
-                          <div className="flex items-center gap-1 ml-4">
-                            {isActivePlating && (
-                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-                            )}
-                            <span className="text-[9px] text-slate-400">
-                              Redzone: {plated != null ? `${plated.toLocaleString("de-DE")} platiert` : "aktiv"}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ─── Redzone-Monitor-Panel ───────────────────────────────────────────────────
 
 function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
@@ -884,56 +740,57 @@ function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
     : "—";
 
   const hasAnyActivity = activeRuns.length > 0 || cookingNow.length > 0 || doneTotals.length > 0;
+  const maxDone = doneTotals.reduce((m, d) => Math.max(m, d.total), 0);
+  const doneSum = doneTotals.reduce((s, d) => s + d.total, 0);
+  const active = activeLineCount > 0;
 
   return (
-    <div className={`card shadow-md border-0 overflow-hidden transition-all ${
-      activeLineCount > 0 ? "ring-1 ring-red-200" : "ring-1 ring-slate-200"
-    }`}>
+    <div className={`card border-0 overflow-hidden transition-all ${active ? "shadow-lg ring-1 ring-rose-200" : "shadow-md ring-1 ring-slate-200"}`}>
       {/* Header */}
       <button
         onClick={() => setExpanded(e => !e)}
-        className={`w-full px-5 py-3.5 flex items-center justify-between gap-3 text-left ${
-          activeLineCount > 0 ? "bg-red-50" : "bg-slate-50"
+        className={`w-full px-5 py-4 flex items-center justify-between gap-3 text-left transition-colors ${
+          active ? "bg-gradient-to-r from-rose-600 to-red-600 text-white" : "bg-slate-50"
         }`}
       >
         <div className="flex items-center gap-3 flex-wrap min-w-0">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className={`w-2 h-2 rounded-full ${
-              loading ? "bg-slate-400" :
-              error ? "bg-amber-500" :
-              activeLineCount > 0 ? "bg-red-500 animate-pulse" : "bg-emerald-500"
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={`w-2.5 h-2.5 rounded-full ${
+              loading ? "bg-white/50" :
+              error ? "bg-amber-300" :
+              active ? "bg-white animate-pulse" : "bg-emerald-500"
             }`} />
-            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">Redzone Live · Plating</span>
+            <span className={`text-xs font-black uppercase tracking-wider ${active ? "text-white" : "text-slate-800"}`}>Redzone Live · Plating</span>
           </div>
-          {activeLineCount > 0 && (
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 ring-1 ring-red-200 font-bold shrink-0">
-              {activeLineCount} {activeLineCount === 1 ? "Linie" : "Linien"} aktiv
+          {active && (
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-white/25 text-white ring-1 ring-white/30 font-bold shrink-0">
+              {activeLineCount} {activeLineCount === 1 ? "Linie" : "Linien"} platieren gerade
             </span>
           )}
           {cookingNow.length > 0 && (
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-700 ring-1 ring-orange-200 font-bold shrink-0">
+            <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-bold shrink-0 ${active ? "bg-white/20 text-white ring-1 ring-white/30" : "bg-orange-100 text-orange-700 ring-1 ring-orange-200"}`}>
               🔥 {cookingNow.length} Ofen/Braiser
             </span>
           )}
           {totalPlated > 0 && (
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium shrink-0">
-              {totalPlated.toLocaleString("de-DE")} Portionen fertig (24h)
+            <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold shrink-0 ${active ? "bg-white/15 text-white/90" : "bg-slate-100 text-slate-600"}`}>
+              {totalPlated.toLocaleString("de-DE")} Portionen fertig (24 h)
             </span>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {!loading && !error && (
-            <span className="text-[10px] text-slate-400">Stand {lastUpdateStr} · ⟳ {secondsUntilRefresh}s</span>
+            <span className={`text-[10px] ${active ? "text-white/70" : "text-slate-400"}`}>Stand {lastUpdateStr} · ⟳ {secondsUntilRefresh}s</span>
           )}
           {error && <span className="text-[10px] text-amber-600 font-medium truncate max-w-40">{error}</span>}
-          <span className="text-[10px] text-slate-400">{expanded ? "▲" : "▼"}</span>
+          <span className={`text-[10px] ${active ? "text-white/70" : "text-slate-400"}`}>{expanded ? "▲" : "▼"}</span>
         </div>
       </button>
 
       {expanded && (
-        <div className="p-5 space-y-5">
+        <div className="p-5 space-y-5 bg-white">
           {!hasAnyActivity && !loading && (
-            <div className="text-[10px] text-slate-400 italic text-center py-4">
+            <div className="text-[11px] text-slate-400 italic text-center py-6">
               Keine aktiven Plating- oder Kochvorgänge in den letzten 24 Stunden
             </div>
           )}
@@ -941,26 +798,29 @@ function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
           {/* Aktive Plating-Linien */}
           {activeRuns.length > 0 && (
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wide text-red-600 mb-2">
-                🔴 Aktiv platieren ({activeRuns.length})
+              <div className="text-[10px] font-black uppercase tracking-wider text-rose-600 mb-2.5 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" /> Aktiv platieren ({activeRuns.length})
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                 {activeRuns.map(run => (
-                  <div key={run.locationName + run.runName} className="rounded-xl px-3 py-2.5 bg-red-50 ring-1 ring-red-200">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-slate-900 truncate">{run.locationName}</span>
-                      {run.mealCode && (
-                        <span className="font-mono text-[11px] font-bold text-red-700 shrink-0">{run.mealCode}</span>
-                      )}
-                    </div>
-                    <div className="text-[10px] text-slate-500 truncate mt-0.5">{run.productTypeName}</div>
-                    <div className="flex items-center justify-between mt-1.5 text-[10px]">
-                      <span className="text-slate-400">seit {sinceMin(run.startTime)}</span>
-                      {run.outCount != null && run.outCount > 0 && (
-                        <span className="font-mono font-bold text-red-600">
-                          {run.outCount.toLocaleString("de-DE")} Stk
-                        </span>
-                      )}
+                  <div key={run.locationName + run.runName} className="rounded-2xl overflow-hidden ring-1 ring-rose-200 bg-rose-50/70 flex">
+                    <div className="w-1 bg-rose-400 shrink-0" />
+                    <div className="flex-1 min-w-0 px-3.5 py-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-slate-800 truncate">{run.locationName}</span>
+                        {run.mealCode && (
+                          <span className="font-mono text-xs font-black text-rose-700 shrink-0">{run.mealCode}</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate mt-0.5">{run.productTypeName}</div>
+                      <div className="flex items-center justify-between mt-2 text-[10px]">
+                        <span className="text-slate-400">läuft seit {sinceMin(run.startTime)}</span>
+                        {run.outCount != null && run.outCount > 0 && (
+                          <span className="font-mono font-black text-rose-600 text-[11px]">
+                            {run.outCount.toLocaleString("de-DE")} <span className="font-normal text-[9px]">Stk</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -971,18 +831,16 @@ function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
           {/* Aktive Kocher (Ofen / Braiser) */}
           {cookingNow.length > 0 && (
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wide text-orange-600 mb-2">
-                🔥 Ofen / Braiser aktiv ({cookingNow.length})
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="text-[10px] font-black uppercase tracking-wider text-orange-600 mb-2.5">🔥 Ofen / Braiser aktiv ({cookingNow.length})</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                 {cookingNow.map(run => (
-                  <div key={run.locationName + run.runName} className="rounded-xl px-3 py-2 bg-orange-50 ring-1 ring-orange-200">
+                  <div key={run.locationName + run.runName} className="rounded-2xl px-3.5 py-2.5 bg-orange-50/70 ring-1 ring-orange-200">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-bold text-slate-800 truncate">{run.locationName}</span>
-                      <span className="text-[10px] text-orange-600 shrink-0">{run.areaName}</span>
+                      <span className="text-[11px] font-bold text-slate-800 truncate">{run.locationName}</span>
+                      <span className="text-[10px] text-orange-600 font-medium shrink-0">{run.areaName}</span>
                     </div>
-                    <div className="text-[10px] text-slate-500 truncate">{run.productTypeName}</div>
-                    <div className="text-[9px] text-slate-400 mt-1">seit {sinceMin(run.startTime)}</div>
+                    <div className="text-[10px] text-slate-500 truncate mt-0.5">{run.productTypeName}</div>
+                    <div className="text-[9px] text-slate-400 mt-1.5">seit {sinceMin(run.startTime)}</div>
                   </div>
                 ))}
               </div>
@@ -992,16 +850,24 @@ function RedzoneMonitorPanel({ redzone }: { redzone: RedzoneState | null }) {
           {/* Heute fertig (abgeschlossene Runs, gruppiert nach Meal) */}
           {doneTotals.length > 0 && (
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">
-                ✓ Fertig platiert heute ({doneTotals.length} Rezepte · {totalPlated.toLocaleString("de-DE")} Portionen gesamt)
+              <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2.5">
+                ✓ Fertig platiert heute · {doneTotals.length} Rezepte erkannt · {doneSum.toLocaleString("de-DE")} Portionen
+                {totalPlated > doneSum && <span className="font-normal text-slate-400"> (24 h gesamt {totalPlated.toLocaleString("de-DE")})</span>}
               </div>
-              <div className="flex flex-wrap gap-2">
-                {doneTotals.map(entry => (
-                  <div key={entry.mealCode} className="rounded-lg px-2.5 py-1.5 bg-slate-50 ring-1 ring-slate-200 text-[10px]">
-                    <span className="font-mono font-bold text-slate-800">{entry.mealCode}</span>
-                    <span className="text-slate-500 ml-1.5">{entry.total.toLocaleString("de-DE")} Stk</span>
+              <div className="space-y-1">
+                {doneTotals.slice(0, 10).map(entry => (
+                  <div key={entry.mealCode} className="flex items-center gap-2 text-[10px]">
+                    <span className="font-mono font-bold text-slate-700 w-16 shrink-0">{entry.mealCode}</span>
+                    <span className="text-slate-500 truncate flex-1 min-w-0">{entry.name}</span>
+                    <div className="w-24 h-1.5 rounded-full bg-slate-100 overflow-hidden shrink-0">
+                      <div className="h-full rounded-full bg-emerald-400" style={{ width: `${maxDone > 0 ? (entry.total / maxDone) * 100 : 0}%` }} />
+                    </div>
+                    <span className="font-mono font-bold text-slate-600 w-14 text-right shrink-0">{entry.total.toLocaleString("de-DE")}</span>
                   </div>
                 ))}
+                {doneTotals.length > 10 && (
+                  <div className="text-[9px] text-slate-400 pt-0.5">+{doneTotals.length - 10} weitere Rezepte</div>
+                )}
               </div>
             </div>
           )}
@@ -1022,15 +888,6 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   // Preblast-Wiegungen, weil die schon VOR dem Kochen auftreten. Siehe
   // shortageAlerts.ts für die Verknüpfung mit den aktuellen WOs.
   const shortsTrackerMonitor = useShortsTrackerMonitor();
-  // F_VE-Production-Plan-Sheet (Ready/Min-Needs je Do/Fr/Sa) — eigene
-  // Wochen-Tabs (gid pro KW), siehe productionPlanReadiness.ts. Nur der Tab
-  // der gerade ausgewählten Woche wird geladen.
-  const { weeks: planWeekOptions } = useProductionPlanWeeks();
-  // Cross-Source-Frühwarnungen (Küche vs. Plating/LinePlaiting) — kommen aus
-  // dem app-weiten BackfillsProvider, damit hier keine zweite, abweichende
-  // Berechnung entsteht. Optional, weil diese Ansicht theoretisch auch ohne
-  // den Provider funktionieren muss (z.B. in Tests).
-  const backfillAlerts = useBackfillsOptional()?.alerts ?? [];
   const redzone = useRedzoneOptional();
 
   // Live-WMS-Cache (wmsCache/workorders, siehe scripts/sync-wms-cache.ts) — der
@@ -1201,15 +1058,15 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
   const selectedWeekNum = selectedWeek ? weekNumFromHfWeek(selectedWeek) : null;
 
-  // gid des F_VE-Production-Plan-Tabs, der zur gewählten Woche passt — die
-  // Tab-Liste selbst zeigt nur ab der aktuell laufenden KW aufwärts (siehe
-  // wms-local-server.ts), eine gewählte Vergangenheits-KW liefert also bewusst
-  // keinen Treffer (kein Plan-Check für längst abgeschlossene Wochen).
-  const planGid = useMemo(
-    () => (selectedWeekNum != null ? planWeekOptions.find(w => w.week === selectedWeekNum)?.gid ?? "" : ""),
-    [planWeekOptions, selectedWeekNum]
-  );
-  const { data: planSheetData } = useProductionPlanMonitor(planGid);
+  // „Schon plaitiert / steht rum" je Meal — LinePlaiting-Actuals ⊕ Redzone
+  // (24 h + 72 h) für „Fortschritt je Meal" / „Was kann ich plaiten?", plus der
+  // Holding-Puffer je Meal für den Minimum-Needs-Prüfhinweis. Siehe
+  // useCombinedPlaited.ts.
+  const { plaitedByCode, holdingMealsByCode } = useCombinedPlaited(selectedWeekNum);
+
+  // Minimum Needs kommen aus dem „Volume Overview"-Tab der Transparency Plan
+  // (alle Märkte zusammengerechnet).
+  const volumeOverview = useVolumeOverviewMonitor();
 
   // Effektiver Plan für die gewählte Woche, gestaffelt nach Vertrauenswürdigkeit
   // — genau die Kette, die KetBreakdownView für dasselbe Problem schon nutzt,
@@ -1335,20 +1192,13 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
   // ── State ──
   const [expandedMeals, setExpandedMeals] = useState<Set<string>>(new Set());
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatOpen, setChatOpen] = useState(false);
   const [liveFeedSearch, setLiveFeedSearch] = useState("");
   const [liveFeedToday, setLiveFeedToday] = useState(true);
   const [liveFeedStage, setLiveFeedStage] = useState<"post" | "pre">("post");
   const [backfillFilter, setBackfillFilter] = useState<"all" | "critical" | "behind">("all");
-  const [mealFilter, setMealFilter] = useState<"all" | "critical" | "running" | "done">("all");
-  const [shiftEndHours, setShiftEndHours] = useState(8);
+  const [mealFilter, setMealFilter] = useState<"offen" | "all" | "critical" | "running" | "done">("offen");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [shortagesExpanded, setShortagesExpanded] = useState(false);
-  const [recsExpanded, setRecsExpanded] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const chatPanelRef = useRef<HTMLDivElement>(null);
 
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -1363,8 +1213,8 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   // zählen, sonst würden liegen gebliebene Wiegungen aus einer anderen KW die
   // "Gewogen heute"-Bilanz verfälschen. Die WO-Zuordnung in matched/meals
   // braucht das nicht extra (die schaut ohnehin nur exakte WO-Nummern der
-  // gewählten Woche nach), nur der Intelligence-Agent arbeitet direkt auf den
-  // rohen Einträgen.
+  // gewählten Woche nach) — nur die "heute"-Zähler im Live Feed arbeiten
+  // direkt auf den rohen Einträgen.
   const weekScopedPostblast = useMemo((): PostblastData | null => {
     if (!monitor.data || selectedWeekNum == null) return monitor.data;
     const entries = monitor.data.entries.filter(e => weekPrefixFromWoNumber(e.workOrder) === selectedWeekNum);
@@ -1382,13 +1232,6 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
       lastUpdated: monitor.data.lastUpdated,
     };
   }, [monitor.data, selectedWeekNum]);
-  const intelligence = useMemo(
-    () => analyzeProduction(
-      weekScopedPostblast, meals, backfill, matched, filteredProductionPlan, shiftEndHours,
-      planSheetData?.rows ?? [], shortsTrackerMonitor.data?.entries ?? []
-    ),
-    [weekScopedPostblast, meals, backfill, matched, filteredProductionPlan, shiftEndHours, planSheetData, shortsTrackerMonitor.data]
-  );
   const todayEntries = useMemo(
     () => (weekScopedPostblast?.entries ?? []).filter(e => e.date === todayStr),
     [weekScopedPostblast, todayStr]
@@ -1454,39 +1297,45 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   // ── Sets & Filter ──
   const backfillByWo = useMemo(() => new Map(backfill.map(b => [b.workOrder, b])), [backfill]);
 
+  // Je Meal: netto platierbar, "beendet" (nichts mehr zu tun) + ehrliche % —
+  // gemeinsame Logik mit dem Plating Dashboard (siehe mealProgress.ts).
+  const mealMeta = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof mealReadiness>>();
+    for (const meal of meals) m.set(meal.recipeCode, mealReadiness(meal, recipeWeights, plaitedByCode));
+    return m;
+  }, [meals, recipeWeights, plaitedByCode]);
+
   const filteredMeals = useMemo(() => {
-    if (mealFilter === "critical") return meals.filter(m => m.criticalWOs.length > 0);
-    if (mealFilter === "running") return meals.filter(m => m.completedWOs < m.totalWOs && m.criticalWOs.length === 0);
-    if (mealFilter === "done") return meals.filter(m => m.completedWOs === m.totalWOs);
-    return meals;
-  }, [meals, mealFilter]);
+    const pass = (m: MealProgress) => {
+      const meta = mealMeta.get(m.recipeCode)!;
+      if (mealFilter === "offen") return !meta.finished;
+      if (mealFilter === "critical") return m.criticalWOs.length > 0;
+      if (mealFilter === "running") return m.completedWOs < m.totalWOs && m.criticalWOs.length === 0 && !meta.finished;
+      if (mealFilter === "done") return meta.finished;
+      return true;
+    };
+    // Chronologisch nach Plating-Bereitschaft: was jetzt platierbar ist zuerst
+    // (höchste Netto-Menge), runter bis zu Meals ohne Produktion (0 %).
+    return meals.filter(pass).sort((a, b) => {
+      const ma = mealMeta.get(a.recipeCode)!, mb = mealMeta.get(b.recipeCode)!;
+      return (mb.net?.netMeals ?? 0) - (ma.net?.netMeals ?? 0) || b.progressPct - a.progressPct;
+    });
+  }, [meals, mealFilter, mealMeta]);
 
   // ── Summary ──
   const totalPlanned = meals.reduce((s, m) => s + m.totalPlannedKg, 0);
   const totalActual = meals.reduce((s, m) => s + m.totalActualKg, 0);
   const overallPct = totalPlanned > 0 ? (totalActual / totalPlanned) * 100 : 0;
-  const mealCritical = meals.filter(m => m.criticalWOs.length > 0).length;
-  const mealDone = meals.filter(m => m.completedWOs === m.totalWOs).length;
+  const mealDone = meals.filter(m => mealMeta.get(m.recipeCode)?.finished).length;
+  const mealCritical = meals.filter(m => m.criticalWOs.length > 0 && !mealMeta.get(m.recipeCode)?.finished).length;
   const mealRunning = meals.length - mealCritical - mealDone;
   const shiftDeltaKg = totalActual - Object.values(shiftStartActual).reduce((s, v) => s + v, 0);
   const unplannedCount = matched.filter(m => !m.hasPlan).length;
   const estimatedCount = matched.filter(m => m.isEstimated).length;
-  // Kühlverlust durch den Blast Chiller — nur über WOs, für die beide Stufen
-  // vorliegen (siehe shrinkKg in postblastMatch.ts), gewichtet über Pre-Blast
-  // als Basis für eine ehrliche Durchschnitts-Prozentzahl.
-  const shrinkTotalKg = matched.reduce((s, m) => s + m.shrinkKg, 0);
-  const shrinkBaseKg = matched.reduce((s, m) => s + (m.shrinkKg > 0 ? m.preBlastKg : 0), 0);
-  const shrinkAvgPct = shrinkBaseKg > 0 ? (shrinkTotalKg / shrinkBaseKg) * 100 : 0;
 
   const lastUpdate = monitor.lastUpdate
     ? new Date(monitor.lastUpdate).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : "—";
-
-  // ── Chat Scroll ──
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
-  useEffect(() => {
-    if (chatOpen) setTimeout(() => chatPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
-  }, [chatOpen]);
 
   // ── Handler ──
   function toggleMeal(code: string) {
@@ -1495,26 +1344,6 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
       if (n.has(code)) n.delete(code); else n.add(code);
       return n;
     });
-  }
-
-  function buildCtx(): ChatContext {
-    return { meals, backfill, intelligence, matched, todayEntries };
-  }
-
-  function handleChat(e: FormEvent) {
-    e.preventDefault();
-    const input = chatInput.trim();
-    if (!input) return;
-    setChatInput("");
-    const response = respondToChat(input, buildCtx());
-    setChatMessages(prev => [...prev, { role: "user", text: input }, { role: "agent", text: response }]);
-    if (!chatOpen) setChatOpen(true);
-  }
-
-  function handleQuickChat(prompt: string) {
-    const response = respondToChat(prompt, buildCtx());
-    setChatMessages(prev => [...prev, { role: "user", text: prompt }, { role: "agent", text: response }]);
-    setChatOpen(true);
   }
 
   async function handleRefresh() {
@@ -1706,13 +1535,6 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                   })}
                 </select>
               )}
-              <select
-                value={shiftEndHours}
-                onChange={e => setShiftEndHours(Number(e.target.value))}
-                className="text-xs px-2 py-1.5 rounded-full bg-white/20 text-white ring-1 ring-white/30 border-0"
-              >
-                {[6, 7, 8, 9, 10, 12].map(h => <option key={h} value={h} className="text-slate-900">Schicht {h} h</option>)}
-              </select>
             </div>
             {monitor.error && (
               <div className="px-3 py-1 rounded-full bg-red-400/30 ring-1 ring-red-300 text-red-100 text-xs">{monitor.error}</div>
@@ -1771,280 +1593,6 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
         </div>
       </div>
 
-      {/* ══ PLATING-QUEUE ════════════════════════════════════════════════ */}
-      <PlatingNowPanel meals={meals} recipeWeights={recipeWeights} wmsRows={liveWmsRows} redzone={redzone} />
-
-      {/* ══ REDZONE LIVE ═════════════════════════════════════════════════ */}
-      <RedzoneMonitorPanel redzone={redzone} />
-
-      {/* ══ MINIMUM NEEDS ════════════════════════════════════════════════ */}
-      <MinimumNeedsPanel planRows={planSheetData?.rows ?? []} redzone={redzone} />
-
-      {/* ══ ZUSATZDATEN FÜR KG-SCHÄTZUNG ═══════════════════════════════════ */}
-      <div className="card p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="font-bold text-slate-500 uppercase tracking-wide text-[10px] shrink-0">Zusatzdaten für Schätzung</span>
-
-          <input
-            ref={ketFileInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleKetCsvFile(f); e.target.value = ""; }}
-          />
-          <button
-            onClick={() => ketFileInputRef.current?.click()}
-            className={`px-3 py-1.5 rounded-full font-medium transition ${ketCsvRows ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-          >
-            {ketCsvRows ? `✓ KET-CSV · ${ketCsvRows.length} Zeilen` : "KET-CSV hochladen"}
-          </button>
-          {ketCsvFileName && <span className="text-slate-400 text-[10px]">{ketCsvFileName}</span>}
-          {ketCsvRows && (
-            <button
-              onClick={() => { setKetCsvRows(null); try { localStorage.removeItem(KET_CSV_STORAGE_KEY); } catch { /* quota */ } }}
-              className="text-slate-300 hover:text-slate-500"
-              title="KET-CSV entfernen"
-            >
-              ✕
-            </button>
-          )}
-
-          <div className="w-px h-4 bg-slate-200 mx-1" />
-          {recipeWeights
-            ? <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 font-medium">✓ {recipeWeights.recipeCount} Rezept-Gewichte</span>
-            : <span className="text-[10px] text-slate-400">Rezept-Gewichte: über Nav-Leiste hochladen</span>
-          }
-        </div>
-        <p className="text-[10px] text-slate-400 mt-2">
-          KET-CSV liefert Ziel-Portionen je WO. Rezept-Gewichte (export-recipes.csv) können global über die linke Nav-Leiste hochgeladen werden und gelten app-weit.
-        </p>
-      </div>
-
-      {/* ══ KI PRODUKTIONS-AGENT ═══════════════════════════════════════════ */}
-      <div className="card overflow-hidden border-0 shadow-md">
-        {/* KI Header */}
-        <div className="px-5 py-4 bg-gradient-to-r from-violet-700 to-purple-700 text-white flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-lg">🤖</div>
-            <div>
-              <div className="font-bold">KI Produktions-Agent</div>
-              <div className="text-xs text-purple-200">Regel-basierte Produktionsanalyse</div>
-            </div>
-            {intelligence.shiftSummary && (
-              <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold ml-2 ${
-                intelligence.shiftSummary.overallHealth === "good" ? "bg-emerald-400/30 text-emerald-200 ring-1 ring-emerald-400/40" :
-                intelligence.shiftSummary.overallHealth === "warning" ? "bg-amber-400/30 text-amber-200 ring-1 ring-amber-400/40" :
-                "bg-red-400/30 text-red-200 ring-1 ring-red-400/40"
-              }`}>
-                {intelligence.shiftSummary.overallHealth === "good" ? "ON TRACK ✓" :
-                 intelligence.shiftSummary.overallHealth === "warning" ? "ACHTUNG ⚠" : "KRITISCH ●"}
-              </span>
-            )}
-          </div>
-          <button
-            onClick={() => setChatOpen(o => !o)}
-            className="text-xs px-4 py-2 rounded-full bg-white/20 hover:bg-white/30 text-white ring-1 ring-white/30 transition font-medium"
-          >
-            {chatOpen ? "▲ Chat schließen" : "💬 Chat öffnen"}
-          </button>
-        </div>
-
-        <div className="p-5">
-          {/* Schicht-Tiles */}
-          {intelligence.shiftSummary ? (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-              <div className="bg-slate-50 rounded-xl p-3 ring-1 ring-slate-200">
-                <div className="text-[10px] text-slate-500 uppercase font-bold">Gewogen heute</div>
-                <div className="text-xl font-bold font-mono mt-0.5">{fmt(intelligence.shiftSummary.totalWeighed, 1)} kg</div>
-                <div className="text-[10px] text-slate-400">{intelligence.shiftSummary.totalEntries} Wiegungen</div>
-              </div>
-              <div className="bg-cyan-50 rounded-xl p-3 ring-1 ring-cyan-200" title="Kühlverlust zwischen Pre- und Post-Blast, nur über WOs mit beiden Wiegungen">
-                <div className="text-[10px] text-cyan-600 uppercase font-bold">Schwund</div>
-                <div className="text-xl font-bold font-mono mt-0.5 text-cyan-700">{fmt(shrinkTotalKg, 1)} kg</div>
-                <div className="text-[10px] text-cyan-500">Ø {fmt(shrinkAvgPct, 1)}% Blast Chiller</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 ring-1 ring-slate-200">
-                <div className="text-[10px] text-slate-500 uppercase font-bold">Tempo</div>
-                <div className="text-xl font-bold font-mono mt-0.5">{fmt(intelligence.shiftSummary.kgPerHour, 1)} <span className="text-sm font-normal text-slate-400">kg/h</span></div>
-                <div className="text-[10px] text-slate-400">seit {fmt(intelligence.shiftSummary.shiftDurationHours, 1)} h</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 ring-1 ring-slate-200">
-                <div className="text-[10px] text-slate-500 uppercase font-bold">Prognose Schichtende</div>
-                <div className="text-xl font-bold font-mono mt-0.5">{fmt(intelligence.shiftSummary.projectedEndOfShift, 0)} <span className="text-sm font-normal text-slate-400">kg</span></div>
-                <div className="text-[10px] text-slate-400">bei {shiftEndHours} h Schicht</div>
-              </div>
-              {intelligence.shiftSummary.shortfallAtEndOfShift > 0 ? (
-                <div className="bg-red-50 rounded-xl p-3 ring-1 ring-red-200">
-                  <div className="text-[10px] text-red-600 uppercase font-bold">Fehlprognose</div>
-                  <div className="text-xl font-bold font-mono mt-0.5 text-red-700">−{fmt(intelligence.shiftSummary.shortfallAtEndOfShift, 0)} kg</div>
-                  <div className="text-[10px] text-red-500 font-medium">Bei aktuellem Tempo droht Unterdeckung — noch keine bestätigte Backfill-Notwendigkeit</div>
-                </div>
-              ) : (
-                <div className="bg-emerald-50 rounded-xl p-3 ring-1 ring-emerald-200">
-                  <div className="text-[10px] text-emerald-600 uppercase font-bold">Prognose</div>
-                  <div className="text-lg font-bold mt-0.5 text-emerald-700">Plan erfüllt ✓</div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="mb-4 bg-slate-50 rounded-xl p-4 text-center text-xs text-slate-400 ring-1 ring-slate-200">
-              Noch keine Schicht-Daten — starte Chat oder nutze Quick-Buttons für aktuelle Infos.
-            </div>
-          )}
-
-          {/* Alerts */}
-          {intelligence.alerts.length > 0 && (
-            <div className="space-y-2 mb-4">
-              {intelligence.alerts.slice(0, 6).map(alert => (
-                <div key={alert.id} className={`flex items-start gap-3 px-4 py-3 rounded-xl text-xs ${
-                  alert.severity === "critical" ? "bg-red-50 ring-1 ring-red-200" :
-                  alert.severity === "warning" ? "bg-amber-50 ring-1 ring-amber-200" :
-                  "bg-white ring-1 ring-slate-200"
-                }`}>
-                  <AlertIcon severity={alert.severity} />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-slate-800">{alert.title}</div>
-                    <div className="text-slate-600 mt-0.5">{alert.message}</div>
-                    {alert.suggestedAction && (
-                      <div className="mt-1.5 text-purple-700 font-medium">→ {alert.suggestedAction}</div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Cross-Source-Frühwarnungen aus der Backfills-Funktion (RTI + LinePlaiting
-              gegen die Küchen-Gewichte hier) — dieselbe Berechnung wie in der
-              Backfills-Ansicht, hier nur zusätzlich sichtbar gemacht. */}
-          {backfillAlerts.length > 0 && (
-            <div className="space-y-2 mb-4">
-              <div className="text-[10px] uppercase font-bold text-violet-600 tracking-wide">Cross-Source (Küche ↔ Plating) — siehe auch "Backfills"</div>
-              {backfillAlerts.slice(0, 4).map(alert => (
-                <div key={alert.id} className={`flex items-start gap-3 px-4 py-3 rounded-xl text-xs ${
-                  alert.severity === "critical" ? "bg-red-50 ring-1 ring-red-200" :
-                  alert.severity === "warning" ? "bg-amber-50 ring-1 ring-amber-200" :
-                  "bg-white ring-1 ring-slate-200"
-                }`}>
-                  <span className={`text-base leading-none ${alert.severity === "critical" ? "text-red-600" : alert.severity === "warning" ? "text-amber-500" : "text-sky-500"}`}>●</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-slate-800">{alert.title}</div>
-                    <div className="text-slate-600 mt-0.5">{alert.message}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Empfehlungen */}
-          {intelligence.recommendations.length > 0 && (
-            <div className="bg-purple-50 rounded-xl p-4 ring-1 ring-purple-200 mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[10px] uppercase font-bold text-purple-700 tracking-wide">
-                  Empfehlungen ({intelligence.recommendations.length})
-                </div>
-                {intelligence.recommendations.length > 4 && (
-                  <button
-                    onClick={() => setRecsExpanded(e => !e)}
-                    className="text-[10px] text-purple-500 hover:text-purple-700 font-medium"
-                  >
-                    {recsExpanded ? "▲ Weniger" : `▼ Alle ${intelligence.recommendations.length} zeigen`}
-                  </button>
-                )}
-              </div>
-              <ul className="space-y-1.5 text-xs text-slate-700">
-                {(recsExpanded ? intelligence.recommendations : intelligence.recommendations.slice(0, 4)).map((rec, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="text-purple-400 shrink-0 mt-0.5">▸</span>
-                    <span>{rec}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Chat */}
-          {chatOpen && (
-            <div ref={chatPanelRef} className="bg-slate-50 rounded-2xl ring-1 ring-slate-200 overflow-hidden">
-              <div className="px-4 py-2.5 bg-white border-b border-slate-100 flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wide">Chat mit KI-Agent</span>
-                <span className="text-[10px] text-slate-400">Tippe 'hilfe' für alle Befehle</span>
-              </div>
-
-              {/* Quick-Buttons */}
-              <div className="px-4 py-2 flex flex-wrap gap-1.5 bg-white border-b border-slate-100">
-                {["status", "was fehlt", "als nächstes", "runs", "kritisch", "prognose", "meals", "tempo", "fertig", "empfehlung"].map(q => (
-                  <button
-                    key={q}
-                    onClick={() => handleQuickChat(q)}
-                    className="text-[10px] px-2.5 py-1 rounded-full bg-purple-50 ring-1 ring-purple-200 text-purple-700 hover:bg-purple-100 transition font-medium"
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-
-              {/* Nachrichten */}
-              <div className="px-4 py-3 max-h-80 overflow-y-auto space-y-2.5">
-                {chatMessages.length === 0 ? (
-                  <div className="py-6 text-xs text-slate-400 text-center">
-                    Stelle eine Frage — z.B. "was fehlt", "runs", "als nächstes", "WO 35-209"
-                  </div>
-                ) : (
-                  chatMessages.map((msg, i) => (
-                    <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[88%] px-3.5 py-2.5 rounded-2xl text-xs leading-relaxed ${
-                        msg.role === "user"
-                          ? "bg-purple-600 text-white rounded-br-sm shadow-sm"
-                          : "bg-white text-slate-800 rounded-bl-sm ring-1 ring-slate-200 shadow-sm"
-                      }`}>
-                        {msg.role === "agent" && (
-                          <span className="text-[10px] font-bold text-purple-600 block mb-1">🤖 KI-Agent</span>
-                        )}
-                        {msg.text.split("\n").map((line, j) => (
-                          <span key={j} className="block">{line || " "}</span>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                )}
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* Eingabe */}
-              <div className="px-4 py-3 bg-white border-t border-slate-100">
-                <form onSubmit={handleChat} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    placeholder="Frage… z.B. 'run 2', 'WO 35-209', 'als nächstes'"
-                    className="flex-1 text-xs px-3.5 py-2 rounded-full border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-purple-400 focus:bg-white transition"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!chatInput.trim()}
-                    className="px-4 py-2 rounded-full bg-purple-600 text-white text-xs font-medium hover:bg-purple-700 disabled:opacity-40 transition shadow-sm"
-                  >
-                    Senden
-                  </button>
-                  {chatMessages.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setChatMessages([])}
-                      className="px-3 py-2 rounded-full bg-slate-100 text-slate-400 text-xs hover:bg-slate-200 transition"
-                      title="Chat leeren"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </form>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* ══ MEAL-FORTSCHRITT ════════════════════════════════════════════════ */}
       {meals.length > 0 && (
         <div className="card p-5 shadow-sm">
@@ -2055,10 +1603,11 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
             </div>
             <div className="flex flex-wrap gap-1.5">
               {([
-                { key: "all", label: `Alle · ${meals.length}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
+                { key: "offen", label: `Offen · ${mealCritical + mealRunning}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
                 { key: "critical", label: `⚠ Kritisch · ${mealCritical}`, active: "bg-red-600 text-white", inactive: "bg-white ring-1 ring-red-200 text-red-600" },
                 { key: "running", label: `◌ Laufend · ${mealRunning}`, active: "bg-sky-600 text-white", inactive: "bg-white ring-1 ring-sky-200 text-sky-600" },
                 { key: "done", label: `✓ Fertig · ${mealDone}`, active: "bg-emerald-600 text-white", inactive: "bg-white ring-1 ring-emerald-200 text-emerald-700" },
+                { key: "all", label: `Alle · ${meals.length}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
               ] as const).map(f => (
                 <button
                   key={f.key}
@@ -2093,6 +1642,9 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               const isCritical = meal.criticalWOs.length > 0;
               const awaitingWOs = meal.workOrders.filter(wo => wo.awaitingPostBlast);
               const awaitingKg = awaitingWOs.reduce((s, wo) => s + wo.preBlastKg, 0);
+              // Ehrlicher Fortschritt = das schwächste Sub-Rezept (siehe
+              // mealProgress.ts) — sonst steht 100 %, obwohl eine Komponente fehlt.
+              const truePct = mealMeta.get(meal.recipeCode)?.displayPct ?? meal.progressPct;
 
               // Runs gruppieren
               const byRun = new Map<number, WoMatchedStatus[]>();
@@ -2118,11 +1670,11 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                     <div
                       className={`h-full transition-all duration-700 ${
                         isCritical ? "bg-red-400" :
-                        meal.progressPct >= 95 ? "bg-emerald-400" :
-                        meal.progressPct >= 60 ? "bg-sky-400" :
-                        meal.progressPct >= 30 ? "bg-amber-400" : "bg-slate-300"
+                        truePct >= 95 ? "bg-emerald-400" :
+                        truePct >= 60 ? "bg-sky-400" :
+                        truePct >= 30 ? "bg-amber-400" : "bg-slate-300"
                       }`}
-                      style={{ width: `${Math.min(meal.progressPct, 100)}%` }}
+                      style={{ width: `${Math.min(truePct, 100)}%` }}
                     />
                   </div>
                   {/* Linke Statuslinie */}
@@ -2148,11 +1700,25 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                 Backfill: −{fmt(mealBackfillPortions)} Stk
                               </span>
                             )}
-                            {hasRuns && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200 font-bold shrink-0">
-                                {runEntries.length} Runs
-                              </span>
-                            )}
+                            {hasRuns && runEntries.map(([r, wos]) => {
+                              const rDone = wos.every(w => w.isComplete);
+                              const rStarted = wos.some(w => w.actualKg > 0);
+                              const rCrit = wos.some(w => w.isCritical);
+                              return (
+                                <span
+                                  key={r}
+                                  title={`Run ${r}: ${wos.filter(w => w.isComplete).length}/${wos.length} Sub-WOs fertig`}
+                                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ring-1 ${
+                                    rDone ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
+                                    : rCrit ? "bg-red-100 text-red-700 ring-red-200"
+                                    : rStarted ? "bg-indigo-100 text-indigo-700 ring-indigo-200"
+                                    : "bg-slate-100 text-slate-400 ring-slate-200"
+                                  }`}
+                                >
+                                  Run {r} {rDone ? "✓" : rStarted ? `${wos.filter(w => w.isComplete).length}/${wos.length}` : "wartet"}
+                                </span>
+                              );
+                            })}
                             {awaitingWOs.length > 0 && (
                               <span
                                 title={`${awaitingWOs.length} WO(s) schon pre-blast gewogen, Post-Blast-Wiegung steht noch aus`}
@@ -2175,27 +1741,44 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                                 );
                                 return null; // kein File geladen → kein Hinweis im Header
                               }
-                              if (cap.meals === 0) return (
+                              // Brutto (ganze Woche) minus die laut Redzone schon platierten
+                              // Portionen — sonst zeigt die Karte Runs an, die längst raus sind.
+                              const net = netPlateable(meal, cap.meals, platedForMeal(plaitedByCode, meal.recipeCode));
+                              if (net.fullyPlated) return (
+                                <span
+                                  className="text-slate-400 font-medium"
+                                  title={`Gesamte produzierte Menge (${net.grossMeals.toLocaleString("de-DE")}) ist schon plaitiert (LinePlaiting + Redzone)`}
+                                >
+                                  · ✓ komplett platiert
+                                </span>
+                              );
+                              if (net.netMeals === 0) return (
                                 <span className="text-red-600 font-bold">· 0 platierbar ⛔</span>
                               );
                               return (
                                 <span className={cap.exact ? "text-emerald-600 font-bold" : "text-amber-600 font-medium"}>
-                                  · {cap.exact ? "" : "~"}{cap.meals.toLocaleString("de-DE")} platierbar
+                                  · {cap.exact ? "" : "~"}{net.netMeals.toLocaleString("de-DE")} platierbar
+                                  {net.partiallyPlated && (
+                                    <span
+                                      className="text-slate-400 font-normal"
+                                      title={`Brutto ${net.grossMeals.toLocaleString("de-DE")} − ${net.platedMeals.toLocaleString("de-DE")} schon plaitiert (LinePlaiting + Redzone)`}
+                                    > (−{net.platedMeals.toLocaleString("de-DE")} platiert)</span>
+                                  )}
                                   {!cap.exact && <span className="text-amber-400 font-normal" title="KET-Plan mit aktuellen WOs exportieren → export-recipes.csv hochladen"> ≈</span>}
                                 </span>
                               );
                             })()}
-                            {hasRuns && runEntries.map(([r, wos]) => (
-                              <span key={r} className={`font-medium ${wos.every(w => w.isComplete) ? "text-emerald-600" : wos.some(w => w.isCritical) ? "text-red-600" : "text-slate-400"}`}>
-                                R{r}:{wos.filter(w => w.isComplete).length}/{wos.length}
-                              </span>
-                            ))}
                           </div>
                           {!expanded && <WoDots wos={meal.workOrders} />}
                         </div>
                         <div className="shrink-0 text-right">
-                          <div className={`text-2xl font-bold font-mono ${isCritical ? "text-red-600" : isDone ? "text-emerald-600" : "text-slate-800"}`}>
-                            {fmt(meal.progressPct, 0)}%
+                          <div
+                            className={`text-2xl font-bold font-mono ${isCritical ? "text-red-600" : truePct >= 99.5 ? "text-emerald-600" : "text-slate-800"}`}
+                            title={Math.round(truePct) !== Math.round(meal.progressPct)
+                              ? `Schwächstes Sub-Rezept ${fmt(truePct, 0)}% · kg-Summe wäre ${fmt(meal.progressPct, 0)}% (einzelne Subs überproduziert)`
+                              : undefined}
+                          >
+                            {fmt(truePct, 0)}%
                           </div>
                           <div className="text-[10px] text-slate-400">
                             {fmtMass(meal.totalActualKg * 1000)} / {fmtMass(meal.totalPlannedKg * 1000)}
@@ -2205,7 +1788,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
                       {/* Fortschrittsbalken */}
                       <div className="px-4 pb-3">
-                        <ProgressBar pct={meal.progressPct} size="sm" />
+                        <ProgressBar pct={truePct} size="sm" />
                       </div>
 
                       {/* Kritisch-Hinweis (collapsed) */}
@@ -2371,6 +1954,19 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
           </div>
         </div>
       )}
+
+      {/* ══ PLATING-QUEUE ════════════════════════════════════════════════ */}
+      <PlatingNowPanel meals={meals} recipeWeights={recipeWeights} wmsRows={liveWmsRows} redzone={redzone} plaitedByCode={plaitedByCode} />
+
+      {/* ══ GESAMTVOLUMEN ════════════════════════════════════════════════ */}
+      <VolumeSummary volumeOverview={volumeOverview.data} holdingMealsByCode={holdingMealsByCode} redzone={redzone} />
+
+      {/* ══ MINIMUM NEEDS ════════════════════════════════════════════════ */}
+      <MinimumNeedsPanel
+        volumeOverview={volumeOverview.data}
+        redzone={redzone}
+        holdingMealsByCode={holdingMealsByCode}
+      />
 
       {/* ══ BACKFILL-MELDUNGEN ══════════════════════════════════════════════ */}
       {backfill.length > 0 && (
@@ -2557,6 +2153,49 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
           </div>
         </div>
       )}
+
+      {/* ══ REDZONE LIVE ═════════════════════════════════════════════════ */}
+      <RedzoneMonitorPanel redzone={redzone} />
+
+      {/* ══ ZUSATZDATEN FÜR KG-SCHÄTZUNG ═══════════════════════════════════ */}
+      <div className="card p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-bold text-slate-500 uppercase tracking-wide text-[10px] shrink-0">Zusatzdaten für Schätzung</span>
+
+          <input
+            ref={ketFileInputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleKetCsvFile(f); e.target.value = ""; }}
+          />
+          <button
+            onClick={() => ketFileInputRef.current?.click()}
+            className={`px-3 py-1.5 rounded-full font-medium transition ${ketCsvRows ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+          >
+            {ketCsvRows ? `✓ KET-CSV · ${ketCsvRows.length} Zeilen` : "KET-CSV hochladen"}
+          </button>
+          {ketCsvFileName && <span className="text-slate-400 text-[10px]">{ketCsvFileName}</span>}
+          {ketCsvRows && (
+            <button
+              onClick={() => { setKetCsvRows(null); try { localStorage.removeItem(KET_CSV_STORAGE_KEY); } catch { /* quota */ } }}
+              className="text-slate-300 hover:text-slate-500"
+              title="KET-CSV entfernen"
+            >
+              ✕
+            </button>
+          )}
+
+          <div className="w-px h-4 bg-slate-200 mx-1" />
+          {recipeWeights
+            ? <span className="text-[10px] px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 font-medium">✓ {recipeWeights.recipeCount} Rezept-Gewichte</span>
+            : <span className="text-[10px] text-slate-400">Rezept-Gewichte: über Nav-Leiste hochladen</span>
+          }
+        </div>
+        <p className="text-[10px] text-slate-400 mt-2">
+          KET-CSV liefert Ziel-Portionen je WO. Rezept-Gewichte (export-recipes.csv) können global über die linke Nav-Leiste hochgeladen werden und gelten app-weit.
+        </p>
+      </div>
 
       {/* ══ LIVE FEED ═══════════════════════════════════════════════════════ */}
       {((monitor.data?.entries.length ?? 0) > 0 || (preblastMonitor.data?.entries.length ?? 0) > 0) && (

@@ -108,6 +108,52 @@ describe("parseProductionPlan", () => {
   });
 });
 
+// ── Einschicht-Layout MIT eingeschobenem Tages-Split-Block (ab W37) ───────────
+// Zwischen W36 und W37 kam im Einschicht-Sheet ein zusätzlicher
+// "Thu/Fri/Sat"-Block + "Total"-Spalte dazu (der Plating-Split je Tag), der
+// die Min-Needs-Spalten von 34 auf 38 geschoben hat. Der Parser findet den
+// Min-Needs-Block über die vollen Wochentagsnamen im Header, nicht über einen
+// festen Abstand — hier abgesichert.
+describe("parseProductionPlan – Einschicht mit Split-Block (W37/W38)", () => {
+  const HEADER_W38 = [
+    "Code", "Preference", "Recipe Name", "BENL", "NORD", "DE", "Total", "Total+Buffer",
+    "Complexity Score", "# subs", "# Cook stations", "Active cook min", "Passive Hold",
+    "Grill", "Cup", "Butter", "Oven", "Braiser", "Slice", "Allergens", "", "",
+    "Sunday 06.09.", "Monday 07.09.", "Tuesday 08.09.", "Wednesday 09.09.",
+    "Thursday 10.09.", "Friday 11.09.", "Saturday 12.09.", "",
+    "Thu", "Fri", "Sat", "",            // 30-33: Ready-Block (+ Leerspalte)
+    "Thu", "Fri", "Sat", "Total",       // 34-37: Tages-Split + Total
+    "Thursday", "Friday", "Saturday",   // 38-40: Min Needs
+  ];
+  // FV1351A aus echtem W38-Dump: Ready 7188×3, Split 4134/913/2198 (= Total 7245), Min Needs 3054/2141/-57.
+  const ROW = (() => {
+    const a = Array(41).fill("");
+    a[0] = "FV1351A"; a[2] = "Cheddar Pasta";
+    a[3] = "3512"; a[4] = "2297"; a[5] = "1436"; a[6] = "7245"; a[7] = "7607";
+    a[26] = "4,134"; // Plating am Donnerstag (Matrix)
+    a[30] = "7188"; a[31] = "7188"; a[32] = "7188";
+    a[34] = "4134"; a[35] = "913"; a[36] = "2198"; a[37] = "7245";
+    a[38] = "3054"; a[39] = "2141"; a[40] = "-57";
+    return a;
+  })();
+  const ROWS = [
+    ["Week", "2026-W38"],
+    ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "PLATING", "", "", "", "", "", "", "", "Ready", "", "", "", "", "", "", "", "Min Needs"],
+    HEADER_W38,
+    ROW,
+  ];
+
+  const data = parseProductionPlan(ROWS);
+
+  it("keeps Ready on the abbreviated block (30-32)", () => {
+    expect(data.rows[0].readyByDay).toEqual({ thu: 7188, fri: 7188, sat: 7188 });
+  });
+
+  it("reads Min Needs from the full-weekday block (38-40), not the inserted split block", () => {
+    expect(data.rows[0].minNeedsByDay).toEqual({ thu: 3054, fri: 2141, sat: -57 });
+  });
+});
+
 // ── Zweischicht-Layout (ab W39) ────────────────────────────────────────────────
 // Mo-Fr je zwei Tagesspalten (early/late), So/Sa einspaltig → 12 Spalten (22-33);
 // Ready 35-37, Min Needs 39-41. Darunter ein zweiter "Code"-Block ("KITCHEN").

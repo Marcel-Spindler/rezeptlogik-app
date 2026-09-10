@@ -20,8 +20,9 @@ import { useFullInventoryMonitor } from "../wms-overview/useFullInventoryMonitor
 import { currentHfWeek } from "../../lib/hfWeek";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWeeks";
 import { buildSkuInfoIndex } from "../../lib/wmsSkuEnrichment";
-import { combineBackfillSignals, detectCrossSourceAlerts } from "./combineBackfills";
+import { aggregatePlatingByMeal, combineBackfillSignals, detectCrossSourceAlerts } from "./combineBackfills";
 import { computeRtiBackfills, type RtiMealBackfill } from "./rtiBackfillCalculator";
+import { codeDigits } from "../../lib/helpers";
 import { buildRtiExternalTargets } from "./buildRtiExternalTargets";
 import { pushRtiTargets } from "./rtiTargetsRelay";
 import { sweepRtiInventory, type SubStockElsewhere } from "./rtiInventorySweep";
@@ -66,6 +67,19 @@ export interface BackfillsState {
   inventoryElsewhere: Map<string, SubStockElsewhere>;
   linePlaitingConnected: boolean;
   wmsHoldingConnected: boolean;
+  // ─── „Wie viel vom Wochenziel ist schon plaitiert / steht rum" ─────────────
+  // Alle drei auf die 4-Ziffer-Meal-Identität (codeDigits) gekeyed.
+  // Σ tatsächlich plaitierte Portionen je Meal über die GANZE laufende KW —
+  // LinePlaiting-Actuals (Mensch-gepflegt, alle Tage) kombiniert mit dem
+  // Redzone-Output (Maschinen-Zählung, 24-h-Feed): pro Meal das Maximum.
+  plaitedByCode: Map<string, number>;
+  // LinePlaiting „{Tag} needs" des zuletzt befüllten Tages — der vom Plating-
+  // Team live gepflegte Restbedarf. null-Einträge fehlen (nichts eingetragen).
+  platingTeamNeedByCode: Map<string, number>;
+  // Fertigware-Puffer je Meal in MEAL-Portionen (kleinstes „Available Mealcount"
+  // über die Engpass-Subs im RTI-Rechner). Nur befüllt für Meals, die im
+  // RTI-Sheet mit Rückstand stehen — sonst leer (NICHT „Puffer = 0").
+  holdingMealsByCode: Map<string, number>;
   linePlaitingSource: LinePlaitingSource;
   linePlaitingActiveTab: string;      // "LinePlating W36" bzw. "gid=…" (Override)
   linePlaitingWeek: string;           // aus den Sheet-Daten geparste KW ("W36")
@@ -196,6 +210,38 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
 
   const rtiMeals = useMemo(() => computeRtiBackfills(rti.data, rtiExternalTargets), [rti.data, rtiExternalTargets]);
 
+  // ── „Schon plaitiert" je Meal: LinePlaiting-Actuals ⊕ Redzone-Output (max) ──
+  const platingAgg = useMemo(() => aggregatePlatingByMeal(linePlaitingData), [linePlaitingData]);
+  const { plaitedByCode, platingTeamNeedByCode } = useMemo(() => {
+    const plaited = new Map<string, number>();
+    const need = new Map<string, number>();
+    for (const [k, agg] of platingAgg) {
+      if (agg.allActualTotal > 0) plaited.set(k, Math.round(agg.allActualTotal));
+      if (agg.minNeeded != null && agg.minNeeded > 0) need.set(k, Math.round(agg.minNeeded));
+    }
+    // Redzone-Output der laufenden KW oben drauf (pro Meal das Maximum).
+    const rz = new Map<string, number>();
+    for (const run of redzone?.runs ?? []) {
+      if (run.areaName !== "Plating" || !run.mealCode || !(run.outCount != null && run.outCount > 0)) continue;
+      const k = codeDigits(run.mealCode).toUpperCase();
+      rz.set(k, (rz.get(k) ?? 0) + run.outCount);
+    }
+    for (const [k, v] of rz) plaited.set(k, Math.max(plaited.get(k) ?? 0, Math.round(v)));
+    return { plaitedByCode: plaited, platingTeamNeedByCode: need };
+  }, [platingAgg, redzone?.runs]);
+
+  // Fertigware-Puffer je Meal (kleinster availableMealcount über die Engpass-Subs).
+  const holdingMealsByCode = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const meal of rtiMeals) {
+      const subs = [...meal.openSubs, ...meal.enteredSubs];
+      if (subs.length === 0) continue;
+      const cover = Math.min(...subs.map(s => s.availableMealcount));
+      if (Number.isFinite(cover) && cover > 0) m.set(codeDigits(meal.mealCode).toUpperCase(), Math.round(cover));
+    }
+    return m;
+  }, [rtiMeals]);
+
   // Ersatz-Kopfzahlen an die Cloud Function relayen (Firestore) — die nutzt sie,
   // wenn ihre eigene Online-Redzone-Verbindung (Snowflake-JWT) gerade aus ist.
   useEffect(() => { pushRtiTargets(rtiExternalTargets); }, [rtiExternalTargets]);
@@ -302,6 +348,9 @@ export function BackfillsProvider({ children }: { children: ReactNode }) {
     inventoryElsewhere,
     linePlaitingConnected: !!linePlaitingData,
     wmsHoldingConnected: !!wmsHolding.rows,
+    plaitedByCode,
+    platingTeamNeedByCode,
+    holdingMealsByCode,
     linePlaitingSource,
     linePlaitingActiveTab: linePlaiting.activeTab,
     linePlaitingWeek: linePlaiting.data?.week ?? "",

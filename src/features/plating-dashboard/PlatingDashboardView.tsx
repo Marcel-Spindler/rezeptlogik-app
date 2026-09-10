@@ -5,9 +5,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DataBundle, WorkOrderEntry } from "../../core/types";
 import {
   usePostblastMonitor, usePreblastMonitor, useRtiMonitor, useEtMonitor,
-  useProductionPlanWeeks, useProductionPlanMonitor,
+  useProductionPlanWeeks, useProductionPlanMonitor, useVolumeOverviewMonitor,
 } from "../gsheet-monitor/useGSheetMonitor";
-import { matchPostblastToWorkOrders, type BackfillNeed } from "../gsheet-monitor/postblastMatch";
+import { matchPostblastToWorkOrders, type BackfillNeed, type MealProgress } from "../gsheet-monitor/postblastMatch";
+import { platedForMeal } from "../gsheet-monitor/plateableNet";
+import { mealReadiness } from "../gsheet-monitor/mealProgress";
+import { MinimumNeedsPanel, VolumeSummary } from "../gsheet-monitor/MinimumNeedsPanel";
 import { estimatePlannedKg } from "../gsheet-monitor/PostblastLiveView";
 import { currentHfWeek } from "../../lib/hfWeek";
 import { weekNumFromHfWeek, weekPrefixFromWoNumber } from "../wms-overview/wmsWeeks";
@@ -15,7 +18,8 @@ import { fetchWmsWorkorderCache, filterRowsToWeekWindow, wmsWorkorderRowToEntry 
 import type { KetRow } from "../ket-plan/ketTypes";
 import { useWoReconciliation } from "../wo-reconciliation/WoReconciliationContext";
 import { useRedzoneOptional } from "../redzone-live/RedzoneContext";
-import { PlatingActionBoard, computeMealPlatable } from "./PlatingActionBoard";
+import { useCombinedPlaited } from "../gsheet-monitor/useCombinedPlaited";
+import { PlatingActionBoard } from "./PlatingActionBoard";
 import { MealProgressCard } from "./MealProgressCard";
 
 const KET_CSV_STORAGE_KEY = "ket-csv-rows-v1";
@@ -126,6 +130,11 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
 
   const selectedWeekNum = selectedWeek ? weekNumFromHfWeek(selectedWeek) : null;
 
+  // „Schon plaitiert" je Meal — LinePlaiting-Actuals ⊕ Redzone (siehe useCombinedPlaited.ts).
+  const { plaitedByCode, holdingMealsByCode } = useCombinedPlaited(selectedWeekNum);
+  // Minimum Needs / Gesamtvolumen aus dem „Volume Overview"-Tab.
+  const volumeOverview = useVolumeOverviewMonitor();
+
   const planGid = useMemo(
     () => (selectedWeekNum != null ? planWeekOptions.find(w => w.week === selectedWeekNum)?.gid ?? "" : ""),
     [planWeekOptions, selectedWeekNum],
@@ -202,41 +211,49 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
 
   // Meal-Filter + Expand-State
   const [expandedMeals, setExpandedMeals] = useState<Set<string>>(new Set());
-  const [mealFilter, setMealFilter] = useState<"all" | "critical" | "running" | "done">("all");
+  const [mealFilter, setMealFilter] = useState<"offen" | "all" | "critical" | "running" | "done">("offen");
 
   const backfillByWo = useMemo(() => new Map(backfill.map(b => [b.workOrder, b])), [backfill]);
 
-  // Platierbare Meals berechnen: welche Meals können gerade platiert werden?
+  // Netto platierbar / beendet / ehrliche % je Meal — gemeinsame Logik mit dem
+  // Postblast Live Monitor (siehe mealProgress.ts).
+  const mealMeta = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof mealReadiness>>();
+    for (const meal of meals) m.set(meal.recipeCode, mealReadiness(meal, recipeWeights, plaitedByCode));
+    return m;
+  }, [meals, recipeWeights, plaitedByCode]);
+
+  // „Platierbar"-Highlight: netto platierbar > 0 ODER RTI-Holding-Puffer da.
   const platableMap = useMemo(() => {
     const map = new Map<string, number>();
     for (const meal of meals) {
-      if (meal.totalWOs === 0) continue;
-      const wos = meal.workOrders;
-      const holdingKg = wos.reduce((s, w) => s + w.platingHoldingKg, 0);
-      const missingWos = wos.filter(w => w.hasPlan && w.plannedKg > 0 && w.actualKg === 0 && !w.awaitingPostBlast);
-      const hasBlockingZero = missingWos.length > 0 && !wos.some(w => w.subRecipe === missingWos[0].subRecipe && w.actualKg > 0);
-      if (hasBlockingZero) continue;
-      const cap = computeMealPlatable(meal, recipeWeights);
-      if ((cap && cap.meals > 0) || holdingKg > 0) {
-        map.set(meal.recipeCode, cap?.meals ?? 0);
-      }
+      const meta = mealMeta.get(meal.recipeCode)!;
+      const holdingKg = meal.workOrders.reduce((s, w) => s + w.platingHoldingKg, 0);
+      const net = meta.net?.netMeals ?? 0;
+      if (net > 0 || holdingKg > 0) map.set(meal.recipeCode, net);
     }
     return map;
-  }, [meals, recipeWeights]);
+  }, [meals, mealMeta]);
 
-  const mealCritical = meals.filter(m => m.criticalWOs.length > 0).length;
-  const mealDone = meals.filter(m => m.completedWOs === m.totalWOs).length;
+  const mealDone = meals.filter(m => mealMeta.get(m.recipeCode)?.finished).length;
+  const mealCritical = meals.filter(m => m.criticalWOs.length > 0 && !mealMeta.get(m.recipeCode)?.finished).length;
   const mealRunning = meals.length - mealCritical - mealDone;
 
-  // Umgekehrte Sortierung: höchster Fortschritt oben (platierbare zuerst)
-  const sortedMeals = useMemo(() => [...meals].sort((a, b) => b.progressPct - a.progressPct), [meals]);
-
   const filteredMeals = useMemo(() => {
-    if (mealFilter === "critical") return sortedMeals.filter(m => m.criticalWOs.length > 0);
-    if (mealFilter === "done") return sortedMeals.filter(m => m.completedWOs === m.totalWOs);
-    if (mealFilter === "running") return sortedMeals.filter(m => m.criticalWOs.length === 0 && m.completedWOs < m.totalWOs);
-    return sortedMeals;
-  }, [sortedMeals, mealFilter]);
+    const pass = (m: MealProgress) => {
+      const meta = mealMeta.get(m.recipeCode)!;
+      if (mealFilter === "offen") return !meta.finished;
+      if (mealFilter === "critical") return m.criticalWOs.length > 0;
+      if (mealFilter === "running") return m.completedWOs < m.totalWOs && m.criticalWOs.length === 0 && !meta.finished;
+      if (mealFilter === "done") return meta.finished;
+      return true;
+    };
+    // Chronologisch: was jetzt am meisten platierbar ist zuerst, runter bis 0 %.
+    return meals.filter(pass).sort((a, b) => {
+      const ma = mealMeta.get(a.recipeCode)!, mb = mealMeta.get(b.recipeCode)!;
+      return (mb.net?.netMeals ?? 0) - (ma.net?.netMeals ?? 0) || b.progressPct - a.progressPct;
+    });
+  }, [meals, mealFilter, mealMeta]);
 
   function toggleMeal(code: string) {
     setExpandedMeals(prev => {
@@ -339,7 +356,13 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
         </div>
       </div>
 
-      {/* ── Fortschritt je Meal (OBEN) ── */}
+      {/* ── Gesamtvolumen ── */}
+      <VolumeSummary volumeOverview={volumeOverview.data} holdingMealsByCode={holdingMealsByCode} redzone={redzone} />
+
+      {/* ── Minimum Needs (Do → Fr → Sa je Meal) ── */}
+      <MinimumNeedsPanel volumeOverview={volumeOverview.data} redzone={redzone} holdingMealsByCode={holdingMealsByCode} />
+
+      {/* ── Fortschritt je Meal ── */}
       <div className="card p-5 border-0 shadow-md">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
@@ -348,10 +371,11 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
           </div>
           <div className="flex flex-wrap gap-1.5">
             {([
-              { key: "all", label: `Alle · ${meals.length}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
+              { key: "offen", label: `Offen · ${mealCritical + mealRunning}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
               { key: "critical", label: `⚠ Kritisch · ${mealCritical}`, active: "bg-red-600 text-white", inactive: "bg-white ring-1 ring-red-200 text-red-600" },
               { key: "running", label: `◌ Laufend · ${mealRunning}`, active: "bg-sky-600 text-white", inactive: "bg-white ring-1 ring-sky-200 text-sky-600" },
               { key: "done", label: `✓ Fertig · ${mealDone}`, active: "bg-emerald-600 text-white", inactive: "bg-white ring-1 ring-emerald-200 text-emerald-700" },
+              { key: "all", label: `Alle · ${meals.length}`, active: "bg-slate-700 text-white", inactive: "bg-white ring-1 ring-slate-200 text-slate-600" },
             ] as const).map(f => (
               <button
                 key={f.key}
@@ -388,6 +412,7 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
               recipeWeights={recipeWeights}
               isPlatable={platableMap.has(meal.recipeCode)}
               plateableMeals={platableMap.get(meal.recipeCode) ?? null}
+              platedMeals={platedForMeal(plaitedByCode, meal.recipeCode)}
             />
           ))}
           {filteredMeals.length === 0 && (
@@ -406,6 +431,7 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
           backfill={backfill}
           recipeWeights={recipeWeights}
           redzone={redzone}
+          platedByMealCode={plaitedByCode}
         />
       </div>
     </div>

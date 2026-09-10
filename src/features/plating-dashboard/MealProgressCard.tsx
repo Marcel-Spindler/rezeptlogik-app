@@ -3,7 +3,8 @@
 import { type ReactElement } from "react";
 import type { MealProgress, WoMatchedStatus, BackfillNeed } from "../gsheet-monitor/postblastMatch";
 import type { RecipeWeightLookup } from "../gsheet-monitor/parsers/parseExportRecipes";
-import { recipeWeightKey } from "../gsheet-monitor/parsers/parseExportRecipes";
+import { netPlateable } from "../gsheet-monitor/plateableNet";
+import { grossPlateable, honestMealProgress } from "../gsheet-monitor/mealProgress";
 import { fmt, fmtMass } from "../whatif/whatIfFormat";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -52,36 +53,6 @@ function WoDots({ wos }: { wos: WoMatchedStatus[] }) {
   );
 }
 
-function computeMaxPlateable(
-  meal: MealProgress,
-  recipeWeights: RecipeWeightLookup | null,
-): { meals: number; exact: boolean } | null {
-  if (!recipeWeights) return null;
-  const bySubRecipe = new Map<string, { actualKg: number; recipeCode: string; hasBlockingZero: boolean }>();
-  for (const wo of meal.workOrders) {
-    const key = wo.subRecipe;
-    if (!bySubRecipe.has(key)) bySubRecipe.set(key, { actualKg: 0, recipeCode: wo.recipeCode, hasBlockingZero: false });
-    const entry = bySubRecipe.get(key)!;
-    entry.actualKg += wo.actualKg;
-    if (wo.hasPlan && wo.plannedKg > 0 && wo.actualKg === 0 && !wo.awaitingPostBlast) entry.hasBlockingZero = true;
-  }
-  for (const entry of bySubRecipe.values()) {
-    if (entry.actualKg > 0) entry.hasBlockingZero = false;
-  }
-  let minMeals = Infinity;
-  let found = 0;
-  for (const [subRecipe, { actualKg, recipeCode, hasBlockingZero }] of bySubRecipe) {
-    const grams = recipeWeights.gramsPerPortion.get(recipeWeightKey(recipeCode, subRecipe));
-    if (!grams || grams <= 0) { if (hasBlockingZero) { minMeals = 0; found++; } continue; }
-    if (actualKg === 0 && !hasBlockingZero) continue;
-    const maxFromThis = hasBlockingZero ? 0 : Math.floor(actualKg / (grams / 1000));
-    found++;
-    if (maxFromThis < minMeals) minMeals = maxFromThis;
-  }
-  if (found === 0) return null;
-  return { meals: minMeals === Infinity ? 0 : minMeals, exact: true };
-}
-
 // ─── Hauptkomponente ────────────────────────────────────────────────────────
 
 export interface MealProgressCardProps {
@@ -92,9 +63,12 @@ export interface MealProgressCardProps {
   recipeWeights: RecipeWeightLookup | null;
   isPlatable?: boolean;
   plateableMeals?: number | null;
+  // Redzone: schon platierte Portionen für dieses Meal (72-h-Fenster) — wird von
+  // der Brutto-"platierbar"-Zahl abgezogen (siehe plateableNet.ts).
+  platedMeals?: number | null;
 }
 
-export function MealProgressCard({ meal, expanded, onToggle, backfillNeeds, recipeWeights, isPlatable, plateableMeals }: MealProgressCardProps) {
+export function MealProgressCard({ meal, expanded, onToggle, backfillNeeds, recipeWeights, isPlatable, plateableMeals, platedMeals }: MealProgressCardProps) {
   const isDone = meal.completedWOs === meal.totalWOs;
   const isCritical = meal.criticalWOs.length > 0;
   const awaitingWOs = meal.workOrders.filter(wo => wo.awaitingPostBlast);
@@ -113,7 +87,16 @@ export function MealProgressCard({ meal, expanded, onToggle, backfillNeeds, reci
   const borderColor = isPlatable ? "border-emerald-400" : isCritical ? "border-red-300" : isDone ? "border-emerald-300" : "border-slate-200";
   const bgColor = isPlatable ? "bg-emerald-50" : isCritical ? "bg-red-50/40" : isDone ? "bg-emerald-50/20" : "";
 
-  const cap = computeMaxPlateable(meal, recipeWeights);
+  const grossCap = grossPlateable(meal, recipeWeights);
+  // Brutto (ganze Woche) minus die laut Redzone/LinePlaiting schon plaitierten Portionen.
+  const cap = grossCap
+    ? { ...netPlateable(meal, grossCap.meals, platedMeals), exact: grossCap.exact }
+    : null;
+
+  // Ehrlicher Fortschritt = schwächstes Sub-Rezept (siehe mealProgress.ts).
+  const finished = !!cap?.fullyPlated
+    || (isDone && meal.progressPct >= 99.5 && (cap?.netMeals ?? 0) === 0 && !isCritical);
+  const displayPct = finished ? 100 : Math.min(honestMealProgress(meal).pct, isDone && !isCritical ? 100 : 99);
 
   return (
     <div className={`rounded-2xl border-2 overflow-hidden transition-shadow ${borderColor} ${bgColor} ${expanded ? "shadow-md" : "hover:shadow-sm"}`}>
@@ -133,11 +116,11 @@ export function MealProgressCard({ meal, expanded, onToggle, backfillNeeds, reci
         <div
           className={`h-full transition-all duration-700 ${
             isCritical ? "bg-red-400" :
-            meal.progressPct >= 95 ? "bg-emerald-400" :
-            meal.progressPct >= 60 ? "bg-sky-400" :
-            meal.progressPct >= 30 ? "bg-amber-400" : "bg-slate-300"
+            displayPct >= 95 ? "bg-emerald-400" :
+            displayPct >= 60 ? "bg-sky-400" :
+            displayPct >= 30 ? "bg-amber-400" : "bg-slate-300"
           }`}
-          style={{ width: `${Math.min(meal.progressPct, 100)}%` }}
+          style={{ width: `${Math.min(displayPct, 100)}%` }}
         />
       </div>
       <div className="flex">
@@ -156,11 +139,24 @@ export function MealProgressCard({ meal, expanded, onToggle, backfillNeeds, reci
                     Backfill: −{fmt(mealBackfillPortions)} Stk
                   </span>
                 )}
-                {hasRuns && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200 font-bold shrink-0">
-                    {runEntries.length} Runs
-                  </span>
-                )}
+                {hasRuns && runEntries.map(([r, wos]) => {
+                  const rDone = wos.every(w => w.isComplete);
+                  const rStarted = wos.some(w => w.actualKg > 0);
+                  const rCrit = wos.some(w => w.isCritical);
+                  return (
+                    <span
+                      key={r}
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ring-1 ${
+                        rDone ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
+                        : rCrit ? "bg-red-100 text-red-700 ring-red-200"
+                        : rStarted ? "bg-indigo-100 text-indigo-700 ring-indigo-200"
+                        : "bg-slate-100 text-slate-400 ring-slate-200"
+                      }`}
+                    >
+                      Run {r} {rDone ? "✓" : rStarted ? `${wos.filter(w => w.isComplete).length}/${wos.length}` : "wartet"}
+                    </span>
+                  );
+                })}
                 {awaitingWOs.length > 0 && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 ring-1 ring-cyan-200 font-bold shrink-0">
                     ⏳ {awaitingWOs.length} im Chiller · {fmt(awaitingKg, 1)} kg
@@ -171,17 +167,36 @@ export function MealProgressCard({ meal, expanded, onToggle, backfillNeeds, reci
                 <span>{meal.completedWOs}/{meal.totalWOs} WOs fertig</span>
                 <span>·</span>
                 <span>{fmt(meal.plannedMeals)} Meals</span>
-                {cap && (
-                  <span className={cap.meals === 0 ? "text-red-600 font-bold" : "text-emerald-600 font-bold"}>
-                    · {cap.meals === 0 ? "0 platierbar ⛔" : `${cap.meals.toLocaleString("de-DE")} platierbar`}
+                {cap && cap.fullyPlated && (
+                  <span
+                    className="text-slate-400 font-medium"
+                    title={`Gesamte produzierte Menge (${cap.grossMeals.toLocaleString("de-DE")}) ist schon plaitiert (LinePlaiting + Redzone)`}
+                  >
+                    · ✓ komplett platiert
+                  </span>
+                )}
+                {cap && !cap.fullyPlated && (
+                  <span className={cap.netMeals === 0 ? "text-red-600 font-bold" : "text-emerald-600 font-bold"}>
+                    · {cap.netMeals === 0 ? "0 platierbar ⛔" : `${cap.netMeals.toLocaleString("de-DE")} platierbar`}
+                    {cap.partiallyPlated && (
+                      <span
+                        className="text-slate-400 font-normal"
+                        title={`Brutto ${cap.grossMeals.toLocaleString("de-DE")} − ${cap.platedMeals.toLocaleString("de-DE")} schon plaitiert (LinePlaiting + Redzone)`}
+                      > (−{cap.platedMeals.toLocaleString("de-DE")} platiert)</span>
+                    )}
                   </span>
                 )}
               </div>
               {!expanded && <WoDots wos={meal.workOrders} />}
             </div>
             <div className="shrink-0 text-right">
-              <div className={`text-2xl font-bold font-mono ${isCritical ? "text-red-600" : isDone ? "text-emerald-600" : "text-slate-800"}`}>
-                {fmt(meal.progressPct, 0)}%
+              <div
+                className={`text-2xl font-bold font-mono ${isCritical ? "text-red-600" : displayPct >= 99.5 ? "text-emerald-600" : "text-slate-800"}`}
+                title={Math.round(displayPct) !== Math.round(meal.progressPct)
+                  ? `Schwächstes Sub-Rezept ${fmt(displayPct, 0)}% · kg-Summe wäre ${fmt(meal.progressPct, 0)}%`
+                  : undefined}
+              >
+                {fmt(displayPct, 0)}%
               </div>
               <div className="text-[10px] text-slate-400">
                 {fmtMass(meal.totalActualKg * 1000)} / {fmtMass(meal.totalPlannedKg * 1000)}
@@ -191,7 +206,7 @@ export function MealProgressCard({ meal, expanded, onToggle, backfillNeeds, reci
 
           {/* Fortschrittsbalken */}
           <div className="px-4 pb-3">
-            <ProgressBar pct={meal.progressPct} />
+            <ProgressBar pct={displayPct} />
           </div>
 
           {/* Kritisch-Hinweis (collapsed) */}

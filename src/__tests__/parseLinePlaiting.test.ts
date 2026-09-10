@@ -67,6 +67,41 @@ const W36_GVIZ: string[][] = [
   ["Friday", "Prep Line", "09:00 - 09:30", "", "", "", "", "", "", "FV1942A", "Tandoori-Spiced Salmon Bowl", "3650", "", "", "3.0", "880", "-2770", "850", "", "done , no carrots", ""],
 ];
 
+// W38-Layout: das Sheet lässt die Planned/Actual/Delta-Header GANZ weg (auch in
+// der ersten Comms-Zeile), die Spalten stehen aber weiter an der W36-Geometrie
+// relativ zu "Meal": Meal@10, Planned@11, Start@12, Stop@13, RunTime@14,
+// Actual@15, Delta@16, "THU needs"@17.
+const W38: string[][] = [
+  ["", "", "W38"],
+  ["", "Comms", "Dienstag", "Line 1", "Line 2", "Line 3", "Cupping/Slicing", "Amount", "", "Code", "Meal", "", "Start", "Stop", "", "", "", "THU needs", "", "Shortage", "Comments"],
+  ["Tuesday", "Prep Line", "06:00 - 06:30", "Prepping", "Prepping", "Prepping", "", "", "", "FV1351A", "Cheddar & Red Pepper Chicken Thigh Pasta", "5402", "", "", "5.0", "4448", "-954", "", "", "Fondue short", "Ready"],
+  ["", "", "07:00 - 07:30", "", "", "", "", "", "", "FV0516A", "Sun-Dried Tomato Penne", "1810", "", "", "1.0", "1712", "-98", "", "", "Spinach short", "Ready"],
+  ["", "Comms", "Donnerstag", "Line 1", "Line 2", "Line 3", "Cupping/Slicing", "Amount", "", "Code", "Meal", "", "Start", "Stop", "", "", "", "THU needs", "", "Shortage", "Comments"],
+  ["Thursday", "Prep Line", "06:00 - 06:30", "", "", "", "", "", "", "FV1351A", "Cheddar & Red Pepper Chicken Thigh Pasta", "2233", "", "", "2.0", "512", "-1721", "900", "", "", ""],
+];
+
+describe("parseLinePlaiting — W38 ohne Planned/Actual/Delta-Header (positionaler Fallback)", () => {
+  it("liest planned/actual/delta über die W36-Geometrie relativ zu 'Meal'", () => {
+    const data = parseLinePlaiting(W38);
+    expect(data.week).toBe("W38");
+    const tue = data.rows.find(r => r.day === "Tuesday" && r.recipeCode === "FV1351A")!;
+    expect(tue.plannedPortions).toBe(5402);
+    expect(tue.actualPortions).toBe(4448);
+    expect(tue.deltaPortions).toBe(-954);
+    const penne = data.rows.find(r => r.recipeCode === "FV0516A")!;
+    expect(penne.plannedPortions).toBe(1810);
+    expect(penne.actualPortions).toBe(1712);
+  });
+
+  it("summiert Actuals eines Meals über mehrere Tage (byRecipeCode)", () => {
+    const data = parseLinePlaiting(W38);
+    const rows = data.byRecipeCode.get("FV1351A")!;
+    expect(rows.reduce((s, r) => s + r.actualPortions, 0)).toBe(4448 + 512);
+    const thu = rows.find(r => r.day === "Thursday")!;
+    expect(thu.dayNeedPortions).toBe(900);
+  });
+});
+
 describe("parseLinePlaiting — header-basierte Spaltenerkennung", () => {
   it("erkennt die KW aus dem Tab-Kopf", () => {
     expect(parseLinePlaiting(W36).week).toBe("W36");

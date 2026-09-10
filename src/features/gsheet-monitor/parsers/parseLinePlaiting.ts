@@ -100,7 +100,7 @@ function mergeHeader(prev: ColMap, row: unknown[]): ColMap {
     return -1;
   };
   const take = (found: number, fallback: number) => (found >= 0 ? found : fallback);
-  return {
+  const next: ColMap = {
     code: take(idx((h) => h === "code"), prev.code),
     meal: take(idx((h) => h === "meal"), prev.meal),
     planned: take(idx((h) => h === "planned"), prev.planned),
@@ -112,6 +112,17 @@ function mergeHeader(prev: ColMap, row: unknown[]): ColMap {
     comment: take(idx((h) => h === "comment" || h === "comments"), prev.comment),
     backfills: take(idx((h) => h === "backfills"), prev.backfills),
   };
+
+  // Ab W37/W38 lässt das Sheet die Planned/Actual/Delta-Header ganz WEG, die
+  // Spalten stehen aber weiter an der W36-Geometrie relativ zu "Meal":
+  //   Meal, Planned, Start, Stop, Run Time, Actual, Delta, "{Tag} needs" …
+  // Also: fehlt der Header, aber "Meal" ist bekannt → feste Offsets annehmen.
+  if (next.meal >= 0) {
+    if (next.planned < 0) next.planned = next.meal + 1;
+    if (next.actual < 0) next.actual = next.meal + 5;
+    if (next.delta < 0) next.delta = next.meal + 6;
+  }
+  return next;
 }
 
 function isCommsRow(row: unknown[]): boolean {

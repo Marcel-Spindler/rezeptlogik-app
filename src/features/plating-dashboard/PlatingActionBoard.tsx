@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { MealProgress, WoMatchedStatus, BackfillNeed } from "../gsheet-monitor/postblastMatch";
 import type { RecipeWeightLookup } from "../gsheet-monitor/parsers/parseExportRecipes";
 import { recipeWeightKey } from "../gsheet-monitor/parsers/parseExportRecipes";
+import { netPlateable, platedForMeal } from "../gsheet-monitor/plateableNet";
 import { estimateMealEta, type MealEta } from "../gsheet-monitor/productionEta";
 import type { RedzoneState } from "../redzone-live/RedzoneContext";
 import { fmt } from "../whatif/whatIfFormat";
@@ -43,6 +44,10 @@ export interface PlatingActionBoardProps {
   backfill: BackfillNeed[];
   recipeWeights: RecipeWeightLookup | null;
   redzone?: RedzoneState | null;
+  // Redzone: schon platierte Portionen je Meal-Code (72-h-Fenster). Wird von der
+  // Brutto-Menge abgezogen — ein fertig platierter Run zählt nicht mehr als
+  // "jetzt plaiten" (siehe plateableNet.ts).
+  platedByMealCode?: Map<string, number>;
 }
 
 // ─── Platierbare Meals berechnen (gleiche Logik wie PostblastLiveView) ───────
@@ -120,12 +125,14 @@ function categorize(
   allMatched: WoMatchedStatus[],
   backfill: BackfillNeed[],
   recipeWeights: RecipeWeightLookup | null,
+  platedByMealCode?: Map<string, number>,
 ) {
   const backfillByWo = new Map(backfill.map(b => [b.workOrder, b]));
 
   const ready: ReadyMeal[] = [];
   const chiller: ChillerMeal[] = [];
   const blocked: BlockedMeal[] = [];
+  const platedOut: Array<{ meal: MealProgress; platedMeals: number }> = [];
   const actions: ActionItem[] = [];
 
   for (const meal of meals) {
@@ -134,15 +141,17 @@ function categorize(
     const holdingKg = wos.reduce((s, w) => s + w.platingHoldingKg, 0);
     const hasChillerWo = wos.some(w => w.awaitingPostBlast);
     const cap = computeMealPlatable(meal, recipeWeights);
+    // Brutto minus die laut Redzone schon platierten Portionen.
+    const net = netPlateable(meal, cap?.meals ?? 0, platedForMeal(platedByMealCode, meal.recipeCode));
 
     // Blockiert: Sub-Meals mit 0 kg, nicht im Chiller
     const missingWos = wos.filter(w => w.hasPlan && w.plannedKg > 0 && w.actualKg === 0 && !w.awaitingPostBlast);
     const hasBlockingZero = missingWos.length > 0 && !wos.some(w => w.subRecipe === missingWos[0].subRecipe && w.actualKg > 0);
 
-    if (!hasBlockingZero && (cap && cap.meals > 0 || holdingKg > 0)) {
+    if (!hasBlockingZero && (net.netMeals > 0 || holdingKg > 0)) {
       ready.push({
         meal,
-        maxMeals: cap?.meals ?? 0,
+        maxMeals: net.netMeals,
         exact: cap?.exact ?? false,
         bottleneckSubRecipe: cap?.bottleneckSubRecipe ?? null,
         holdingKg,
@@ -152,6 +161,8 @@ function categorize(
       const kgInChiller = chillerWos.reduce((s, w) => s + w.preBlastKg, 0);
       const eta = estimateMealEta(meal, allMatched);
       chiller.push({ meal, kgInChiller, eta, chillerWos });
+    } else if (net.fullyPlated && !hasBlockingZero) {
+      platedOut.push({ meal, platedMeals: net.platedMeals });
     } else if (hasBlockingZero) {
       const mealActions: string[] = [];
       for (const w of missingWos) {
@@ -173,6 +184,7 @@ function categorize(
   }
 
   ready.sort((a, b) => b.maxMeals - a.maxMeals);
+  platedOut.sort((a, b) => b.platedMeals - a.platedMeals);
   chiller.sort((a, b) => {
     if (a.eta.etaHours != null && b.eta.etaHours != null) return a.eta.etaHours - b.eta.etaHours;
     if (a.eta.etaHours != null) return -1;
@@ -226,7 +238,7 @@ function categorize(
     return order[a.priority] - order[b.priority];
   });
 
-  return { ready, chiller, blocked, actions };
+  return { ready, chiller, blocked, platedOut, actions };
 }
 
 // ─── Komponente ──────────────────────────────────────────────────────────────
@@ -240,10 +252,10 @@ function ProgressBarSmall({ pct, color }: { pct: number; color?: string }) {
   );
 }
 
-export function PlatingActionBoard({ meals, allMatched, backfill, recipeWeights, redzone }: PlatingActionBoardProps) {
-  const { ready, chiller, blocked } = useMemo(
-    () => categorize(meals, allMatched, backfill, recipeWeights),
-    [meals, allMatched, backfill, recipeWeights],
+export function PlatingActionBoard({ meals, allMatched, backfill, recipeWeights, redzone, platedByMealCode }: PlatingActionBoardProps) {
+  const { ready, chiller, blocked, platedOut } = useMemo(
+    () => categorize(meals, allMatched, backfill, recipeWeights, platedByMealCode),
+    [meals, allMatched, backfill, recipeWeights, platedByMealCode],
   );
 
   const [showAllReady, setShowAllReady] = useState(false);
@@ -403,6 +415,26 @@ export function PlatingActionBoard({ meals, allMatched, backfill, recipeWeights,
           )}
         </div>
       </div>
+
+      {/* ── KOMPLETT PLATIERT (Redzone: ganze Wochenmenge raus) ── */}
+      {platedOut.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-slate-100">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">
+            ✓ Komplett platiert ({platedOut.length})
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {platedOut.map(({ meal: m, platedMeals }) => (
+              <span
+                key={m.recipeCode}
+                title={`${m.recipeName} — ${platedMeals.toLocaleString("de-DE")} Portionen plaitiert — gesamte produzierte Menge raus`}
+                className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-500"
+              >
+                {m.recipeCode}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
