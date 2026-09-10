@@ -543,8 +543,37 @@ async function postSlack(text) {
 }
 
 const nf = n => Math.round(n).toLocaleString("de-DE");
-function subLine(s) {
-  return `• *${s.subRecipeName}* — mindestens ${nf(s.minimumNeed)}, mit Puffer ${nf(s.bufferedNeed)}${s.basis === "gap-only" ? " _(im Sheet noch nicht erfasst)_" : ""}`;
+const RULE = "──────────────────────────────";
+const IND = "   "; // 3× geschütztes Leerzeichen — Slack trimmt es nicht
+
+// Eine gruppierte Kategorie-Meldung: fette Überschrift + Trennlinie + Blöcke.
+// Leere Gruppen posten nicht. Bündelt alles zu EINEM Slack-Post pro Kategorie
+// statt N Einzel-Posts — klare Abtrennung zwischen den Kategorien, zusammen-
+// gehörende Zeilen im selben Rahmen (Trennlinie oben, Leerzeile zwischen Blöcken).
+async function postGroup(title, subtitle, blocks) {
+  const body = blocks.filter(Boolean).join("\n\n");
+  if (!body) return;
+  const head = subtitle ? `*${title}*   ·   ${subtitle}` : `*${title}*`;
+  await postSlack(`${head}\n${RULE}\n${body}`);
+}
+
+// Ein Meal-Block: Kopfzeile + eingerückte Detailzeilen.
+function mealBlock(meal, subLines) {
+  const est = meal.targetEstimated ? `   _(Ziel/Ist geschätzt · ${meal.targetSourceLabel})_` : "";
+  const head = `*${meal.mealCode}*  ·  ${meal.mealName}`;
+  const gap = meal.gap > 0 ? `\n${IND}${nf(meal.gap)} fehlen  —  ${nf(meal.actuals)} / ${nf(meal.plannedTarget)} platiert${est}` : "";
+  const subs = subLines.length ? "\n" + subLines.map(l => `${IND}${l}`).join("\n") : "";
+  return head + gap + subs;
+}
+
+function subNeed(s) {
+  const tail = s.basis === "gap-only" ? "  _(im Sheet noch nicht pro Sub erfasst)_" : "";
+  return `• *${s.subRecipeName}*  →  ${nf(s.minimumNeed)}  (mit Puffer ${nf(s.bufferedNeed)})${tail}`;
+}
+
+// Einzelzeile „Code · Detail" mit optionaler eingerückter zweiter Zeile.
+function itemLine(code, title, detail) {
+  return `• *${code}*  ·  ${title}${detail ? `\n${IND}${detail}` : ""}`;
 }
 
 // ── Watcher ────────────────────────────────────────────────────────────────
@@ -699,39 +728,50 @@ exports.rtiBackfillWatch = onSchedule(
       }
     }
 
-    // Slack-Posts — auf dem allerersten Lauf NICHT (sonst Nachricht für jeden
-    // aktuell offenen Backfill). Ab dann nur echte Änderungen.
+    // ── Slack: EINE gruppierte Meldung je Kategorie (nicht je Sub/Meal) ──────
+    // Reihenfolge nach Dringlichkeit. Auf dem allerersten Lauf (seeding) nichts —
+    // sonst käme für jeden aktuell offenen Backfill eine Meldung.
     if (!seeding) {
-    for (const { meal, planned, actuals, source, rewrite } of headerFilledAlerts) {
-      const verb = rewrite ? "korrigiert" : "eingetragen";
-      await postSlack(`🤖 *${meal.mealCode} ${meal.mealName}* — *Planned Target ${nf(planned)}* / *Actuals ${nf(actuals)}* automatisch in den RTI-Sheet-Kopf ${verb} (${source}). Zahlen bitte kurz gegenprüfen.`);
-    }
-    for (const { meal, s } of newOpen) {
-      const est = meal.targetEstimated ? `  _(Ziel/Ist geschätzt: ${meal.targetSourceLabel})_` : "";
-      await postSlack(`🔴 *Backfill nötig — ${meal.mealCode} ${meal.mealName}*\n${meal.gap} Portionen fehlen (${nf(meal.actuals)}/${nf(meal.plannedTarget)} platiert)${est}\n${subLine(s)}`);
-    }
-    for (const { meal, s, prevMin } of grownSubs) {
-      await postSlack(`📈 *Backfill-Menge gestiegen — ${meal.mealCode} ${meal.mealName}*\n${subLine(s)}   _(vorher ${nf(prevMin)})_`);
-    }
-    for (const { meal } of headerAlerts) {
+      // 🔴 NEU: Backfill nötig — je Meal ein Rahmen, Engpass-Subs eingerückt.
+      const byMeal = new Map();
+      for (const { meal, s } of newOpen) {
+        if (!byMeal.has(meal.mealCode)) byMeal.set(meal.mealCode, { meal, subs: [] });
+        byMeal.get(meal.mealCode).subs.push(s);
+      }
+      await postGroup("🔴  BACKFILL NÖTIG", `${byMeal.size} Meal${byMeal.size === 1 ? "" : "s"}`,
+        [...byMeal.values()].map(({ meal, subs }) => mealBlock(meal, subs.map(subNeed))));
+
+      // 📈 Menge gestiegen.
+      await postGroup("📈  BACKFILL-MENGE GESTIEGEN", "",
+        grownSubs.map(({ meal, s, prevMin }) =>
+          itemLine(meal.mealCode, s.subRecipeName, `jetzt ${nf(s.minimumNeed)}   _(vorher ${nf(prevMin)})_`)));
+
+      // ⏰ Wiegung hängt.
+      await postGroup("⏰  WIEGUNG HÄNGT", `seit > ${STALE_MIN} min offen`,
+        staleAlerts.map(({ meal, ageMin }) =>
+          itemLine(meal.mealCode, meal.mealName,
+            `${nf(meal.gap)} kurz seit ${Math.round(ageMin)} min · offen: ${meal.openSubs.map(x => x.subRecipeName).join(", ")}`)));
+
+      // ⚠️ Kopf fehlt + nicht automatisch füllbar.
       const dead = [
         !sourcesOk.redzoneOk && "Redzone",
         !sourcesOk.relayOk && "Browser-Relay",
         !sourcesOk.lpOk && "LinePlaiting",
       ].filter(Boolean).join(" / ");
-      const why = dead
-        ? `keine Ist-Quelle erreichbar (${dead})`
-        : "kein Forecast-Wert und keine Ist-Zahl für dieses Meal gefunden";
-      await postSlack(`⚠️ *${meal.mealCode} ${meal.mealName}* — es wird schon gewogen, aber *Planned Target / Actuals* fehlen im RTI-Sheet-Kopf und liessen sich nicht automatisch füllen (${why}). Bitte oben eintragen.`);
-    }
-    for (const { meal, s, viaApp } of nowEntered) {
-      const wer = viaApp ? "von *Planer Automatik* (Backfill-Wächter) erledigt" : "im RTI-Sheet als „done“ markiert";
-      await postSlack(`✅ ${meal.mealCode} · ${s.subRecipeName} — ${wer}.`);
-    }
-    for (const { meal, ageMin } of staleAlerts) {
-      const open = meal.openSubs.map(x => x.subRecipeName).join(", ");
-      await postSlack(`⏰ *${meal.mealCode} ${meal.mealName}* ist ${meal.gap} Portionen kurz — Wiegung läuft seit ${Math.round(ageMin)} min, aber noch offen: ${open}. Bitte im RTI-Sheet nachtragen oder Backfill ansetzen.`);
-    }
+      await postGroup("⚠️  RTI-KOPF FEHLT", "Planned Target / Actuals im Sheet-Kopf nachtragen",
+        headerAlerts.map(({ meal }) =>
+          itemLine(meal.mealCode, meal.mealName, dead ? `_${dead} nicht erreichbar_` : "")));
+
+      // 🤖 Kopf automatisch gefüllt/korrigiert.
+      await postGroup("🤖  RTI-KOPF AUTOMATISCH GEFÜLLT", "Zahlen bitte kurz gegenprüfen",
+        headerFilledAlerts.map(({ meal, planned, actuals, source, rewrite }) =>
+          itemLine(meal.mealCode, meal.mealName,
+            `Planned ${nf(planned)}  /  Actuals ${nf(actuals)}   _(${rewrite ? "korrigiert" : "eingetragen"} · ${source})_`)));
+
+      // ✅ Erledigt.
+      await postGroup("✅  ERLEDIGT", "",
+        nowEntered.map(({ meal, s, viaApp }) =>
+          itemLine(meal.mealCode, `${s.subRecipeName}   _(${viaApp ? "Planer Automatik" : "im RTI-Sheet"})_`, "")));
     } // ende !seeding
 
     // Geteiltes Flacker-Signal: jede offene App liest das und flackert dann
@@ -830,4 +870,5 @@ module.exports._internal = {
   parseRti, computeRtiBackfills, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow, fetchLinePlaitingFirstRun, deriveHeaderTargets,
+  mealBlock, subNeed, itemLine, RULE, IND,
 };

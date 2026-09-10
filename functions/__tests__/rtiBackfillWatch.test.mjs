@@ -11,6 +11,7 @@ const {
   computeRtiBackfills, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow,
+  mealBlock, subNeed, itemLine, IND, RULE,
 } = require("../rtiBackfillWatch.js")._internal;
 
 const sub = (o = {}) => ({
@@ -142,6 +143,28 @@ test("fillRtiHeader — Plausibilität + Zeilen-Check", async () => {
   assert.equal((await fillRtiHeader(sheets, rows, meal, 80, 10)).reason, "out-of-range");
   const rows3 = [[], [], [], [], [], ["", "FV9999A - Other", "", "", ""]];
   assert.equal((await fillRtiHeader(sheets, rows3, meal, 6918, 5539)).reason, "row-mismatch");
+});
+
+test("Slack-Format — mealBlock: Kopf + eingerückte Sub-Zeilen (nbsp-Einzug)", () => {
+  const b = mealBlock(
+    { mealCode: "FV4048A", mealName: "Creamy Leek", gap: 915, actuals: 2848, plannedTarget: 3763 },
+    [subNeed({ subRecipeName: "Mash", minimumNeed: 915, bufferedNeed: 1137, basis: "sheet" })],
+  );
+  const lines = b.split("\n");
+  assert.equal(lines[0], "*FV4048A*  ·  Creamy Leek");
+  assert.ok(lines[1].startsWith(IND), "Detailzeile mit nbsp eingerückt");
+  assert.match(lines[1], /915 fehlen.*2\.848 \/ 3\.763/);
+  assert.ok(lines[2].startsWith(IND + "• *Mash*"));
+  assert.equal(IND, "   ");
+});
+
+test("Slack-Format — itemLine: Code fett, optionale 2. Zeile eingerückt", () => {
+  assert.equal(itemLine("FV0780A", "Penne", ""), "• *FV0780A*  ·  Penne");
+  assert.equal(itemLine("FV0780A", "Penne", "Planned 5.510"), `• *FV0780A*  ·  Penne\n${IND}Planned 5.510`);
+});
+
+test("Slack-Format — RULE ist eine Trennlinie", () => {
+  assert.ok(RULE.length >= 20 && /^─+$/.test(RULE));
 });
 
 test("plannedActualFromRow — Tripel p,a,d mit d=a−p, Run-Zähler weg", () => {
