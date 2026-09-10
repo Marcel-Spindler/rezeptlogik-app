@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const {
   computeRtiBackfills, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
-  parseCsv, parseWholeNumber,
+  parseCsv, parseWholeNumber, plannedActualFromRow,
 } = require("../rtiBackfillWatch.js")._internal;
 
 const sub = (o = {}) => ({
@@ -95,29 +95,60 @@ test("parseWholeNumber — Tausender-Trenner beide Stile", () => {
   assert.equal(parseWholeNumber("-915"), -915);
 });
 
-test("fillRtiHeader — schreibt D/E nur wenn beide leer + plausibel", async () => {
+test("fillRtiHeader — leere Zellen: schreiben", async () => {
   const rows = [];
   rows[5] = ["", "FV0780A - Whole Wheat Penne Bolognese [DE]", "", "", ""];
   const meal = { mealCode: "FV0780A", headerRow: 5 };
   const writes = [];
   const sheets = { spreadsheets: { values: { update: async a => { writes.push(a); return {}; } } } };
 
-  const ok = await fillRtiHeader(sheets, rows, meal, 6918, 5539);
+  const ok = await fillRtiHeader(sheets, rows, meal, 5510, 5539);
   assert.equal(ok.ok, true);
   assert.equal(ok.cell, "'RTI'!D6:E6");
-  assert.deepEqual(writes[0].requestBody.values, [[6918, 5539]]);
+  assert.equal(ok.rewrite, false);
+  assert.deepEqual(writes[0].requestBody.values, [[5510, 5539]]);
+});
 
-  // D schon gefüllt → niemals überschreiben
-  const rows2 = [[], [], [], [], [], ["", "FV0780A - x", "", "7000", ""]];
-  writes.length = 0;
-  assert.equal((await fillRtiHeader(sheets, rows2, meal, 6918, 5539)).reason, "not-empty");
+test("fillRtiHeader — Hand-Eintrag: niemals anfassen", async () => {
+  const meal = { mealCode: "FV0780A", headerRow: 5 };
+  const writes = [];
+  const sheets = { spreadsheets: { values: { update: async a => { writes.push(a); return {}; } } } };
+  const rows = [[], [], [], [], [], ["", "FV0780A - x", "", "7000", "6000"]];
+  // kein prevFill → fremder Wert
+  assert.equal((await fillRtiHeader(sheets, rows, meal, 5510, 5539)).reason, "human-edit");
+  // prevFill passt NICHT zu den Zellen → jemand hat editiert
+  assert.equal((await fillRtiHeader(sheets, rows, meal, 5510, 5539, { planned: 6918, actuals: 5600 })).reason, "human-edit");
   assert.equal(writes.length, 0);
+});
 
-  // Ist > Ziel*1.05 → implausibel
+test("fillRtiHeader — eigener Fehl-Eintrag: korrigieren", async () => {
+  const meal = { mealCode: "FV0780A", headerRow: 5 };
+  const writes = [];
+  const sheets = { spreadsheets: { values: { update: async a => { writes.push(a); return {}; } } } };
+  const rows = [[], [], [], [], [], ["", "FV0780A - x", "", "6918", "5600"]];
+  const r = await fillRtiHeader(sheets, rows, meal, 5510, 5600, { planned: 6918, actuals: 5600 });
+  assert.equal(r.ok, true);
+  assert.equal(r.rewrite, true);
+  assert.deepEqual(writes[0].requestBody.values, [[5510, 5600]]);
+  // marginale Änderung → kein Rewrite
+  assert.equal((await fillRtiHeader(sheets, rows, meal, 6919, 5601, { planned: 6918, actuals: 5600 })).reason, "no-change");
+});
+
+test("fillRtiHeader — Plausibilität + Zeilen-Check", async () => {
+  const rows = [[], [], [], [], [], ["", "FV0780A - x", "", "", ""]];
+  const meal = { mealCode: "FV0780A", headerRow: 5 };
+  const sheets = { spreadsheets: { values: { update: async () => ({}) } } };
   assert.equal((await fillRtiHeader(sheets, rows, meal, 6918, 7400)).reason, "implausible");
-  // Ziel außerhalb Bereich
   assert.equal((await fillRtiHeader(sheets, rows, meal, 80, 10)).reason, "out-of-range");
-  // Zeile trägt anderen Code
   const rows3 = [[], [], [], [], [], ["", "FV9999A - Other", "", "", ""]];
   assert.equal((await fillRtiHeader(sheets, rows3, meal, 6918, 5539)).reason, "row-mismatch");
+});
+
+test("plannedActualFromRow — Tripel p,a,d mit d=a−p, Run-Zähler weg", () => {
+  // [code, name, planned, "", "", "3.0", actual, delta, ...rechts Wochensummen]
+  const row = ["FV4048A", "Creamy Leek", "3763", "", "", "3.0", "2848", "-915", "", "", "note", "24.32%", "", "12599", "0", "-12599"];
+  assert.deepEqual(plannedActualFromRow(row, 2), { planned: 3763, actual: 2848 });
+  // Überproduktion: delta positiv
+  const row2 = ["FV0780A", "Penne", "5510", "", "", "5.0", "5600", "90"];
+  assert.deepEqual(plannedActualFromRow(row2, 2), { planned: 5510, actual: 5600 });
 });

@@ -37,58 +37,57 @@ function linePlaiting(...rows: Partial<LinePlaitingRow>[]): LinePlaitingData {
 const NOW = new Date(2026, 8, 10, 8, 0, 0);
 
 describe("buildRtiExternalTargets", () => {
-  it("Forecast (totalVerdenVolume) + Redzone-Output je 4-Ziffer-Code", () => {
+  it("LinePlaiting 1. Run treibt Planned UND Actual (nicht die Forecast-Gesamtzahl)", () => {
     const m = buildRtiExternalTargets({
-      data: data(wr("FV0780A", 6918)),
+      data: data(wr("FV0780A", 6918)), // Forecast-Gesamt, hier NICHT verwendet
       weekShort: "W38",
-      linePlaiting: null,
-      redzoneRuns: [
-        run("FV0780A", 3000, "2026-09-08T06:00:00"),
-        run("FV0780A", 2539, "2026-09-09T06:00:00"),
-      ],
+      linePlaiting: linePlaiting(
+        { recipeCode: "FV0780A", plannedPortions: 5510, actualPortions: 5600 },
+        { recipeCode: "FV0780A", plannedPortions: 2540, actualPortions: 0, day: "Friday" }, // 2. Run — ignoriert
+      ),
+      redzoneRuns: [run("FV0780A", 5539, "2026-09-08T06:00:00")],
       now: NOW,
     });
     const t = m.get("0780")!;
-    expect(t.plannedTarget).toBe(6918);
-    expect(t.actuals).toBe(5539);
-    expect(t.source).toBe("Forecast + Redzone");
+    expect(t.plannedTarget).toBe(5510);
+    expect(t.actuals).toBe(5600); // Ist > Ziel (Überproduktion 1. Run) — bis Ziel×1.05 erlaubt
+    expect(t.source).toBe("LinePlaiting 1. Run");
   });
 
-  it("kein Redzone → LinePlaiting Σ Actual als Fallback", () => {
+  it("kein LinePlaiting-Actual → Redzone-Output als Ist-Fallback", () => {
     const m = buildRtiExternalTargets({
-      data: data(wr("FV0001A", 3000)),
+      data: data(),
       weekShort: "W38",
-      linePlaiting: linePlaiting(
-        { recipeCode: "FV0001A", plannedPortions: 1500, actualPortions: 1400 },
-        { recipeCode: "FV0001A", plannedPortions: 1500, actualPortions: 1300, day: "Wednesday" },
-      ),
-      redzoneRuns: [],
+      linePlaiting: linePlaiting({ recipeCode: "FV0001A", plannedPortions: 3000, actualPortions: 0 }),
+      redzoneRuns: [run("FV0001A", 2700, "2026-09-08T06:00:00")],
       now: NOW,
     });
     const t = m.get("0001")!;
     expect(t.plannedTarget).toBe(3000);
     expect(t.actuals).toBe(2700);
-    expect(t.source).toBe("Forecast + LinePlaiting");
+    expect(t.source).toBe("LinePlaiting 1. Run / Redzone");
   });
 
-  it("kein Forecast → LinePlaiting Σ Planned trägt das Ziel", () => {
+  it("kein LinePlaiting → Forecast-Gesamt trägt das Ziel (markiert), Redzone das Ist", () => {
     const m = buildRtiExternalTargets({
-      data: data(),
+      data: data(wr("FV0042A", 4000)),
       weekShort: "W38",
-      linePlaiting: linePlaiting({ recipeCode: "FV0042A", plannedPortions: 2000, actualPortions: 1800 }),
-      redzoneRuns: [],
+      linePlaiting: null,
+      redzoneRuns: [run("FV0042A", 3600, "2026-09-08T06:00:00")],
       now: NOW,
     });
     const t = m.get("0042")!;
-    expect(t.plannedTarget).toBe(2000);
-    expect(t.actuals).toBe(1800);
-    expect(t.source).toBe("LinePlaiting + LinePlaiting");
+    expect(t.plannedTarget).toBe(4000);
+    expect(t.actuals).toBe(3600);
+    expect(t.source).toBe("Forecast-Gesamt / Redzone");
   });
 
-  it("ohne Ist-Zahl (kein Redzone, kein LinePlaiting-Actual) → kein Eintrag", () => {
+  it("ohne Ist-Zahl → kein Eintrag", () => {
     const m = buildRtiExternalTargets({
       data: data(wr("FV0001A", 3000)),
-      weekShort: "W38", linePlaiting: null, redzoneRuns: [], now: NOW,
+      weekShort: "W38",
+      linePlaiting: linePlaiting({ recipeCode: "FV0001A", plannedPortions: 3000, actualPortions: 0 }),
+      redzoneRuns: [], now: NOW,
     });
     expect(m.has("0001")).toBe(false);
   });
@@ -121,15 +120,15 @@ describe("buildRtiExternalTargets", () => {
     expect(m.get("0001")!.actuals).toBe(500);
   });
 
-  it("Ist über Ziel → auf das Ziel geklemmt", () => {
+  it("Redzone-Ist deutlich über Ziel → verworfen (Mehr-Run-Meal, nicht zum 1. Run passend)", () => {
     const m = buildRtiExternalTargets({
       data: data(wr("FV0001A", 3000)),
       weekShort: "W38",
       linePlaiting: null,
-      redzoneRuns: [run("FV0001A", 3200, "2026-09-08T06:00:00")],
+      redzoneRuns: [run("FV0001A", 4200, "2026-09-08T06:00:00")], // > 3000×1.05
       now: NOW,
     });
-    expect(m.get("0001")!.actuals).toBe(3000);
+    expect(m.has("0001")).toBe(false);
   });
 
   it("andere KW im weekShort → dieser WeekRecipe zählt nicht", () => {
@@ -141,5 +140,11 @@ describe("buildRtiExternalTargets", () => {
       now: NOW,
     });
     expect(m.has("0001")).toBe(false);
+  });
+
+  it("ohne weekShort → leer", () => {
+    expect(buildRtiExternalTargets({
+      data: data(wr("FV0001A", 3000)), weekShort: "", linePlaiting: null, redzoneRuns: [], now: NOW,
+    }).size).toBe(0);
   });
 });

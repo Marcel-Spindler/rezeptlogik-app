@@ -1,10 +1,13 @@
 // Ersatz-Kopfzahlen für den RTI-Backfill-Rechner, wenn Planned Target / Actuals
 // im RTI-Sheet-Kopf (noch) nicht von Hand eingetragen sind. Rein, kein Hook.
 //
-//   Planned Target  ← Forecast (WeekRecipe.totalVerdenVolume der KW),
-//                     Fallback: LinePlaiting Σ Planned der KW
-//   Actuals         ← Redzone Σ outCount (Plating-Runs, ab Montag),
-//                     Fallback: LinePlaiting Σ Actual der KW
+// WICHTIG: Der RTI-Kopf, wie ihn Menschen füllen, ist NICHT die Forecast-
+// Gesamtzahl, sondern der **1. (Haupt-)Plating-Run** des Meals — an KW38 gegen
+// 9 von Hand gefüllte Meals verifiziert (RTI Planned == LinePlaiting 1. Run,
+// exakt). Ein Meal mit 2–3 Runs hätte sonst ein viel zu hohes Planned Target.
+//
+//   Planned Target  ← LinePlaiting 1. Run (Planned)  ▸ Fallback Forecast-Gesamt (markiert)
+//   Actuals         ← LinePlaiting 1. Run (Actual)   ▸ Fallback Redzone-Output
 //
 // Key = codeDigits(mealCode).toUpperCase() (4-stellig) — identisch zum Key in
 // computeRtiBackfills / combineBackfills, damit FV4063A und FV4063B zusammenfallen.
@@ -12,7 +15,6 @@ import type { DataBundle } from "../../core/types";
 import type { LinePlaitingData } from "../gsheet-monitor/gsheetTypes";
 import type { PlatingRunDisplay } from "../redzone-live/redzoneTypes";
 import { codeDigits } from "../../lib/helpers";
-import { aggregatePlatingByMeal } from "./combineBackfills";
 import type { RtiExternalTarget } from "./rtiBackfillCalculator";
 
 function key(code: string): string {
@@ -39,36 +41,26 @@ export interface BuildRtiTargetsInput {
 export function buildRtiExternalTargets(input: BuildRtiTargetsInput): Map<string, RtiExternalTarget> {
   const { data, weekShort, linePlaiting, redzoneRuns, now = new Date() } = input;
   const out = new Map<string, RtiExternalTarget>();
-  // Ohne eindeutige KW kein verlässliches Forecast-Ziel — dann keine Schätzung.
   if (!weekShort) return out;
 
-  // ── Planned Target: Forecast (WeekRecipe) ─────────────────────────────────
-  const plannedByCode = new Map<string, number>();
-  const plannedSrc = new Map<string, "Forecast" | "LinePlaiting">();
+  // ── LinePlaiting: 1. Run (erste Zeile je Meal) Planned + Actual ───────────
+  const lpFirstRun = new Map<string, { planned: number; actual: number }>();
+  for (const r of linePlaiting?.rows ?? []) {
+    if (!r.recipeCode || !(r.plannedPortions > 0)) continue;
+    const k = key(r.recipeCode);
+    if (lpFirstRun.has(k)) continue; // Zeilen stehen in Tages-/Run-Reihenfolge
+    lpFirstRun.set(k, { planned: Math.round(r.plannedPortions), actual: Math.round(Math.max(0, r.actualPortions)) });
+  }
+
+  // ── Forecast (WeekRecipe.totalVerdenVolume) — Fallback fürs Ziel ──────────
+  const forecast = new Map<string, number>();
   for (const wr of data?.weekRecipes ?? []) {
-    if (wr.weekShort !== weekShort) continue;
-    if (!(wr.totalVerdenVolume > 0)) continue;
+    if (wr.weekShort !== weekShort || !(wr.totalVerdenVolume > 0)) continue;
     const k = key(wr.code);
-    // größten Wert behalten (Code-Varianten / Doppel-Zeilen)
-    if ((plannedByCode.get(k) ?? 0) < wr.totalVerdenVolume) {
-      plannedByCode.set(k, wr.totalVerdenVolume);
-      plannedSrc.set(k, "Forecast");
-    }
+    if ((forecast.get(k) ?? 0) < wr.totalVerdenVolume) forecast.set(k, Math.round(wr.totalVerdenVolume));
   }
 
-  // ── LinePlaiting Σ Planned / Σ Actual der KW (Fallback bzw. Ist-Quelle) ────
-  const platingByMeal = aggregatePlatingByMeal(linePlaiting);
-  const lpPlanned = new Map<string, number>();
-  const lpActual = new Map<string, number>();
-  for (const [k, agg] of platingByMeal) {
-    if (agg.allPlannedTotal > 0) lpPlanned.set(k, Math.round(agg.allPlannedTotal));
-    if (agg.allActualTotal > 0) lpActual.set(k, Math.round(agg.allActualTotal));
-  }
-  for (const [k, v] of lpPlanned) {
-    if (!plannedByCode.has(k)) { plannedByCode.set(k, v); plannedSrc.set(k, "LinePlaiting"); }
-  }
-
-  // ── Actuals: Redzone Σ outCount (Plating), ab Montag dieser Woche ──────────
+  // ── Redzone Σ outCount (Plating), ab Montag — Fallback fürs Ist ───────────
   const weekStart = startOfWeekMonday(now);
   const redzoneByCode = new Map<string, number>();
   for (const run of redzoneRuns ?? []) {
@@ -81,21 +73,27 @@ export function buildRtiExternalTargets(input: BuildRtiTargetsInput): Map<string
     redzoneByCode.set(k, (redzoneByCode.get(k) ?? 0) + add);
   }
 
-  // ── Zusammenführen: nur Meals mit Planned Target ──────────────────────────
-  for (const [k, plannedTarget] of plannedByCode) {
+  const codes = new Set<string>([...lpFirstRun.keys(), ...forecast.keys()]);
+  for (const k of codes) {
+    const run1 = lpFirstRun.get(k);
+    const fc = forecast.get(k) ?? 0;
+
+    let plannedTarget = 0;
+    let planSrc = "";
+    if (run1 && run1.planned > 0) { plannedTarget = run1.planned; planSrc = "LinePlaiting 1. Run"; }
+    else if (fc > 0) { plannedTarget = fc; planSrc = "Forecast-Gesamt"; }
+    else continue;
+
     const redz = redzoneByCode.get(k) ?? 0;
-    const lp = lpActual.get(k) ?? 0;
     let actuals = 0;
     let actualSrc = "";
-    if (redz > 0) { actuals = Math.round(redz); actualSrc = "Redzone"; }
-    else if (lp > 0) { actuals = lp; actualSrc = "LinePlaiting"; }
+    if (run1 && run1.actual > 0) { actuals = run1.actual; actualSrc = "LinePlaiting 1. Run"; }
+    else if (redz > 0 && redz <= plannedTarget * 1.05) { actuals = Math.round(redz); actualSrc = "Redzone"; }
     else continue; // ohne Ist-Zahl kein rechenbarer gap
 
-    // klemmen: das Ist kann durch Zähl-/Fensterlücken minimal übers Ziel gehen
-    if (actuals > plannedTarget) actuals = plannedTarget;
-
-    const source = `${plannedSrc.get(k) ?? "Forecast"} + ${actualSrc}`;
-    out.set(k, { plannedTarget: Math.round(plannedTarget), actuals, source });
+    actuals = Math.min(actuals, Math.round(plannedTarget * 1.05));
+    const source = planSrc === actualSrc ? planSrc : `${planSrc} / ${actualSrc}`;
+    out.set(k, { plannedTarget, actuals, source });
   }
 
   return out;
