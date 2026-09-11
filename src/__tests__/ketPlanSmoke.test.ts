@@ -56,6 +56,7 @@ function makeCalc(overrides?: Partial<BatchCalc>): BatchCalc {
     factorBatches: null,
     factorBatchQtyKg: null,
     factorFallbackCapacity: false,
+    factorProteinDept: false,
     readyMade: false,
     allergensContains: [],
     chillerAssignment: null,

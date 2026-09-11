@@ -55,6 +55,13 @@ export interface FactorClassification {
   rti: boolean;
   capacityKg: number | null;
   fallback?: boolean;
+  // Nur gesetzt, wenn capacityKg === ONE_BATCH: unterscheidet echtes Protein/Fisch
+  // (Fisch, Bacon, Tofu, Pute, mariniertes Fleisch) von Nüssen/Green Onion, die
+  // zwar auch als Einzel-Batch laufen (Spice Room pickt sie einmalig), aber keine
+  // Protein-Komponenten sind. Nur für die Debox-Departement-Zuordnung relevant
+  // (classifyDeboxDepartment/classifyIstDepartment) — ändert nichts an der
+  // Batch-Kapazität selbst.
+  oneBatchIsProtein?: boolean;
 }
 
 // Hauptklassifizierer, Regelreihenfolge ist Teil der Logik (erste passende Regel gewinnt).
@@ -85,9 +92,14 @@ export function classify(name: string, cookMethods: string[] = []): FactorClassi
   if (
     /fish|fisch|bacon|tofu|turkey|pute|marinade|brined/.test(n)
     || (/brine|grill|marinade/.test(cm) && /chicken|pork|beef|salmon|fish|shrimp|bacon/.test(n))
-  ) return { rti: false, capacityKg: ONE_BATCH };
-  if (/green onion|cipollott|scallion/.test(n)) return { rti: false, capacityKg: ONE_BATCH };
-  if (/pine ?nut|pinoli|nuts?\b|pistachio|almond/.test(n) && !/flour|mehl/.test(n)) return { rti: false, capacityKg: ONE_BATCH };
+  ) return { rti: false, capacityKg: ONE_BATCH, oneBatchIsProtein: true };
+  if (/green onion|cipollott|scallion/.test(n)) return { rti: false, capacityKg: ONE_BATCH, oneBatchIsProtein: false };
+  // "coconut" enthält als Substring "nut" (coco-NUT) — vor der Nuss-Regel ausschließen,
+  // sonst wird z.B. "Coconut Rice" fälschlich als Einzel-Batch-Nuss klassifiziert
+  // statt als Reis (Kapazität 100 kg).
+  if (/pine ?nut|pinoli|nuts?\b|pistachio|almond/.test(n) && !/flour|mehl/.test(n) && !/coconut|kokos/.test(n)) {
+    return { rti: false, capacityKg: ONE_BATCH, oneBatchIsProtein: false };
+  }
 
   if (/rice|reis|risotto|grain|basmati|spanakopita|pilaf|couscous|quinoa/.test(n)) return { rti: false, capacityKg: 100 };
   if (/mash|stamppot|puree|purè|püree/.test(n)) return { rti: false, capacityKg: 95 };

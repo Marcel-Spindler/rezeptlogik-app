@@ -24,10 +24,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Gleiche Heuristik wie ketLogic.classifyDeboxDepartment, aber ohne den vollen
 // BatchCalc/DataBundle -- reicht für die Mail, die nur Name + Cook Methods aus
-// dem KET-CSV kennt (siehe factorRules.classify).
+// dem KET-CSV kennt (siehe factorRules.classify). Nüsse/Green Onion sind trotz
+// ONE_BATCH kein Protein (oneBatchIsProtein grenzt das ab) -- sonst landen z.B.
+// "Roasted Green Onions" fälschlich in der Protein-Spalte.
 export function classifyIstDepartment(row: KetRow): IstDepartment {
   const cls = classify(row.subRecipeName, row.cookMethods);
-  const isProtein = !cls.rti && (cls.capacityKg === NO_BATCH || cls.capacityKg === ONE_BATCH);
+  const isProtein = !cls.rti && (cls.capacityKg === NO_BATCH || (cls.capacityKg === ONE_BATCH && cls.oneBatchIsProtein === true));
   return isProtein ? "protein" : "veggie";
 }
 

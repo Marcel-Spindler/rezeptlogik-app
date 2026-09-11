@@ -7,6 +7,7 @@ import { useBackfills } from "./BackfillsContext";
 import type { BackfillFeasibility } from "./backfillTypes";
 import type { RtiMealBackfill, RtiSubShortfall } from "./rtiBackfillCalculator";
 import type { SubStockElsewhere } from "./rtiInventorySweep";
+import { useSharedBackfillSince } from "./sharedBackfillSince";
 import { fmt } from "../whatif/whatIfFormat";
 import { codeDigits, usePersistent } from "../../lib/helpers";
 
@@ -21,6 +22,24 @@ type EnteredMap = Record<string, EnteredMark>;
 
 function subKey(weekNum: number | null, mealCode: string, sub: RtiSubShortfall): string {
   return `${weekNum ?? "?"}:${sub.workOrder || mealCode}:${sub.subRecipeName}`;
+}
+
+// ── "seit wann offen" ───────────────────────────────────────────────────────
+// Treibt die chronologische Sortierung (älteste zuerst — siehe BackfillWatchView)
+// UND die "seit"-Anzeige je Zeile, damit ein länger offener Engpass nicht von
+// einem frischen, größeren aus dem Blick verdrängt wird.
+//
+// Quelle: bevorzugt der geteilte Zeitstempel aus Firestore (useSharedBackfillSince
+// — von der Cloud Function alle 10 min geschrieben, für ALLE Geräte gleich).
+// Lokal (localStorage) ist nur der Fallback, solange die Function diesen Engpass
+// noch nicht erfasst hat (kurz nach dem ersten Auftauchen) oder ohne Firestore
+// (reiner data.json-Modus) — sonst würde jedes Gerät sein eigenes "zuerst
+// gesehen" führen und derselbe Engpass sähe auf einem anderen Rechner oder nach
+// einem Reload plötzlich "gerade eben entdeckt" aus.
+type FirstSeenMap = Record<string, number>;
+
+function formatSince(ts: number): string {
+  return new Date(ts).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function copyLine(meal: RtiMealBackfill, sub: RtiSubShortfall): string {
@@ -121,13 +140,14 @@ function elsewhereNote(e: SubStockElsewhere | undefined) {
 // ── Sub-Zeile ───────────────────────────────────────────────────────────────
 
 function SubRow({
-  meal, sub, elsewhere, entered, flash, onEnter, onUndo,
+  meal, sub, elsewhere, entered, flash, since, onEnter, onUndo,
 }: {
   meal: RtiMealBackfill;
   sub: RtiSubShortfall;
   elsewhere: SubStockElsewhere | undefined;
   entered: EnteredMark | undefined;
   flash: boolean;
+  since: number | undefined;
   onEnter: () => void;
   onUndo: () => void;
 }) {
@@ -136,9 +156,14 @@ function SubRow({
 
   if (entered && !grew) {
     return (
-      <div className="flex items-center justify-between gap-2 pl-5 pr-4 py-2 text-[12px] text-slate-400">
-        <span className="truncate">✓ eingetragen · <span className="line-through">{sub.subRecipeName}</span> ({fmt(entered.min)})</span>
-        <button type="button" onClick={onUndo} className="shrink-0 text-slate-400 hover:text-slate-700 underline">rückgängig</button>
+      <div className="pl-5 pr-4 py-2">
+        <div className="flex items-center justify-between gap-2 text-[12px] text-slate-400">
+          <span className="truncate">✓ eingetragen · <span className="line-through">{sub.subRecipeName}</span> ({fmt(entered.min)})</span>
+          <button type="button" onClick={onUndo} className="shrink-0 text-slate-400 hover:text-slate-700 underline">rückgängig</button>
+        </div>
+        {entered.synced === false && (
+          <div className="mt-1 text-[10px] text-amber-700">⚠ Sheet „done" fehlgeschlagen — manuell setzen</div>
+        )}
       </div>
     );
   }
@@ -158,11 +183,13 @@ function SubRow({
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${covered ? "bg-amber-400" : "bg-rose-500"}`} />
             <span className="truncate">{sub.subRecipeName}</span>
           </div>
-          {(holdingInfo || sub.basis === "gap-only") && (
+          {(since != null || holdingInfo || sub.basis === "gap-only") && (
             <div className="mt-0.5 text-[11px] text-slate-500">
+              {since != null && <span className="text-slate-400">offen seit {formatSince(since)}</span>}
+              {since != null && holdingInfo && " · "}
               {holdingInfo}
               {sub.basis === "gap-only" && (
-                <span className="text-amber-600">{holdingInfo ? " · " : ""}⧗ noch nicht pro Sub im Sheet — geschätzt</span>
+                <span className="text-amber-600">{(since != null || holdingInfo) ? " · " : ""}⧗ noch nicht pro Sub im Sheet — geschätzt</span>
               )}
             </div>
           )}
@@ -205,7 +232,7 @@ function SubRow({
 // ── Meal-Karte ──────────────────────────────────────────────────────────────
 
 function MealCard({
-  meal, weekNum, feasibility, elsewhere, entered, flashKeys, setEntered, openCount,
+  meal, weekNum, feasibility, elsewhere, entered, flashKeys, setEntered, openCount, since,
 }: {
   meal: RtiMealBackfill;
   weekNum: number | null;
@@ -215,7 +242,19 @@ function MealCard({
   flashKeys: Set<string>;
   setEntered: Dispatch<SetStateAction<EnteredMap>>;
   openCount: number;
+  since: Map<string, number>;
 }) {
+  // Chronologisch, älteste zuerst — damit ein länger offener Engpass oben
+  // stehen bleibt, statt von einem frischen, größeren verdrängt zu werden.
+  const sortedOpenSubs = useMemo(
+    () => [...meal.openSubs].sort((a, b) =>
+      (since.get(subKey(weekNum, meal.mealCode, a)) ?? Infinity) -
+      (since.get(subKey(weekNum, meal.mealCode, b)) ?? Infinity),
+    ),
+    [meal.openSubs, meal.mealCode, weekNum, since],
+  );
+  const oldestSince = since.get(subKey(weekNum, meal.mealCode, sortedOpenSubs[0]));
+
   const mark = useCallback((sub: RtiSubShortfall, on: boolean) => {
     const key = subKey(weekNum, meal.mealCode, sub);
     setEntered(prev => {
@@ -254,6 +293,9 @@ function MealCard({
               <span>geplant {fmt(meal.plannedTarget)} · platiert {fmt(meal.actuals)}</span>
               <span className="text-slate-300">·</span>
               <span className="font-medium text-slate-600">{openCount} nachkochen</span>
+              {oldestSince != null && (
+                <span className="text-slate-400">· offen seit {formatSince(oldestSince)}</span>
+              )}
               {meal.targetEstimated && (
                 <span className="text-amber-600" title={`Ziel/Ist aus App-Daten (${meal.targetSourceLabel}) — Bot trägt es im RTI-Sheet nach`}>
                   ⧗ Ziel/Ist geschätzt
@@ -272,7 +314,7 @@ function MealCard({
       <RohwareStrip f={feasibility} />
 
       <div className="divide-y divide-slate-100">
-        {meal.openSubs.map(sub => {
+        {sortedOpenSubs.map(sub => {
           const key = subKey(weekNum, meal.mealCode, sub);
           return (
             <SubRow
@@ -282,6 +324,7 @@ function MealCard({
               elsewhere={elsewhere.get(`${meal.mealCode}|${sub.subRecipeName}`)}
               entered={entered[key]}
               flash={flashKeys.has(key)}
+              since={since.get(key)}
               onEnter={() => mark(sub, true)}
               onUndo={() => mark(sub, false)}
             />
@@ -344,8 +387,46 @@ export function BackfillWatchView() {
   } = useBackfills();
 
   const [entered, setEntered] = usePersistent<EnteredMap>("backfill-watch-entered", {});
+  const [firstSeen, setFirstSeen] = usePersistent<FirstSeenMap>("backfill-watch-first-seen", {});
   const [explainerOpen, setExplainerOpen] = usePersistent<boolean>("backfill-watch-explainer", true);
   const [filter, setFilter] = useState<"open" | "all">("open");
+  const sharedSince = useSharedBackfillSince();
+
+  // Lokaler Fallback-Zeitstempel "zuerst gesehen" je offenem Engpass — nur
+  // gepflegt, wenn wirklich ein neuer Key auftaucht oder einer verschwindet.
+  // Ohne dieses Gate würde jeder RTI-Poll (alle 60 s) unabhängig vom Inhalt
+  // einen localStorage-Write auslösen (usePersistent schreibt bei jedem
+  // Setter-Aufruf, unabhängig davon, ob sich der Wert ändert).
+  useEffect(() => {
+    const openKeys = new Set<string>();
+    for (const meal of rtiMeals) {
+      for (const sub of meal.openSubs) openKeys.add(subKey(selectedWeekNum, meal.mealCode, sub));
+    }
+    const staleOrNew = openKeys.size !== Object.keys(firstSeen).length
+      || [...openKeys].some(k => firstSeen[k] == null);
+    if (!staleOrNew) return;
+    setFirstSeen(prev => {
+      const now = Date.now();
+      const next: FirstSeenMap = {};
+      for (const k of openKeys) next[k] = prev[k] ?? now;
+      return next;
+    });
+  }, [rtiMeals, selectedWeekNum, firstSeen, setFirstSeen]);
+
+  // Effektiver "seit"-Zeitstempel je Engpass: geteilt (Firestore, für alle
+  // Geräte gleich) bevorzugt, lokal nur als Fallback — siehe Kommentar oben
+  // bei FirstSeenMap.
+  const effectiveSince = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const meal of rtiMeals) {
+      for (const sub of meal.openSubs) {
+        const localKey = subKey(selectedWeekNum, meal.mealCode, sub);
+        const ts = sharedSince.get(`${sub.workOrder}|${sub.subRecipeName}`) ?? firstSeen[localKey];
+        if (ts != null) m.set(localKey, ts);
+      }
+    }
+    return m;
+  }, [rtiMeals, selectedWeekNum, sharedSince, firstSeen]);
 
   // Rohware-Ampel je 4-Ziffer-Code auflösen (feasibilityByMeal ist auf den
   // Anzeige-Code der combined-Liste gekeyed, der abweichen kann).
@@ -384,9 +465,21 @@ export function BackfillWatchView() {
   const openSubCount = withOpen.reduce((s, m) => s + m.openSubs.filter(sub => !isEntered(m, sub)).length, 0);
   const enteredCount = withOpen.reduce((s, m) => s + m.openSubs.filter(sub => isEntered(m, sub)).length, 0);
 
-  const visible = filter === "open"
+  // Chronologisch, älteste zuerst — ein länger offener Backfill bleibt oben
+  // stehen, statt von einem frischen, größeren aus dem Blick verdrängt zu werden.
+  const oldestIncidentAt = useCallback((meal: RtiMealBackfill): number => {
+    let min = Infinity;
+    for (const sub of meal.openSubs) {
+      const ts = effectiveSince.get(subKey(selectedWeekNum, meal.mealCode, sub));
+      if (ts != null && ts < min) min = ts;
+    }
+    return min;
+  }, [effectiveSince, selectedWeekNum]);
+
+  const visible = (filter === "open"
     ? withOpen.filter(m => m.openSubs.some(sub => !isEntered(m, sub)))
-    : withOpen;
+    : withOpen
+  ).slice().sort((a, b) => oldestIncidentAt(a) - oldestIncidentAt(b));
 
   const copyAllOpen = useMemo(() => withOpen.flatMap(m =>
     m.openSubs.filter(sub => !isEntered(m, sub)).map(sub => copyLine(m, sub)),
@@ -494,6 +587,7 @@ export function BackfillWatchView() {
                   flashKeys={flashKeys}
                   setEntered={setEntered}
                   openCount={meal.openSubs.filter(sub => !isEntered(meal, sub)).length}
+                  since={effectiveSince}
                 />
               ))}
             </div>

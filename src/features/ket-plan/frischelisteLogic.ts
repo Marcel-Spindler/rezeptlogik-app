@@ -37,18 +37,22 @@ export function buildFrischelisteEinkauf(
 
     const calc = calcMap.get(row.key);
     if (!calc) continue;
-    const dept = classifyDeboxDepartment(calc);
-    if (!dept) continue;
 
-    const buf = dept === "protein" ? proteinBuf : veggieBuf;
+    // Einkauf zählt jede Zutat nach ihrer EIGENEN Kategorie (PHF/PTN aus dem
+    // Ingredient-Stammdatensatz) — anders als die Küchenansicht (siehe
+    // buildFrischeliste), die nach dem Department des GERICHTS gruppiert.
+    // Für den Einkauf ist das Gericht irrelevant: Zwiebel/Knoblauch aus einer
+    // Protein-Marinade sind trotzdem PHF-Einkauf, kein Protein-Einkauf.
     const allIngs: IngCalc[] =
       calc.components.length > 0
         ? calc.components.flatMap((c) => c.ingredients)
         : calc.ingredients;
 
     for (const ing of allIngs) {
-      if (!isPhf(ing.category)) continue;
+      const cat = (ing.category ?? "").toUpperCase().trim();
+      if (cat !== "PHF" && cat !== "PTN") continue;
       if (ing.totalKg <= 0) continue;
+      const buf = cat === "PTN" ? proteinBuf : veggieBuf;
       const ingKey = ing.name.trim().toLowerCase();
       const existing = buf.get(ingKey);
       if (existing) {

@@ -21,6 +21,13 @@ STRUCTURE
   as "A. STATION", "B. STATION", … in natural process order. Give something a
   letter only if staff physically walk to a distinct area. Mixing, draining,
   blending and marinating are usually action lines INSIDE the nearest station.
+- The equipment list is NOT one letter per machine. A stand/horizontal mixer, a
+  patty or portioning machine, paddles, scoops — anything used right there in the
+  debox/prep area — stay as action lines inside that ONE station (usually
+  "PROTEIN DEBOX" / "VEGGIE DEBOX"). Real sheets for a multi-equipment prep (e.g.
+  mix → form on the patty machine) still read as just "A. PROTEIN DEBOX" then
+  "B. OVEN" — two stations, not five. Only give a genuinely separate room its own
+  letter (Spice Room, Braiser, Oven, Grill, Blast Chiller, …).
 - Under each station: numbered imperative steps. Mostly one action per line, but a
   step MAY carry a short second clause or a technique note when they belong
   together — e.g. "Sauté the onion and garlic in the oil until tender and very
@@ -45,7 +52,8 @@ USE THE CONTEXT (only what is actually given, never guess a field)
 - productFamily → pick the archetypal flow for that family (e.g. "Shredded
   Chicken" = marinade → oven → shred, reserve pan liquid, recombine by ratio;
   "Cupped Sauces - Cold" = debox → blend → cup).
-- processFlow / equipment → the stations and their order.
+- processFlow / equipment → which stations exist and their order — NOT one
+  station per equipment item, see STRUCTURE above.
 - batches / perBatchKg / totalKg → you MAY state a batch or total weight
   approximately ("~50 kg per batch"); period for EN ("~11.2 kg"), comma for DE
   ("~11,2 kg"). Never invent one, never add decimals beyond the context.
@@ -223,6 +231,33 @@ A. GEWÜRZRAUM
 EN: RTI → Plating
 DE: RTI → Plattieren
 
+--- Example G: several equipment items, ONE debox station (mixer + forming
+    machine stay inside "A", not their own letters — see STRUCTURE)
+EN:
+A. PROTEIN DEBOX
+1. Remove all ingredients from outer packaging; transfer to Cambros individually. DO NOT mix
+2. Combine the wet ingredients in the mixer bowl until fully combined
+3. Combine the dry ingredients and seasoning in a separate Cambro until fully mixed
+4. Load the mixer bowl onto a platform scale; add the meat, wet mix and dry mix in thirds until the full batch is in
+5. Mix on low speed just until combined. DO NOT OVERMIX or the result turns dense and dry
+6. Portion and round on the forming machine; arrange on sheet trays, 100 pcs per tray
+B. OVEN
+1. Roast per Oven Setting: Beef Meatballs
+2. FSQA CCP1 Check
+3. Transfer to pre-blast associates
+DE:
+A. PROTEINDEBOX
+1. Alle Zutaten aus der Außenverpackung nehmen; einzeln in Cambros umfüllen. NICHT vermischen
+2. Die feuchten Zutaten in der Rührschüssel vollständig vermengen
+3. Die trockenen Zutaten und Gewürze in einem separaten Cambro vollständig vermischen
+4. Die Rührschüssel auf eine Plattformwaage stellen; Fleisch, feuchte und trockene Mischung in Dritteln zugeben, bis die volle Charge drin ist
+5. Auf niedriger Stufe nur bis zum Vermengen mischen. NICHT ZU LANGE MISCHEN, sonst wird das Ergebnis dicht und trocken
+6. Auf der Formmaschine portionieren und rundformen; auf Bleche verteilen, 100 Stück pro Blech
+B. OFEN
+1. Nach Ofeneinstellung rösten: Rinder-Frikadellen
+2. FSQA CCP1-Kontrolle
+3. Zur Vorkühlung übergeben
+
 Return JSON: {"english":"...","german":"...","status":"needs_review"}`;
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
@@ -309,32 +344,53 @@ async function runInstructionBatch(items, generate, concurrency, delayMs) {
   return results;
 }
 
+// Baut den Request-Body. `breakRepetition` schaltet für den Retry nach einer
+// erkannten Wiederholungsschleife (Modell schließt das JSON nie ab, füllt den
+// Rest des Budgets stattdessen mit Leerzeilen) eine höhere Temperatur dazu —
+// mehr Budget allein hilft dagegen nicht, der Text wächst dann nur
+// proportional mit und bleibt trotzdem abgeschnitten.
+function buildInstructionRequestBody(context, breakRepetition = false) {
+  return JSON.stringify({
+    systemInstruction: { parts: [{ text: GEMINI_INSTRUCTION_SYSTEM_PROMPT }] },
+    contents: [{ role: "user", parts: [{ text: `WO context:\n${context}` }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          english: { type: "STRING" },
+          german: { type: "STRING" },
+          status: { type: "STRING", enum: ["generated", "needs_review"] },
+        },
+        required: ["english", "german", "status"],
+      },
+      maxOutputTokens: 4096,
+      // gemini-2.5-flash lehnt frequencyPenalty/presencePenalty ab ("Penalty is
+      // not enabled for...") — bei einer erkannten Wiederholungsschleife bleibt
+      // nur, die Temperatur für den Retry deutlich anzuheben, um aus dem bei
+      // temperature 0.1 fast deterministischen Loop rauszukommen.
+      temperature: breakRepetition ? 0.7 : 0.1,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  });
+}
+
 async function generateGeminiInstruction(context) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY fehlt im lokalen Server");
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const requestBody = JSON.stringify({
-      systemInstruction: { parts: [{ text: GEMINI_INSTRUCTION_SYSTEM_PROMPT }] },
-      contents: [{ role: "user", parts: [{ text: `WO context:\n${context}` }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            english: { type: "STRING" },
-            german: { type: "STRING" },
-            status: { type: "STRING", enum: ["generated", "needs_review"] },
-          },
-          required: ["english", "german", "status"],
-        },
-        maxOutputTokens: 2400,
-        temperature: 0.1,
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    });
-  const payload = await geminiCallWithRetry(requestBody, apiKey, model);
-  const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+  let payload = await geminiCallWithRetry(buildInstructionRequestBody(context), apiKey, model);
+  let text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
   if (!text) throw new Error(`Gemini lieferte keine Instructions (${payload.promptFeedback?.blockReason || payload.candidates?.[0]?.finishReason || "unbekannter Grund"})`);
+  if (payload.candidates?.[0]?.finishReason === "MAX_TOKENS") {
+    // Ein Retry mit höherer Temperatur gegen die Wiederholungsschleife.
+    payload = await geminiCallWithRetry(buildInstructionRequestBody(context, true), apiKey, model);
+    text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("") || "";
+    if (!text) throw new Error(`Gemini lieferte keine Instructions (${payload.promptFeedback?.blockReason || payload.candidates?.[0]?.finishReason || "unbekannter Grund"})`);
+    if (payload.candidates?.[0]?.finishReason === "MAX_TOKENS") {
+      throw new Error(`Gemini-Antwort bricht wiederholt bei maxOutputTokens ab (${text.length} Zeichen) — vermutlich Wiederholungsschleife`);
+    }
+  }
   const instruction = extractInstructionJson(text, "Gemini");
   return {
     english: instruction.english,

@@ -2109,6 +2109,11 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                 if (!selectedCalc) throw new Error("Keine Berechnung für diese WO vorhanden");
                 const instruction = await generateWoInstruction(selectedRow, selectedCalc);
                 persistInstructions({ [selectedRow.key]: instruction }, [{ key: selectedRow.key, cacheKey: instructionCacheKey(selectedRow), row: selectedRow, calc: selectedCalc }]);
+                try {
+                  await saveRowToKetDrive(selectedRow, { ...woInstructions, [selectedRow.key]: instruction });
+                } catch (error) {
+                  throw new Error(`Instruction erzeugt, aber Drive-Ablage fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`);
+                }
               }}
               onInstructionEdit={(updated) => {
                 if (!selectedCalc) return;
@@ -2130,6 +2135,17 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                   component,
                 };
                 persistInstructions({ [target.key]: instruction }, [target]);
+                // Erst in Drive ablegen, wenn ALLE Komponenten der WO eine
+                // Anweisung haben — ein Zwischenstand mit fehlenden Komponenten
+                // wäre als PDF irreführend (siehe rowInstructionStatus).
+                const nextInstructions = { ...woInstructions, [target.key]: instruction };
+                if (rowInstructionStatus(selectedRow, selectedCalc, (k) => !!nextInstructions[k]).complete) {
+                  try {
+                    await saveRowToKetDrive(selectedRow, nextInstructions);
+                  } catch (error) {
+                    throw new Error(`Instruction erzeugt, aber Drive-Ablage fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`);
+                  }
+                }
               }}
               onComponentInstructionEdit={(component, updated) => {
                 if (!selectedCalc) return;
@@ -2155,6 +2171,11 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                 persistInstructions(result.generated, toGenerate);
                 if (result.failed.length > 0) {
                   throw new Error(`${result.failed.length} von ${toGenerate.length} Kochanweisungen fehlgeschlagen: ${result.failed.map((f) => f.componentName ?? f.woNumber).join(", ")}`);
+                }
+                try {
+                  await saveRowToKetDrive(selectedRow, { ...woInstructions, ...result.generated });
+                } catch (error) {
+                  throw new Error(`Instructions erzeugt, aber Drive-Ablage fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`);
                 }
               }}
               onDownload={async () => {

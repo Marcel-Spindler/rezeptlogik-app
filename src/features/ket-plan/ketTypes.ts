@@ -153,6 +153,10 @@ export interface WoComponent {
   factorBatches: number | null;
   factorBatchQtyKg: number | null;
   factorFallbackCapacity: boolean;
+  // Echtes Protein/Fisch laut Factor-Klassifizierung dieser Komponente (neverBatch
+  // ODER Einzel-Batch mit oneBatchIsProtein) — Nüsse/Green Onion zählen NICHT als
+  // Protein, obwohl sie auch Einzel-Batch sind. Grundlage für classifyDeboxDepartment.
+  factorProteinDept: boolean;
   readyMade: boolean;
   // GN-Blech-Bedarf dieser Komponente, aufsummiert über ihre eigenen Zutaten
   // (siehe IngCalc.gnTrays), gruppiert nach GN-Größe.
@@ -214,6 +218,10 @@ export interface BatchCalc {
   factorBatches: number | null;
   factorBatchQtyKg: number | null;
   factorFallbackCapacity: boolean;
+  // Echtes Protein/Fisch laut Factor-Klassifizierung (neverBatch ODER Einzel-Batch
+  // mit oneBatchIsProtein) — Nüsse/Green Onion zählen NICHT als Protein, obwohl sie
+  // auch Einzel-Batch sind. Grundlage für classifyDeboxDepartment.
+  factorProteinDept: boolean;
   // "Roasted Garlic"/"Roasted Garlic Oil" — wöchentlich fertiges Produkt, nie expandieren.
   readyMade: boolean;
   // Bilinguale (EN/DE) CONTAINS-Allergenliste, aus DetailedIngredient.allergen gesammelt.

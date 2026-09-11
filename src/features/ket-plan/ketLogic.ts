@@ -681,6 +681,8 @@ function buildWoComponents(
     const componentFactorBatchQtyKg = componentFactorBatches && componentFactorBatches > 0
       ? +(totalKg / componentFactorBatches).toFixed(3)
       : null;
+    const componentFactorProteinDept = !componentRti
+      && (componentNeverBatch || (componentFactorClass.capacityKg === ONE_BATCH && componentFactorClass.oneBatchIsProtein === true));
 
     return {
       name: child.name,
@@ -702,6 +704,7 @@ function buildWoComponents(
       factorBatches: componentFactorBatches,
       factorBatchQtyKg: componentFactorBatchQtyKg,
       factorFallbackCapacity: !!componentFactorClass.fallback,
+      factorProteinDept: componentFactorProteinDept,
       readyMade: READY_MADE.test(child.name),
       gnTraySummary,
       scoopInfo: resolveScoopInfo(recipe, child.name),
@@ -910,6 +913,7 @@ export function calcBatch(
       ? (totalKg > 0 ? 1 : 0)
       : (totalKg > 0 && factorCapacityKg ? Math.ceil(totalKg / factorCapacityKg) : null);
   const factorBatchQtyKg = factorBatches && factorBatches > 0 ? +(totalKg / factorBatches).toFixed(3) : null;
+  const factorProteinDept = !rti && (neverBatch || (factorClass.capacityKg === ONE_BATCH && factorClass.oneBatchIsProtein === true));
 
   const allergenSet = new Set<string>();
   if (matchedSub) collectAllergens(matchedSub, allergenSet);
@@ -938,6 +942,7 @@ export function calcBatch(
     subRecipeInstructionsGermanFallback: instructionPair.germanIsFallback,
     rti, neverBatch, factorCapacityKg, factorBatches, factorBatchQtyKg,
     factorFallbackCapacity: !!factorClass.fallback,
+    factorProteinDept,
     readyMade: READY_MADE.test(row.subRecipeName),
     allergensContains,
     chillerAssignment,
@@ -1070,20 +1075,21 @@ export function catColor(cat: string): string {
   return "text-slate-500 bg-slate-50";
 }
 
-// Debox-Department (Shopfloor-Dashboard, Sidebar-Filter): Protein Debox
-// (Fleisch/Fisch/sonstige Proteine) vs. Veggie Debox (alles andere). Primär
-// über eine explizite "VEGGIE DEBOX"/"PROTEIN DEBOX"-Cook-Method (falls die
-// Datenquelle das liefert, z.B. aus manueller Zuweisung), sonst über die
-// Factor-Klassifizierung (neverBatch = Fleisch/Fisch nie gesplittet,
-// factorCapacityKg ONE_BATCH/NO_BATCH = sonstige Proteine) — dieselbe
-// Heuristik, mit der praktisch jede nicht-RTI-WO eindeutig einer der beiden
-// Debox-Stationen zugeordnet werden kann, auch ohne explizite Cook-Method.
+// Debox-Department (Shopfloor-Dashboard, Sidebar-Filter, Frischeliste): Protein
+// Debox (Fleisch/Fisch/sonstige echte Proteine) vs. Veggie Debox (alles andere).
+// Primär über eine explizite "VEGGIE DEBOX"/"PROTEIN DEBOX"-Cook-Method (falls
+// die Datenquelle das liefert, z.B. aus manueller Zuweisung), sonst über
+// calc.factorProteinDept — die Factor-Klassifizierung dieser WO/Komponente
+// (neverBatch = Fleisch/Fisch nie gesplittet, ODER Einzel-Batch mit
+// oneBatchIsProtein). Wichtig: NICHT jede ONE_BATCH-Klassifizierung ist Protein —
+// Nüsse und Green Onion laufen ebenfalls als Einzel-Batch (Spice Room pickt sie
+// einmalig), sind aber Veggie-Debox-Artikel; factorProteinDept filtert das schon
+// beim Berechnen der WO/Komponente heraus (siehe factorRules.classify).
 export function classifyDeboxDepartment(calc: BatchCalc): "protein" | "veggie" | null {
   if (calc.rti) return null;
   if (calc.resolvedCookMethods.includes("PROTEIN DEBOX")) return "protein";
   if (calc.resolvedCookMethods.includes("VEGGIE DEBOX")) return "veggie";
-  const isProtein = calc.neverBatch || calc.factorCapacityKg === NO_BATCH || calc.factorCapacityKg === ONE_BATCH;
-  return isProtein ? "protein" : "veggie";
+  return calc.factorProteinDept ? "protein" : "veggie";
 }
 
 // Stabiler Cache-Key für WO-Instructions: basiert auf Rezeptcode + Sub-Rezeptname,

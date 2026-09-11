@@ -51,6 +51,7 @@ function makeCalc(overrides: Partial<BatchCalc> & { equipBatches: BatchCalc["equ
     factorBatches: null,
     factorBatchQtyKg: null,
     factorFallbackCapacity: false,
+    factorProteinDept: false,
     readyMade: false,
     allergensContains: [],
     chillerAssignment: null,
