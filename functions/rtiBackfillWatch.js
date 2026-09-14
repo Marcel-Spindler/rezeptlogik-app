@@ -189,6 +189,28 @@ function classify(sub, gap, plannedTarget) {
   };
 }
 
+// Dieselbe WO taucht oft in einem SPÄTEREN Block desselben Meal-Codes erneut
+// auf (Nachwiegung/„no" an einem späteren Tag) — meist mit leerem Meal-Kopf,
+// weshalb "größter Planned Target gewinnt" (computeRtiBackfills) diesen Block
+// ignoriert. Nur die tatsächlich gemessenen/gestatusten Felder der zuletzt im
+// Sheet gelisteten Zeile übernehmen; workOrder/subRecipeName/isBackfillCandidate
+// bleiben die der block-eigenen Zeile. 1:1 mit
+// src/features/backfills/rtiBackfillCalculator.ts (withLatestSubData).
+function withLatestSubData(sub, latest) {
+  if (!latest || latest === sub) return sub;
+  return {
+    ...sub,
+    platingHoldingKg: latest.platingHoldingKg,
+    weighedKg: latest.weighedKg,
+    gramPerMeal: latest.gramPerMeal,
+    availableMealcount: latest.availableMealcount,
+    minimumNeed: latest.minimumNeed,
+    shortagePct: latest.shortagePct,
+    backfillMeals: latest.backfillMeals,
+    status: latest.status,
+  };
+}
+
 // externalTargets: Map<4-Ziffer-Code, { plannedTarget, actuals, source }> —
 // Ersatz-Kopfzahlen aus App-Daten (Forecast + Redzone), 1:1 mit
 // src/features/backfills/rtiBackfillCalculator.ts.
@@ -198,9 +220,12 @@ function usableExternalTarget(ext) {
 }
 
 function computeRtiBackfills(meals, externalTargets) {
+  const blocksByKey = new Map();
   const bestByKey = new Map();
   for (const meal of meals) {
     const key = String(meal.mealCode).replace(/\D/g, "");
+    const arr = blocksByKey.get(key);
+    if (arr) arr.push(meal); else blocksByKey.set(key, [meal]);
     const cur = bestByKey.get(key);
     if (!cur || meal.plannedTarget > cur.plannedTarget) bestByKey.set(key, meal);
   }
@@ -243,8 +268,15 @@ function computeRtiBackfills(meals, externalTargets) {
     if (gap < MIN_SUB_SHORTFALL) continue;
 
     const openSubs = [], enteredSubs = [], notNeededSubs = [];
-    for (const sub of meal.subRecipes) {
-      if (sub.isBackfillCandidate) continue;
+    // Über alle Blöcke DIESES Meal-Codes: die zuletzt im Sheet gelistete Zeile
+    // je WO gewinnt (siehe withLatestSubData oben).
+    const latestByWorkOrder = new Map();
+    for (const block of blocksByKey.get(String(meal.mealCode).replace(/\D/g, "")) || [meal]) {
+      for (const s of block.subRecipes) if (s.workOrder) latestByWorkOrder.set(s.workOrder, s);
+    }
+    for (const subRaw of meal.subRecipes) {
+      if (subRaw.isBackfillCandidate) continue;
+      const sub = withLatestSubData(subRaw, latestByWorkOrder.get(subRaw.workOrder));
       const c = classify(sub, gap, plannedTarget);
       if (!c) continue;
       if (c.vetoed) notNeededSubs.push(c);
@@ -836,11 +868,16 @@ exports.rtiMarkDone = onRequest({ region: REGION, timeoutSeconds: 30 }, async (r
       valueRenderOption: "FORMATTED_VALUE",
     });
     const rows = resp.data.values || [];
+    // Dieselbe WO kann mehrfach im Sheet stehen (Re-Check-Block an einem
+    // späteren Tag, siehe withLatestSubData) — NICHT beim ersten Treffer
+    // abbrechen, sondern den LETZTEN nehmen. Sonst schreibt "done" in einen
+    // längst überholten Block, den computeRtiBackfills gar nicht mehr liest,
+    // und der Engpass taucht beim nächsten Poll unverändert wieder auf.
     let rowIndex = -1;
     for (let i = 0; i < rows.length; i++) {
       const a = String((rows[i] || [])[0] ?? "").trim();
       const b = String((rows[i] || [])[1] ?? "").trim();
-      if (a === String(wo).trim() && (!subRecipe || b === String(subRecipe).trim())) { rowIndex = i; break; }
+      if (a === String(wo).trim() && (!subRecipe || b === String(subRecipe).trim())) rowIndex = i;
     }
     if (rowIndex < 0) { res.status(404).json({ error: `WO ${wo} nicht gefunden` }); return; }
 
@@ -870,5 +907,5 @@ module.exports._internal = {
   parseRti, computeRtiBackfills, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow, fetchLinePlaitingFirstRun, deriveHeaderTargets,
-  mealBlock, subNeed, itemLine, RULE, IND,
+  mealBlock, subNeed, itemLine, RULE, IND, withLatestSubData,
 };

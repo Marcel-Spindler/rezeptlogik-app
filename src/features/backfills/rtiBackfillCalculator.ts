@@ -162,6 +162,28 @@ function classify(sub: RtiSubRecipeEntry, gap: number, plannedTarget: number): C
   };
 }
 
+// Dieselbe WO taucht oft in einem SPÄTEREN Block desselben Meal-Codes erneut
+// auf (Nachwiegung/„no" an einem späteren Tag) — meist mit leerem Meal-Kopf,
+// weshalb "größter Planned Target gewinnt" (unten) diesen Block ignoriert.
+// Nur die tatsächlich gemessenen/gestatusten Felder der zuletzt im Sheet
+// gelisteten Zeile übernehmen; workOrder/subRecipeName/isBackfillCandidate
+// bleiben die der block-eigenen Zeile (die Rolle "real vs. Kandidat" ändert
+// sich nicht über Blöcke hinweg — live an KW38 geprüft).
+function withLatestSubData(sub: RtiSubRecipeEntry, latest: RtiSubRecipeEntry | undefined): RtiSubRecipeEntry {
+  if (!latest || latest === sub) return sub;
+  return {
+    ...sub,
+    platingHoldingKg: latest.platingHoldingKg,
+    weighedKg: latest.weighedKg,
+    gramPerMeal: latest.gramPerMeal,
+    availableMealcount: latest.availableMealcount,
+    minimumNeed: latest.minimumNeed,
+    shortagePct: latest.shortagePct,
+    backfillMeals: latest.backfillMeals,
+    status: latest.status,
+  };
+}
+
 /**
  * Wertet jeden Meal-Block des RTI-Tabs aus und liefert die Sub-Rezept-Engpässe.
  * Nur Meals mit mindestens einem Engpass-Sub kommen in die Liste — ein Meal,
@@ -176,11 +198,15 @@ export function computeRtiBackfills(
   rti: RtiData | null | undefined,
   externalTargets?: Map<string, RtiExternalTarget>,
 ): RtiMealBackfill[] {
-  // Mehrere Blöcke je Meal-Code (echte Wiegung + leere Prep-/Zweitrun-Blöcke,
-  // teils unter Code-Varianten) — den mit dem größten Planned Target behalten.
+  // Mehrere Blöcke je Meal-Code (echte Wiegung + leere Prep-/Zweitrun-/Re-Check-
+  // Blöcke, teils unter Code-Varianten) — den mit dem größten Planned Target
+  // als Meal-Kopf behalten (der einzige Block mit echten Kopfzahlen).
+  const blocksByKey = new Map<string, RtiMealBlock[]>();
   const bestByKey = new Map<string, RtiMealBlock>();
   for (const meal of rti?.meals ?? []) {
     const key = codeDigits(meal.mealCode).toUpperCase();
+    const arr = blocksByKey.get(key);
+    if (arr) arr.push(meal); else blocksByKey.set(key, [meal]);
     const cur = bestByKey.get(key);
     if (!cur || meal.plannedTarget > cur.plannedTarget) bestByKey.set(key, meal);
   }
@@ -237,8 +263,16 @@ export function computeRtiBackfills(
     const notNeededSubs: RtiSubShortfall[] = [];
     const candidateSubNames = new Set<string>();
 
-    for (const sub of meal.subRecipes) {
-      if (sub.isBackfillCandidate) { candidateSubNames.add(sub.subRecipeName); continue; }
+    // Über alle Blöcke DIESES Meal-Codes: die zuletzt im Sheet gelistete Zeile
+    // je WO gewinnt (siehe withLatestSubData oben).
+    const latestByWorkOrder = new Map<string, RtiSubRecipeEntry>();
+    for (const block of blocksByKey.get(codeDigits(meal.mealCode).toUpperCase()) ?? [meal]) {
+      for (const s of block.subRecipes) if (s.workOrder) latestByWorkOrder.set(s.workOrder, s);
+    }
+
+    for (const subRaw of meal.subRecipes) {
+      if (subRaw.isBackfillCandidate) { candidateSubNames.add(subRaw.subRecipeName); continue; }
+      const sub = withLatestSubData(subRaw, latestByWorkOrder.get(subRaw.workOrder));
       const c = classify(sub, gap, plannedTarget);
       if (!c) continue;
       const { vetoed, ...shortfall } = c;

@@ -73,8 +73,8 @@ describe("computeRtiBackfills — Status J", () => {
     const [m] = computeRtiBackfills(rti({
       plannedTarget: 3763, actuals: 2848,
       subRecipes: [
-        sub({ subRecipeName: "Mash", minimumNeed: -915, backfillMeals: -1137, shortagePct: -24.32, status: "done" }),
-        sub({ subRecipeName: "Pork", minimumNeed: -812, backfillMeals: -987, shortagePct: -21.58, status: "open" }),
+        sub({ workOrder: "38-163", subRecipeName: "Mash", minimumNeed: -915, backfillMeals: -1137, shortagePct: -24.32, status: "done" }),
+        sub({ workOrder: "38-164", subRecipeName: "Pork", minimumNeed: -812, backfillMeals: -987, shortagePct: -21.58, status: "open" }),
       ],
     }));
     expect(m.openSubs.map(s => s.subRecipeName)).toEqual(["Pork"]);
@@ -84,7 +84,7 @@ describe("computeRtiBackfills — Status J", () => {
 
   it("alle Engpässe 'done' → allEntered=true, openSubs leer", () => {
     const [m] = computeRtiBackfills(rti({
-      subRecipes: [sub({ minimumNeed: -915, status: "done" }), sub({ subRecipeName: "B", minimumNeed: -800, status: "done" })],
+      subRecipes: [sub({ workOrder: "38-167", minimumNeed: -915, status: "done" }), sub({ workOrder: "38-168", subRecipeName: "B", minimumNeed: -800, status: "done" })],
     }));
     expect(m.openSubs).toHaveLength(0);
     expect(m.allEntered).toBe(true);
@@ -92,7 +92,7 @@ describe("computeRtiBackfills — Status J", () => {
 
   it("Status 'no' → notNeededSubs", () => {
     const [m] = computeRtiBackfills(rti({
-      subRecipes: [sub({ subRecipeName: "Fondue", minimumNeed: -954, status: "open" }), sub({ subRecipeName: "Zucchini", minimumNeed: -543, status: "not-needed" })],
+      subRecipes: [sub({ workOrder: "38-165", subRecipeName: "Fondue", minimumNeed: -954, status: "open" }), sub({ workOrder: "38-166", subRecipeName: "Zucchini", minimumNeed: -543, status: "not-needed" })],
     }));
     expect(m.openSubs.map(s => s.subRecipeName)).toEqual(["Fondue"]);
     expect(m.notNeededSubs.map(s => s.subRecipeName)).toEqual(["Zucchini"]);
@@ -157,6 +157,64 @@ describe("computeRtiBackfills — nichts zu tun", () => {
   });
 });
 
+describe("computeRtiBackfills — Re-Check in einem SPÄTEREN Block überschreibt (live an KW38 FV4116A/FV1169A aufgefallen)", () => {
+  // Reale Sheet-Struktur: dieselbe WO wird an einem späteren Tag erneut
+  // gelistet (Nachwiegung/„no"), aber in einem Block MIT LEEREM Meal-Kopf —
+  // "größter Planned Target gewinnt" hätte diesen Block bisher komplett
+  // ignoriert und den längst erledigten Engpass für immer als offen gemeldet.
+  const feed = (subRecipesBlock2: Partial<RtiSubRecipeEntry>, subRecipesBlock3?: Partial<RtiSubRecipeEntry>): RtiData => ({
+    week: "W38", lastUpdated: Date.now(),
+    meals: [
+      {
+        mealCode: "FV4116A", mealName: "Sweet Potato & Bulgogi-Spiced Beef",
+        plannedTarget: 2585, actuals: 1632, delta: -953, deltaPct: 36.87,
+        subRecipes: [sub({ workOrder: "38-186", subRecipeName: "Toasted Sesame Seeds", weighedKg: 0, gramPerMeal: 1, availableMealcount: 0, minimumNeed: -953, backfillMeals: -1304, shortagePct: -36.87, status: "open" })],
+      },
+      {
+        mealCode: "FV4116A", mealName: "Sweet Potato & Bulgogi-Spiced Beef",
+        plannedTarget: 0, actuals: 0, delta: 0, deltaPct: 0,
+        subRecipes: [sub({ workOrder: "38-186", subRecipeName: "Toasted Sesame Seeds", gramPerMeal: 1, ...subRecipesBlock2 })],
+      },
+      ...(subRecipesBlock3 ? [{
+        mealCode: "FV4116A", mealName: "Sweet Potato & Bulgogi-Spiced Beef",
+        plannedTarget: 0, actuals: 0, delta: 0, deltaPct: 0,
+        subRecipes: [sub({ workOrder: "38-186", subRecipeName: "Toasted Sesame Seeds", gramPerMeal: 1, ...subRecipesBlock3 })],
+      }] : []),
+    ],
+  });
+
+  it("Block 2 zeigt dieselbe WO längst nachgewogen (Überschuss) → kein Backfill mehr", () => {
+    const result = computeRtiBackfills(feed({ weighedKg: 1.55, availableMealcount: 1550, minimumNeed: 1550, status: "open" }));
+    expect(result).toHaveLength(0);
+  });
+
+  it("Block 2 aktualisiert nur die Menge (noch offen, aber kleiner) — 'letzter Block gewinnt'", () => {
+    const [m] = computeRtiBackfills(feed({ weighedKg: 30, availableMealcount: 200, minimumNeed: -200, status: "open" }));
+    expect(m.openSubs.map(s => `${s.subRecipeName}:${s.minimumNeed}`)).toEqual(["Toasted Sesame Seeds:200"]);
+  });
+
+  it("Block 3 (jüngster) markiert 'no', obwohl Block 2 noch offen war → notNeededSubs statt openSubs", () => {
+    const result = computeRtiBackfills(feed(
+      { weighedKg: 0, availableMealcount: 0, minimumNeed: -953, status: "open" },
+      { weighedKg: 40, availableMealcount: 400, minimumNeed: -50, status: "not-needed" },
+    ));
+    expect(result).toHaveLength(1);
+    expect(result[0].openSubs).toHaveLength(0);
+    expect(result[0].notNeededSubs.map(s => s.subRecipeName)).toEqual(["Toasted Sesame Seeds"]);
+  });
+
+  it("ohne Re-Check-Block bleibt das alte Verhalten (Regression)", () => {
+    const [m] = computeRtiBackfills({
+      week: "W38", lastUpdated: Date.now(),
+      meals: [{
+        mealCode: "FV4116A", mealName: "T", plannedTarget: 2585, actuals: 1632, delta: -953, deltaPct: 36.87,
+        subRecipes: [sub({ workOrder: "38-186", subRecipeName: "Toasted Sesame Seeds", weighedKg: 0, minimumNeed: -953, status: "open" })],
+      }],
+    });
+    expect(m.openSubs.map(s => s.subRecipeName)).toEqual(["Toasted Sesame Seeds"]);
+  });
+});
+
 describe("computeRtiBackfills — Kopf aus App-Daten ergänzt (externalTargets)", () => {
   const targets = (t: Partial<RtiExternalTarget>): Map<string, RtiExternalTarget> =>
     new Map([["0001", { plannedTarget: 3000, actuals: 2600, source: "Forecast + Redzone", ...t }]]);
@@ -164,8 +222,8 @@ describe("computeRtiBackfills — Kopf aus App-Daten ergänzt (externalTargets)"
   // Bottleneck-Sub kam leer zurück (weighedKg 0), ein anderes Sub wurde gewogen
   // → someWeighed=true, aber der Engpass-Sub deckt nichts aus dem Holding.
   const emptyBottleneck = (name: string) => [
-    sub({ subRecipeName: "Beilage", weighedKg: 40, gramPerMeal: 100 }),
-    sub({ subRecipeName: name, weighedKg: 0, gramPerMeal: 100 }),
+    sub({ workOrder: "38-201", subRecipeName: "Beilage", weighedKg: 40, gramPerMeal: 100 }),
+    sub({ workOrder: "38-202", subRecipeName: name, weighedKg: 0, gramPerMeal: 100 }),
   ];
 
   it("Planned Target fehlt → aus externalTargets, targetEstimated=true, gap gerechnet", () => {

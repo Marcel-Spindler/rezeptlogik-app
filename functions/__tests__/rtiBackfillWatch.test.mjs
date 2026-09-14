@@ -51,6 +51,30 @@ test("computeRtiBackfills — Kopf leer + externalTargets + Wiegung → geschät
   assert.equal(r.headerRow, 12);
 });
 
+test("computeRtiBackfills — Re-Check in einem SPÄTEREN Block (leerer Meal-Kopf) überschreibt die Sub-Menge (live an KW38 FV4116A aufgefallen)", () => {
+  const block1 = {
+    mealCode: "FV4116A", mealName: "Sweet Potato & Bulgogi-Spiced Beef", plannedTarget: 2585, actuals: 1632, headerRow: 5,
+    subRecipes: [sub({ workOrder: "38-186", subRecipeName: "Toasted Sesame Seeds", weighedKg: 0, gramPerMeal: 1, availableMealcount: 0, minimumNeed: -953, backfillMeals: -1304, shortagePct: -36.87 })],
+  };
+  const reCheckBlock = (overrides) => ({
+    mealCode: "FV4116A", mealName: "Sweet Potato & Bulgogi-Spiced Beef", plannedTarget: 0, actuals: 0, headerRow: 20,
+    subRecipes: [sub({ workOrder: "38-186", subRecipeName: "Toasted Sesame Seeds", gramPerMeal: 1, ...overrides })],
+  });
+
+  // Block 2 zeigt dieselbe WO längst nachgewogen (Überschuss) → kein Backfill mehr,
+  // obwohl Block 1 (größtes Planned Target) noch offen zeigt.
+  assert.equal(computeRtiBackfills([block1, reCheckBlock({ weighedKg: 5.5, availableMealcount: 5500, minimumNeed: 5500 })]).length, 0);
+
+  // Block 3 (jüngster) markiert explizit "no" → notNeededSubs statt openSubs.
+  const [r] = computeRtiBackfills([
+    block1,
+    reCheckBlock({ weighedKg: 0, availableMealcount: 0, minimumNeed: -953, status: "open" }),
+    reCheckBlock({ weighedKg: 40, availableMealcount: 400, minimumNeed: -50, status: "not-needed" }),
+  ]);
+  assert.equal(r.openSubs.length, 0);
+  assert.deepEqual(r.notNeededSubs.map(s => s.subRecipeName), ["Toasted Sesame Seeds"]);
+});
+
 test("computeRtiBackfills — Kopf leer, aber noch NICHTS gewogen → keine Substitution", () => {
   const meals = [{
     mealCode: "FV0780A", mealName: "Penne", plannedTarget: 0, actuals: 0, headerRow: 12,

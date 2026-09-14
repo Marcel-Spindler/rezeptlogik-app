@@ -273,10 +273,10 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept
     const combined = combine([], null, rtiData({
       plannedTarget: 3763, actuals: 2848,
       subRecipes: [
-        rtiSub("open", { subRecipeName: "Creamy Leek", minimumNeed: 59 }),
-        rtiSub("open", { subRecipeName: "Green beans", minimumNeed: 356 }),
-        rtiSub("open", { subRecipeName: "Mash", minimumNeed: -915, backfillMeals: -1137, shortagePct: -24.32 }),
-        rtiSub("open", { subRecipeName: "Pork tenderloin", minimumNeed: -812, backfillMeals: -987, shortagePct: -21.58 }),
+        rtiSub("open", { workOrder: "36-161", subRecipeName: "Creamy Leek", minimumNeed: 59 }),
+        rtiSub("open", { workOrder: "36-162", subRecipeName: "Green beans", minimumNeed: 356 }),
+        rtiSub("open", { workOrder: "36-163", subRecipeName: "Mash", minimumNeed: -915, backfillMeals: -1137, shortagePct: -24.32 }),
+        rtiSub("open", { workOrder: "36-164", subRecipeName: "Pork tenderloin", minimumNeed: -812, backfillMeals: -987, shortagePct: -21.58 }),
       ],
     }));
     expect(combined[0].rtiSubShortfalls.map(s => s.subRecipeName).sort()).toEqual(["Mash", "Pork tenderloin"]);
@@ -295,7 +295,7 @@ describe("combineBackfillSignals — RTI-Sheet treibt den Bedarf, pro Sub-Rezept
   });
 
   it("ein Sub offen, einer schon eingetragen (Sheet 'done') → Alarm nur für den offenen", () => {
-    const combined = combine([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("open", { subRecipeName: "Sub B" })] }));
+    const combined = combine([], null, rtiData({ subRecipes: [rtiSub("done"), rtiSub("open", { workOrder: "36-002", subRecipeName: "Sub B" })] }));
     expect(combined[0].rtiHasOpenSubs).toBe(true);
     expect(combined[0].rtiSubShortfalls.map(s => s.subRecipeName)).toEqual(["Sub B"]);
     expect(detectCrossSourceAlerts(combined).some(a => a.title.startsWith("Backfill nötig"))).toBe(true);
