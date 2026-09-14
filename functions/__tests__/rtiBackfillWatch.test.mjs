@@ -8,11 +8,17 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
-  computeRtiBackfills, detectWeek, codeDigits,
+  computeRtiBackfills: computeRtiBackfillsAt, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow,
   mealBlock, subNeed, itemLine, IND, RULE,
 } = require("../rtiBackfillWatch.js")._internal;
+
+// Alle Fixtures dieser Datei nutzen "38-xxx"-WOs (KW38) — fixer Referenz-
+// Zeitpunkt, damit der WO-Wochenfilter (nur laufende KW zählt, siehe
+// currentWorkOrderWeek) die Tests nicht vom echten Kalenderdatum abhängig macht.
+const REF_NOW = new Date("2026-09-09T10:00:00Z"); // KW38
+const computeRtiBackfills = (meals, externalTargets) => computeRtiBackfillsAt(meals, externalTargets, REF_NOW);
 
 const sub = (o = {}) => ({
   workOrder: "38-000", subRecipeName: "Sub", platingHoldingKg: 0, weighedKg: 0,
@@ -73,6 +79,18 @@ test("computeRtiBackfills — Re-Check in einem SPÄTEREN Block (leerer Meal-Kop
   ]);
   assert.equal(r.openSubs.length, 0);
   assert.deepEqual(r.notNeededSubs.map(s => s.subRecipeName), ["Toasted Sesame Seeds"]);
+});
+
+test("computeRtiBackfills — WO-Wochenfilter: Sheet über den Wochenwechsel hinweg nicht geleert", () => {
+  const meal = workOrder => [{
+    mealCode: "FV4200A", mealName: "T", plannedTarget: 2000, actuals: 1000, headerRow: 3,
+    subRecipes: [sub({ workOrder, subRecipeName: "Sauce", minimumNeed: -1000 })],
+  }];
+  // REF_NOW dieser Datei liegt in KW38.
+  assert.equal(computeRtiBackfills(meal("37-500")).length, 0, "vergangene KW nicht mehr flaggen");
+  assert.equal(computeRtiBackfills(meal("39-500")).length, 0, "zukünftige KW ebenfalls nicht flaggen");
+  assert.deepEqual(computeRtiBackfills(meal("38-500"))[0].openSubs.map(s => s.subRecipeName), ["Sauce"]);
+  assert.deepEqual(computeRtiBackfills(meal("abc-500"))[0].openSubs.map(s => s.subRecipeName), ["Sauce"], "nicht parsebares Präfix blockiert nicht");
 });
 
 test("computeRtiBackfills — Kopf leer, aber noch NICHTS gewogen → keine Substitution", () => {

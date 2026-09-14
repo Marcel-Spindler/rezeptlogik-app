@@ -58,6 +58,28 @@ const EXT_ACTUALS_MAX_RATIO = 1.15;
 const PLATING_START_HOUR = Number(process.env.RTI_PLATING_START_HOUR || 6);
 const PLATING_END_HOUR = Number(process.env.RTI_PLATING_END_HOUR || 15);
 
+// WO-Nummern im RTI-Sheet sind "{KW}-{laufende Nummer}" (z.B. "38-186",
+// "39-001") — das KW-Präfix ist damit ein zuverlässiges Signal, aus welcher
+// Kalenderwoche eine Zeile stammt. Bleibt ein Meal-Block über den Wochenwechsel
+// hinweg im Sheet stehen (Reset passiert nicht zuverlässig/automatisch), soll
+// er nicht mehr als aktueller Backfill zählen — nur WOs der LAUFENDEN Woche
+// werden noch geflaggt. 1:1 mit src/features/backfills/rtiBackfillCalculator.ts
+// (HF-Woche = echte ISO-Woche + 1, Duplikat von src/lib/hfWeek.ts — Functions
+// haben keinen Zugriff auf src/).
+function workOrderWeek(workOrder) {
+  const n = parseInt(String(workOrder || "").split("-")[0], 10);
+  return Number.isFinite(n) ? n : null;
+}
+function currentWorkOrderWeek(now) {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const isoWeek = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const week = isoWeek + 1;
+  return week <= 52 ? week : 1;
+}
+
 function berlinHour(now) {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Berlin", hour: "2-digit", hour12: false,
@@ -219,7 +241,8 @@ function usableExternalTarget(ext) {
     && ext.actuals <= ext.plannedTarget * EXT_ACTUALS_MAX_RATIO;
 }
 
-function computeRtiBackfills(meals, externalTargets) {
+function computeRtiBackfills(meals, externalTargets, now) {
+  const currentWeek = currentWorkOrderWeek(now || new Date());
   const blocksByKey = new Map();
   const bestByKey = new Map();
   for (const meal of meals) {
@@ -276,6 +299,10 @@ function computeRtiBackfills(meals, externalTargets) {
     }
     for (const subRaw of meal.subRecipes) {
       if (subRaw.isBackfillCandidate) continue;
+      // WO aus einer VERGANGENEN Kalenderwoche (Sheet über den Wochenwechsel
+      // hinweg nicht geleert) → nicht mehr flaggen, siehe currentWorkOrderWeek.
+      const woWeek = workOrderWeek(subRaw.workOrder);
+      if (woWeek != null && woWeek !== currentWeek) continue;
       const sub = withLatestSubData(subRaw, latestByWorkOrder.get(subRaw.workOrder));
       const c = classify(sub, gap, plannedTarget);
       if (!c) continue;
@@ -646,7 +673,7 @@ exports.rtiBackfillWatch = onSchedule(
     }
 
     const parsed = parseRti(rows);
-    const meals = computeRtiBackfills(parsed, externalTargets);
+    const meals = computeRtiBackfills(parsed, externalTargets, nowDate);
 
     const prevSnap = await stateDoc().get();
     const seeding = !prevSnap.exists; // erster Lauf → Ist-Zustand merken, nichts posten
@@ -908,4 +935,5 @@ module.exports._internal = {
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow, fetchLinePlaitingFirstRun, deriveHeaderTargets,
   mealBlock, subNeed, itemLine, RULE, IND, withLatestSubData,
+  workOrderWeek, currentWorkOrderWeek,
 };

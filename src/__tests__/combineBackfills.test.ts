@@ -7,6 +7,11 @@ import type { PlatingRunDisplay } from "../features/redzone-live/redzoneTypes";
 import type { StoredRow } from "../features/wms-overview/wmsTypes";
 import type { WmsSkuInfo } from "../lib/wmsSkuEnrichment";
 
+// Alle rtiSub-Fixtures nutzen "36-xxx"-WOs (KW36) — fixer Referenz-Zeitpunkt
+// für computeRtiBackfills, damit der WO-Wochenfilter (nur laufende KW zählt)
+// die Tests nicht vom tatsächlichen Kalenderdatum abhängig macht.
+const RTI_REF_NOW = new Date("2026-08-26T10:00:00Z"); // KW36
+
 function rtiSub(status: RtiSubRecipeEntry["status"], overrides: Partial<RtiSubRecipeEntry> = {}): RtiSubRecipeEntry {
   return {
     workOrder: "36-001", subRecipeName: "Sub A", platingHoldingKg: 0, weighedKg: 0,
@@ -90,7 +95,7 @@ function combine(
   wmsRows?: StoredRow[],
   skuIndex?: Map<string, WmsSkuInfo>,
 ) {
-  return combineBackfillSignals(kitchen, lp, rti, computeRtiBackfills(rti), redzoneRuns, wmsRows, skuIndex);
+  return combineBackfillSignals(kitchen, lp, rti, computeRtiBackfills(rti, undefined, RTI_REF_NOW), redzoneRuns, wmsRows, skuIndex);
 }
 
 describe("combineBackfillSignals", () => {

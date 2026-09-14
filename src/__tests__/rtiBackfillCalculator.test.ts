@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { computeRtiBackfills, MIN_SUB_SHORTFALL, type RtiExternalTarget } from "../features/backfills/rtiBackfillCalculator";
+import { computeRtiBackfills as computeRtiBackfillsAt, MIN_SUB_SHORTFALL, type RtiExternalTarget } from "../features/backfills/rtiBackfillCalculator";
 import type { RtiData, RtiMealBlock, RtiSubRecipeEntry } from "../features/gsheet-monitor/gsheetTypes";
+
+// Alle Fixtures dieser Datei nutzen "38-xxx"-WOs (KW38) — fixer Referenz-
+// Zeitpunkt (statt echtem "jetzt"), damit der WO-Wochenfilter (nur die
+// laufende Kalenderwoche zählt, siehe currentWorkOrderWeek) die Tests nicht
+// vom tatsächlichen Kalenderdatum abhängig macht.
+const REF_NOW = new Date("2026-09-09T10:00:00Z"); // KW38
+function computeRtiBackfills(rti: RtiData | null | undefined, externalTargets?: Map<string, RtiExternalTarget>) {
+  return computeRtiBackfillsAt(rti, externalTargets, REF_NOW);
+}
 
 function sub(overrides: Partial<RtiSubRecipeEntry>): RtiSubRecipeEntry {
   return {
@@ -212,6 +221,35 @@ describe("computeRtiBackfills — Re-Check in einem SPÄTEREN Block überschreib
       }],
     });
     expect(m.openSubs.map(s => s.subRecipeName)).toEqual(["Toasted Sesame Seeds"]);
+  });
+});
+
+describe("computeRtiBackfills — WO-Wochenfilter (Sheet über den Wochenwechsel hinweg nicht geleert)", () => {
+  const meal = (workOrder: string): RtiData => ({
+    week: "W38", lastUpdated: Date.now(),
+    meals: [{
+      mealCode: "FV4200A", mealName: "T", plannedTarget: 2000, actuals: 1000, delta: -1000, deltaPct: 50,
+      subRecipes: [sub({ workOrder, subRecipeName: "Sauce", minimumNeed: -1000, status: "open" })],
+    }],
+  });
+
+  it("WO aus einer VERGANGENEN KW (37) wird trotz offenem Engpass nicht mehr geflaggt", () => {
+    // REF_NOW dieser Datei liegt in KW38 — eine 37er-WO ist damit "letzte Woche".
+    expect(computeRtiBackfills(meal("37-500"))).toHaveLength(0);
+  });
+
+  it("WO der LAUFENDEN KW (38) wird ganz normal geflaggt", () => {
+    const [m] = computeRtiBackfills(meal("38-500"));
+    expect(m.openSubs.map(s => s.subRecipeName)).toEqual(["Sauce"]);
+  });
+
+  it("WO aus der ZUKUNFT (39, z.B. schon angelegte Backfill-Slot-WO) wird ebenfalls nicht geflaggt", () => {
+    expect(computeRtiBackfills(meal("39-500"))).toHaveLength(0);
+  });
+
+  it("nicht parsebares WO-Präfix (Fallback) blockiert nicht — altes Verhalten", () => {
+    const [m] = computeRtiBackfills(meal("abc-500"));
+    expect(m.openSubs.map(s => s.subRecipeName)).toEqual(["Sauce"]);
   });
 });
 

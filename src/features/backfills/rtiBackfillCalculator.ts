@@ -21,10 +21,27 @@
 // offenen Liste) · leer = offen, noch nachzutragen · "no" = Veto (kein Backfill).
 import type { RtiData, RtiMealBlock, RtiSubRecipeEntry } from "../gsheet-monitor/gsheetTypes";
 import { codeDigits } from "../../lib/helpers";
+import { hfWeekForDate } from "../../lib/hfWeek";
 
 // Ein Sub-Bedarf zählt erst ab dieser Schwelle als echter Engpass (Rauschfilter
 // gegen minimale Zähl-/Rundungsabweichungen — identisch zu MIN_RTI_SHORTFALL).
 export const MIN_SUB_SHORTFALL = 30;
+
+// WO-Nummern im RTI-Sheet sind "{KW}-{laufende Nummer}" (z.B. "38-186",
+// "39-001") — das KW-Präfix ist damit ein zuverlässiges Signal, aus welcher
+// Kalenderwoche eine Zeile stammt. Bleibt ein Meal-Block über den Wochenwechsel
+// hinweg im Sheet stehen (Reset passiert nicht zuverlässig/automatisch), soll
+// er nicht mehr als aktueller Backfill zählen — nur WOs der LAUFENDEN Woche
+// werden noch geflaggt (live am 2026-09-14/KW39-Übergang mit FV4116A/FV1169A
+// aufgefallen: Dutzende KW38-WOs standen noch offen, obwohl längst KW39 war).
+function workOrderWeek(workOrder: string): number | null {
+  const n = parseInt(String(workOrder ?? "").split("-")[0], 10);
+  return Number.isFinite(n) ? n : null;
+}
+function currentWorkOrderWeek(now: Date): number {
+  const m = /-W(\d{2})$/.exec(hfWeekForDate(now));
+  return m ? Number(m[1]) : NaN;
+}
 
 export type RtiShortfallBasis = "sheet" | "gap-only";
 
@@ -197,7 +214,10 @@ function withLatestSubData(sub: RtiSubRecipeEntry, latest: RtiSubRecipeEntry | u
 export function computeRtiBackfills(
   rti: RtiData | null | undefined,
   externalTargets?: Map<string, RtiExternalTarget>,
+  now: Date = new Date(),
 ): RtiMealBackfill[] {
+  const currentWeek = currentWorkOrderWeek(now);
+
   // Mehrere Blöcke je Meal-Code (echte Wiegung + leere Prep-/Zweitrun-/Re-Check-
   // Blöcke, teils unter Code-Varianten) — den mit dem größten Planned Target
   // als Meal-Kopf behalten (der einzige Block mit echten Kopfzahlen).
@@ -272,6 +292,10 @@ export function computeRtiBackfills(
 
     for (const subRaw of meal.subRecipes) {
       if (subRaw.isBackfillCandidate) { candidateSubNames.add(subRaw.subRecipeName); continue; }
+      // WO aus einer VERGANGENEN Kalenderwoche (Sheet über den Wochenwechsel
+      // hinweg nicht geleert) → nicht mehr flaggen, siehe currentWorkOrderWeek.
+      const woWeek = workOrderWeek(subRaw.workOrder);
+      if (woWeek != null && woWeek !== currentWeek) continue;
       const sub = withLatestSubData(subRaw, latestByWorkOrder.get(subRaw.workOrder));
       const c = classify(sub, gap, plannedTarget);
       if (!c) continue;
