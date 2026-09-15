@@ -926,19 +926,26 @@ export function StagingDashboard({
     }).filter((x): x is NonNullable<typeof x> => x !== null);
   }, [rows, calcMap, progress, cookSchedules]);
 
-  // Alle Tage mit WO-Daten als Chips (vergangene nur wenn noch offene WOs)
+  // Tage ab heute (Chips) + vergangene Tage mit offenen WOs (Überfällig-Sektion)
   const weekDays = useMemo(() => weekDaysFromIsoWeek(week), [week]);
   const availableDays = useMemo(() => {
     const days = new Set<string>();
-    for (const d of woData) if (d.stagingDate) days.add(d.stagingDate);
-    return [...days].sort().filter(day =>
-      day >= today || woData.some(d => d.stagingDate === day && !d.staged)
-    );
+    for (const d of woData) if (d.stagingDate && d.stagingDate >= today) days.add(d.stagingDate);
+    return [...days].sort();
   }, [woData, today]);
 
-  const defaultDay = availableDays.includes(today)
-    ? today : availableDays.includes(tomorrow)
-    ? tomorrow : availableDays[0] ?? today;
+  const overdueDays = useMemo(() => {
+    const days = new Set<string>();
+    for (const d of woData) if (d.stagingDate && d.stagingDate < today && !d.staged) days.add(d.stagingDate);
+    return [...days].sort();
+  }, [woData, today]);
+
+  const overdueWos = useMemo(() =>
+    woData.filter(d => d.stagingDate && d.stagingDate < today && !d.staged)
+      .sort((a, b) => (a.stagingDate ?? "").localeCompare(b.stagingDate ?? "")),
+    [woData, today]);
+
+  const defaultDay = today;
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const activeDay = selectedDay ?? defaultDay;
@@ -1038,17 +1045,15 @@ export function StagingDashboard({
           const isActive = day === activeDay;
           const isToday    = day === today;
           const isTomorrow = day === tomorrow;
-          const isPast     = day < today;
-          const label = isToday ? "Heute" : isTomorrow ? "Morgen" : isPast ? "Offen" : fmtDate(day);
+          const label = isToday ? "Heute" : isTomorrow ? "Morgen" : fmtDate(day);
           return (
             <button key={day} type="button" onClick={() => setSelectedDay(day)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm ${
                 isActive ? "bg-[#0f2240] text-white shadow-md"
-                  : isPast ? "bg-amber-50 text-amber-700 border border-amber-200 hover:border-amber-400"
                   : "bg-white text-slate-500 border border-slate-200 hover:border-indigo-300 hover:text-indigo-600"
               }`}>
               <span>{label}</span>
-              {!isPast && <span className="text-[10px] opacity-60">{fmtDate(day)}</span>}
+              {(isToday || isTomorrow) && <span className="text-[10px] opacity-60">{fmtDate(day)}</span>}
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${
                 done === count && count > 0 ? "bg-emerald-500 text-white"
                   : isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
@@ -1071,6 +1076,30 @@ export function StagingDashboard({
           <span className="text-xs text-slate-400 italic">Keine Staging-WOs in den geladenen Daten</span>
         )}
       </div>
+
+      {/* ── ÜBERFÄLLIG ── */}
+      {overdueWos.length > 0 && (
+        <div className="shrink-0 mx-4 mb-2 rounded-xl border-2 border-red-300 bg-red-50 overflow-hidden">
+          <div className="px-4 py-2 bg-red-100 flex items-center gap-2">
+            <span className="text-red-700 font-black text-[11px]">⚠ ÜBERFÄLLIG — {overdueWos.length} WOs nicht gestagt</span>
+            <span className="text-[9px] text-red-500 font-bold">
+              ({overdueDays.map(d => fmtDate(d)).join(", ")})
+            </span>
+          </div>
+          <div className="px-4 py-2 space-y-1">
+            {overdueWos.map(wo => (
+              <div key={wo.row.key} className="flex items-center gap-2 text-[10px]">
+                <span className="font-bold text-red-600">{fmtDate(wo.stagingDate!)}</span>
+                <span className="font-black text-slate-700">WO {wo.row.woNumber}</span>
+                <span className="text-slate-500 truncate max-w-[200px]">{wo.row.recipeName}</span>
+                <span className="ml-auto font-bold text-slate-600">{fmtKg(wo.calc.totalKg)}</span>
+                <button type="button" onClick={() => { setSelectedDay(wo.stagingDate!); }}
+                  className="text-[9px] font-bold text-indigo-600 hover:underline">anzeigen</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── SORTIER-HINWEIS ── */}
       {visibleWos.length > 1 && (
