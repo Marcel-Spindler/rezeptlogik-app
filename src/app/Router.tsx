@@ -26,6 +26,7 @@ const PlanningOasisView  = lazyWithRetry(() => import("../planning-oasis/Plannin
 const MealCatalogView    = lazyWithRetry(() => import("../features/meal-catalog/MealCatalogView").then(m => ({ default: m.MealCatalogView })), "meal-catalog");
 const KitchenSurface     = lazyWithRetry(() => import("./KitchenSurface").then(m => ({ default: m.KitchenSurface })), "kitchen-surface");
 const ShopfloorKioskSurface = lazyWithRetry(() => import("./ShopfloorKioskSurface").then(m => ({ default: m.ShopfloorKioskSurface })), "shopfloor-surface");
+const StagingKioskSurface   = lazyWithRetry(() => import("./StagingKioskSurface").then(m => ({ default: m.StagingKioskSurface })), "staging-surface");
 const CsvImportView       = lazyWithRetry(() => import("../CsvImportView").then(m => ({ default: m.CsvImportView })), "csv-import");
 const KetBreakdownView    = lazyWithRetry(() => import("../KetBreakdownView").then(m => ({ default: m.KetBreakdownView })), "ket-breakdown");
 const PetPlanView         = lazyWithRetry(() => import("../PetPlanView").then(m => ({ default: m.PetPlanView })), "pet-plan");
@@ -324,6 +325,16 @@ export function Router() {
     return (
       <ErrorBoundary label="shopfloor">
         <ShopfloorKioskSurface data={data} selectedWeek={selectedWeek} />
+      </ErrorBoundary>
+    );
+  }
+
+  if (surface === "staging") {
+    return (
+      <ErrorBoundary label="staging">
+        <Suspense fallback={<LoadingCard />}>
+          <StagingKioskSurface data={data} selectedWeek={selectedWeek} />
+        </Suspense>
       </ErrorBoundary>
     );
   }

@@ -9,7 +9,7 @@ import type { DataBundle } from "../core/types";
 import type { DataSourceStatus } from "../core/dataSource";
 
 export type AppView = "heute" | "recipe" | "catalog" | "planning" | "wo" | "pet" | "whatif" | "rundmail" | "import" | "wms" | "blast-chiller" | "allergen-plating" | "postblast-live" | "backfills" | "redzone-live" | "transparency-plan" | "artikel-woche" | "full-inventory" | "plating-plan" | "plating-day" | "kochplan" | "plating-line-bot" | "plating-dashboard";
-export type AppSurface = "full" | "kitchen" | "rundmail" | "redzone" | "shopfloor" | "plating";
+export type AppSurface = "full" | "kitchen" | "rundmail" | "redzone" | "shopfloor" | "plating" | "staging";
 
 export const ALL_VIEWS: readonly AppView[] = ["heute", "recipe", "catalog", "planning", "wo", "pet", "whatif", "rundmail", "import", "wms", "blast-chiller", "allergen-plating", "plating-line-bot", "postblast-live", "backfills", "redzone-live", "transparency-plan", "artikel-woche", "full-inventory", "plating-plan", "plating-day", "kochplan", "plating-dashboard"];
 
@@ -43,6 +43,7 @@ function resolveSurface(): AppSurface {
   if (s === "redzone") return "redzone";
   if (s === "shopfloor") return "shopfloor";
   if (s === "plating") return "plating";
+  if (s === "staging") return "staging";
   return "full";
 }
 
@@ -77,7 +78,7 @@ function useUrlOverrides(
       setSelectedWeek(weekParam);
       setSelectedRecipe(null);
       setSearchText("");
-    } else if (surface === "shopfloor") {
+    } else if (surface === "shopfloor" || surface === "staging") {
       // Kiosk-Laptops sollen IMMER die aktuelle Woche zeigen (via currentHfWeek()-
       // Fallback in useKetRowsData), nicht einen veralteten localStorage-Wert.
       setSelectedWeek("");
