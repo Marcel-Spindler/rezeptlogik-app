@@ -12,6 +12,9 @@ export interface StagingProgressEntry {
   /** Offset in vollen Tagen relativ zum automatisch berechneten Staging-Datum.
    *  0 = kein Override, -1 = einen Tag früher, +1 = einen Tag später usw. */
   offsetDays?: number;
+  /** Lager meldet: Zutat(en) nicht auf Lager. Freitext oder true. */
+  outOfStock?: string | null;
+  outOfStockAt?: string | null;
 }
 
 export type StagingProgress = Record<string, StagingProgressEntry>; // key: woNumber
@@ -20,6 +23,7 @@ export function useStagingProgress(week: string | null): {
   progress: StagingProgress;
   setStaged: (woNumber: string, staged: boolean) => void;
   setOffset: (woNumber: string, offsetDays: number) => void;
+  setOutOfStock: (woNumber: string, message: string | null) => void;
   syncError: string | null;
 } {
   const [progress, setProgress] = useState<StagingProgress>({});
@@ -64,5 +68,9 @@ export function useStagingProgress(week: string | null): {
     writeEntry(woNumber, { offsetDays });
   }, [writeEntry]);
 
-  return { progress, setStaged, setOffset, syncError };
+  const setOutOfStock = useCallback((woNumber: string, message: string | null) => {
+    writeEntry(woNumber, { outOfStock: message, outOfStockAt: message ? new Date().toISOString() : null });
+  }, [writeEntry]);
+
+  return { progress, setStaged, setOffset, setOutOfStock, syncError };
 }

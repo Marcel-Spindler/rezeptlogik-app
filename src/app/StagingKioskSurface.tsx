@@ -16,7 +16,7 @@ import type { BatchCalc } from "../features/ket-plan/ketTypes";
 export function StagingKioskSurface({ data, selectedWeek }: { data: DataBundle; selectedWeek: string }) {
   const { ketRows, liveWeek } = useKetRowsData(data, selectedWeek, null);
   const gnHints = useGnHints();
-  const { progress, setStaged, setOffset, syncError } = useStagingProgress(liveWeek);
+  const { progress, setStaged, setOffset, setOutOfStock, syncError } = useStagingProgress(liveWeek);
 
   const calcMap = useMemo(() => {
     const m = new Map<string, BatchCalc>();
@@ -51,6 +51,7 @@ export function StagingKioskSurface({ data, selectedWeek }: { data: DataBundle; 
           serverAvailable={serverAvailable}
           onToggleStaged={setStaged}
           onOffsetChange={setOffset}
+          onOutOfStock={setOutOfStock}
           syncError={syncError}
         />
       </div>

@@ -17,7 +17,7 @@ import { DEFAULT_PRINT_OPTIONS, printStagingWo } from "./stagingPrint";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type ViewMode = "card" | "list";
-type WoEntry = { row: KetRow; calc: BatchCalc; staged: boolean; offset: number; stagingDate: string | null; aScore: number; aGroup: string; cookFlow: string[] };
+type WoEntry = { row: KetRow; calc: BatchCalc; staged: boolean; offset: number; stagingDate: string | null; aScore: number; aGroup: string; cookFlow: string[]; outOfStock: string | null };
 
 // ── Staging-Datum ──────────────────────────────────────────────────────────────
 
@@ -411,7 +411,7 @@ function WoCard({
 
 function WoListRow({
   row, calc, staged, offset, stagingDate, allergenScore, seqNum, plannerMode, cookFlow,
-  stockMap, stagingMap, serverAvailable, onToggleStaged, onOffsetChange,
+  stockMap, stagingMap, serverAvailable, outOfStock, onToggleStaged, onOffsetChange, onOutOfStock,
 }: WoItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
@@ -483,7 +483,29 @@ function WoListRow({
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
             </svg>
           </button>
+
+          {/* Nicht auf Lager */}
+          <button type="button"
+            onClick={() => onOutOfStock(outOfStock ? null : "Nicht auf Lager")}
+            className={`shrink-0 px-1.5 h-6 rounded-full text-[8px] font-black transition-all border ${
+              outOfStock
+                ? "bg-red-600 text-white border-red-600"
+                : "bg-white text-slate-300 border-slate-200 hover:border-red-400 hover:text-red-500"
+            }`}
+            title={outOfStock ? "Meldung aufheben" : "Nicht auf Lager melden"}>
+            {outOfStock ? "✕ OOS" : "OOS"}
+          </button>
         </div>
+
+        {/* Out-of-Stock Banner */}
+        {outOfStock && (
+          <div className="mx-3 mb-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-[11px] font-black flex items-center gap-2">
+            <span className="text-base">⚠</span>
+            <span>NICHT AUF LAGER — {outOfStock}</span>
+            <button type="button" onClick={() => onOutOfStock(null)}
+              className="ml-auto text-white/70 hover:text-white text-[10px] font-bold">aufheben</button>
+          </div>
+        )}
 
         {/* Ausgeklappter Inhalt */}
         {expanded && (
@@ -860,14 +882,16 @@ interface WoItemProps {
   stagingDate: string | null; allergenScore: number; seqNum: number;
   plannerMode: boolean; cookFlow: string[];
   stockMap: IngredientStockMap; stagingMap: IngredientStockMap; serverAvailable: boolean;
+  outOfStock: string | null;
   onToggleStaged: () => void; onOffsetChange: (delta: number) => void;
+  onOutOfStock: (message: string | null) => void;
 }
 
 // ── Haupt-Dashboard ────────────────────────────────────────────────────────────
 
 export function StagingDashboard({
   rows, calcMap, cookSchedules, week, progress, stockMap, stagingMap, serverAvailable,
-  onToggleStaged, onOffsetChange, syncError,
+  onToggleStaged, onOffsetChange, onOutOfStock, syncError,
 }: {
   rows: KetRow[];
   calcMap: Map<string, BatchCalc>;
@@ -879,6 +903,7 @@ export function StagingDashboard({
   serverAvailable: boolean;
   onToggleStaged: (woNumber: string, staged: boolean) => void;
   onOffsetChange: (woNumber: string, offsetDays: number) => void;
+  onOutOfStock: (woNumber: string, message: string | null) => void;
   syncError: string | null;
 }) {
   const [plannerMode, setPlannerMode] = useState(false);
@@ -897,7 +922,7 @@ export function StagingDashboard({
       const aScore = allergenSortScore(calc.allergensContains);
       const aGroup = allergenGroupKey(calc.allergensContains);
       const cookFlow = cookFlowSteps(row, cookSchedules);
-      return { row, calc, staged: entry.staged ?? false, offset, stagingDate, aScore, aGroup, cookFlow };
+      return { row, calc, staged: entry.staged ?? false, offset, stagingDate, aScore, aGroup, cookFlow, outOfStock: entry.outOfStock ?? null };
     }).filter((x): x is NonNullable<typeof x> => x !== null);
   }, [rows, calcMap, progress, cookSchedules]);
 
@@ -934,7 +959,7 @@ export function StagingDashboard({
   const allDone = stagedCount === visibleWos.length && visibleWos.length > 0;
 
   const copyLink = () => {
-    const url = new URL(window.location.href);
+    const url = new URL("https://rezeptlogik-verden-factor.web.app/");
     url.searchParams.set("surface", "staging");
     navigator.clipboard.writeText(url.toString()).then(() => {
       setLinkCopied(true);
@@ -1072,12 +1097,14 @@ export function StagingDashboard({
           </div>
         ) : (
           <div className={viewMode === "list" ? "space-y-1.5" : "space-y-3"}>
-            {visibleWos.map(({ row, calc, staged, offset, stagingDate, aScore, cookFlow }, idx) => {
+            {visibleWos.map(({ row, calc, staged, offset, stagingDate, aScore, cookFlow, outOfStock }, idx) => {
               const props: WoItemProps = {
                 row, calc, staged, offset, stagingDate, allergenScore: aScore,
                 seqNum: idx + 1, plannerMode, cookFlow, stockMap, stagingMap, serverAvailable,
+                outOfStock,
                 onToggleStaged: () => onToggleStaged(row.woNumber, !staged),
                 onOffsetChange: delta => onOffsetChange(row.woNumber, delta),
+                onOutOfStock: msg => onOutOfStock(row.woNumber, msg),
               };
               return viewMode === "list"
                 ? <WoListRow key={row.key} {...props} />
