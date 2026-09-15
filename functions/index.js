@@ -4064,3 +4064,55 @@ exports.generatePdf = onGuardedRequest(
   exports.rtiBackfillWatch = rtiWatch.rtiBackfillWatch;
   exports.rtiMarkDone = rtiWatch.rtiMarkDone;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Shorts Tracker — OOS-Meldung aus dem Staging-Dashboard ins GSheet schreiben.
+// POST /api/shorts-tracker-append  { woNumber, stagingDate, ingredient, sku, shortKg, reason }
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const SHORTS_TRACKER_SHEET_ID = "18ItpSvuN1wMGX6f2-IpWqSm2K6tcnFOyISRV2vXnRtU";
+const SHORTS_TRACKER_TAB = "Shorts Tracker";
+
+function shortsTrackerSaCredentials() {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64;
+  return raw ? JSON.parse(Buffer.from(raw, "base64").toString("utf8")) : undefined;
+}
+
+exports.shortsTrackerAppend = onRequest(
+  { region: "europe-west3", cors: [/rezeptlogik.*\.web\.app$/, /localhost/], maxInstances: 5 },
+  async (req, res) => {
+    if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+    try {
+      const { woNumber, stagingDate, ingredient, sku, shortKg, reason } = req.body || {};
+      if (!woNumber || !ingredient) return res.status(400).json({ error: "woNumber and ingredient required" });
+
+      const woSuffix = String(woNumber).replace(/^\d+-/, "");
+      const fmtDate = stagingDate
+        ? (() => { const [y, m, d] = stagingDate.split("-"); return `${d}.${m}.${y}`; })()
+        : "";
+
+      const auth = new google.auth.GoogleAuth({
+        credentials: shortsTrackerSaCredentials(),
+        scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+      });
+      const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHORTS_TRACKER_SHEET_ID,
+        range: `'${SHORTS_TRACKER_TAB}'!A:J`,
+        valueInputOption: "USER_ENTERED",
+        insertDataOption: "INSERT_ROWS",
+        requestBody: { values: [[
+          woSuffix, fmtDate, ingredient, sku || "", shortKg ?? "", "", "", "", "",
+          reason || "OOS gemeldet via Staging Dashboard",
+        ]] },
+      });
+
+      logger.info("Shorts Tracker append", { woNumber, ingredient, sku, shortKg });
+      res.json({ ok: true, woNumber, ingredient });
+    } catch (err) {
+      logger.error("Shorts Tracker append failed", { error: err?.message || String(err) });
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  },
+);

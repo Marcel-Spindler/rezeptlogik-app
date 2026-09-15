@@ -1149,7 +1149,24 @@ export function StagingDashboard({
                 outOfStock,
                 onToggleStaged: () => onToggleStaged(row.woNumber, !staged),
                 onOffsetChange: delta => onOffsetChange(row.woNumber, delta),
-                onOutOfStock: (ingName, isOos) => onOutOfStock(row.woNumber, ingName, isOos),
+                onOutOfStock: (ingName, isOos) => {
+                  onOutOfStock(row.woNumber, ingName, isOos);
+                  if (isOos) {
+                    const ing = calc.ingredients.find(i => i.name === ingName);
+                    fetch("/api/shorts-tracker-append", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        woNumber: row.woNumber,
+                        stagingDate,
+                        ingredient: ingName,
+                        sku: ing?.id ?? "",
+                        shortKg: ing ? (ing.totalPcs != null && ing.totalPcs > 0 ? `${ing.totalPcs} Stk` : +(ing.totalKg).toFixed(1)) : "",
+                        reason: "",
+                      }),
+                    }).catch(() => {});
+                  }
+                },
               };
               return viewMode === "list"
                 ? <WoListRow key={row.key} {...props} />
