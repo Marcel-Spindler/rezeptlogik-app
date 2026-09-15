@@ -926,15 +926,15 @@ export function StagingDashboard({
     }).filter((x): x is NonNullable<typeof x> => x !== null);
   }, [rows, calcMap, progress, cookSchedules]);
 
-  // Nur Tage der geladenen KW anzeigen (mit WO-Daten oder offenen WOs)
+  // Alle Tage mit WO-Daten als Chips (vergangene nur wenn noch offene WOs)
   const weekDays = useMemo(() => weekDaysFromIsoWeek(week), [week]);
   const availableDays = useMemo(() => {
-    const daysWithData = new Set<string>();
-    for (const d of woData) if (d.stagingDate) daysWithData.add(d.stagingDate);
-    return weekDays.filter(day =>
-      daysWithData.has(day) && (day >= today || woData.some(d => d.stagingDate === day && !d.staged))
+    const days = new Set<string>();
+    for (const d of woData) if (d.stagingDate) days.add(d.stagingDate);
+    return [...days].sort().filter(day =>
+      day >= today || woData.some(d => d.stagingDate === day && !d.staged)
     );
-  }, [woData, today, weekDays]);
+  }, [woData, today]);
 
   const defaultDay = availableDays.includes(today)
     ? today : availableDays.includes(tomorrow)

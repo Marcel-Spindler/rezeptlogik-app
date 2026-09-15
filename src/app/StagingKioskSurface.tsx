@@ -6,7 +6,7 @@ import { useMemo } from "react";
 import type { DataBundle } from "../core/types";
 import { EQUIP_DEFAULTS } from "../features/ket-plan/ketTypes";
 import { calcBatch } from "../features/ket-plan/ketLogic";
-import { useKetRowsData } from "../features/ket-plan/useKetRowsData";
+import { useKetRowsData, useSharedKetCsvRows } from "../features/ket-plan/useKetRowsData";
 import { useGnHints } from "../features/ket-plan/useGnHints";
 import { useStagingProgress } from "../features/ket-plan/useStagingProgress";
 import { useIngredientStock } from "../features/ket-plan/useIngredientStock";
@@ -14,7 +14,8 @@ import { StagingDashboard } from "../features/ket-plan/StagingDashboard";
 import type { BatchCalc } from "../features/ket-plan/ketTypes";
 
 export function StagingKioskSurface({ data, selectedWeek }: { data: DataBundle; selectedWeek: string }) {
-  const { ketRows, liveWeek } = useKetRowsData(data, selectedWeek, null);
+  const sharedCsv = useSharedKetCsvRows();
+  const { ketRows, liveWeek } = useKetRowsData(data, selectedWeek, sharedCsv);
   const gnHints = useGnHints();
   const { progress, setStaged, setOffset, setOutOfStock, syncError } = useStagingProgress(liveWeek);
 
