@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DataBundle } from "../../core/types";
 import { fmtNum } from "../../lib/helpers";
 import { usePlatingWeekPlan } from "./usePlatingWeekPlan";
@@ -8,6 +8,9 @@ import {
   PLATING_DAYS, PRODUCTION_SHIFT_HOURS,
   type PlatingDay, type PlatingDayCapacity, type PlatingMealPlan, type PlatingPlanParams,
 } from "./platingPlanTypes";
+import { fetchPlanningSheet } from "../../lib/planningSheetApi";
+import { importSheetIntoPlan } from "./importSheetIntoPlan";
+import { savePlatingWeekPlan } from "./platingWeekPlanFirestore";
 
 const DAY_LABEL: Record<PlatingDay, string> = {
   Mo: "Mo", Di: "Di", Mi: "Mi", Do: "Do", Fr: "Fr", Sa: "Sa", So: "So",
@@ -79,6 +82,58 @@ function RunCell({ meal, day, onMove, onEdit }: {
 
 const PARAM_DAYS: PlatingDay[] = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
+/** Mindestbedarf je Markt — Summe demand.benl/nord/de über alle Meals.
+ *  Entspricht den kumulierten Werten aus Sheet-Spalten L (BENL), M (BENL+NORD), N (Gesamt). */
+function MarketMinNeedsCard({ meals }: { meals: PlatingMealPlan[] }) {
+  const totals = meals.reduce(
+    (acc, m) => ({ benl: acc.benl + m.demand.benl, nord: acc.nord + m.demand.nord, de: acc.de + m.demand.de }),
+    { benl: 0, nord: 0, de: 0 },
+  );
+  const minTotal = totals.benl + totals.nord + totals.de;
+  if (minTotal === 0) return null;
+
+  const rows = [
+    { label: "BENL", value: totals.benl, pct: totals.benl / minTotal, bar: "bg-blue-400", dot: "bg-blue-400" },
+    { label: "NORD", value: totals.nord, pct: totals.nord / minTotal, bar: "bg-teal-400",  dot: "bg-teal-400" },
+    { label: "DE",   value: totals.de,   pct: totals.de   / minTotal, bar: "bg-violet-400", dot: "bg-violet-400" },
+  ];
+  // Kumulierte Minima wie Sheet L/M/N:
+  const cumBenl  = totals.benl;
+  const cumBenNord = totals.benl + totals.nord;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]">
+      <div className="mb-1.5 flex items-center gap-3">
+        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Min. Needs Märkte</span>
+        <span className="ml-auto text-[9px] text-slate-400" title={`Kumuliert: BENL ${fmtNum(cumBenl)} · BENL+NORD ${fmtNum(cumBenNord)} · Gesamt ${fmtNum(minTotal)}`}>
+          Σ {fmtNum(minTotal)}
+        </span>
+      </div>
+      <div className="mb-2 flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
+        {rows.map(r => (
+          <div key={r.label} className={`${r.bar} transition-all`} style={{ width: `${r.pct * 100}%` }} title={`${r.label}: ${fmtNum(r.value)}`} />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {rows.map((r, i) => {
+          const cum = i === 0 ? cumBenl : i === 1 ? cumBenNord : minTotal;
+          return (
+            <div key={r.label} className="flex items-center gap-1">
+              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${r.dot}`} />
+              <span className="text-slate-500">{r.label}</span>
+              <span className="font-mono font-semibold text-slate-800">{fmtNum(r.value)}</span>
+              <span className="text-[9px] text-slate-400">{Math.round(r.pct * 100)}%</span>
+              {i < 2 && (
+                <span className="text-[9px] text-slate-300" title={`Kumuliert bis inkl. ${r.label}`}>↑{fmtNum(cum)}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Complexity Score als farbiger Chip (Median-Meal = 1.0). */
 function CxChip({ cx }: { cx: number | null }) {
   if (cx == null) return <span className="text-[9px] text-slate-300">–</span>;
@@ -94,6 +149,9 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
   const [showParams, setShowParams] = useState(false);
   const [draftParams, setDraftParams] = useState<PlatingPlanParams>(() => buildDefaultParams(week));
   const [draftCap, setDraftCap] = useState<Partial<Record<PlatingDay, PlatingDayCapacity>>>(() => ({ ...DEFAULT_DAY_CAPACITY }));
+
+  const [sheetImportState, setSheetImportState] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const sheetImportRef = useRef<string>("");
 
   useEffect(() => {
     setDraftParams(plan?.params ?? buildDefaultParams(week));
@@ -132,6 +190,23 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
   const setNote = (code: string, note: string) => {
     update(prev => ({ ...prev, meals: prev.meals.map(m => m.code === code ? { ...m, note } : m) }));
   };
+
+  const loadFromSheet = useCallback(async () => {
+    setSheetImportState("loading");
+    sheetImportRef.current = week;
+    try {
+      const sheetData = await fetchPlanningSheet(week, true);
+      if (sheetImportRef.current !== week) return;
+      const imported = importSheetIntoPlan(sheetData, data, plan, draftParams);
+      await savePlatingWeekPlan(imported);
+      setSheetImportState("ok");
+      setTimeout(() => setSheetImportState("idle"), 3000);
+    } catch (err) {
+      console.error("Sheet-Import fehlgeschlagen", err);
+      setSheetImportState("error");
+      setTimeout(() => setSheetImportState("idle"), 5000);
+    }
+  }, [week, data, plan, draftParams]);
 
   const triggerAI = useCallback((mode: "fill" | "optimize") => {
     const p = plan?.params ?? draftParams;
@@ -183,6 +258,23 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
             className="rounded-lg bg-verden-600 px-3 py-1.5 font-semibold text-white hover:bg-verden-500"
           >
             {plan ? "Neu generieren" : "Plan generieren"}
+          </button>
+          <button
+            type="button"
+            onClick={loadFromSheet}
+            disabled={sheetImportState === "loading"}
+            title="Plan aus dem Planning-GSheet laden (Tab W{N} - Plating Plan [WIP])"
+            className={`rounded-lg border px-3 py-1.5 font-semibold transition ${
+              sheetImportState === "loading"
+                ? "border-slate-200 bg-slate-50 text-slate-400 cursor-wait"
+                : sheetImportState === "ok"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                  : sheetImportState === "error"
+                    ? "border-red-300 bg-red-50 text-red-700"
+                    : "border-cyan-300 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+            }`}
+          >
+            {sheetImportState === "loading" ? "lädt…" : sheetImportState === "ok" ? "✓ Sheet geladen" : sheetImportState === "error" ? "⚠ Fehler" : "Aus Sheet laden"}
           </button>
           <button
             type="button"
@@ -242,6 +334,9 @@ export function PlatingPlanView({ data, week }: { data: DataBundle; week: string
           )}
         </div>
       )}
+
+      {/* ── Minimum Needs je Markt ── */}
+      {plan && <MarketMinNeedsCard meals={plan.meals} />}
 
       {showParams && (
         <div className="card space-y-3 border-cyan-200 bg-cyan-50/40 p-3 text-[11px]">
