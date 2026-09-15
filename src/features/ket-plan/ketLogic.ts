@@ -526,18 +526,20 @@ function cleanIngredientNameForGnLookup(name: string): string {
     /s$/i.test(stem) ? word : stem);
 }
 
-function resolveGnTrays(ing: IngCalc, hints: GnHints): { trays: number | null; gnType: string | null } {
+function resolveGnTrays(ing: IngCalc, hints: GnHints): { trays: number | null; raw: number | null; gnType: string | null } {
   const lookupName = cleanIngredientNameForGnLookup(ing.name);
   const trayPcsHint = wrLookupTrayPcs(hints.trayHints, lookupName, ing.id);
   if (trayPcsHint && trayPcsHint > 0) {
     const gnType = wrLookupGnType(hints.trayHints, lookupName, ing.id) ?? "GN 2/1";
     if (ing.totalPcs > 0) {
-      return { trays: Math.ceil(ing.totalPcs / trayPcsHint), gnType };
+      const raw = ing.totalPcs / trayPcsHint;
+      return { trays: Math.ceil(raw), raw, gnType };
     }
     if (ing.totalKg > 0) {
       const pieceKg = wrLookupPieceKg(hints.pieceWeightKg, lookupName, ing.id);
       if (pieceKg && pieceKg > 0) {
-        return { trays: Math.ceil((ing.totalKg / pieceKg) / trayPcsHint), gnType };
+        const raw = (ing.totalKg / pieceKg) / trayPcsHint;
+        return { trays: Math.ceil(raw), raw, gnType };
       }
     }
   }
@@ -545,10 +547,10 @@ function resolveGnTrays(ing: IngCalc, hints: GnHints): { trays: number | null; g
     const cap = lookupEquipmentCapacity(lookupName);
     if (cap?.kgPerGn21 && cap.kgPerGn21 > 0) {
       const needs = calcEquipmentNeeds(ing.totalKg, cap);
-      if (needs.trays) return { trays: needs.trays, gnType: "GN 2/1" };
+      if (needs.trays) return { trays: needs.trays, raw: ing.totalKg / cap.kgPerGn21, gnType: "GN 2/1" };
     }
   }
-  return { trays: null, gnType: null };
+  return { trays: null, raw: null, gnType: null };
 }
 
 // Trägt gnTrays/gnType direkt in die Zutatenliste ein (mutiert wie separate/
@@ -557,8 +559,9 @@ function resolveGnTrays(ing: IngCalc, hints: GnHints): { trays: number | null; g
 function applyGnTrays(ingredients: IngCalc[], hints: GnHints): GnTraySummary[] {
   const totals = new Map<string, number>();
   for (const ing of ingredients) {
-    const { trays, gnType } = resolveGnTrays(ing, hints);
+    const { trays, raw, gnType } = resolveGnTrays(ing, hints);
     ing.gnTrays = trays;
+    ing.gnTraysRaw = raw;
     ing.gnType = gnType;
     if (trays && gnType) totals.set(gnType, (totals.get(gnType) ?? 0) + trays);
   }
@@ -596,6 +599,20 @@ function componentEquipmentKey(name: string, categories: string, data: DataBundl
 // bekommt am Ende ihre eigene WoComponent.
 function flattenLeafSubRecipes(node: DetailedSubRecipe, data: DataBundle): DetailedSubRecipe[] {
   const substantial = (node.subRecipes ?? []).filter((c) => collectDetailedIngredients(c).length > 0);
+
+  // Reiner Verpackungsknoten (keine eigenen Zutaten) mit GENAU einem Kind: die WO
+  // besteht trotzdem aus zwei echten, unterschiedlichen Stufen — z.B. "Beef Burger
+  // Master EU" (0 eigene Zutaten) umhüllt nur "Burger Patty" (Fleisch/Gemüse/Fond
+  // mischen, Patty formen); WO-Ebene ist danach separat Grillen/Ofen. Factor gibt
+  // "Burger Patty" im echten Sheet eine eigene Anweisung — ohne diesen Fall geht
+  // sie nie in eine WoComponent, weil die "≥2 Kinder"-Regel unten hier nie greift.
+  // Das Kind wird das eine Blatt dieser WO — NICHT weiter aufspalten, selbst wenn
+  // es (wie "Burger Patty") selbst wieder ≥2 Kinder mit unterschiedlichem Equipment
+  // hat: Factor gibt dafür in der Praxis trotzdem nur EINE Anweisung.
+  if (substantial.length === 1 && (node.ingredients ?? []).length === 0) {
+    return [substantial[0]];
+  }
+
   if (substantial.length < 2) return [node];
   const distinctEquip = new Set(substantial.map((c) => componentEquipmentKey(c.name, c.categories, data)));
   if (distinctEquip.size < 2) return [node];
@@ -617,9 +634,15 @@ function buildWoComponents(
   gnHints: GnHints,
 ): { components: WoComponent[]; uomWarnings: string[] } {
   const leaves = flattenLeafSubRecipes(matchedSub, data);
-  // Kein Split gefunden → matchedSub selbst ist das einzige Blatt, kein
-  // zusammengesetztes Sub-Rezept (normaler Einzel-Fall, unverändert).
-  if (leaves.length < 2) return { components: [], uomWarnings: [] };
+  // Kein Split gefunden → matchedSub selbst ist weiterhin das einzige Blatt, kein
+  // zusammengesetztes Sub-Rezept (normaler Einzel-Fall, unverändert). Ein EINZELNES
+  // Blatt, das NICHT matchedSub selbst ist (siehe flattenLeafSubRecipes: reiner
+  // Verpackungsknoten mit genau einem Kind, z.B. "Beef Burger Master EU" →
+  // "Burger Patty"), zählt dagegen als echter Split — sonst würde "Burger Patty"
+  // nie eine eigene WoComponent/Kochanweisung bekommen.
+  if (leaves.length === 0 || (leaves.length === 1 && leaves[0] === matchedSub)) {
+    return { components: [], uomWarnings: [] };
+  }
 
   const uomWarnings: string[] = [];
   const components: WoComponent[] = leaves.map((child) => {
@@ -645,6 +668,7 @@ function buildWoComponents(
         spiceRoom: isSpiceRoom(ing.name),
         allergen: ing.allergen || undefined,
         gnTrays: null,
+        gnTraysRaw: null,
         gnType: null,
       });
     }
@@ -713,6 +737,51 @@ function buildWoComponents(
   });
 
   return { components, uomWarnings };
+}
+
+// Läuft den Rezept-Baum für die Gewürzraum-Sammelliste (buildSpiceRoomPdf) ab:
+// JEDER benannte Knoten mit eigenen Gewürz-Zutaten wird ein eigener Block —
+// unabhängig davon, ob flattenLeafSubRecipes/buildWoComponents ihn als eigene
+// WoComponent behandelt (das ist für Kochanweisungen kalibriert — gleiches
+// Equipment wird dort bewusst NICHT weiter aufgespalten — nicht für Gewürz-
+// Portionierung). Ohne diese eigene, feinere Aufteilung würden z.B. "Cumin
+// Ground" aus einer Garam-Masala- UND einer separaten Curry-Powder-
+// Gewürzmischung (beide unter demselben Sub-Rezept, gleiches Equipment, siehe
+// "Biryani - Spice and veg mix") als zwei unbeschriftete, scheinbar doppelte
+// Zeilen in einer flachen Liste landen, statt als zwei erkennbare Blöcke.
+function buildSpiceRoomGroups(
+  node: DetailedSubRecipe,
+  targetPortions: number,
+): Array<{ title: string; ingredients: IngCalc[] }> {
+  const own: IngCalc[] = node.ingredients
+    .map((ing): IngCalc => {
+      const { factor, isPcs } = uomToKgFactor(ing.uom);
+      const totalKg = isPcs ? 0 : factor * ing.grossQty * targetPortions;
+      const totalPcs = isPcs ? ing.grossQty * targetPortions : 0;
+      return {
+        name: ing.name,
+        id: ing.id,
+        category: "",
+        uom: ing.uom,
+        totalKg,
+        perBatchKg: 0,
+        yieldPct: ing.yieldPct ?? null,
+        totalPcs,
+        separate: isSeparate(ing.name),
+        spiceRoom: isSpiceRoom(ing.name),
+        allergen: ing.allergen || undefined,
+        gnTrays: null,
+        gnTraysRaw: null,
+        gnType: null,
+      };
+    })
+    .filter((ing) => ing.spiceRoom && (ing.totalKg > 0.0005 || ing.totalPcs > 0))
+    .sort(sortIngredients);
+
+  const groups: Array<{ title: string; ingredients: IngCalc[] }> = [];
+  if (own.length > 0) groups.push({ title: node.name, ingredients: own });
+  for (const child of node.subRecipes ?? []) groups.push(...buildSpiceRoomGroups(child, targetPortions));
+  return groups;
 }
 
 // Fasst die je-Komponente korrekt berechneten equipBatches zu einer WO-weiten
@@ -805,6 +874,7 @@ export function calcBatch(
             spiceRoom: false,
             allergen: ing.allergen || undefined,
             gnTrays: null,
+            gnTraysRaw: null,
             gnType: null,
           });
         }
@@ -833,6 +903,7 @@ export function calcBatch(
           separate: false,
           spiceRoom: false,
           gnTrays: null,
+          gnTraysRaw: null,
           gnType: null,
         });
       }
@@ -900,6 +971,11 @@ export function calcBatch(
   ingredients.sort(sortIngredients);
   const gnTraySummary = applyGnTrays(ingredients, gnHints);
 
+  // Gewürzraum-Sammelliste (buildSpiceRoomPdf): eigener Baum-Durchlauf statt
+  // der WoComponent-Aufteilung oben — siehe buildSpiceRoomGroups. Leer, wenn
+  // kein Struktur-Match vorliegt (dann bleibt auch das WO-PDF ohne Zutaten).
+  const spiceGroups = matchedSub ? buildSpiceRoomGroups(matchedSub, row.targetPortions) : [];
+
   const instructionPair = findSubRecipeInstructions(recipe, data.mealCatalog, data.instructions, row.subRecipeName);
 
   // ── Factor-Produktionsregeln (RTI / nie-batchen-Fleisch / Batch-Kapazität nach Name) ──
@@ -949,6 +1025,7 @@ export function calcBatch(
     uomWarnings,
     factorOverridesEquip: rti || neverBatch,
     components,
+    spiceGroups,
     gnTraySummary,
     // Nur für den Nicht-Komponenten-Fall — bei zusammengesetzten Sub-Rezepten steht
     // es je Komponente in components[].scoopInfo (siehe Kommentar bei BatchCalc.scoopInfo).

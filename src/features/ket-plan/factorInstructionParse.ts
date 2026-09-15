@@ -208,18 +208,38 @@ export function parseFactorRecipePdfText(text: string, sourceFile?: string): Fac
     const segments: RawSegment[] = [];
     let activeComponent: string | undefined;
     let expectAlternating: RawSegment["lang"] | null = null;
+    // Welche Komponente das GERADE offene (marker-lose, noch auf seine
+    // Gegensprache wartende) Segment betrifft — eingefroren beim Öffnen, NICHT
+    // activeComponent live nachgeführt. Ein unbeschrifteter Absatz kann durch
+    // einen kompletten anderen (beschrifteten) Block unterbrochen werden, bevor
+    // seine Gegensprache auftaucht (z.B. WO-EN offen → ↳ Komponente → Komponente-
+    // EN+DE komplett beschriftet dazwischen → WO-DE erst danach, immer noch
+    // unbeschriftet) — activeComponent wäre zu dem Zeitpunkt längst weitergerückt.
+    let expectAlternatingComponent: string | undefined;
+    // Manche PDF-Layouts liefern (je nach Spaltenanordnung) erst ALLE EN-Blöcke
+    // eines Abschnitts und danach erst die zugehörigen DE-Blöcke — z.B. "WO-EN,
+    // ↳ Komponente, Komponente-EN, WO-DE, Komponente-DE" statt strikt
+    // abwechselnd. Ohne diese Warteschlange würde die DE-Zeile der WO-Ebene
+    // fälschlich der zuletzt gesehenen ↳-Komponente zugeordnet (activeComponent
+    // ist zu dem Zeitpunkt schon weitergerückt) — FIFO in Lesereihenfolge der
+    // EN-Blöcke stellt die korrekte Zuordnung wieder her, auch im normalen
+    // strikt-alternierenden Fall (dort steht ohnehin nie mehr als 1 Eintrag an).
+    const pendingEnComponents: Array<string | undefined> = [];
 
     for (let i = 0; i < block.body.length; i++) {
       const line = block.body[i];
 
+      // Ein neuer ↳-/🧂-Marker beendet NIE ein bereits offenes marker-loses
+      // Warten (expectAlternating/-Component bleiben unangetastet) — der neue
+      // Block wird über seine EIGENEN (ggf. wieder marker-losen) Zeilen unten
+      // sein eigenes Warten auf-/zumachen, siehe Kommentar oben.
       const sub = line.match(SUBRECIPE_MARK_RE);
-      if (sub) { activeComponent = cleanComponentName(sub[1]); expectAlternating = null; continue; }
+      if (sub) { activeComponent = cleanComponentName(sub[1]); continue; }
 
       const stage = line.match(STAGE_MARK_RE);
       if (stage && !/INSTRUCTIONS|ANLEITUNG/i.test(line)) {
         // "🧂 BRINE — Chicken Thighs - BRINED" → Komponente = der genannte Name.
         activeComponent = cleanComponentName(stage[2]);
-        expectAlternating = null;
         continue;
       }
 
@@ -228,11 +248,14 @@ export function parseFactorRecipePdfText(text: string, sourceFile?: string): Fac
         const stageTag = en[1]?.toUpperCase();
         const inline = en[2]?.trim();
         const component = stageTag && !activeComponent ? undefined : activeComponent;
+        pendingEnComponents.push(component);
         if (inline) {
+          // Komplett (Marker + Text auf derselben Zeile) — kein eigenes Warten,
+          // ein etwaiges FREMDES noch offenes Warten (siehe oben) bleibt unberührt.
           segments.push({ lang: "en", stage: stageTag, component, text: inline });
-          expectAlternating = null;
         } else {
           expectAlternating = "en";
+          expectAlternatingComponent = component;
           segments.push({ lang: "en", stage: stageTag, component, text: "" });
         }
         continue;
@@ -241,23 +264,30 @@ export function parseFactorRecipePdfText(text: string, sourceFile?: string): Fac
       if (de) {
         const stageTag = de[1]?.toUpperCase();
         const inline = de[2]?.trim();
+        // Dem ältesten noch offenen EN-Block zuordnen (siehe pendingEnComponents
+        // oben) — nicht dem aktuell aktiven Komponentennamen, der zwischen einem
+        // EN-Block und seinem eigenen DE-Gegenstück schon weitergerückt sein kann.
+        const component = pendingEnComponents.length > 0 ? pendingEnComponents.shift() : activeComponent;
         if (inline) {
-          segments.push({ lang: "de", stage: stageTag, component: activeComponent, text: inline });
-          expectAlternating = null;
+          segments.push({ lang: "de", stage: stageTag, component, text: inline });
         } else {
           expectAlternating = "de";
-          segments.push({ lang: "de", stage: stageTag, component: activeComponent, text: "" });
+          expectAlternatingComponent = component;
+          segments.push({ lang: "de", stage: stageTag, component, text: "" });
         }
         continue;
       }
 
-      // Fortsetzungs-Absatz im marker-losen Mehr-Absatz-Layout.
+      // Fortsetzungs-Absatz im marker-losen Mehr-Absatz-Layout — gehört zu dem
+      // Segment, das beim Öffnen des Wartens eingefroren wurde
+      // (expectAlternatingComponent), NICHT zum inzwischen weitergerückten
+      // activeComponent (siehe Kommentar oben bei dessen Deklaration).
       if (expectAlternating && line.trim() && !NOISE_LINE_RE.test(line) && !RECIPE_HEADER_RE.test(line)) {
         const lang: RawSegment["lang"] = looksGerman(line) ? "de" : "en";
-        const last = [...segments].reverse().find((s) => s.lang === lang && s.component === activeComponent);
+        const last = [...segments].reverse().find((s) => s.lang === lang && s.component === expectAlternatingComponent);
         if (last) last.text = `${last.text} ${line.trim()}`.trim();
-        else segments.push({ lang, component: activeComponent, text: line.trim() });
-        // nach EN folgt DE folgt EN …
+        else segments.push({ lang, component: expectAlternatingComponent, text: line.trim() });
+        // nach EN folgt DE folgt EN … — dieselbe Komponente bleibt eingefroren.
         expectAlternating = lang === "en" ? "de" : "en";
       }
     }

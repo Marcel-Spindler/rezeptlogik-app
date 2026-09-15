@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DataBundle, WorkOrderEntry } from "../../core/types";
 import {
   usePostblastMonitor, usePreblastMonitor, useRtiMonitor, useEtMonitor,
-  useProductionPlanWeeks, useProductionPlanMonitor, useVolumeOverviewMonitor,
+  useVolumeOverviewMonitor,
 } from "../gsheet-monitor/useGSheetMonitor";
 import { matchPostblastToWorkOrders, type BackfillNeed, type MealProgress } from "../gsheet-monitor/postblastMatch";
 import { platedForMeal } from "../gsheet-monitor/plateableNet";
@@ -29,7 +29,6 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
   const preblastMonitor = usePreblastMonitor();
   const rtiMonitor = useRtiMonitor();
   const etMonitor = useEtMonitor();
-  const { weeks: planWeekOptions } = useProductionPlanWeeks();
   const redzone = useRedzoneOptional();
   const woRecon = useWoReconciliation();
   const recipeWeights = woRecon?.recipeWeights ?? null;
@@ -97,6 +96,11 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
       if ([...labels].some(w => weekNumFromHfWeek(w) === n)) continue;
       if (refYear) labels.add(`${refYear}-W${String(n).padStart(2, "0")}`);
     }
+    // Die laufende KW muss IMMER wählbar sein, auch direkt nach dem Wechsel,
+    // solange noch keine der Quellen (Firestore/ET/WMS/KET) eine WO dafür
+    // kennt — sonst kommt niemand an die neue Woche ran, bis zufällig die
+    // erste WO irgendwo auftaucht (live am KW38→KW39-Übergang beobachtet).
+    labels.add(currentHfWeek());
     return [...labels].sort();
   }, [data.weeks, woCountByWeekNum, allowedWeekNums]);
 
@@ -134,12 +138,6 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
   const { plaitedByCode, holdingMealsByCode } = useCombinedPlaited(selectedWeekNum);
   // Minimum Needs / Gesamtvolumen aus dem „Volume Overview"-Tab.
   const volumeOverview = useVolumeOverviewMonitor();
-
-  const planGid = useMemo(
-    () => (selectedWeekNum != null ? planWeekOptions.find(w => w.week === selectedWeekNum)?.gid ?? "" : ""),
-    [planWeekOptions, selectedWeekNum],
-  );
-  useProductionPlanMonitor(planGid);
 
   // Produktionsplan: Firestore + KET + WMS + ET zusammenführen
   const { filteredProductionPlan, unplannedWorkOrders, estimatedWorkOrders } = useMemo(() => {
@@ -261,8 +259,12 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
     });
   }
 
-  // Teilbare URL
-  const shareUrl = `${window.location.origin}${window.location.pathname}?surface=plating`;
+  // Teilbare URL — auf dem lokalen Dev-Server (npm start) ist "localhost" nur
+  // auf diesem PC erreichbar. Für Kolleg:innen muss die deployte Firebase-
+  // Hosting-URL geteilt werden (npm run deploy), nicht der lokale Link.
+  const isLocalDev = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+  const HOSTED_ORIGIN = "https://rezeptlogik-verden-factor.web.app";
+  const shareUrl = `${isLocalDev ? HOSTED_ORIGIN : window.location.origin}${window.location.pathname}?surface=plating`;
   const [linkCopied, setLinkCopied] = useState(false);
 
   // Verbindungsstatus
@@ -355,6 +357,12 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
             {linkCopied ? "Kopiert!" : "Kopieren"}
           </button>
         </div>
+        {isLocalDev && (
+          <div className="mt-2 text-[10px] text-amber-300 bg-amber-500/10 ring-1 ring-amber-400/20 rounded-lg px-3 py-1.5">
+            ⚠ Du siehst diese Seite gerade über den lokalen Dev-Server (localhost) — der oben kopierte Link
+            zeigt deshalb auf die deployte Version. Falls dort noch ein älterer Stand läuft: <code>npm run deploy</code>.
+          </div>
+        )}
       </div>
 
       {/* ── Fortschritt je Meal ── */}

@@ -1,6 +1,6 @@
 // Baut das druckbare HTML/PDF für einen Satz Work Orders (Breakdown-Karten je WO).
 import { EQUIP_LABELS, type BatchCalc, type IngCalc, type KetRow, type ScoopInfo, type WoInstruction } from "./ketTypes";
-import { escHtml, fmtKg, fmtNum, parseDateShift, sortIngredients } from "./ketLogic";
+import { escHtml, fmtDateHeader, fmtKg, fmtNum, parseDateShift, parseSortKey, sortIngredients } from "./ketLogic";
 import { orderCookingMethods, parseInstructionLines, splitInstructionKeywords } from "./woInstructionBot";
 import { methodColorToCSS } from "../../lib/helpers";
 
@@ -261,13 +261,6 @@ export function buildPdf(
           ${calc.allergensContains.map(a => `<span style="background:#c62828;color:#fff;font-weight:800;font-size:7px;padding:1px 5px;border-radius:6px;">${escHtml(a)}</span>`).join("")}
         </div>`
       : "";
-    const chillerHtml = calc.chillerAssignment
-      ? `<div style="margin:3px 0;padding:3px 8px;background:${calc.chillerAssignment.cfg.headBg};border-radius:4px;display:flex;align-items:center;gap:4px;">
-          <span style="font-weight:900;color:${calc.chillerAssignment.cfg.headColor};font-size:8px;">❄️ ${escHtml(calc.chillerAssignment.cfg.label)}</span>
-          <span style="font-weight:700;color:${calc.chillerAssignment.cfg.headColor};font-size:7px;opacity:.8;">${escHtml(calc.chillerAssignment.cfg.sub)}</span>
-          ${calc.chillerAssignment.unknown ? `<span style="font-weight:900;color:#b45309;font-size:7px;">⚠ unbekannt</span>` : ""}
-        </div>`
-      : "";
 
     // Einfaches Sub-Rezept: die WO-weite Kochanweisung. Zusammengesetztes
     // Sub-Rezept: hier steht — falls vorhanden (aus dem Factor-Harvest) — die
@@ -351,9 +344,7 @@ export function buildPdf(
   ${calc.scoopInfo ? `<div style="margin:3px 0;padding:4px 8px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:5px;display:flex;align-items:center;gap:4px;font-size:10px;font-weight:800;color:#7c3aed;">🥄 ${scoopBadgeHtml(calc.scoopInfo)}</div>` : ""}
   ${factorBadgeHtml}
   ${allergenHtml}
-  ${chillerHtml}
 
-  ${row.workOrderComment ? `<div class="comment warn">⚠ WO Kommentar: ${row.workOrderComment}</div>` : ""}
   ${row.stagingComment ? `<div class="comment info">💬 Staging: ${row.stagingComment}</div>` : ""}
   ${instrHtml}
   ${noInstrHtml}
@@ -481,6 +472,123 @@ body{font-family:Arial,sans-serif;font-size:9px;color:#111;background:#fff}
 </head>
 <body>
 ${cards}
+</body>
+</html>`;
+}
+
+// Baut EIN durchlaufendes, druckbares HTML für die Gewürzraum-Sammelliste der
+// ganzen Woche: alle WOs mit Spice-Room-Zutaten, chronologisch nach Tag
+// gestaffelt (Tag-Trenner als Abschnittsüberschrift, NICHT als eigene Datei/
+// Seite je Tag — ein durchgängiges Dokument zum Abarbeiten). Je benanntem
+// Knoten im Rezept-Baum (siehe ketLogic.buildSpiceRoomGroups, BatchCalc.
+// spiceGroups) EINE eigene Gewürz-Teilliste — NICHT über die ganze WO hinweg
+// zu einer Zeile je Gewürzname zusammengerechnet: jedes Sub-Meal/jede
+// Gewürzmischung wird im Gewürzraum als eigene Portion/Tüte vorbereitet, also
+// muss jede ihre eigene, vollständige Liste behalten (auch wenn zwei Stufen
+// zufällig dasselbe Gewürz brauchen — sonst sieht das wie eine unerklärte
+// Dopplung aus statt wie zwei getrennte Mischungen). Zutatennamen/Mengen sind
+// bewusst identisch zu den Werten in den einzelnen WO-PDFs, damit beide
+// Blätter querverweisbar bleiben — diese Liste ersetzt nichts, sie ergänzt.
+export function buildSpiceRoomPdf(
+  rows: KetRow[],
+  calcMap: Map<string, BatchCalc>,
+  weekLabel: string,
+): string {
+  interface SpiceBlock { title: string; ingredients: IngCalc[] }
+  interface SpiceWo { row: KetRow; blocks: SpiceBlock[] }
+
+  const spiceWos: SpiceWo[] = rows
+    .map((row): SpiceWo | null => {
+      const calc = calcMap.get(row.key);
+      if (!calc || calc.spiceGroups.length === 0) return null;
+      return { row, blocks: calc.spiceGroups };
+    })
+    .filter((x): x is SpiceWo => x !== null)
+    .sort((a, b) =>
+      parseSortKey(a.row.dateNeeded) - parseSortKey(b.row.dateNeeded)
+      || a.row.woNumber.localeCompare(b.row.woNumber, undefined, { numeric: true }));
+
+  let currentDay = "";
+  const blocks = spiceWos.map(({ row, blocks: woBlocks }) => {
+    const { date } = parseDateShift(row.dateNeeded);
+    const d = new Date(`${date}T00:00:00`);
+    const dayKey = date;
+    const dayFull = Number.isNaN(d.getTime())
+      ? date
+      : d.toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
+    const daySection = dayKey !== currentDay
+      ? (() => { currentDay = dayKey; return `<div class="day-divider">${escHtml(dayFull)}</div>`; })()
+      : "";
+
+    // Bei nur EINER Teilliste (einfache WO oder zusammengesetzte WO mit genau
+    // 1 Komponente) den Komponentennamen nicht nochmal als Unterüberschrift
+    // wiederholen — steht schon im WO-Kopf. Ab 2 Teillisten (echte
+    // Mehr-Komponenten-WO) bekommt jede ihre eigene, klar benannte Sektion.
+    const showSubHeads = woBlocks.length > 1;
+    const blockHtml = woBlocks.map(({ title, ingredients }) => {
+      const spiceRows = ingredients.map((ing) => `
+        <tr>
+          <td>${escHtml(ing.name)}${ing.separate ? ` <span class="badge-separate">SEPARATE</span>` : ""}</td>
+          <td class="num">${ing.totalPcs > 0 ? `${Math.round(ing.totalPcs)} Stk` : fmtKg(ing.totalKg)}</td>
+        </tr>`).join("");
+      return `
+  ${showSubHeads ? `<div class="component-title">${escHtml(title)}</div>` : ""}
+  <table class="spice-table">
+    <thead><tr><th>Gewürz</th><th class="num">Menge (gesamt)</th></tr></thead>
+    <tbody>${spiceRows}</tbody>
+  </table>`;
+    }).join("\n");
+
+    return `${daySection}
+<div class="wo-block">
+  <div class="wo-block-head">
+    <span class="wo-block-num">WO ${escHtml(row.woNumber)}</span>
+    <span class="wo-block-code">${escHtml(row.recipeCode)}</span>
+    <span class="wo-block-name">${escHtml(row.subRecipeName || row.recipeName)}</span>
+    <span class="wo-block-date">${escHtml(fmtDateHeader(row.dateNeeded))}</span>
+  </div>
+  ${blockHtml}
+</div>`;
+  }).join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Spice Room ${escHtml(weekLabel)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:10px;color:#111;background:#fff;padding:10px}
+.page-title{font-size:16px;font-weight:900;color:#1e3a5f;margin-bottom:2px}
+.page-sub{font-size:9px;color:#6b7280;margin-bottom:10px}
+.day-divider{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:linear-gradient(135deg,#0f2240,#1e3a5f);padding:5px 10px;border-radius:4px;margin:14px 0 6px}
+.day-divider:first-of-type{margin-top:0}
+.wo-block{border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;overflow:hidden;page-break-inside:avoid;break-inside:avoid-page}
+.wo-block-head{background:#fef3c7;border-bottom:2px solid #f59e0b;padding:4px 8px;display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}
+.wo-block-num{font-size:12px;font-weight:900;color:#1e3a5f}
+.wo-block-code{font-size:9px;font-weight:700;color:#9ca3af;font-family:monospace}
+.wo-block-name{font-size:10px;font-weight:700;color:#111;flex:1}
+.wo-block-date{font-size:8px;font-weight:700;color:#92400e;margin-left:auto}
+.component-title{font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#64748b;background:#f8fafc;padding:3px 8px;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0}
+.wo-block > .component-title:first-of-type{border-top:none}
+.spice-table{width:100%;border-collapse:collapse;font-size:9px}
+.spice-table th{background:#fffbeb;padding:3px 8px;text-align:left;font-weight:700;font-size:7px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #fde68a;color:#92400e}
+.spice-table td{padding:2px 8px;border-bottom:1px solid #fef3c7}
+.spice-table .num{text-align:right;white-space:nowrap;font-weight:700;color:#1e3a5f}
+.badge-separate{display:inline-block;font-size:6px;font-weight:900;padding:0 4px;border-radius:2px;background:#b23c17;color:#fff;letter-spacing:.03em;vertical-align:middle}
+@media print{
+  body{padding:4mm}
+  .wo-block{page-break-inside:avoid;break-inside:avoid-page}
+  .day-divider{page-break-after:avoid;break-after:avoid-page}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:A4;margin:8mm}
+}
+</style>
+</head>
+<body>
+<div class="page-title">🌶 Spice Room — Gewürzliste</div>
+<div class="page-sub">${escHtml(weekLabel)} · ${spiceWos.length} WO(s) mit Spice-Room-Zutaten · Mengen = Gesamt je WO (nicht pro Batch)</div>
+${blocks || '<div style="padding:20px;color:#6b7280;">Keine Spice-Room-Zutaten in dieser Woche.</div>'}
 </body>
 </html>`;
 }

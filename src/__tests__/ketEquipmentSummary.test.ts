@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { KetRow, BatchCalc, GnTraySummary, ScoopInfo } from "../features/ket-plan/ketTypes";
+import type { KetRow, BatchCalc, GnTraySummary, IngCalc, ScoopInfo } from "../features/ket-plan/ketTypes";
 import type { RunInfo } from "../features/ket-plan/ketRunLogic";
 import type { ChillerAssignment } from "../features/blast-chiller/blastChillerLogic";
 import {
@@ -25,6 +25,23 @@ function makeRow(overrides: Partial<KetRow> & { key: string; woNumber: string; d
     kitchenStatus: "",
     unlockedEta: "",
     workOrderComment: "",
+    ...overrides,
+  };
+}
+
+function makeIng(overrides: Partial<IngCalc> & { name: string; totalKg: number }): IngCalc {
+  return {
+    id: overrides.name,
+    category: "",
+    uom: "kg",
+    perBatchKg: 0,
+    yieldPct: null,
+    totalPcs: 0,
+    separate: false,
+    spiceRoom: false,
+    gnTrays: null,
+    gnTraysRaw: null,
+    gnType: null,
     ...overrides,
   };
 }
@@ -58,6 +75,7 @@ function makeCalc(overrides: Partial<BatchCalc> & { equipBatches: BatchCalc["equ
     uomWarnings: [],
     factorOverridesEquip: false,
     components: [],
+    spiceGroups: [],
     gnTraySummary: [],
     scoopInfo: null,
     portionGrams: null,
@@ -141,6 +159,7 @@ describe("computeFullResourceDemand", () => {
       equipBatches: [{ equip: "BRAISER", label: "Braiser", capacityKg: 80, batches: 2, perBatchKg: 40, remainderKg: 0, utilizationPct: 50 }],
       resolvedCookMethods: ["BRAISER"],
       gnTraySummary: gnSummary,
+      ingredients: [makeIng({ name: "Braiser-Zutat", totalKg: 40, gnTrays: 5, gnTraysRaw: 5, gnType: "GN 2/1" })],
       scoopInfo: scoop,
       allergensContains: ["MILCH"],
       chillerAssignment: chillerMilk,
@@ -149,6 +168,7 @@ describe("computeFullResourceDemand", () => {
       equipBatches: [{ equip: "OVEN", label: "Ofen", capacityKg: 60, batches: 1, perBatchKg: 50, remainderKg: 0, utilizationPct: 83 }],
       resolvedCookMethods: ["OVEN"],
       gnTraySummary: [{ gnType: "GN 2/1", trays: 8 }],
+      ingredients: [makeIng({ name: "Ofen-Zutat", totalKg: 50, gnTrays: 8, gnTraysRaw: 8, gnType: "GN 2/1" })],
       scoopInfo: null,
       allergensContains: ["FISCH"],
       chillerAssignment: chillerFree,
@@ -301,5 +321,85 @@ describe("computeFullResourceDemand", () => {
     expect(html).toContain("Run 1");
     expect(html).toContain("BLAST CHILLER");
     expect(html).toContain("SCOOPS");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// Wannen/Blech-Pooling über mehrere WOs (Regressionstest für den
+// Rundungs-Bug: vorher rundete jede WO-Zeile einzeln auf, dann wurden die
+// schon gerundeten Werte addiert — das blies Wannen/Bleche künstlich auf,
+// sobald mehrere WOs am selben Tag/Schicht dieselbe Zutat brauchten).
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("Wannen/Blech-Pooling über mehrere WOs", () => {
+  it("poolt Wannen zutatbasiert VOR dem Runden, statt pro WO einzeln aufzurunden", () => {
+    const rows: KetRow[] = [
+      makeRow({ key: "wo::a", woNumber: "50-1", dateNeeded: "2026-08-20 - 1" }),
+      makeRow({ key: "wo::b", woNumber: "50-2", dateNeeded: "2026-08-20 - 1" }),
+    ];
+    const calcs = new Map<string, BatchCalc>([
+      ["wo::a", makeCalc({
+        equipBatches: [{ equip: "BRAISER", label: "Braiser", capacityKg: 80, batches: 1, perBatchKg: 10, remainderKg: 0, utilizationPct: 12 }],
+        resolvedCookMethods: ["BRAISER"],
+        ingredients: [makeIng({ name: "Broccoli Florets", totalKg: 10 })],
+      })],
+      ["wo::b", makeCalc({
+        equipBatches: [{ equip: "BRAISER", label: "Braiser", capacityKg: 80, batches: 1, perBatchKg: 8, remainderKg: 0, utilizationPct: 10 }],
+        resolvedCookMethods: ["BRAISER"],
+        ingredients: [makeIng({ name: "Broccoli Florets", totalKg: 8 })],
+      })],
+    ]);
+    const result = computeFullResourceDemand(rows, calcs, new Map());
+    const braiser = result.byRunDayShift[0].stations.find(s => s.station === "BRAISER");
+    // 10kg + 8kg = 18kg ÷ 45kg/Wanne (Broccoli Florets, siehe CAPACITY_DB) =
+    // ceil(0.4) = 1 Wanne — NICHT ceil(10/45) + ceil(8/45) = 1 + 1 = 2.
+    expect(braiser!.wannen).toBe(1);
+  });
+
+  it("poolt GN-Bleche zutatbasiert VOR dem Runden, statt pro WO einzeln aufzurunden", () => {
+    const rows: KetRow[] = [
+      makeRow({ key: "wo::a", woNumber: "51-1", dateNeeded: "2026-08-20 - 1" }),
+      makeRow({ key: "wo::b", woNumber: "51-2", dateNeeded: "2026-08-20 - 1" }),
+    ];
+    const calcs = new Map<string, BatchCalc>([
+      ["wo::a", makeCalc({
+        equipBatches: [{ equip: "BRAISER", label: "Braiser", capacityKg: 80, batches: 1, perBatchKg: 10, remainderKg: 0, utilizationPct: 12 }],
+        resolvedCookMethods: ["BRAISER"],
+        ingredients: [makeIng({ name: "Test Zutat", totalKg: 10, gnTrays: 1, gnTraysRaw: 0.3, gnType: "GN 2/1" })],
+      })],
+      ["wo::b", makeCalc({
+        equipBatches: [{ equip: "BRAISER", label: "Braiser", capacityKg: 80, batches: 1, perBatchKg: 8, remainderKg: 0, utilizationPct: 10 }],
+        resolvedCookMethods: ["BRAISER"],
+        ingredients: [makeIng({ name: "Test Zutat", totalKg: 8, gnTrays: 1, gnTraysRaw: 0.3, gnType: "GN 2/1" })],
+      })],
+    ]);
+    const result = computeFullResourceDemand(rows, calcs, new Map());
+    const braiser = result.byRunDayShift[0].stations.find(s => s.station === "BRAISER");
+    // 0.3 + 0.3 = 0.6 Bleche roh → ceil(0.6) = 1 Blech — NICHT ceil(0.3) + ceil(0.3) = 1 + 1 = 2.
+    expect(braiser!.gnTrays.find(t => t.gnType === "GN 2/1")?.count).toBe(1);
+  });
+
+  it("behandelt unterschiedliche Zutaten weiterhin als getrennte Bleche", () => {
+    const rows: KetRow[] = [
+      makeRow({ key: "wo::a", woNumber: "52-1", dateNeeded: "2026-08-20 - 1" }),
+      makeRow({ key: "wo::b", woNumber: "52-2", dateNeeded: "2026-08-20 - 1" }),
+    ];
+    const calcs = new Map<string, BatchCalc>([
+      ["wo::a", makeCalc({
+        equipBatches: [{ equip: "BRAISER", label: "Braiser", capacityKg: 80, batches: 1, perBatchKg: 10, remainderKg: 0, utilizationPct: 12 }],
+        resolvedCookMethods: ["BRAISER"],
+        ingredients: [makeIng({ name: "Zutat A", totalKg: 10, gnTrays: 1, gnTraysRaw: 0.3, gnType: "GN 2/1" })],
+      })],
+      ["wo::b", makeCalc({
+        equipBatches: [{ equip: "BRAISER", label: "Braiser", capacityKg: 80, batches: 1, perBatchKg: 8, remainderKg: 0, utilizationPct: 10 }],
+        resolvedCookMethods: ["BRAISER"],
+        ingredients: [makeIng({ name: "Zutat B", totalKg: 8, gnTrays: 1, gnTraysRaw: 0.3, gnType: "GN 2/1" })],
+      })],
+    ]);
+    const result = computeFullResourceDemand(rows, calcs, new Map());
+    const braiser = result.byRunDayShift[0].stations.find(s => s.station === "BRAISER");
+    // Zwei VERSCHIEDENE Zutaten teilen sich kein Blech — 0.3 + 0.3 bleibt
+    // getrennt gerundet: ceil(0.3) + ceil(0.3) = 1 + 1 = 2.
+    expect(braiser!.gnTrays.find(t => t.gnType === "GN 2/1")?.count).toBe(2);
   });
 });

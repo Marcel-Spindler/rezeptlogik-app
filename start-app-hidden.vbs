@@ -5,6 +5,12 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 objShell.CurrentDirectory = scriptDir
 
+' Lokale SQLite-DB VOR dem Vite-Start bauen/auffrischen (0 = hidden, True = warten).
+' local-db-server.mjs prueft beim eigenen Start einmalig, ob die Datei existiert
+' ("dbAvailable") -- fehlt sie dann, bleibt die App bis zum naechsten manuellen
+' Neustart auf HTTP 503 ("Lokale Datenbank antwortet nicht") haengen.
+objShell.Run "cmd /c npm run db:build", 0, True
+
 ' npm start (vite) im Hintergrund, kein sichtbares Fenster (0 = hidden, False = nicht warten)
 objShell.Run "cmd /c npm start", 0, False
 

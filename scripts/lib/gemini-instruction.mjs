@@ -80,7 +80,26 @@ the kitchen completes with its local HACCP / oven sheet — do NOT write literal
 - mixer speed   → "mix on low speed" / "auf niedriger Stufe mischen"
 
 MIRROR: EN and DE must have the same stations, the same letters and the same step
-count. NEVER list ingredients — the sheet already has an ingredient table.
+count.
+
+NAME THE INGREDIENTS IN THE STEPS — this is what makes a sheet usable, not a vague
+outline: every action that adds, seasons, combines or cooks something must name the
+actual ingredient(s) from the context by their plain kitchen name, exactly like the
+real sheets do — "Sweat the onion, garlic and ginger until translucent", "Add the
+curry powder and turmeric until fragrant", "Whisk in the Dijon mustard and reduced
+stock", "Fold in the cold butter, then the parsley". Never write a vague "add the
+seasoning" / "add the remaining ingredients" when the context tells you what they
+are — name them. Exception: when several items genuinely go in together with no
+technique-relevant order (e.g. a spice-room blend combined in one go), "combine all
+ingredients" for THAT step is fine — but do not use it as a shortcut to avoid naming
+ingredients elsewhere. This is NOT the same as reprinting the ingredient table: never
+state quantities (weights/percentages) in the instruction text — the sheet already
+has the quantity table for that.
+
+TRANSLATION: write the DE version as a professional kitchen instruction in its own
+right, not a literal word-for-word translation of the EN — same meaning, same
+stations, same step count, but natural German kitchen phrasing throughout (see
+STATION NAMES below for the fixed EN→DE station terms).
 
 FACTOR RULES (from context — never override):
 - rti=true → output ONLY "RTI → Plating" in both languages, nothing else.

@@ -11,7 +11,7 @@
 //   • Gantt-Timeline (frühester/spätester Start je Station)
 // Kein Essen/Zutaten in der Ausgabe — nur Equipment, Mengen, Zeiten.
 
-import type { BatchCalc, EquipBatch, GnTraySummary, IngCalc, KetRow, ScoopInfo } from "./ketTypes";
+import type { BatchCalc, EquipBatch, IngCalc, KetRow, ScoopInfo } from "./ketTypes";
 import { EQUIP_LABELS } from "./ketTypes";
 import { parseDateShift } from "./ketLogic";
 import { shiftLabel, type RunInfo } from "./ketRunLogic";
@@ -203,31 +203,56 @@ function makeScoopKey(s: ScoopInfo): string {
   return `${s.methodType ?? "UNKNOWN"}||${s.methodColor ?? ""}||${s.yieldGrams != null ? s.yieldGrams : "x"}`;
 }
 
-function mergeGnTrays(summaries: GnTraySummary[]): GnTrayDemand[] {
-  if (summaries.length === 0) return [];
-  const map = new Map<string, number>();
-  for (const s of summaries) {
-    if (s.trays > 0) map.set(s.gnType, (map.get(s.gnType) ?? 0) + s.trays);
+// Poolt den ROHEN (unrunden) Blech-Bedarf pro Zutat (siehe IngCalc.gnTraysRaw)
+// über alle WOs einer Station/eines Tages hinweg und rundet ERST DANACH, ein
+// einziges Mal pro Zutat — statt wie vorher jede WO-Zeile einzeln aufzurunden
+// und dann die schon gerundeten Werte zu addieren. Letzteres bläht den Bedarf
+// künstlich auf: 5× dieselbe Zutat mit je 0.3 Blechen wurde vorher zu 5 Blechen
+// (5×⌈0.3⌉), tatsächlich gebraucht wird nur ⌈5×0.3⌉ = 2. Verschiedene Zutaten
+// bleiben getrennt (können sich kein Blech teilen), erst NACH dem Runden wird
+// je GN-Größe aufsummiert.
+function poolGnTraysByIngredient(ingredients: IngCalc[]): GnTrayDemand[] {
+  const byIngredient = new Map<string, { raw: number; gnType: string }>();
+  for (const ing of ingredients) {
+    if (!ing.gnType || !ing.gnTraysRaw || ing.gnTraysRaw <= 0) continue;
+    const key = `${ing.name.trim().toLowerCase()}||${ing.gnType}`;
+    const existing = byIngredient.get(key);
+    if (existing) existing.raw += ing.gnTraysRaw;
+    else byIngredient.set(key, { raw: ing.gnTraysRaw, gnType: ing.gnType });
   }
-  return [...map.entries()]
+  const byGnType = new Map<string, number>();
+  for (const { raw, gnType } of byIngredient.values()) {
+    byGnType.set(gnType, (byGnType.get(gnType) ?? 0) + Math.ceil(raw));
+  }
+  return [...byGnType.entries()]
     .map(([gnType, count]) => ({ gnType, count }))
     .sort((a, b) => a.gnType.localeCompare(b.gnType));
 }
 
-// Berechnet Wannen aus den einzelnen Zutaten (pro Zutat die CapacityDB fragen).
-// Fallback auf pauschal wenn keine Zutat einen DB-Treffer hat.
-function computeWannenFromIngredients(ingredients: IngCalc[], totalKg: number): number {
-  if (totalKg <= 0) return 0;
-  let wannenSum = 0;
+// Berechnet Wannen aus den einzelnen Zutaten (pro Zutat die CapacityDB fragen,
+// Wannen-Größe ist je nach Zutat unterschiedlich — 45kg bis 270kg, siehe
+// wrEquipmentCapacityDB.CAPACITY_DB). Erst über alle WOs der Station DIESELBE
+// Zutat aufsummieren, DANN einmal runden — sonst bläht sich der Bedarf genauso
+// künstlich auf wie bei den GN-Blechen oben (10kg + 8kg Brokkoli bei 45kg/Wanne
+// braucht 1 Wanne, nicht 1+1=2). Fallback auf pauschal 80kg/Wanne für Zutaten
+// ohne DB-Treffer.
+function computeWannenFromIngredients(ingredients: IngCalc[]): number {
+  const byItem = new Map<string, { kg: number; wanneKg: number }>();
   let coveredKg = 0;
+  let totalKg = 0;
   for (const ing of ingredients) {
     if (ing.totalKg <= 0) continue;
+    totalKg += ing.totalKg;
     const cap = lookupEquipmentCapacity(ing.name);
     if (cap?.wanneKg && cap.wanneKg > 0) {
-      wannenSum += Math.ceil(ing.totalKg / cap.wanneKg);
+      const existing = byItem.get(cap.item);
+      if (existing) existing.kg += ing.totalKg;
+      else byItem.set(cap.item, { kg: ing.totalKg, wanneKg: cap.wanneKg });
       coveredKg += ing.totalKg;
     }
   }
+  let wannenSum = 0;
+  for (const { kg, wanneKg } of byItem.values()) wannenSum += Math.ceil(kg / wanneKg);
   // Für den nicht-abgedeckten Rest: Fallback 80kg/Wanne
   const uncoveredKg = totalKg - coveredKg;
   if (uncoveredKg > 0) {
@@ -236,43 +261,33 @@ function computeWannenFromIngredients(ingredients: IngCalc[], totalKg: number): 
   return wannenSum;
 }
 
-// Debox-Stationen brauchen GN-Trays VOR dem Kochen — aus den Zutaten der WO
-// kann man ableiten welche Trays in der Debox gebraucht werden (Protein/Veggie
-// Debox = Auftauen/Portionieren auf GN-Bleche bevor es in den Braiser/Oven geht).
-function computeDeboxTrays(ingredients: IngCalc[], station: string): GnTrayDemand[] {
-  if (station !== "VEGGIE DEBOX" && station !== "PROTEIN DEBOX") return [];
-  const map = new Map<string, number>();
-  for (const ing of ingredients) {
-    if (ing.gnTrays && ing.gnTrays > 0 && ing.gnType) {
-      map.set(ing.gnType, (map.get(ing.gnType) ?? 0) + ing.gnTrays);
-    }
-  }
-  return [...map.entries()]
-    .map(([gnType, count]) => ({ gnType, count }))
-    .sort((a, b) => a.gnType.localeCompare(b.gnType));
-}
-
 interface StationAccumulator {
   batches: number;
   kg: number;
   minutes: number;
-  gnTrays: GnTraySummary[];
-  deboxTrays: GnTrayDemand[];
   scoops: Map<string, ScoopEntry>;
   allergens: Set<string>;
   woNumbers: Set<string>;
+  // Rohe Zutaten (nicht vorgerundet) für Wannen + "reguläre" GN-Bleche dieser
+  // Station — Pooling/Rundung passiert erst ganz am Ende pro Zutat (siehe
+  // computeWannenFromIngredients/poolGnTraysByIngredient), NICHT pro WO.
   ingredients: IngCalc[];
+  // Separat: Zutaten, die VOR dem Kochen durch eine Debox-Station laufen
+  // (Protein/Veggie Debox = Auftauen/Portionieren auf GN-Bleche, bevor es in
+  // den Braiser/Ofen geht). Eigener Pool, weil das dieselben physischen
+  // Bleche sein können wie die "regulären" — beim finalen Zusammenführen wird
+  // je GN-Größe das Maximum genommen, nicht addiert.
+  deboxIngredients: IngCalc[];
 }
 
 function createStationAcc(): StationAccumulator {
-  return { batches: 0, kg: 0, minutes: 0, gnTrays: [], deboxTrays: [], scoops: new Map(), allergens: new Set(), woNumbers: new Set(), ingredients: [] };
+  return { batches: 0, kg: 0, minutes: 0, scoops: new Map(), allergens: new Set(), woNumbers: new Set(), ingredients: [], deboxIngredients: [] };
 }
 
 function accumulateBlock(
   stationMap: Map<string, StationAccumulator>,
   woNumber: string,
   equipBatches: EquipBatch[],
-  gnTraySummary: GnTraySummary[],
   scoopInfo: ScoopInfo | null,
   primaryEquip: string | null,
   resolvedCookMethods: string[],
@@ -293,10 +308,6 @@ function accumulateBlock(
     agg.woNumbers.add(woNumber);
   }
 
-  if (gnTraySummary.length > 0 && primaryEquip) {
-    ensure(primaryEquip).gnTrays.push(...gnTraySummary);
-  }
-
   if (scoopInfo?.methodType) {
     const key = makeScoopKey(scoopInfo);
     const station = primaryEquip ?? resolvedCookMethods[0] ?? "UNKNOWN";
@@ -313,17 +324,15 @@ function accumulateBlock(
     }
   }
 
-  // Zutaten für Wannen-Berechnung + Debox-Tray-Ableitung sammeln (nur intern,
+  // Zutaten für Wannen-Berechnung + reguläre GN-Bleche sammeln (nur intern,
   // NICHT in der Ausgabe — kein Essen listen).
   if (ingredients.length > 0) {
     const station = primaryEquip ?? resolvedCookMethods[0];
     if (station) ensure(station).ingredients.push(...ingredients);
-    // Debox-Stationen: Zutaten dort zuordnen
+    // Debox-Stationen: dieselben Zutaten zusätzlich im Debox-Pool ablegen.
     for (const method of resolvedCookMethods) {
       if (method === "VEGGIE DEBOX" || method === "PROTEIN DEBOX") {
-        const deboxAgg = ensure(method);
-        const deboxTrays = computeDeboxTrays(ingredients, method);
-        if (deboxTrays.length > 0) deboxAgg.deboxTrays.push(...deboxTrays.map(t => ({ gnType: t.gnType, count: t.count })));
+        ensure(method).deboxIngredients.push(...ingredients);
       }
     }
   }
@@ -375,10 +384,10 @@ export function computeFullResourceDemand(
 
       if (calc.components.length > 0) {
         for (const comp of calc.components) {
-          accumulateBlock(stationMap, row.woNumber, comp.equipBatches, comp.gnTraySummary, comp.scoopInfo, comp.primaryEquip, comp.resolvedCookMethods, minutesPerBatch, comp.ingredients);
+          accumulateBlock(stationMap, row.woNumber, comp.equipBatches, comp.scoopInfo, comp.primaryEquip, comp.resolvedCookMethods, minutesPerBatch, comp.ingredients);
         }
       } else {
-        accumulateBlock(stationMap, row.woNumber, calc.equipBatches, calc.gnTraySummary, calc.scoopInfo, calc.primaryEquip, calc.resolvedCookMethods, minutesPerBatch, calc.ingredients);
+        accumulateBlock(stationMap, row.woNumber, calc.equipBatches, calc.scoopInfo, calc.primaryEquip, calc.resolvedCookMethods, minutesPerBatch, calc.ingredients);
       }
 
       // Allergene → alle Stationen
@@ -405,13 +414,12 @@ export function computeFullResourceDemand(
     // 3) Station-Akkumulatoren → StationDemand[]
     const stations: StationDemand[] = [...stationMap.entries()]
       .map(([station, agg]) => {
-        // GN-Trays: Equipment-basiert + Debox-basiert zusammen
-        const equipGnTrays = mergeGnTrays(agg.gnTrays);
-        const deboxGnMap = new Map<string, number>();
-        for (const dt of agg.deboxTrays) deboxGnMap.set(dt.gnType, (deboxGnMap.get(dt.gnType) ?? 0) + dt.count);
-        const deboxGnTrays: GnTrayDemand[] = [...deboxGnMap.entries()].map(([gnType, count]) => ({ gnType, count }));
-        // Merge: nimm die höhere Zahl (nicht addieren — Debox-Trays sind dieselben
+        // GN-Trays: regulärer Bedarf + Debox-Vorlauf getrennt gepoolt (roh, vor
+        // dem Runden — siehe poolGnTraysByIngredient), dann je GN-Größe das
+        // Maximum genommen (nicht addieren — Debox-Trays sind dieselben
         // physischen Bleche die danach im Ofen landen, nicht zusätzliche).
+        const equipGnTrays = poolGnTraysByIngredient(agg.ingredients);
+        const deboxGnTrays = poolGnTraysByIngredient(agg.deboxIngredients);
         const allGnTypes = new Set([...equipGnTrays.map(t => t.gnType), ...deboxGnTrays.map(t => t.gnType)]);
         const gnTrays: GnTrayDemand[] = [...allGnTypes]
           .map(gnType => {
@@ -424,8 +432,9 @@ export function computeFullResourceDemand(
 
         const totalGnCount = gnTrays.reduce((s, t) => s + t.count, 0);
 
-        // Wannen: zutatbasiert aus CapacityDB
-        const wannen = computeWannenFromIngredients(agg.ingredients, agg.kg);
+        // Wannen: zutatbasiert aus CapacityDB, über alle WOs dieser Station
+        // gepoolt bevor gerundet wird.
+        const wannen = computeWannenFromIngredients(agg.ingredients);
 
         const ovenLoads = station === "OVEN" && totalGnCount > 0
           ? Math.ceil(totalGnCount / ovenRackCap)
@@ -1013,4 +1022,23 @@ export function allergenSortScore(allergens: string[]): number {
     score += ALLERGEN_WEIGHT[a] ?? 2;
   }
   return score;
+}
+
+/** Gruppenkey für die Reinigungsreihenfolge: alle WOs mit demselben
+ *  dominanten Allergen landen nebeneinander, damit nie Milch→Sulfit→Milch
+ *  entsteht. Format: "<gewicht_padded>_<allergenname>" — lexikografisch
+ *  sortierbar: 00_none < 01_Gluten < 02_Milch < 05_Nüsse.
+ *  WOs derselben Gruppe werden dann nach Gesamtscore (weniger → mehr) geordnet. */
+export function allergenGroupKey(allergens: string[]): string {
+  if (allergens.length === 0) return "00_none";
+  let maxWeight = 0;
+  let dominant = "";
+  for (const a of allergens) {
+    const w = ALLERGEN_WEIGHT[a] ?? 2;
+    if (w > maxWeight || (w === maxWeight && a < dominant)) {
+      maxWeight = w;
+      dominant = a;
+    }
+  }
+  return `${String(maxWeight).padStart(2, "0")}_${dominant}`;
 }

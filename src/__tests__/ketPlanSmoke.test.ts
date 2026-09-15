@@ -63,6 +63,7 @@ function makeCalc(overrides?: Partial<BatchCalc>): BatchCalc {
     uomWarnings: [],
     factorOverridesEquip: false,
     components: [],
+    spiceGroups: [],
     gnTraySummary: [],
     scoopInfo: null,
     portionGrams: null,

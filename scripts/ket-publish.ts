@@ -56,7 +56,7 @@ import {
   parseKetCsv,
   type GnHints,
 } from "../src/features/ket-plan/ketLogic.ts";
-import { buildPdf } from "../src/features/ket-plan/ketPdf.ts";
+import { buildPdf, buildSpiceRoomPdf } from "../src/features/ket-plan/ketPdf.ts";
 import { buildWoInstructionContext } from "../src/features/ket-plan/woInstructionBot.ts";
 import { wrBuildHintsFromDumps } from "../src/features/kitchen-mode/wrEquipmentHints.ts";
 import { weekPrefixFromWoNumber } from "../src/features/wms-overview/wmsWeeks.ts";
@@ -521,6 +521,50 @@ async function main() {
         errors++;
         weeksWithErr.add(segs[0]);
         console.warn(`\n  ✗ WO ${row.woNumber}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+
+    // Gewürzraum-Sammelliste: EIN durchlaufendes Dokument je in den Rows
+    // vorkommender Woche (normalerweise genau eine) — NICHT nach Tag/Station
+    // aufgeteilt wie die einzelnen WO-PDFs (siehe buildSpiceRoomPdf), landet als
+    // Geschwister-Ordner "Spice Room" neben Protein/Veggie im selben
+    // Wochenordner. Ergänzt die einzelnen WO-PDFs, ersetzt dort nichts.
+    for (const week of [...new Set(rows.map((r) => weekFolder(r)))]) {
+      const weekRows = rows.filter((r) => weekFolder(r) === week);
+      const spiceHtml = buildSpiceRoomPdf(weekRows, calcMap, week.replace(WEEK_SUFFIX, ""));
+      const spicePage = await browser.newPage();
+      try {
+        await spicePage.setContent(spiceHtml, { waitUntil: "networkidle" });
+        const spicePdf = Buffer.from(await spicePage.pdf({
+          format: "A4",
+          printBackground: true,
+          margin: { top: "8mm", right: "8mm", bottom: "8mm", left: "8mm" },
+        }));
+        const fileName = "Spice-Room-Gewuerzliste.pdf";
+        const segs = [week, "Spice Room"];
+        if (drive) {
+          let parent = DRIVE_FOLDER_ID;
+          let acc = "";
+          for (const seg of segs) {
+            acc = acc ? `${acc}/${seg}` : seg;
+            let id = folderCache.get(acc);
+            if (!id) { id = await driveFindOrCreateFolder(drive, parent, seg); folderCache.set(acc, id); }
+            parent = id;
+          }
+          await driveUpsertPdf(drive, parent, fileName, spicePdf);
+        } else {
+          let dir = localRoot;
+          for (const seg of segs) {
+            dir = join(dir, seg);
+            if (!existsSync(dir)) mkdirSync(dir);
+          }
+          writeFileSync(join(dir, fileName), spicePdf);
+        }
+        console.log(`  🌶 Spice Room Liste: ${segs.join("/")}/${fileName}`);
+      } catch (e) {
+        console.warn(`  ✗ Spice Room Liste (${week}) fehlgeschlagen: ${e instanceof Error ? e.message : e}`);
+      } finally {
+        await spicePage.close();
       }
     }
   } finally {

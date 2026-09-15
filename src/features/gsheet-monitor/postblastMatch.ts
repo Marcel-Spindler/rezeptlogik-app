@@ -97,11 +97,22 @@ export interface BackfillNeed {
   rtiConfirmed: boolean;
 }
 
+// Das RTI-Sheet tippt WO-Nummern oft mit führender Null ("38-021"), der
+// Produktionsplan/ET/Post-Blast-Feed dagegen konsequent ohne ("38-21") — live
+// verifiziert (KW38: RTI listet "38-021"/"38-022"/…, ET/Post-Blast "38-21"/
+// "38-22"/…). Ohne Normalisierung verfehlt die Zuordnung JEDE WO mit
+// ein- oder zweistelliger laufender Nummer: rtiStatus/platingHoldingKg bleiben
+// dann leer, obwohl das RTI-Sheet die WO längst als "done"/"no" führt.
+function normalizeWorkOrder(wo: string): string {
+  const m = /^(\d+)-0*(\d+)$/.exec(String(wo ?? "").trim());
+  return m ? `${m[1]}-${m[2]}` : String(wo ?? "").trim();
+}
+
 function buildRtiIndex(rtiData: RtiData | null | undefined) {
   const byWo = new Map<string, RtiSubRecipeEntry>();
   for (const meal of rtiData?.meals ?? []) {
     for (const sub of meal.subRecipes) {
-      byWo.set(sub.workOrder, sub);
+      byWo.set(normalizeWorkOrder(sub.workOrder), sub);
     }
   }
   return { byWo };
@@ -156,7 +167,7 @@ export function matchPostblastToWorkOrders(
     // (Pre-Blast-Gewicht da), das ist kein "nichts passiert"-Kritisch-Fall,
     // sondern wartet nur noch auf die zweite Wiegung.
     const isCritical = hasPlan && plannedKg > 0 && progressPct < 30 && actualKg === 0 && !awaitingPostBlast;
-    const rtiEntry = rtiByWo.get(woNum);
+    const rtiEntry = rtiByWo.get(normalizeWorkOrder(woNum));
 
     matched.push({
       workOrder: woNum,

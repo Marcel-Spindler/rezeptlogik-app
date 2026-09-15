@@ -188,28 +188,40 @@ export function KetEquipmentPanel({
     return [...days].sort();
   }, [rows]);
 
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // Mehrfachauswahl der Tage — leer bedeutet "kein Tag manuell gewählt", dann
+  // greift der Fallback auf den ersten verfügbaren Tag weiter unten.
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [runFilter, setRunFilter] = useState<"all" | 1 | 2>("all");
 
-  // Aktiver Tag (erster Tag wenn nichts gewählt)
-  const activeDay = selectedDay ?? availableDays[0] ?? null;
-
-  // Gefilterte RunDemands für den aktiven Tag
-  const dayDemands = useMemo(() => {
-    if (!activeDay) return [];
-    return summary.byRunDayShift.filter(rd =>
-      rd.date === activeDay && (runFilter === "all" || rd.run === runFilter),
+  const toggleDay = (day: string) => {
+    setSelectedDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day],
     );
-  }, [summary, activeDay, runFilter]);
+  };
+
+  // Aktive Tage (erster Tag wenn nichts gewählt) — sortiert wie availableDays
+  const activeDays = useMemo(() => {
+    if (selectedDays.length === 0) return availableDays[0] ? [availableDays[0]] : [];
+    return availableDays.filter(d => selectedDays.includes(d));
+  }, [selectedDays, availableDays]);
+  const allSelected = selectedDays.length > 0 && availableDays.every(d => selectedDays.includes(d));
+
+  // Gefilterte RunDemands für die aktiven Tage
+  const dayDemands = useMemo(() => {
+    if (activeDays.length === 0) return [];
+    return summary.byRunDayShift.filter(rd =>
+      activeDays.includes(rd.date) && (runFilter === "all" || rd.run === runFilter),
+    );
+  }, [summary, activeDays, runFilter]);
 
   // WO-Details für die Station-Cards (welche WO gehört zu welcher Station)
   const woDetailsByStation = useMemo(() => {
     const map = new Map<string, { woNumber: string; subRecipeName: string; kg: number }[]>();
-    if (!activeDay) return map;
+    if (activeDays.length === 0) return map;
 
     for (const row of rows) {
       const { date } = parseDateShift(row.dateNeeded);
-      if (date !== activeDay) continue;
+      if (!activeDays.includes(date)) continue;
       if (runFilter !== "all") {
         const runInfo = runAssignments.get(row.key);
         if (runInfo && runInfo.run !== runFilter) continue;
@@ -234,7 +246,7 @@ export function KetEquipmentPanel({
       }
     }
     return map;
-  }, [rows, calcMap, runAssignments, activeDay, runFilter]);
+  }, [rows, calcMap, runAssignments, activeDays, runFilter]);
 
   // Tages-Totals
   const dayTotals = useMemo(() => {
@@ -301,26 +313,45 @@ export function KetEquipmentPanel({
     );
   }
 
-  const hasBottleneck = summary.bottlenecks.some(b => b.date === activeDay);
+  const hasBottleneck = summary.bottlenecks.some(b => activeDays.includes(b.date));
 
   return (
     <div className="h-full flex flex-col bg-gradient-to-b from-slate-50 to-white">
-      {/* ── Tages-Tabs ── */}
+      {/* ── Tages-Tabs (Mehrfachauswahl — antippen fügt hinzu/entfernt) ── */}
       <div className="shrink-0 px-4 pt-4 pb-2 flex items-center gap-2 flex-wrap">
-        {availableDays.map(day => (
+        {availableDays.map(day => {
+          const isActive = activeDays.includes(day);
+          return (
+            <button
+              key={day}
+              type="button"
+              onClick={() => toggleDay(day)}
+              title={isActive ? "Tag abwählen" : "Tag zur Auswahl hinzufügen (Mehrfachauswahl möglich)"}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                isActive
+                  ? "bg-[#1e3a5f] text-white shadow-md scale-105"
+                  : "bg-white text-slate-500 border border-slate-200 hover:border-blue-300 hover:text-blue-600"
+              }`}
+            >
+              {fmtDate(day)}
+            </button>
+          );
+        })}
+
+        {availableDays.length > 1 && (
           <button
-            key={day}
             type="button"
-            onClick={() => setSelectedDay(day)}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
-              day === activeDay
-                ? "bg-[#1e3a5f] text-white shadow-md scale-105"
-                : "bg-white text-slate-500 border border-slate-200 hover:border-blue-300 hover:text-blue-600"
+            onClick={() => setSelectedDays(allSelected ? [] : [...availableDays])}
+            title="Alle Tage der Woche zusammen anzeigen"
+            className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border border-dashed transition-all ${
+              allSelected
+                ? "bg-slate-700 text-white border-slate-700"
+                : "bg-white text-slate-400 border-slate-300 hover:border-blue-300 hover:text-blue-600"
             }`}
           >
-            {fmtDate(day)}
+            {allSelected ? "Ganze Woche ✓" : "Ganze Woche"}
           </button>
-        ))}
+        )}
 
         {/* Run-Filter */}
         <div className="ml-auto flex rounded-lg overflow-hidden border border-slate-200 text-[9px] font-bold">
@@ -340,9 +371,14 @@ export function KetEquipmentPanel({
       </div>
 
       {/* ── Tages-KPI ── */}
-      {activeDay && (
+      {activeDays.length > 0 && (
         <div className="shrink-0 px-4 pb-3">
           <div className="flex items-center gap-4 text-[11px] flex-wrap">
+            {activeDays.length > 1 && (
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wide">
+                {activeDays.map(fmtDate).join(" + ")}
+              </span>
+            )}
             <span className="font-black text-slate-800">{dayTotals.wos} WOs</span>
             <span className="text-slate-400">·</span>
             <span className="font-bold text-slate-600">{dayTotals.kg.toFixed(0)} kg</span>
@@ -360,9 +396,9 @@ export function KetEquipmentPanel({
           {/* Engpass-Alert */}
           {hasBottleneck && (
             <div className="mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-              {summary.bottlenecks.filter(b => b.date === activeDay).map((b, i) => (
+              {summary.bottlenecks.filter(b => activeDays.includes(b.date)).map((b, i) => (
                 <div key={i} className="text-[10px] font-bold text-red-700">
-                  ⚠ {b.reason}
+                  ⚠ {activeDays.length > 1 ? `${b.date} · ` : ""}{b.reason}
                 </div>
               ))}
             </div>
@@ -382,7 +418,7 @@ export function KetEquipmentPanel({
           ))}
         </div>
 
-        {dayStations.length === 0 && activeDay && (
+        {dayStations.length === 0 && activeDays.length > 0 && (
           <div className="text-center text-slate-400 text-sm mt-12">
             Keine Station-Daten für diesen Tag.
           </div>

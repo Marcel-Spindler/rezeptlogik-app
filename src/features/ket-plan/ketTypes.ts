@@ -102,6 +102,13 @@ export interface IngCalc {
   // (z.B. Flüssigkeiten/Saucen, die nur in die Wanne gehen).
   gnTrays: number | null;
   gnType: string | null; // z.B. "GN 2/1"
+  // Unrunder Blech-Bedarf dieser einen Zutaten-Zeile (z.B. 0.3 statt aufgerundet 1) —
+  // wird für die Pro-WO-Anzeige oben auf `gnTrays` aufgerundet, bleibt hier aber roh
+  // erhalten, damit eine Station/Tag-Aggregation über mehrere WOs hinweg dieselbe
+  // Zutat erst AUFSUMMIEREN und dann EINMAL aufrunden kann (siehe ketEquipmentSummary
+  // .poolGnTraysByIngredient) statt pro WO-Zeile einzeln aufzurunden und den Bedarf
+  // künstlich aufzublähen.
+  gnTraysRaw: number | null;
 }
 
 // Aufsummierter GN-Blech-Bedarf, gruppiert nach GN-Größe (nicht austauschbar —
@@ -240,6 +247,12 @@ export interface BatchCalc {
   // diesem Fall der reine Gesamt-Rohware-Überblick — die belastbaren Batch-
   // Zahlen je Equipment stehen dann in den einzelnen components[].
   components: WoComponent[];
+  // Für die Gewürzraum-Sammelliste (buildSpiceRoomPdf): JEDER benannte Knoten
+  // im Rezept-Baum mit eigenen Gewürz-Zutaten als eigener Block — feinere,
+  // unabhängige Aufteilung als `components` oben (die ist für Kochanweisungen
+  // kalibriert, siehe ketLogic.buildSpiceRoomGroups). Leer, wenn kein
+  // Struktur-Match vorliegt.
+  spiceGroups: { title: string; ingredients: IngCalc[] }[];
   // GN-Blech-Bedarf über ALLE Zutaten dieser WO (siehe IngCalc.gnTrays), gruppiert
   // nach GN-Größe. Bei zusammengesetzten Sub-Rezepten die Summe aller Komponenten
   // PLUS gemeinsamer/nicht komponenten-gebundener Zutaten (z.B. geteilte Gewürze) —

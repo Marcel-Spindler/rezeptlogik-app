@@ -914,7 +914,6 @@ export function StagingDashboard({
         <div className="flex items-center gap-3">
           <div>
             <div className="text-white text-base font-black tracking-tight leading-none">Staging</div>
-            {week && <div className="text-white/40 text-[11px] font-medium mt-0.5">KW {isoWeekNumber(week)}</div>}
           </div>
           <div className="ml-auto flex items-center gap-2">
             {!serverAvailable && <span className="text-[10px] text-amber-300/70 font-medium">WMS offline</span>}

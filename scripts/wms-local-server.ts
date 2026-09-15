@@ -220,6 +220,8 @@ async function fetchTransparencyTabRows(key: string): Promise<string[][]> {
 
 let cachedConn: snowflake.Connection | undefined;
 let connectingConn: Promise<snowflake.Connection> | undefined;
+// Verhindert Browser-Spam: nach jedem SSO-Versuch mind. 90s Pause.
+let ssoBackoffUntil = 0;
 
 // LEFT JOIN auf T_ITEM_MASTER, damit jede Bestandszeile die WMS-Bezeichnung
 // (DESCRIPTION), die Meal-Nummer und die Artikelklasse mitbringt — sonst steht
@@ -750,16 +752,24 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 
 async function ensureConnection(): Promise<snowflake.Connection> {
   if (cachedConn) return cachedConn;
+  // Backoff-Guard: kein zweiter Browser-Tab innerhalb von 90s nach dem letzten Versuch.
+  if (Date.now() < ssoBackoffUntil) {
+    const secs = Math.ceil((ssoBackoffUntil - Date.now()) / 1000);
+    throw new Error(`SSO-Anmeldung läuft oder kürzlich fehlgeschlagen — nächster Versuch in ${secs}s.`);
+  }
   if (!connectingConn) {
     console.log("SSO-Anmeldung startet im Browser ...");
+    ssoBackoffUntil = Date.now() + 90_000; // 90s Backoff ab jetzt (wird bei Erfolg zurückgesetzt)
     connectingConn = connectSnowflake()
       .then((conn) => {
         cachedConn = conn;
+        ssoBackoffUntil = 0; // Erfolg: Backoff aufheben
         console.log("Snowflake verbunden.");
         return conn;
       })
       .finally(() => {
         connectingConn = undefined;
+        // Bei Fehler bleibt ssoBackoffUntil stehen → 90s Pause vor dem nächsten Versuch
       });
   }
   cachedConn = await connectingConn;
@@ -1586,7 +1596,12 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   // ─── Redzone Live Plating Status (Factor Verden) ──────────────────────────
   if (url.pathname === "/redzone-plating-status" && req.method === "GET") {
     const lookbackHours = Number(url.searchParams.get("hours") ?? 24);
-    const hours = Number.isFinite(lookbackHours) ? Math.min(168, Math.max(1, lookbackHours)) : 24;
+    // Deckel/Limit 1:1 mit functions/index.js (exports.redzoneStatus) gehalten:
+    // usePlatedMealTotals fragt für eine abgeschlossene Vorwoche bis zu 576h
+    // an (siehe lookbackHoursFor in useCombinedPlaited.ts) — der alte Deckel
+    // (168h/500 Zeilen) kappte bei einem breiteren Fenster die älteren, noch
+    // relevanten Zeilen der Vorwoche einfach weg.
+    const hours = Number.isFinite(lookbackHours) ? Math.min(600, Math.max(1, lookbackHours)) : 24;
 
     const REDZONE_SQL = `
       SELECT "areaName", "locationName", "productTypeName", "productTypeSKU",
@@ -1602,7 +1617,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       AND "productTypeName" != 'None'
       AND "startTime" >= DATEADD(hour, -${hours}, CURRENT_TIMESTAMP())
       ORDER BY "startTime" DESC
-      LIMIT 500`;
+      LIMIT 5000`;
 
     try {
       const conn = await ensureConnection();
@@ -1706,10 +1721,83 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  // ─── Ingredient Stock (Lagerplatz + MHD für Staging-Dashboard) ──────────────
+  // Sucht nach Lagerbestand für eine kommagetrennte Liste von Zutaten-Namen.
+  // Jeder Name wird als ILIKE '%name%' gegen T_ITEM_MASTER.DESCRIPTION gesucht.
+  // Antwort: flat rows mit LOCATION_ID + EXPIRATION_DATE; Frontend gruppiert.
+  if (url.pathname === "/wms-ingredient-stock" && req.method === "GET") {
+    const whId = url.searchParams.get("whId")?.trim() || "VF";
+    const rawItems = url.searchParams.get("items")?.trim() || "";
+    if (!rawItems) {
+      sendJson(res, 400, { ok: false, error: "items-Parameter fehlt (kommagetrennte Zutaten-Namen)" });
+      return;
+    }
+    const items = rawItems.split(",").map(s => s.trim()).filter(Boolean).slice(0, 60);
+    if (items.length === 0) {
+      sendJson(res, 400, { ok: false, error: "items-Parameter enthält keine gültigen Einträge" });
+      return;
+    }
+
+    // Dynamische ILIKE-Bedingungen je Zutat; SQL-Injektionsschutz via Parameterized Query
+    const patterns = items.map(n => `%${n}%`);
+    const whereParts = patterns.map(() => "im.DESCRIPTION ILIKE ?").join(" OR ");
+    const sql = `
+SELECT
+    si.LOCATION_ID,
+    si.ITEM_NUMBER,
+    im.DESCRIPTION,
+    im.UOM,
+    si.ACTUAL_QTY,
+    si.LOT_NUMBER,
+    si.FIFO_DATE,
+    si.EXPIRATION_DATE,
+    si.STATUS
+FROM US_OPS_ANALYTICS.HIGHJUMP.T_STORED_ITEM si
+LEFT JOIN US_OPS_ANALYTICS.HIGHJUMP.T_ITEM_MASTER im
+    ON si.ITEM_NUMBER = im.ITEM_NUMBER AND im.WH_ID = si.WH_ID
+WHERE si.WH_ID = ?
+  AND si.ACTUAL_QTY > 0
+  AND (${whereParts})
+ORDER BY im.DESCRIPTION, si.EXPIRATION_DATE ASC NULLS LAST, si.LOCATION_ID
+LIMIT 5000`;
+
+    try {
+      const conn = await ensureConnection();
+      console.log(`WMS Ingredient Stock: WH_ID=${whId}, ${items.length} Zutaten, Patterns=${JSON.stringify(patterns.slice(0, 3))}…`);
+      const rows = await executeQuery(conn, sql, [whId, ...patterns]);
+      const mapped = rows.map(r => ({
+        locationId: stringValue(r, "LOCATION_ID"),
+        itemNumber: stringValue(r, "ITEM_NUMBER"),
+        description: stringValue(r, "DESCRIPTION"),
+        uom: stringValue(r, "UOM"),
+        actualQty: numberValue(r, "ACTUAL_QTY"),
+        lotNumber: stringValue(r, "LOT_NUMBER"),
+        fifoDate: dateValue(r, "FIFO_DATE"),
+        expirationDate: dateValue(r, "EXPIRATION_DATE"),
+        status: stringValue(r, "STATUS"),
+      }));
+      sendJson(res, 200, {
+        ok: true,
+        whId,
+        items,
+        generatedAt: new Date().toISOString(),
+        rows: mapped,
+      });
+    } catch (error) {
+      if (cachedConn) {
+        void destroyConnection(cachedConn);
+        cachedConn = undefined;
+      }
+      connectingConn = undefined;
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   sendJson(res, 404, {
     ok: false,
     error: "query-not-configured",
-    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /wms-full-inventory, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=..., /shorts-tracker",
+    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /wms-full-inventory, /wms-ingredient-stock, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=..., /shorts-tracker",
   });
 });
 
