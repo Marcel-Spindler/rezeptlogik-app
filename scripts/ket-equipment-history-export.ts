@@ -123,7 +123,7 @@ async function main() {
   });
 
   // ── Sheet 2: Station-Detail je Tag (über Run+Schicht gemergt, wie im Panel) ─
-  interface StationRollup extends StationDemand { }
+  type StationRollup = StationDemand;
   const stationRows: Record<string, unknown>[] = [];
   for (const date of days) {
     const rds = pastDemands.filter(rd => rd.date === date);

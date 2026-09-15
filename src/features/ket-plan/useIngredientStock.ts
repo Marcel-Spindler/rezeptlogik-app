@@ -182,7 +182,7 @@ export function useIngredientStock(_ingredientNames: string[]): {
         setLoading(false);
       });
     return () => { mounted.current = false; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return { stockMap, stagingMap, loading, serverAvailable };
 }
