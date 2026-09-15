@@ -1009,6 +1009,12 @@ export function calcBatch(
   // kein separater CSV-Upload nötig.
   const chillerAssignment = recipe || structure ? computeWoChiller(data, row.recipeCode, row.subRecipeName) : null;
 
+  // Wenn keine eigenen Zutaten gefunden wurden aber Komponenten existieren,
+  // ist totalKg die Summe der Komponenten-kg (nicht 0).
+  if (totalKg === 0 && components.length > 0) {
+    totalKg = components.reduce((s, c) => s + c.ingredients.reduce((si, i) => si + i.totalKg, 0), 0);
+  }
+
   return {
     totalKg, equipBatches, primaryEquip, capacityKg, primaryCapBibleMatch, batches, perBatchKg, remainderKg,
     resolvedCookMethods, manualEquipment: manualEquipment ?? null,

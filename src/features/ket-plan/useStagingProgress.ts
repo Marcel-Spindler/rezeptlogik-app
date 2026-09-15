@@ -12,9 +12,8 @@ export interface StagingProgressEntry {
   /** Offset in vollen Tagen relativ zum automatisch berechneten Staging-Datum.
    *  0 = kein Override, -1 = einen Tag früher, +1 = einen Tag später usw. */
   offsetDays?: number;
-  /** Lager meldet: Zutat(en) nicht auf Lager. Freitext oder true. */
-  outOfStock?: string | null;
-  outOfStockAt?: string | null;
+  /** Lager meldet: Zutat(en) nicht auf Lager. Key = Zutat-Name. */
+  outOfStock?: Record<string, string> | null;
 }
 
 export type StagingProgress = Record<string, StagingProgressEntry>; // key: woNumber
@@ -23,7 +22,7 @@ export function useStagingProgress(week: string | null): {
   progress: StagingProgress;
   setStaged: (woNumber: string, staged: boolean) => void;
   setOffset: (woNumber: string, offsetDays: number) => void;
-  setOutOfStock: (woNumber: string, message: string | null) => void;
+  setOutOfStock: (woNumber: string, ingredientName: string, isOos: boolean) => void;
   syncError: string | null;
 } {
   const [progress, setProgress] = useState<StagingProgress>({});
@@ -68,9 +67,13 @@ export function useStagingProgress(week: string | null): {
     writeEntry(woNumber, { offsetDays });
   }, [writeEntry]);
 
-  const setOutOfStock = useCallback((woNumber: string, message: string | null) => {
-    writeEntry(woNumber, { outOfStock: message, outOfStockAt: message ? new Date().toISOString() : null });
-  }, [writeEntry]);
+  const setOutOfStock = useCallback((woNumber: string, ingredientName: string, isOos: boolean) => {
+    const current = progress[woNumber]?.outOfStock ?? {};
+    const next = { ...current };
+    if (isOos) next[ingredientName] = new Date().toISOString();
+    else delete next[ingredientName];
+    writeEntry(woNumber, { outOfStock: Object.keys(next).length > 0 ? next : null });
+  }, [writeEntry, progress]);
 
   return { progress, setStaged, setOffset, setOutOfStock, syncError };
 }

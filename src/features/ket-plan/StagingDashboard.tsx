@@ -17,7 +17,7 @@ import { DEFAULT_PRINT_OPTIONS, printStagingWo } from "./stagingPrint";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 type ViewMode = "card" | "list";
-type WoEntry = { row: KetRow; calc: BatchCalc; staged: boolean; offset: number; stagingDate: string | null; aScore: number; aGroup: string; cookFlow: string[]; outOfStock: string | null };
+type WoEntry = { row: KetRow; calc: BatchCalc; staged: boolean; offset: number; stagingDate: string | null; aScore: number; aGroup: string; cookFlow: string[]; outOfStock: Record<string, string> | null };
 
 // ── Staging-Datum ──────────────────────────────────────────────────────────────
 
@@ -201,10 +201,13 @@ function PrintModal({
 
 function IngredientsSection({
   allIngredients, stockMap, stagingMap, serverAvailable, expanded, setExpanded,
+  outOfStock, onOutOfStock,
 }: {
   allIngredients: BatchCalc["ingredients"];
   stockMap: IngredientStockMap; stagingMap: IngredientStockMap;
   serverAvailable: boolean; expanded: boolean; setExpanded: (v: boolean) => void;
+  outOfStock?: Record<string, string> | null;
+  onOutOfStock?: (ingredientName: string, isOos: boolean) => void;
 }) {
   const visible = expanded ? allIngredients : allIngredients.slice(0, 5);
   const hasAllergenIngredients = allIngredients.some(i => !!i.allergen);
@@ -231,10 +234,18 @@ function IngredientsSection({
           return (
             <div key={ing.id}>
               <div className="flex items-center gap-2 py-0.5">
-                <span className={`flex-1 min-w-0 text-[11px] ${ing.allergen ? "font-bold text-orange-700" : "text-slate-700"}`}>
-                  {ing.allergen ? "⚠ " : "· "}{ing.name}
+                <span className={`flex-1 min-w-0 text-[11px] ${ing.allergen ? "font-bold text-orange-700" : outOfStock?.[ing.name] ? "font-bold text-red-600" : "text-slate-700"}`}>
+                  {outOfStock?.[ing.name] ? "✕ " : ing.allergen ? "⚠ " : "· "}{ing.name}
                 </span>
                 <div className="shrink-0 flex items-center gap-1.5">
+                  {onOutOfStock && (
+                    <button type="button" onClick={() => onOutOfStock(ing.name, !outOfStock?.[ing.name])}
+                      className={`text-[7px] font-black px-1 py-0.5 rounded border transition-all ${
+                        outOfStock?.[ing.name]
+                          ? "bg-red-600 text-white border-red-600"
+                          : "bg-white text-slate-300 border-slate-200 hover:border-red-400 hover:text-red-500"
+                      }`} title={outOfStock?.[ing.name] ? "OOS aufheben" : "Nicht auf Lager"}>OOS</button>
+                  )}
                   {ing.separate && (
                     <span title="Separat: wird getrennt von anderen Zutaten verarbeitet"
                       className="text-[8px] font-black px-1 py-0.5 rounded bg-blue-100 text-blue-700 cursor-help">SEP</span>
@@ -301,7 +312,7 @@ function IngredientsSection({
 
 function WoCard({
   row, calc, staged, offset, stagingDate, allergenScore, seqNum, plannerMode, cookFlow,
-  stockMap, stagingMap, serverAvailable, onToggleStaged, onOffsetChange,
+  stockMap, stagingMap, serverAvailable, outOfStock, onToggleStaged, onOffsetChange, onOutOfStock,
 }: WoItemProps) {
   const [expanded, setExpanded] = useState(false);
   const [showPrint, setShowPrint] = useState(false);
@@ -401,7 +412,8 @@ function WoCard({
           </div>
         </div>
         <IngredientsSection allIngredients={allIngredients} stockMap={stockMap} stagingMap={stagingMap}
-          serverAvailable={serverAvailable} expanded={expanded} setExpanded={setExpanded} />
+          serverAvailable={serverAvailable} expanded={expanded} setExpanded={setExpanded}
+          outOfStock={outOfStock} onOutOfStock={onOutOfStock} />
       </div>
     </>
   );
@@ -475,35 +487,35 @@ function WoListRow({
             🖨
           </button>
 
-          {/* Stagen-Toggle */}
-          <button type="button" onClick={onToggleStaged}
+          {/* Stagen-Toggle (mit Bestätigung wenn OOS-Zutaten) */}
+          <button type="button" onClick={() => {
+            const oosCount = outOfStock ? Object.keys(outOfStock).length : 0;
+            if (!staged && oosCount > 0) {
+              const oosNames = Object.keys(outOfStock!).join(", ");
+              if (!window.confirm(`⚠ ${oosCount} Zutat(en) als NICHT AUF LAGER gemeldet:\n\n${oosNames}\n\nTrotzdem als gestagt markieren?`)) return;
+              if (!window.confirm("Bist du sicher? Fehlende Zutaten können die Produktion beeinträchtigen.")) return;
+            }
+            onToggleStaged();
+          }}
             className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center transition-all ${staged ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-300 hover:bg-emerald-50 hover:text-emerald-500"}`}
             title={staged ? "Rückgängig" : "Als gestagt markieren"}>
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
             </svg>
           </button>
-
-          {/* Nicht auf Lager */}
-          <button type="button"
-            onClick={() => onOutOfStock(outOfStock ? null : "Nicht auf Lager")}
-            className={`shrink-0 px-1.5 h-6 rounded-full text-[8px] font-black transition-all border ${
-              outOfStock
-                ? "bg-red-600 text-white border-red-600"
-                : "bg-white text-slate-300 border-slate-200 hover:border-red-400 hover:text-red-500"
-            }`}
-            title={outOfStock ? "Meldung aufheben" : "Nicht auf Lager melden"}>
-            {outOfStock ? "✕ OOS" : "OOS"}
-          </button>
         </div>
 
-        {/* Out-of-Stock Banner */}
-        {outOfStock && (
-          <div className="mx-3 mb-1 px-3 py-1.5 rounded-lg bg-red-600 text-white text-[11px] font-black flex items-center gap-2">
-            <span className="text-base">⚠</span>
-            <span>NICHT AUF LAGER — {outOfStock}</span>
-            <button type="button" onClick={() => onOutOfStock(null)}
-              className="ml-auto text-white/70 hover:text-white text-[10px] font-bold">aufheben</button>
+        {/* Out-of-Stock Banner (wenn Zutaten OOS) */}
+        {outOfStock && Object.keys(outOfStock).length > 0 && (
+          <div className="mx-3 mb-1 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-[10px] flex items-center gap-2 flex-wrap">
+            <span className="font-black text-red-600">⚠ NICHT AUF LAGER:</span>
+            {Object.keys(outOfStock).map(name => (
+              <span key={name} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold">
+                {name}
+                <button type="button" onClick={() => onOutOfStock(name, false)}
+                  className="text-red-400 hover:text-red-700 text-[8px] font-black">✕</button>
+              </span>
+            ))}
           </div>
         )}
 
@@ -544,7 +556,8 @@ function WoListRow({
               </div>
             )}
             <IngredientsSection allIngredients={allIngredients} stockMap={stockMap} stagingMap={stagingMap}
-              serverAvailable={serverAvailable} expanded={true} setExpanded={() => {}} />
+              serverAvailable={serverAvailable} expanded={true} setExpanded={() => {}}
+              outOfStock={outOfStock} onOutOfStock={onOutOfStock} />
           </div>
         )}
       </div>
@@ -882,9 +895,9 @@ interface WoItemProps {
   stagingDate: string | null; allergenScore: number; seqNum: number;
   plannerMode: boolean; cookFlow: string[];
   stockMap: IngredientStockMap; stagingMap: IngredientStockMap; serverAvailable: boolean;
-  outOfStock: string | null;
+  outOfStock: Record<string, string> | null;
   onToggleStaged: () => void; onOffsetChange: (delta: number) => void;
-  onOutOfStock: (message: string | null) => void;
+  onOutOfStock: (ingredientName: string, isOos: boolean) => void;
 }
 
 // ── Haupt-Dashboard ────────────────────────────────────────────────────────────
@@ -903,12 +916,13 @@ export function StagingDashboard({
   serverAvailable: boolean;
   onToggleStaged: (woNumber: string, staged: boolean) => void;
   onOffsetChange: (woNumber: string, offsetDays: number) => void;
-  onOutOfStock: (woNumber: string, message: string | null) => void;
+  onOutOfStock: (woNumber: string, ingredientName: string, isOos: boolean) => void;
   syncError: string | null;
 }) {
   const [plannerMode, setPlannerMode] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [overdueOpen, setOverdueOpen] = useState(false);
   const today = todayIso();
   const tomorrow = tomorrowIso();
 
@@ -1077,27 +1091,29 @@ export function StagingDashboard({
         )}
       </div>
 
-      {/* ── ÜBERFÄLLIG ── */}
+      {/* ── ÜBERFÄLLIG (zuklappbar) ── */}
       {overdueWos.length > 0 && (
-        <div className="shrink-0 mx-4 mb-2 rounded-xl border-2 border-red-300 bg-red-50 overflow-hidden">
-          <div className="px-4 py-2 bg-red-100 flex items-center gap-2">
-            <span className="text-red-700 font-black text-[11px]">⚠ ÜBERFÄLLIG — {overdueWos.length} WOs nicht gestagt</span>
-            <span className="text-[9px] text-red-500 font-bold">
-              ({overdueDays.map(d => fmtDate(d)).join(", ")})
-            </span>
-          </div>
-          <div className="px-4 py-2 space-y-1">
-            {overdueWos.map(wo => (
-              <div key={wo.row.key} className="flex items-center gap-2 text-[10px]">
-                <span className="font-bold text-red-600">{fmtDate(wo.stagingDate!)}</span>
-                <span className="font-black text-slate-700">WO {wo.row.woNumber}</span>
-                <span className="text-slate-500 truncate max-w-[200px]">{wo.row.recipeName}</span>
-                <span className="ml-auto font-bold text-slate-600">{fmtKg(wo.calc.totalKg)}</span>
-                <button type="button" onClick={() => { setSelectedDay(wo.stagingDate!); }}
-                  className="text-[9px] font-bold text-indigo-600 hover:underline">anzeigen</button>
-              </div>
-            ))}
-          </div>
+        <div className="shrink-0 mx-4 mb-2 rounded-xl border border-red-200 bg-red-50/60 overflow-hidden">
+          <button type="button" onClick={() => setOverdueOpen(o => !o)}
+            className="w-full px-4 py-1.5 flex items-center gap-2 text-left hover:bg-red-100/50 transition-colors">
+            <span className="text-[9px] text-red-400 transition-transform" style={{ display: "inline-block", transform: overdueOpen ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+            <span className="text-red-600 font-bold text-[10px]">⚠ {overdueWos.length} überfällige WOs</span>
+            <span className="text-[9px] text-red-400">({overdueDays.map(d => fmtDate(d)).join(", ")})</span>
+          </button>
+          {overdueOpen && (
+            <div className="px-4 pb-2 space-y-1 border-t border-red-100">
+              {overdueWos.map(wo => (
+                <div key={wo.row.key} className="flex items-center gap-2 text-[10px] py-0.5">
+                  <span className="font-bold text-red-600">{fmtDate(wo.stagingDate!)}</span>
+                  <span className="font-black text-slate-700">WO {wo.row.woNumber}</span>
+                  <span className="text-slate-500 truncate max-w-[200px]">{wo.row.recipeName}</span>
+                  <span className="ml-auto font-bold text-slate-600">{fmtKg(wo.calc.totalKg)}</span>
+                  <button type="button" onClick={() => setSelectedDay(wo.stagingDate!)}
+                    className="text-[9px] font-bold text-indigo-600 hover:underline">anzeigen</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1133,7 +1149,7 @@ export function StagingDashboard({
                 outOfStock,
                 onToggleStaged: () => onToggleStaged(row.woNumber, !staged),
                 onOffsetChange: delta => onOffsetChange(row.woNumber, delta),
-                onOutOfStock: msg => onOutOfStock(row.woNumber, msg),
+                onOutOfStock: (ingName, isOos) => onOutOfStock(row.woNumber, ingName, isOos),
               };
               return viewMode === "list"
                 ? <WoListRow key={row.key} {...props} />
