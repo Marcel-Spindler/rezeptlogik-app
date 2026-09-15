@@ -96,11 +96,6 @@ function weekDaysFromIsoWeek(isoWeek: string | null): string[] {
   });
 }
 
-function isoWeekNumber(isoWeek: string | null): string {
-  if (!isoWeek) return "";
-  const m = isoWeek.match(/W(\d{2})/);
-  return m ? m[1].replace(/^0/, "") : isoWeek;
-}
 
 
 
@@ -539,32 +534,70 @@ function WoListRow({
 
 // ── Planer-Kommandozentrale ─────────────────────────────────────────────────
 
+const SECTION_HELP: Record<string, string> = {
+  overview: "Zeigt kg, WO-Anzahl und Staging-Fortschritt pro Tag. Klick auf einen Tag wechselt die Tagesansicht.",
+  stations: "Batches pro Station und Tag. Rot = Spitzenlast, Gelb = mittel, Grün = niedrig. Sortiert nach Gesamt-Batches.",
+  allergens: "Allergen-Gruppen pro Tag. Grün = allergen-frei, Rot = enthält Allergene. Zahl = Anzahl WOs.",
+  wos: "Alle WOs der Woche. Sortierbar per Klick auf Spaltenheader. Verschieben ändert den Staging-Tag um ±1/2 Tage.",
+};
+
+function SectionHeader({ label, helpKey, open, onToggle }: { label: string; helpKey: string; open: boolean; onToggle: () => void }) {
+  const [showHelp, setShowHelp] = useState(false);
+  return (
+    <div className="flex items-center gap-2 mb-1">
+      <button type="button" onClick={onToggle} className="flex items-center gap-1.5 group">
+        <span className="text-[9px] text-amber-500 transition-transform group-hover:text-amber-700" style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+        <span className="text-[10px] font-black text-amber-700 uppercase tracking-wider">{label}</span>
+      </button>
+      <button type="button" onClick={() => setShowHelp(h => !h)}
+        className="w-4 h-4 rounded-full bg-amber-200/60 text-amber-700 text-[8px] font-black flex items-center justify-center hover:bg-amber-300/60 transition-colors" title="Hilfe">?</button>
+      {showHelp && <span className="text-[9px] text-amber-600/80 italic">{SECTION_HELP[helpKey]}</span>}
+    </div>
+  );
+}
+
+function currentWeekRange(today: string): [string, string] {
+  const d = new Date(`${today}T00:00:00Z`);
+  const dow = d.getUTCDay() || 7;
+  const mon = new Date(d);
+  mon.setUTCDate(d.getUTCDate() - (dow - 1));
+  const sun = new Date(mon);
+  sun.setUTCDate(mon.getUTCDate() + 6);
+  return [mon.toISOString().slice(0, 10), sun.toISOString().slice(0, 10)];
+}
+
 function PlannerCommandCenter({
   woData, weekDays, activeDay, today, onSelectDay,
-  onToggleStaged, onOffsetChange,
+  onOffsetChange,
 }: {
   woData: WoEntry[];
   weekDays: string[];
   activeDay: string;
   today: string;
   onSelectDay: (day: string) => void;
-  onToggleStaged: (woNumber: string, staged: boolean) => void;
   onOffsetChange: (woNumber: string, offsetDays: number) => void;
 }) {
   const [sortCol, setSortCol] = useState<"day" | "wo" | "kg" | "allergen">("day");
   const [sortAsc, setSortAsc] = useState(false);
+  const [openSections, setOpenSections] = useState({ overview: true, stations: true, allergens: true, wos: true });
+  const toggle = (key: keyof typeof openSections) => setOpenSections(s => ({ ...s, [key]: !s[key] }));
 
   const toggleSort = (col: typeof sortCol) => {
     if (sortCol === col) setSortAsc(a => !a);
     else { setSortCol(col); setSortAsc(true); }
   };
 
-  // All unique staging days (merge weekDays + any extra days from data)
+  // Filter to current calendar week only
+  const [kwStart, kwEnd] = useMemo(() => currentWeekRange(today), [today]);
+
+  // All unique staging days — only current week
   const allDays = useMemo(() => {
-    const set = new Set(weekDays);
-    for (const d of woData) if (d.stagingDate) set.add(d.stagingDate);
+    const set = new Set(weekDays.filter(d => d >= kwStart && d <= kwEnd));
+    for (const d of woData) {
+      if (d.stagingDate && d.stagingDate >= kwStart && d.stagingDate <= kwEnd) set.add(d.stagingDate);
+    }
     return [...set].sort();
-  }, [woData, weekDays]);
+  }, [woData, weekDays, kwStart, kwEnd]);
 
   // Per-day summary
   const daySummary = useMemo(() => allDays.map(day => {
@@ -572,7 +605,6 @@ function PlannerCommandCenter({
     const totalKg = wos.reduce((s, d) => s + d.calc.totalKg, 0);
     const staged = wos.filter(d => d.staged).length;
 
-    // Station batches — use label (readable) for matching
     const stationBatches: Record<string, number> = {};
     for (const w of wos) {
       for (const eb of w.calc.equipBatches) {
@@ -587,7 +619,6 @@ function PlannerCommandCenter({
       }
     }
 
-    // Allergen groups
     const allergenCounts: Record<string, number> = {};
     for (const w of wos) {
       const g = w.aGroup || "allergen-frei";
@@ -597,12 +628,11 @@ function PlannerCommandCenter({
     return { day, count: wos.length, totalKg, staged, stationBatches, allergenCounts };
   }), [woData, allDays]);
 
-  // Only days that actually have data (for compact grid display)
   const daysWithData = useMemo(() => daySummary.filter(ds => ds.count > 0), [daySummary]);
 
-  // All WOs sorted for table
+  // WOs filtered to current week only
   const sortedWos = useMemo(() => {
-    const all = [...woData].filter(d => d.stagingDate);
+    const all = woData.filter(d => d.stagingDate && d.stagingDate >= kwStart && d.stagingDate <= kwEnd);
     all.sort((a, b) => {
       let cmp = 0;
       switch (sortCol) {
@@ -614,7 +644,7 @@ function PlannerCommandCenter({
       return sortAsc ? cmp : -cmp;
     });
     return all;
-  }, [woData, sortCol, sortAsc]);
+  }, [woData, sortCol, sortAsc, kwStart, kwEnd]);
 
   const maxBatchesPerStation = useMemo(() => {
     const m: Record<string, number> = {};
@@ -626,7 +656,6 @@ function PlannerCommandCenter({
     return m;
   }, [daysWithData]);
 
-  // Discover which stations appear in the data (sorted by total batches desc)
   const activeStations = useMemo(() => {
     const totals: Record<string, number> = {};
     for (const ds of daysWithData) {
@@ -639,179 +668,186 @@ function PlannerCommandCenter({
 
   return (
     <div className="mx-4 mb-3 rounded-2xl border border-amber-200 bg-amber-50/50 overflow-hidden">
-      {/* Section 1: Week Grid — only days with data */}
+      {/* Section 1: Week Grid */}
       <div className="px-4 pt-3 pb-2">
-        <div className="text-[10px] font-black text-amber-700 uppercase tracking-wider mb-2">Wochen-Übersicht</div>
-        {daysWithData.length === 0 ? (
-          <div className="text-[10px] text-slate-400 italic py-2">Keine Staging-Daten in dieser KW</div>
-        ) : (
-          <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(daysWithData.length, 7)}, 1fr)` }}>
-            {daysWithData.map(ds => {
-              const pct = ds.count > 0 ? Math.round((ds.staged / ds.count) * 100) : 0;
-              const isActive = ds.day === activeDay;
-              const isPast = ds.day < today;
-              const allDone = ds.staged === ds.count && ds.count > 0;
-              return (
-                <button key={ds.day} type="button" onClick={() => onSelectDay(ds.day)}
-                  className={`rounded-xl p-2 text-center transition-all border ${
-                    isActive ? "bg-[#0f2240] text-white border-[#0f2240] shadow-md"
-                      : allDone ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : isPast && ds.count > 0 ? "bg-red-50 text-red-600 border-red-200"
-                      : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
-                  }`}>
-                  <div className="text-[10px] font-black">{fmtDate(ds.day)}</div>
-                  <div className="text-[13px] font-black mt-1">{fmtKg(ds.totalKg)}</div>
-                  <div className="text-[9px] font-bold">{ds.count} WOs</div>
-                  <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: isActive ? "rgba(255,255,255,0.2)" : "#e2e8f0" }}>
-                    <div className="h-full rounded-full transition-all" style={{
-                      width: `${pct}%`,
-                      background: allDone ? "#10B981" : pct > 0 ? "#6366F1" : "transparent"
-                    }} />
-                  </div>
-                  <div className="text-[8px] font-bold mt-0.5">{ds.staged}/{ds.count}</div>
-                </button>
-              );
-            })}
-          </div>
+        <SectionHeader label="Wochen-Übersicht" helpKey="overview" open={openSections.overview} onToggle={() => toggle("overview")} />
+        {openSections.overview && (
+          daysWithData.length === 0 ? (
+            <div className="text-[10px] text-slate-400 italic py-2">Keine Staging-Daten in dieser KW</div>
+          ) : (
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(daysWithData.length, 7)}, 1fr)` }}>
+              {daysWithData.map(ds => {
+                const pct = ds.count > 0 ? Math.round((ds.staged / ds.count) * 100) : 0;
+                const isActive = ds.day === activeDay;
+                const isPast = ds.day < today;
+                const allDone = ds.staged === ds.count && ds.count > 0;
+                return (
+                  <button key={ds.day} type="button" onClick={() => onSelectDay(ds.day)}
+                    className={`rounded-xl p-2 text-center transition-all border ${
+                      isActive ? "bg-[#0f2240] text-white border-[#0f2240] shadow-md"
+                        : allDone ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : isPast && ds.count > 0 ? "bg-red-50 text-red-600 border-red-200"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                    }`}>
+                    <div className="text-[10px] font-black">{fmtDate(ds.day)}</div>
+                    <div className="text-[13px] font-black mt-1">{fmtKg(ds.totalKg)}</div>
+                    <div className="text-[9px] font-bold">{ds.count} WOs</div>
+                    <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: isActive ? "rgba(255,255,255,0.2)" : "#e2e8f0" }}>
+                      <div className="h-full rounded-full transition-all" style={{
+                        width: `${pct}%`,
+                        background: allDone ? "#10B981" : pct > 0 ? "#6366F1" : "transparent"
+                      }} />
+                    </div>
+                    <div className="text-[8px] font-bold mt-0.5">{ds.staged}/{ds.count}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )
         )}
       </div>
 
       {/* Section 2: Station Capacity */}
       <div className="px-4 pt-2 pb-2 border-t border-amber-200/60">
-        <div className="text-[10px] font-black text-amber-700 uppercase tracking-wider mb-2">Stationen</div>
-        {activeStations.length === 0 ? (
-          <div className="text-[10px] text-slate-400 italic py-1">Keine Equipment-Daten</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[9px]">
-              <thead>
-                <tr>
-                  <th className="text-left font-bold text-slate-500 pb-1 pr-2 w-24">Station</th>
-                  {daysWithData.map(ds => (
-                    <th key={ds.day} className="text-center font-bold text-slate-400 pb-1 px-0.5">{fmtDate(ds.day)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {activeStations.map(station => {
-                  const peak = maxBatchesPerStation[station] ?? 0;
-                  return (
-                    <tr key={station}>
-                      <td className="font-bold text-slate-600 py-0.5 pr-2 whitespace-nowrap">{station}</td>
-                      {daysWithData.map(ds => {
-                        const b = ds.stationBatches[station] ?? 0;
-                        const intensity = peak > 0 ? b / peak : 0;
-                        return (
-                          <td key={ds.day} className="text-center py-0.5 px-0.5">
-                            {b > 0 ? (
-                              <span className="inline-block rounded px-1.5 py-0.5 font-black" style={{
-                                background: intensity > 0.8 ? "#FEE2E2" : intensity > 0.5 ? "#FEF3C7" : "#F0FDF4",
-                                color: intensity > 0.8 ? "#991B1B" : intensity > 0.5 ? "#92400E" : "#166534",
-                              }}>{b}</span>
-                            ) : <span className="text-slate-200">—</span>}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <SectionHeader label="Stationen" helpKey="stations" open={openSections.stations} onToggle={() => toggle("stations")} />
+        {openSections.stations && (
+          activeStations.length === 0 ? (
+            <div className="text-[10px] text-slate-400 italic py-1">Keine Equipment-Daten</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[9px]">
+                <thead>
+                  <tr>
+                    <th className="text-left font-bold text-slate-500 pb-1 pr-2 w-24">Station</th>
+                    {daysWithData.map(ds => (
+                      <th key={ds.day} className="text-center font-bold text-slate-400 pb-1 px-0.5">{fmtDate(ds.day)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeStations.map(station => {
+                    const peak = maxBatchesPerStation[station] ?? 0;
+                    return (
+                      <tr key={station}>
+                        <td className="font-bold text-slate-600 py-0.5 pr-2 whitespace-nowrap">{station}</td>
+                        {daysWithData.map(ds => {
+                          const b = ds.stationBatches[station] ?? 0;
+                          const intensity = peak > 0 ? b / peak : 0;
+                          return (
+                            <td key={ds.day} className="text-center py-0.5 px-0.5">
+                              {b > 0 ? (
+                                <span className="inline-block rounded px-1.5 py-0.5 font-black" style={{
+                                  background: intensity > 0.8 ? "#FEE2E2" : intensity > 0.5 ? "#FEF3C7" : "#F0FDF4",
+                                  color: intensity > 0.8 ? "#991B1B" : intensity > 0.5 ? "#92400E" : "#166534",
+                                }}>{b}</span>
+                              ) : <span className="text-slate-200">—</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </div>
 
       {/* Section 3: Allergen Heatmap */}
       <div className="px-4 pt-2 pb-2 border-t border-amber-200/60">
-        <div className="text-[10px] font-black text-amber-700 uppercase tracking-wider mb-2">Allergene pro Tag</div>
-        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(daysWithData.length || 1, 7)}, 1fr)` }}>
-          {daysWithData.map(ds => (
-            <div key={ds.day} className="text-center">
-              <div className="text-[9px] font-bold text-slate-400 mb-1">{fmtDate(ds.day)}</div>
-              <div className="flex flex-wrap gap-0.5 justify-center">
-                {Object.entries(ds.allergenCounts).sort(([a], [b]) => a.localeCompare(b)).map(([group, cnt]) => {
-                  const isClean = group === "allergen-frei";
-                  return (
-                    <span key={group} className={`inline-flex w-5 h-5 rounded-full text-[7px] font-black items-center justify-center ${
-                      isClean ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
-                    }`} title={`${group}: ${cnt} WOs`}>{cnt}</span>
-                  );
-                })}
-              </div>
+        <SectionHeader label="Allergene pro Tag" helpKey="allergens" open={openSections.allergens} onToggle={() => toggle("allergens")} />
+        {openSections.allergens && (
+          daysWithData.length === 0 ? (
+            <div className="text-[10px] text-slate-400 italic py-1">Keine Daten</div>
+          ) : (
+            <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(daysWithData.length, 7)}, 1fr)` }}>
+              {daysWithData.map(ds => (
+                <div key={ds.day} className="text-center">
+                  <div className="text-[9px] font-bold text-slate-400 mb-1">{fmtDate(ds.day)}</div>
+                  <div className="flex flex-wrap gap-0.5 justify-center">
+                    {Object.entries(ds.allergenCounts).sort(([a], [b]) => a.localeCompare(b)).map(([group, cnt]) => {
+                      const isClean = group === "allergen-frei";
+                      return (
+                        <span key={group} className={`inline-flex w-5 h-5 rounded-full text-[7px] font-black items-center justify-center ${
+                          isClean ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                        }`} title={`${group}: ${cnt} WOs`}>{cnt}</span>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-          {daysWithData.length === 0 && <div className="text-[10px] text-slate-400 italic py-1">Keine Daten</div>}
-        </div>
+          )
+        )}
       </div>
 
-      {/* Section 4: WO Quick Table */}
+      {/* Section 4: WO Quick Table — no staged toggle (that's logistics) */}
       <div className="px-4 pt-2 pb-3 border-t border-amber-200/60">
-        <div className="text-[10px] font-black text-amber-700 uppercase tracking-wider mb-2">Alle WOs — Schnellaktionen</div>
-        <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
-          <table className="w-full text-[10px]">
-            <thead className="sticky top-0 bg-amber-50">
-              <tr>
-                <th className="text-left py-1 pr-2 cursor-pointer select-none" onClick={() => toggleSort("day")}>
-                  Tag {sortCol === "day" ? (sortAsc ? "↑" : "↓") : ""}
-                </th>
-                <th className="text-left py-1 pr-2 cursor-pointer select-none" onClick={() => toggleSort("wo")}>
-                  WO {sortCol === "wo" ? (sortAsc ? "↑" : "↓") : ""}
-                </th>
-                <th className="text-left py-1 pr-2">Rezept</th>
-                <th className="text-right py-1 pr-2 cursor-pointer select-none" onClick={() => toggleSort("kg")}>
-                  kg {sortCol === "kg" ? (sortAsc ? "↑" : "↓") : ""}
-                </th>
-                <th className="text-center py-1 pr-2 cursor-pointer select-none" onClick={() => toggleSort("allergen")}>
-                  Allergen {sortCol === "allergen" ? (sortAsc ? "↑" : "↓") : ""}
-                </th>
-                <th className="text-center py-1 pr-2">Verschieben</th>
-                <th className="text-center py-1">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedWos.map(wo => {
-                const isActiveDay = wo.stagingDate === activeDay;
-                return (
-                  <tr key={wo.row.key} className={`border-t border-amber-100 ${wo.staged ? "opacity-50" : ""} ${isActiveDay ? "bg-amber-100/40" : ""}`}>
-                    <td className="py-1.5 pr-2">
-                      <button type="button" onClick={() => onSelectDay(wo.stagingDate!)}
-                        className="font-bold text-indigo-600 hover:underline">{fmtDate(wo.stagingDate!)}</button>
-                    </td>
-                    <td className="py-1.5 pr-2 font-black">{wo.row.woNumber}</td>
-                    <td className="py-1.5 pr-2 max-w-[200px] truncate" title={wo.row.recipeName}>{wo.row.recipeName}</td>
-                    <td className="py-1.5 pr-2 text-right font-bold">{fmtKg(wo.calc.totalKg)}</td>
-                    <td className="py-1.5 pr-2 text-center">
-                      {wo.aScore === 0 ? (
-                        <span className="text-emerald-600 font-bold">✓</span>
-                      ) : (
-                        <span className={`inline-block px-1.5 py-0.5 rounded-full font-black text-[8px] ${
-                          wo.aScore <= 3 ? "bg-amber-100 text-amber-700" : wo.aScore <= 6 ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"
-                        }`}>{wo.aScore}</span>
-                      )}
-                    </td>
-                    <td className="py-1.5 pr-2 text-center">
-                      <div className="flex items-center justify-center gap-0.5">
-                        {([-2, -1, 0, 1, 2] as const).map(d => (
-                          <button key={d} type="button"
-                            onClick={() => onOffsetChange(wo.row.woNumber, d)}
-                            className={`w-6 h-5 rounded text-[8px] font-bold border transition-all ${
-                              wo.offset === d ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-400 border-slate-200 hover:border-amber-400"
-                            }`}>{d === 0 ? "•" : d > 0 ? `+${d}` : d}</button>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="py-1.5 text-center">
-                      <button type="button" onClick={() => onToggleStaged(wo.row.woNumber, !wo.staged)}
-                        className={`w-6 h-6 rounded-lg text-[11px] font-black transition-all ${
-                          wo.staged ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-300 hover:bg-emerald-50 hover:text-emerald-500"
-                        }`}>✓</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <SectionHeader label="Alle WOs — Schnellaktionen" helpKey="wos" open={openSections.wos} onToggle={() => toggle("wos")} />
+        {openSections.wos && (
+          <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
+            <table className="w-full text-[10px]">
+              <thead className="sticky top-0 bg-amber-50">
+                <tr>
+                  <th className="text-left py-1 pr-2 cursor-pointer select-none" onClick={() => toggleSort("day")}>
+                    Tag {sortCol === "day" ? (sortAsc ? "↑" : "↓") : ""}
+                  </th>
+                  <th className="text-left py-1 pr-2 cursor-pointer select-none" onClick={() => toggleSort("wo")}>
+                    WO {sortCol === "wo" ? (sortAsc ? "↑" : "↓") : ""}
+                  </th>
+                  <th className="text-left py-1 pr-2">Rezept</th>
+                  <th className="text-right py-1 pr-2 cursor-pointer select-none" onClick={() => toggleSort("kg")}>
+                    kg {sortCol === "kg" ? (sortAsc ? "↑" : "↓") : ""}
+                  </th>
+                  <th className="text-center py-1 pr-2 cursor-pointer select-none" onClick={() => toggleSort("allergen")}>
+                    Allergen {sortCol === "allergen" ? (sortAsc ? "↑" : "↓") : ""}
+                  </th>
+                  <th className="text-center py-1">Verschieben</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedWos.map(wo => {
+                  const isActiveDay = wo.stagingDate === activeDay;
+                  return (
+                    <tr key={wo.row.key} className={`border-t border-amber-100 ${wo.staged ? "opacity-40" : ""} ${isActiveDay ? "bg-amber-100/40" : ""}`}>
+                      <td className="py-1.5 pr-2">
+                        <button type="button" onClick={() => onSelectDay(wo.stagingDate!)}
+                          className="font-bold text-indigo-600 hover:underline">{fmtDate(wo.stagingDate!)}</button>
+                      </td>
+                      <td className="py-1.5 pr-2 font-black">{wo.row.woNumber}</td>
+                      <td className="py-1.5 pr-2 max-w-[200px] truncate" title={wo.row.recipeName}>{wo.row.recipeName}</td>
+                      <td className="py-1.5 pr-2 text-right font-bold">{fmtKg(wo.calc.totalKg)}</td>
+                      <td className="py-1.5 pr-2 text-center">
+                        {wo.aScore === 0 ? (
+                          <span className="text-emerald-600 font-bold">✓</span>
+                        ) : (
+                          <span className={`inline-block px-1.5 py-0.5 rounded-full font-black text-[8px] ${
+                            wo.aScore <= 3 ? "bg-amber-100 text-amber-700" : wo.aScore <= 6 ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"
+                          }`}>{wo.aScore}</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 text-center">
+                        <div className="flex items-center justify-center gap-0.5">
+                          {([-2, -1, 0, 1, 2] as const).map(d => (
+                            <button key={d} type="button"
+                              onClick={() => onOffsetChange(wo.row.woNumber, d)}
+                              className={`w-6 h-5 rounded text-[8px] font-bold border transition-all ${
+                                wo.offset === d ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-400 border-slate-200 hover:border-amber-400"
+                              }`}>{d === 0 ? "•" : d > 0 ? `+${d}` : d}</button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {sortedWos.length === 0 && (
+                  <tr><td colSpan={6} className="py-3 text-center text-slate-400 italic text-[10px]">Keine WOs in der aktuellen KW</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -965,7 +1001,7 @@ export function StagingDashboard({
       {plannerMode && (
         <PlannerCommandCenter
           woData={woData} weekDays={weekDays} activeDay={activeDay} today={today}
-          onSelectDay={setSelectedDay} onToggleStaged={onToggleStaged} onOffsetChange={onOffsetChange}
+          onSelectDay={setSelectedDay} onOffsetChange={onOffsetChange}
         />
       )}
 
