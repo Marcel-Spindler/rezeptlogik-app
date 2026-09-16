@@ -58,7 +58,7 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
     // wandelt die Seriennummer dann in YYYY-MM-DD um.
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `'${tabName}'!A1:N2000`,
+      range: `'${tabName}'!A1:AJ2000`,
       valueRenderOption: "UNFORMATTED_VALUE" as any,
       dateTimeRenderOption: "SERIAL_NUMBER" as any,
     });
@@ -94,7 +94,7 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
   const targetPortionsIdx = header.findIndex(c => c === "target portions" || c.includes("target portion"));
   const woCookedIdx = header.findIndex(c => c.includes("wo cooked portions") || c.includes("cooked portions"));
   const excessIdx = header.findIndex(c => c.includes("cooked portions excess"));
-  const stagingIdx = header.findIndex(c => c.includes("staging"));
+  const stagingIdx = header.findIndex(c => (c.includes("staging") && c.includes("kg")) || c === "staging kg" || c === "staging (kg)");
   const kitchenIdx = header.findIndex(c => c.includes("kitchen") && c.includes("kg"));
   const postIdx    = header.findIndex(c => c.includes("post"));
   const yieldIdx   = header.findIndex(c => c === "yield");
@@ -119,7 +119,7 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
     const yieldPct = parseFloat(yieldRaw.replace(",", ".")) || 0;
 
     entries.push({
-      run:            runIdx >= 0 ? (parseInt(String(row[runIdx] ?? ""), 10) || 0) : 0,
+      run:            runIdx >= 0 ? (parseInt(String(row[runIdx] ?? ""), 10) || 1) : 1,
       kitchenDay:     dayIdx >= 0 ? normalizeKitchenDay(row[dayIdx]) : "",
       workOrder:      woCell,
       recipeId:       recipeIdIdx >= 0 ? String(row[recipeIdIdx] ?? "").trim() : "",

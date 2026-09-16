@@ -609,6 +609,17 @@ const server = http.createServer((req, res) => {
       .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
     return;
   }
+  if (url.pathname === "/api/local-db/ket-druckplan-save" && req.method === "POST") {
+    readJsonBody(req)
+      .then((body) => {
+        // Lokaler Stub — Drive-Upload nicht verfügbar; Erfolg vortäuschen damit der
+        // Button im Frontend funktioniert. Im Prod-Deploy übernimmt die Cloud Function.
+        console.log(`[ket-druckplan] lokaler Stub: stagingDay=${body.stagingDay} cookDay=${body.cookDay}`);
+        sendJson(res, 200, { ok: true, stub: true, folder: `Stagientag ${body.stagingDay}` });
+      })
+      .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));
+    return;
+  }
   if (url.pathname === "/api/local-db/save-ket-pdf" && req.method === "POST") {
     readJsonBody(req)
       .then(async (body) => {

@@ -77,7 +77,7 @@ export function MealProgressCard({ meal, expanded, onToggle, backfillNeeds, reci
 
   const byRun = new Map<number, WoMatchedStatus[]>();
   for (const wo of meal.workOrders) {
-    const r = wo.run ?? 1;
+    const r = wo.run || 1;
     if (!byRun.has(r)) byRun.set(r, []);
     byRun.get(r)!.push(wo);
   }

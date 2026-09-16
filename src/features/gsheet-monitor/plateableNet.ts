@@ -81,7 +81,7 @@ export function netPlateable(
   const kgByRun = new Map<number, number>();
   let totalKg = 0;
   for (const wo of meal.workOrders) {
-    const r = wo.run ?? 1;
+    const r = wo.run || 1;
     kgByRun.set(r, (kgByRun.get(r) ?? 0) + wo.actualKg);
     totalKg += wo.actualKg;
   }

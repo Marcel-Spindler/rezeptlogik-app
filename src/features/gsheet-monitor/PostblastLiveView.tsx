@@ -1082,14 +1082,32 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
   // Portionen (Stufe 4) oder ohne Rezept-Gewichte bleibt die WO "OHNE PLAN".
   const { filteredProductionPlan, unplannedWorkOrders, estimatedWorkOrders } = useMemo(() => {
     const allRows = data.productionPlan?.rows ?? [];
-    const baseRows = selectedWeekNum == null
+    const rawBaseRows = selectedWeekNum == null
       ? allRows
       : allRows.filter(r => weekPrefixFromWoNumber(r.workOrder) === selectedWeekNum);
 
-    const known = new Set(baseRows.map(r => r.workOrder));
-    const gapRows: WorkOrderEntry[] = [];
     const unplanned = new Set<string>();
     const estimated = new Set<string>();
+
+    // Firestore-Planzeilen, die keine kg-Werte haben (postKg = kitchenKg = stagingKg = 0),
+    // bekommen eine Schätzung aus Ziel-Portionen × Gramm/Portion — genau wie Gap-Rows
+    // aus KET/WMS/ET. Das passiert, weil die "Transperancy Total Overview"-Tabelle die
+    // kg-Felder während der laufenden Produktion befüllt (Ist-Daten), nicht vorab als
+    // Soll-Plan — ohne diese Schätzung stünde im "Geplant"-Feld immer "0,0 kg".
+    const baseRows = rawBaseRows.map(row => {
+      if ((row.postKg || 0) > 0 || (row.kitchenKg || 0) > 0 || (row.stagingKg || 0) > 0) return row;
+      const portions = row.targetPortions ?? (row.plannedMeals > 0 ? row.plannedMeals : undefined);
+      const kgEstimate = estimatePlannedKg(recipeWeights, row.recipeCode, row.subRecipe, portions);
+      if (kgEstimate == null) {
+        unplanned.add(row.workOrder);
+        return row;
+      }
+      estimated.add(row.workOrder);
+      return { ...row, postKg: kgEstimate };
+    });
+
+    const known = new Set(baseRows.map(r => r.workOrder));
+    const gapRows: WorkOrderEntry[] = [];
 
     // Index over ALL plan rows (not just week-filtered) for kg-value fallback
     const allRowsByWo = new Map<string, WorkOrderEntry>();
@@ -1649,7 +1667,7 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
               // Runs gruppieren
               const byRun = new Map<number, WoMatchedStatus[]>();
               for (const wo of meal.workOrders) {
-                const r = wo.run ?? 1;
+                const r = wo.run || 1;
                 if (!byRun.has(r)) byRun.set(r, []);
                 byRun.get(r)!.push(wo);
               }
@@ -1704,18 +1722,23 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
                               const rDone = wos.every(w => w.isComplete);
                               const rStarted = wos.some(w => w.actualKg > 0);
                               const rCrit = wos.some(w => w.isCritical);
+                              // Run 3 = Meal-Backfill (Nachproduktion wegen Schwund / Mengenfehler)
+                              const isMealBackfill = r >= 3;
                               return (
                                 <span
                                   key={r}
-                                  title={`Run ${r}: ${wos.filter(w => w.isComplete).length}/${wos.length} Sub-WOs fertig`}
+                                  title={isMealBackfill
+                                    ? `Run ${r} · Meal-Backfill: Nachproduktion wegen Schwund/Mengenfehler — ${wos.filter(w => w.isComplete).length}/${wos.length} Sub-WOs fertig`
+                                    : `Run ${r}: ${wos.filter(w => w.isComplete).length}/${wos.length} Sub-WOs fertig`}
                                   className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ring-1 ${
                                     rDone ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
                                     : rCrit ? "bg-red-100 text-red-700 ring-red-200"
+                                    : isMealBackfill ? "bg-orange-100 text-orange-700 ring-orange-200"
                                     : rStarted ? "bg-indigo-100 text-indigo-700 ring-indigo-200"
                                     : "bg-slate-100 text-slate-400 ring-slate-200"
                                   }`}
                                 >
-                                  Run {r} {rDone ? "✓" : rStarted ? `${wos.filter(w => w.isComplete).length}/${wos.length}` : "wartet"}
+                                  {isMealBackfill ? "♻ " : ""}Run {r}{isMealBackfill ? " · BF" : ""} {rDone ? "✓" : rStarted ? `${wos.filter(w => w.isComplete).length}/${wos.length}` : "wartet"}
                                 </span>
                               );
                             })}
@@ -1827,19 +1850,26 @@ export function PostblastLiveView({ data }: { data: DataBundle }): JSX.Element {
 
                                   // Run-Trennzeile (nur wenn mehrere Runs)
                                   if (hasRuns) {
+                                    const isMealBackfillRun = runNum >= 3;
                                     rows.push(
-                                      <tr key={`sep-${runNum}`} className="bg-gradient-to-r from-indigo-50 to-slate-50">
+                                      <tr key={`sep-${runNum}`} className={`bg-gradient-to-r ${isMealBackfillRun ? "from-orange-50 to-amber-50" : "from-indigo-50 to-slate-50"}`}>
                                         <td colSpan={10} className="px-3 py-2">
                                           <div className="flex items-center gap-3">
                                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0 ${
-                                              runAllDone ? "bg-emerald-500" : runHasCritical ? "bg-red-500" : "bg-indigo-500"
+                                              runAllDone ? "bg-emerald-500" : runHasCritical ? "bg-red-500" : isMealBackfillRun ? "bg-orange-500" : "bg-indigo-500"
                                             }`}>
                                               {runNum}
                                             </span>
-                                            <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Run {runNum}</span>
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider ${isMealBackfillRun ? "text-orange-700" : "text-indigo-700"}`}>
+                                              Run {runNum}{isMealBackfillRun ? " · Meal-Backfill" : ""}
+                                            </span>
+                                            {isMealBackfillRun && (
+                                              <span className="text-[9px] text-orange-500 italic">Nachproduktion wegen Schwund/Mengenfehler</span>
+                                            )}
                                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                                               runAllDone ? "bg-emerald-100 text-emerald-700" :
                                               runHasCritical ? "bg-red-100 text-red-700" :
+                                              isMealBackfillRun ? "bg-orange-100 text-orange-700" :
                                               "bg-indigo-100 text-indigo-700"
                                             }`}>
                                               {runDone}/{runWos.length} fertig

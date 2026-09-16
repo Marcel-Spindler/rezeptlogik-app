@@ -189,7 +189,7 @@ export function matchPostblastToWorkOrders(
       awaitingPostBlast,
       preBlastLikelyDone,
       lastPreBlastWeighing: preWeighings.length > 0 ? preWeighings[preWeighings.length - 1].timestamp || null : null,
-      run: wo.run ?? 1,
+      run: wo.run || 1,
       weighings,
       lastWeighing: weighings.length > 0 ? weighings[weighings.length - 1].timestamp : null,
       platingHoldingKg: rtiEntry?.platingHoldingKg ?? 0,
@@ -216,7 +216,10 @@ export function matchPostblastToWorkOrders(
     meals.push({
       recipeCode,
       recipeName: wos[0].recipeName,
-      plannedMeals: wos[0].plannedMeals,
+      // Bestes plannedMeals-Ergebnis über alle WOs: ET-Lückenfüller haben 0 (kein
+      // Portionswert bekannt), Firestore/KET/WMS-Zeilen den echten Wert. Max stellt
+      // sicher, dass eine ET-Zeile als wos[0] die Anzeige nicht auf "0 Meals" setzt.
+      plannedMeals: wos.reduce((mx, w) => Math.max(mx, w.plannedMeals ?? 0), 0),
       workOrders: wos,
       totalPlannedKg,
       totalActualKg,

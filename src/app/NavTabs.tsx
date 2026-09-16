@@ -81,6 +81,7 @@ const NAV_CATEGORIES: readonly NavCategory[] = [
       { view: "allergen-plating", label: "Allergen Plating" },
       { view: "plating-line-bot", label: "Plating-Linien" },
       { view: "daily-briefing", label: "Tagesbriefing" },
+      { view: "ket-druckplan", label: "KET Druckplan" },
     ],
   },
   {

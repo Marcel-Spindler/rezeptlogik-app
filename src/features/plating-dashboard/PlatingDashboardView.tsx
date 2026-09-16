@@ -142,14 +142,28 @@ export function PlatingDashboardView({ data }: { data: DataBundle }) {
   // Produktionsplan: Firestore + KET + WMS + ET zusammenführen
   const { filteredProductionPlan, unplannedWorkOrders, estimatedWorkOrders } = useMemo(() => {
     const allRows = data.productionPlan?.rows ?? [];
-    const baseRows = selectedWeekNum == null
+    const rawBaseRows = selectedWeekNum == null
       ? allRows
       : allRows.filter(r => weekPrefixFromWoNumber(r.workOrder) === selectedWeekNum);
 
-    const known = new Set(baseRows.map(r => r.workOrder));
-    const gapRows: WorkOrderEntry[] = [];
     const unplanned = new Set<string>();
     const estimated = new Set<string>();
+
+    // Firestore-Planzeilen ohne kg-Werte: Schätzung aus Portionen × Gramm/Portion
+    const baseRows = rawBaseRows.map(row => {
+      if ((row.postKg || 0) > 0 || (row.kitchenKg || 0) > 0 || (row.stagingKg || 0) > 0) return row;
+      const portions = row.targetPortions ?? (row.plannedMeals > 0 ? row.plannedMeals : undefined);
+      const kgEstimate = estimatePlannedKg(recipeWeights, row.recipeCode, row.subRecipe, portions);
+      if (kgEstimate == null) {
+        unplanned.add(row.workOrder);
+        return row;
+      }
+      estimated.add(row.workOrder);
+      return { ...row, postKg: kgEstimate };
+    });
+
+    const known = new Set(baseRows.map(r => r.workOrder));
+    const gapRows: WorkOrderEntry[] = [];
 
     const allRowsByWo = new Map<string, WorkOrderEntry>();
     for (const r of allRows) { if (r.workOrder) allRowsByWo.set(r.workOrder, r); }

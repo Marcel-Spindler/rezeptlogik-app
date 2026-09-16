@@ -160,7 +160,7 @@ export function respondToChat(input: string, ctx: ChatContext): string {
   if (q === "runs" || q === "alle runs" || q === "run übersicht") {
     const runMap = new Map<number, { total: number; done: number; critical: number; kg: number; plannedKg: number }>();
     for (const m of ctx.matched) {
-      const r = m.run ?? 1;
+      const r = m.run || 1;
       const cur = runMap.get(r) ?? { total: 0, done: 0, critical: 0, kg: 0, plannedKg: 0 };
       cur.total++;
       if (m.isComplete) cur.done++;
@@ -183,7 +183,7 @@ export function respondToChat(input: string, ctx: ChatContext): string {
   const runNumMatch = /^run\s*(\d+)$/.exec(q) || /\brun\s+(\d+)\b/.exec(q);
   if (runNumMatch && q !== "runs") {
     const runNum = parseInt(runNumMatch[1], 10);
-    const runWos = ctx.matched.filter(m => (m.run ?? 1) === runNum);
+    const runWos = ctx.matched.filter(m => (m.run || 1) === runNum);
     if (runWos.length === 0) return `Run ${runNum} nicht gefunden. Tippe 'runs' für eine Übersicht.`;
     const done = runWos.filter(w => w.isComplete).length;
     const critical = runWos.filter(w => w.isCritical);
