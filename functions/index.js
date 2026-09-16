@@ -4058,29 +4058,29 @@ exports.generatePdf = onGuardedRequest(
 // ═══════════════════════════════════════════════════════════════════════════════
 // KET Druckplan → Google Drive speichern
 // POST /api/local-db/ket-druckplan-save  { stagingDay, cookDay, html, fileName? }
-// Legt einen Unterordner “Stagientag DD.MM.YYYY” im freigegebenen Drive-Ordner an
+// Legt einen Unterordner "Stagientag DD.MM.YYYY" im freigegebenen Drive-Ordner an
 // (oder nutzt den vorhandenen) und schreibt die HTML-Datei — bestehende wird
 // überschrieben.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const KET_DRUCKPLAN_DRIVE_PARENT = “1gcf62cdJLyD2TNHdWBNEr295bbuALReY”;
+const KET_DRUCKPLAN_DRIVE_PARENT = "1gcf62cdJLyD2TNHdWBNEr295bbuALReY";
 
 async function driveGetOrCreateFolder(drive, parentId, name) {
-  const q = `'${parentId}' in parents and name = '${name.replace(/'/g, “\\'”)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-  const list = await drive.files.list({ q, fields: “files(id)”, pageSize: 1 });
+  const q = `'${parentId}' in parents and name = '${name.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  const list = await drive.files.list({ q, fields: "files(id)", pageSize: 1 });
   if (list.data.files?.[0]?.id) return list.data.files[0].id;
   const created = await drive.files.create({
-    requestBody: { name, mimeType: “application/vnd.google-apps.folder”, parents: [parentId] },
-    fields: “id”,
+    requestBody: { name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] },
+    fields: "id",
   });
   return created.data.id;
 }
 
 async function driveUpsertHtml(drive, folderId, filename, htmlContent) {
-  const q = `'${folderId}' in parents and name = '${filename.replace(/'/g, “\\'”)}' and trashed = false`;
-  const list = await drive.files.list({ q, fields: “files(id)”, pageSize: 1 });
+  const q = `'${folderId}' in parents and name = '${filename.replace(/'/g, "\\'")}' and trashed = false`;
+  const list = await drive.files.list({ q, fields: "files(id)", pageSize: 1 });
   const existingId = list.data.files?.[0]?.id;
-  const media = { mimeType: “text/html”, body: Readable.from([Buffer.from(htmlContent, “utf8”)]) };
+  const media = { mimeType: "text/html", body: Readable.from([Buffer.from(htmlContent, "utf8")]) };
   if (existingId) {
     await drive.files.update({ fileId: existingId, media });
     return existingId;
@@ -4088,38 +4088,38 @@ async function driveUpsertHtml(drive, folderId, filename, htmlContent) {
   const created = await drive.files.create({
     requestBody: { name: filename, parents: [folderId] },
     media,
-    fields: “id”,
+    fields: "id",
   });
   return created.data.id;
 }
 
 exports.ketDruckplanSave = onGuardedRequest(
-  { region: “europe-west3”, timeoutSeconds: 60 },
+  { region: "europe-west3", timeoutSeconds: 60 },
   async (req, res) => {
-    if (req.method !== “POST”) { res.status(405).json({ error: “POST only” }); return; }
+    if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
     const { stagingDay, cookDay, html, fileName } = req.body || {};
-    if (!stagingDay || !html) { res.status(400).json({ error: “stagingDay und html erforderlich” }); return; }
+    if (!stagingDay || !html) { res.status(400).json({ error: "stagingDay und html erforderlich" }); return; }
     try {
       const auth = new google.auth.GoogleAuth({
-        credentials: JSON.parse(process.env.GOOGLE_SA_JSON || “{}”),
-        scopes: [“https://www.googleapis.com/auth/drive”],
+        credentials: JSON.parse(process.env.GOOGLE_SA_JSON || "{}"),
+        scopes: ["https://www.googleapis.com/auth/drive"],
       });
-      const drive = google.drive({ version: “v3”, auth });
-      const [sy, sm, sd] = stagingDay.split(“-”);
+      const drive = google.drive({ version: "v3", auth });
+      const [sy, sm, sd] = stagingDay.split("-");
       const folderName = `Stagientag ${sd}.${sm}.${sy}`;
       const folderId = await driveGetOrCreateFolder(drive, KET_DRUCKPLAN_DRIVE_PARENT, folderName);
-      const safeFile = (fileName || `KET-Druckplan-Kochtag-${cookDay || stagingDay}.html`).replace(/[^\w\-. ()]+/g, “_”);
+      const safeFile = (fileName || `KET-Druckplan-Kochtag-${cookDay || stagingDay}.html`).replace(/[^\w\-. ()]+/g, "_");
       const fileId = await driveUpsertHtml(drive, folderId, safeFile, html);
       res.json({ ok: true, fileId, folder: folderName });
     } catch (err) {
-      logger.error(“ketDruckplanSave error”, err);
+      logger.error("ketDruckplanSave error", err);
       res.status(500).json({ ok: false, error: String(err.message || err) });
     }
   },
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RTI Backfill-Wächter — server-seitige Slack-Meldung + „done”-Rückschreiben.
+// RTI Backfill-Wächter — server-seitige Slack-Meldung + „done"-Rückschreiben.
 // Eigene Datei, damit index.js überschaubar bleibt. Braucht SLACK_WEBHOOK_URL
 // (Watcher) bzw. Bearbeiter-Rechte des Service-Accounts (rtiMarkDone).
 // ═══════════════════════════════════════════════════════════════════════════════

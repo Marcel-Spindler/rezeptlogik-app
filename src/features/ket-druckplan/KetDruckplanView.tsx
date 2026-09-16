@@ -384,11 +384,22 @@ export function KetDruckplanView() {
                 <span>In GDrive speichern</span>
               </button>
               <button
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 transition-colors flex items-center gap-2"
+                onClick={async () => {
+                  // Erst in GDrive speichern, dann Drucken — damit beides garantiert gesichert ist
+                  if (selectedGroup && !driveBusy) {
+                    try {
+                      await handleDriveSave();
+                    } catch {
+                      // Drucken trotzdem ausführen
+                    }
+                  }
+                  window.print();
+                }}
+                disabled={driveBusy}
+                className="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors flex items-center gap-2"
               >
                 <span>🖨</span>
-                <span>Drucken</span>
+                <span>Drucken + GDrive</span>
               </button>
             </div>
           </>
