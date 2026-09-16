@@ -72,8 +72,9 @@ export function subscribeRampUpHashChanges(onChanged: () => void): () => void {
     unsubscribe = onSnapshot(
       doc(db, "apps", "rezeptlogik"),
       (snapshot) => {
-        const data = snapshot.data() as { rampUpHash?: string } | undefined;
-        const nextHash = String(data?.rampUpHash ?? "");
+        const data = snapshot.data() as { rampUpHash?: string; planSyncedAt?: string } | undefined;
+        // Composite signal: Meal-Selection-Änderung (rampUpHash) ODER neuer Produktionsplan-Sync (planSyncedAt)
+        const nextHash = [data?.rampUpHash, data?.planSyncedAt].join("|");
         if (!initialized) {
           initialized = true;
           lastHash = nextHash;

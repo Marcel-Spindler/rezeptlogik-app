@@ -398,7 +398,7 @@ async function fetchBlastWeightsByWo(gid) {
 
 // Zwilling von matchPostblastToWorkOrders (siehe Kommentarblock oben) —
 // liefert nur, was Kritisch/PlatingTodo/TomorrowPriority tatsächlich brauchen.
-function buildMealProgress(planRows, postblastByWo, preblastByWo) {
+function buildMealProgress(planRows, postblastByWo, preblastByWo, ketProgressWos) {
   const matched = [];
   for (const wo of planRows) {
     const woNum = String(wo.workOrder || "").trim();
@@ -409,7 +409,8 @@ function buildMealProgress(planRows, postblastByWo, preblastByWo) {
     const awaitingPostBlast = preBlastKg > 0 && actualKg === 0;
     const progressPct = Math.min(plannedKg > 0 ? (actualKg / plannedKg) * 100 : (actualKg > 0 ? 100 : 0), 100);
     const isComplete = plannedKg > 0 && progressPct >= 95;
-    const isCritical = plannedKg > 0 && progressPct < 30 && actualKg === 0 && !awaitingPostBlast;
+    // KET zeigt Portionen → Küche arbeitet bereits, Postblast hinkt nach → nicht als kritisch flaggen.
+    const isCritical = plannedKg > 0 && progressPct < 30 && actualKg === 0 && !awaitingPostBlast && !(ketProgressWos?.has(woNum));
     matched.push({
       workOrder: woNum, subRecipe: wo.subRecipe || "", recipeCode: wo.recipeCode,
       recipeName: wo.recipeName || wo.recipeCode, plannedMeals: Number(wo.plannedMeals) || 0,
@@ -503,7 +504,7 @@ function buildKitchenCritical(meals) {
     const more = meal.criticalWOs.length > 4 ? ` +${meal.criticalWOs.length - 4}` : "";
     items.push({
       recipeCode: meal.recipeCode, recipeName: meal.recipeName, count: meal.criticalWOs.length,
-      message: `${meal.criticalWOs.length} WO ohne Gewicht trotz Plan — ${woList}${more}`,
+      message: `${meal.criticalWOs.length} WO ohne Postblast-Gewicht (Plan vorhanden, Ist = 0 kg) — ${woList}${more}`,
     });
   }
   items.sort((a, b) => b.count - a.count);
@@ -573,7 +574,7 @@ function buildTomorrowPriorityLite(matched, now, kitchenCriticalByCode) {
 // aus — ein Fetch-Fehler darf niemals als Produktionsproblem verkleidet
 // werden. Fehlender Produktionsplan (weder GSheet noch Firestore-
 // Momentaufnahme verfügbar) wird separat und ehrlich ausgewiesen.
-async function fetchExtendedSignals(totalOverviewRows, now, weekLabel) {
+async function fetchExtendedSignals(totalOverviewRows, now, weekLabel, ketProgressWos) {
   const plan = await fetchProductionPlanRows(totalOverviewRows, weekLabel);
   if (!plan || plan.rows.length === 0) {
     return { ok: false, reason: `kein Produktionsplan für ${weekLabel} gefunden (weder GSheet noch Firestore)`, kitchenCritical: [], platingTodo: [], tomorrowPriority: [] };
@@ -583,7 +584,7 @@ async function fetchExtendedSignals(totalOverviewRows, now, weekLabel) {
     fetchBlastWeightsByWo(POSTBLAST_GID),
     fetchBlastWeightsByWo(PREBLAST_GID),
   ]);
-  const { matched, meals } = buildMealProgress(plan.rows, postblastByWo, preblastByWo);
+  const { matched, meals } = buildMealProgress(plan.rows, postblastByWo, preblastByWo, ketProgressWos);
   const kitchenCritical = buildKitchenCritical(meals);
   const plaitedByCode = await fetchPlaitedByCode(now).catch(() => new Map());
   const platingTodo = buildPlatingTodoLite(meals, plaitedByCode);
@@ -632,7 +633,7 @@ async function fetchRelaySnapshot() {
     const data = snap.data() || {};
     const ageMin = (Date.now() - (data.updatedAt ?? 0)) / 60000;
     if (!(ageMin <= RELAY_FRESHNESS_MIN)) return { available: false, staleMinutes: Math.round(ageMin) };
-    return { available: true, equipmentTomorrow: data.equipmentTomorrow ?? null, feasibility: Array.isArray(data.feasibility) ? data.feasibility : [] };
+    return { available: true, equipmentTomorrow: data.equipmentTomorrow ?? null, feasibility: Array.isArray(data.feasibility) ? data.feasibility : [], ketWoProgress: Array.isArray(data.ketWoProgress) ? data.ketWoProgress : [] };
   } catch (e) {
     logger.warn("Relay-Snapshot lesen fehlgeschlagen", { error: String(e).slice(0, 160) });
     return { available: false };
@@ -752,7 +753,8 @@ function buildBriefingParts({ now, openMeals, platingProgress, rtiError, kitchen
       ? new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(extended.generatedAt))
       : null;
     const standTag = stand ? `  _(Produktionsplan-Stand: ${stand}${extended.source === "firestore" ? ", Firestore-Fallback" : ""})_` : "";
-    detail.push(`🚨 *Kritisch – Küche (${extended.kitchenCritical.length} Meal${extended.kitchenCritical.length === 1 ? "" : "s"} ohne Gewicht trotz Plan)*${standTag}`);
+    detail.push(`🚨 *Küche – Kein Postblast-Gewicht trotz Küchenplan (${extended.kitchenCritical.length} Meal${extended.kitchenCritical.length === 1 ? "" : "s"})*${standTag}`);
+    detail.push(`${rti.IND}_Küchenplan-Gewicht > 0, aber im Postblast-Sheet noch 0 kg gebucht — noch nicht gekocht, oder Wiegung fehlt noch._`);
     for (const c of extended.kitchenCritical.slice(0, EXTENDED_LIST_MAX)) {
       detail.push(`${rti.IND}• *${c.recipeCode}* ${c.recipeName} — ${c.message}`);
     }
@@ -777,17 +779,11 @@ function buildBriefingParts({ now, openMeals, platingProgress, rtiError, kitchen
   }
   detail.push("");
 
+  // Plating-Fortschritt — unabhängig von RTI-Fehler trennen: Plating kommt aus RTI,
+  // Backfill auch — aber Backfill geht ans Ende (Leser wollen erst den Überblick).
   if (rtiError) {
-    detail.push("⚠️ Backfill & Plating-Fortschritt: RTI-Sheet gerade nicht erreichbar.");
+    detail.push("🍽 Plating-Fortschritt: _RTI-Sheet gerade nicht erreichbar._");
   } else {
-    if (openMeals.length > 0) {
-      detail.push(`🔴 *Backfill offen (${openMeals.length} Meal${openMeals.length === 1 ? "" : "s"})*`);
-      detail.push(openMeals.map(m => rti.mealBlock(m, m.openSubs.map(rti.subNeed))).join("\n\n"));
-    } else {
-      detail.push("✅ Kein offener Backfill-Bedarf.");
-    }
-    detail.push("");
-
     const done = platingProgress.filter(m => m.pct >= PLATING_DONE_PCT);
     const open = platingProgress.filter(m => m.pct < PLATING_DONE_PCT);
     if (platingProgress.length === 0) {
@@ -827,6 +823,18 @@ function buildBriefingParts({ now, openMeals, platingProgress, rtiError, kitchen
   detail.push("");
   const feasText = formatFeasibilitySection(relay);
   if (feasText) { detail.push(feasText); detail.push(""); }
+
+  // Backfill ganz unten — nach Equipment/Rohware, weil es operative Detail-Info
+  // ist, die das Plating-Team kennt, und den Überblick oben nicht zustellen soll.
+  if (rtiError) {
+    detail.push("⚠️ Backfill: _RTI-Sheet gerade nicht erreichbar._");
+  } else if (openMeals.length > 0) {
+    detail.push(`🔴 *Backfill offen (${openMeals.length} Meal${openMeals.length === 1 ? "" : "s"})*`);
+    detail.push(openMeals.map(m => rti.mealBlock(m, m.openSubs.map(rti.subNeed))).join("\n\n"));
+  } else {
+    detail.push("✅ Kein offener Backfill-Bedarf.");
+  }
+  detail.push("");
 
   detail.push("_Als Nächstes geplant: Cross-Source-Backfill-Alerts (Plating-Team-Meldungen aus LinePlaiting)._");
 
@@ -879,14 +887,6 @@ exports.dailyBriefingSlack = onSchedule(
       logger.warn("Transperancy Total Overview lesen fehlgeschlagen", { error: String(e).slice(0, 160) });
     }
 
-    let extended;
-    try {
-      extended = await fetchExtendedSignals(totalOverviewRows, now, weekLabel);
-    } catch (e) {
-      extended = { ok: false, reason: "Postblast/Preblast nicht erreichbar", kitchenCritical: [], platingTodo: [], tomorrowPriority: [] };
-      logger.error("Erweiterte Tagesbriefing-Signale fehlgeschlagen", { error: e?.message || String(e) });
-    }
-
     let producibility = null;
     try {
       producibility = totalOverviewRows.length > 0
@@ -897,6 +897,19 @@ exports.dailyBriefingSlack = onSchedule(
     }
 
     const relay = await fetchRelaySnapshot();
+    // WO-Nummern aus dem KET-Plan, für die bereits Portionen gebucht sind —
+    // gebaut aus dem Relay-Snapshot, damit die CF die KET-Daten kennt.
+    const ketProgressWos = relay.available && relay.ketWoProgress.length > 0
+      ? new Set(relay.ketWoProgress.map(w => w.workOrder))
+      : null;
+
+    let extended;
+    try {
+      extended = await fetchExtendedSignals(totalOverviewRows, now, weekLabel, ketProgressWos);
+    } catch (e) {
+      extended = { ok: false, reason: "Postblast/Preblast nicht erreichbar", kitchenCritical: [], platingTodo: [], tomorrowPriority: [] };
+      logger.error("Erweiterte Tagesbriefing-Signale fehlgeschlagen", { error: e?.message || String(e) });
+    }
 
     const { compact, detail } = buildBriefingParts({
       now, openMeals, platingProgress, rtiError, kitchenHeadcount, platingHeadcount, weekLabel, extended, producibility, relay,

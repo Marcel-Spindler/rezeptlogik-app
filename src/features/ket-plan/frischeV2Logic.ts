@@ -368,32 +368,21 @@ export function buildV2Data(
       }
     }
 
-    for (const [rowKey, { qty, submeal, station, category, name, id, shifts, leadDays, cookMethod }] of deduped) {
+    for (const [rowKey, { qty, submeal, station, category, name, id, leadDays, cookMethod }] of deduped) {
       const daysKg = emptyDays();
       let totalKg = 0;
-      // Zweischicht-Woche mit Küchenplan: echten Kochtag als Basis nehmen und
-      // `shifts` Tage davor anliefern. Deckt sich mit dem Plating-Pfad, solange
-      // Kochtag = Plating-Tag − 1 (Regelfall), ist aber korrekt, wenn Marcel im
-      // Küchenplan einen anderen Kochtag setzt. Sonst: klassischer Plating-Pfad.
-      const cookPlan = planRow.kitchenDays;
-      if (cookPlan) {
-        for (const cookDay of DAY_ORDER) {
-          const portions = cookPlan[cookDay] ?? 0;
-          if (portions <= 0) continue;
-          const deliveryDay = offsetDay(cookDay, shifts);
-          const kg = (portions * qty) / 1000;
-          daysKg[deliveryDay] += kg;
-          totalKg += kg;
-        }
-      } else {
-        for (const platingDay of PROD_DAYS) {
-          const portions = planRow.days[platingDay] ?? 0;
-          if (portions <= 0) continue;
-          const deliveryDay = offsetDay(platingDay, leadDays);
-          const kg = (portions * qty) / 1000;
-          daysKg[deliveryDay] += kg;
-          totalKg += kg;
-        }
+      // Frischeliste uses plating-based delivery: deliveryDay = platingDay − leadDays.
+      // kitchenDays is intentionally ignored here — procurement timing is driven by
+      // when food is plated, and leadDays already accounts for the cooking shift.
+      // Using cook days instead caused Saturday-cooking → Friday-delivery spillover
+      // that inflated the Fri column beyond the total of all 3-day articles (impossible).
+      for (const platingDay of PROD_DAYS) {
+        const portions = planRow.days[platingDay] ?? 0;
+        if (portions <= 0) continue;
+        const deliveryDay = offsetDay(platingDay, leadDays);
+        const kg = (portions * qty) / 1000;
+        daysKg[deliveryDay] += kg;
+        totalKg += kg;
       }
       if (totalKg <= 0) continue;
 

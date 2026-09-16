@@ -452,6 +452,7 @@ function buildCriticalItems(
   feasibility: Map<string, BackfillFeasibility>,
   combined: CombinedBackfillNeed[],
   dayScopeCtx: DayScopeCtx,
+  ketCookedByWo?: Map<string, number>,
 ): CriticalItem[] {
   const items: CriticalItem[] = [];
 
@@ -487,15 +488,21 @@ function buildCriticalItems(
     if (meal.criticalWOs.length === 0) continue;
     const dayScope = dayScopeFor(meal.recipeCode, dayScopeCtx);
     if (dayScope == null) continue;
-    const woList = meal.criticalWOs.map(w => w.workOrder).slice(0, 4).join(", ");
-    const more = meal.criticalWOs.length > 4 ? ` +${meal.criticalWOs.length - 4}` : "";
+    // KET-Plan hat Portionen gebucht → Postblast hinkt nach, aber die Küche arbeitet
+    // bereits. Solche WOs nicht als kritisch zeigen.
+    const missing = ketCookedByWo
+      ? meal.criticalWOs.filter(w => (ketCookedByWo.get(w.workOrder) ?? 0) === 0)
+      : meal.criticalWOs;
+    if (missing.length === 0) continue;
+    const woList = missing.map(w => w.workOrder).slice(0, 4).join(", ");
+    const more = missing.length > 4 ? ` +${missing.length - 4}` : "";
     items.push({
       recipeCode: meal.recipeCode,
       recipeName: meal.recipeName,
       severity: "critical",
       source: "kitchen",
       sourceLabel: "Küche",
-      message: `${meal.criticalWOs.length} WO ohne Gewicht trotz Plan — ${woList}${more}`,
+      message: `${missing.length} WO ohne Postblast-Gewicht (Plan vorhanden, Ist = 0 kg) — ${woList}${more}`,
       dayScope,
     });
   }
@@ -815,7 +822,8 @@ export function buildDailyBriefing(opts: {
   const mealPlating = buildMealPlating(meals, plaitedByCode, producibility, recipeWeights, dayScopeCtx);
   const backfillWatch = buildBackfillWatch(rtiMeals, dayScopeCtx);
   const backfillAlerts = alerts.filter(a => a.severity !== "info");
-  const criticalItems = buildCriticalItems(mealPlating, backfillAlerts, meals, feasibilityByMeal, combined, dayScopeCtx);
+  const ketCookedByWo = new Map(ketRows.map(r => [r.woNumber, r.woCookedPortions ?? 0]));
+  const criticalItems = buildCriticalItems(mealPlating, backfillAlerts, meals, feasibilityByMeal, combined, dayScopeCtx, ketCookedByWo);
   const platingTodo = buildPlatingTodo(meals, recipeWeights, plaitedByCode, dayScopeCtx);
   const atRiskWos = buildAtRiskWos(criticalItems, ketDays);
   const tomorrowPriority = buildTomorrowPriority(ketDays, criticalItems);

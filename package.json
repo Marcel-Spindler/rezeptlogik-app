@@ -42,6 +42,7 @@
     "rti:relay": "tsx scripts/rti-redzone-relay.ts",
     "daily-briefing:relay": "tsx scripts/daily-briefing-equipment-feasibility-relay.ts",
     "wms:sync-cache": "tsx scripts/sync-wms-cache.ts",
+    "sync:production-plan": "tsx scripts/sync-production-plan.ts",
     "rack:bilanz": "tsx scripts/rack-bilanz-heute.ts",
     "dump:kpl": "tsx scripts/dump-gsheet.ts 13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U",
     "sync:all": "npm run import:local && npm run import:rampup && npm run import:weekly-planning && npm run push:firestore",

@@ -68,7 +68,14 @@ export function useKetRowsData(
     if (!rows?.length) return false;
     const liveWeekNum = weekNumFromHfWeek(liveWeek);
     if (liveWeekNum == null) return true; // can't tell - don't second-guess the trusted source
-    return rows.some((row) => weekPrefixFromWoNumber(row.workOrder) === liveWeekNum);
+    // WO-Nummern folgen der ISO-Woche ("38-XXX"), der App-interne liveWeek nutzt
+    // Factor/HF-Konvention (ISO+1, also W39 für dieselbe Produktionswoche).
+    // Beide Offsets akzeptieren: prefix === liveWeekNum (HF-Nummerierung) ODER
+    // prefix === liveWeekNum - 1 (ISO-Nummerierung, der häufigere Fall im GSheet).
+    return rows.some((row) => {
+      const prefix = weekPrefixFromWoNumber(row.workOrder);
+      return prefix === liveWeekNum || prefix === liveWeekNum - 1;
+    });
   }, [data?.productionPlan?.rows, liveWeek]);
 
   // Lowest-priority fallback: only reach for the live WMS/Snowflake cache when
@@ -109,11 +116,22 @@ export function useKetRowsData(
   const ketRows = useMemo<KetRow[]>(() => {
     if (csvRows !== null) return csvRows;
     const rows = data?.productionPlan?.rows;
-    if (rows?.length && productionPlanHasLiveWeek) return woEntriesToKetRows(rows);
+    if (rows?.length && productionPlanHasLiveWeek) {
+      // Filter to only the current week's WOs — merged Firestore docs can include
+      // rows from older weeks that would appear as massively overdue.
+      const liveWeekNum = weekNumFromHfWeek(liveWeek);
+      const liveRows = liveWeekNum != null
+        ? rows.filter(row => {
+            const p = weekPrefixFromWoNumber(row.workOrder);
+            return p === liveWeekNum || p === liveWeekNum - 1;
+          })
+        : rows;
+      return woEntriesToKetRows(liveRows.length ? liveRows : rows);
+    }
     if (liveWmsRows?.length) return woEntriesToKetRows(liveWmsRows);
     if (rows?.length) return woEntriesToKetRows(rows); // stale but still better than nothing
     return [];
-  }, [csvRows, data?.productionPlan?.rows, productionPlanHasLiveWeek, liveWmsRows]);
+  }, [csvRows, data?.productionPlan?.rows, productionPlanHasLiveWeek, liveWeek, liveWmsRows]);
 
   return { ketRows, liveWeek, liveWmsRows, productionPlanHasLiveWeek, wmsDroppedWeeks };
 }

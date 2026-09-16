@@ -3,6 +3,29 @@ import type { ProductionPlan, WorkOrderEntry } from "../src/core/types.ts";
 import { num, parseRecipeName } from "./lib/helpers.ts";
 import { getAuthClient, getAllTabNames, findCurrentWeekTab } from "./lib/gsheet-helpers.ts";
 
+// Wandelt einen GSheet-Datumswert (Seriennummer ODER Datumsstring) in YYYY-MM-DD um.
+// Mit dateTimeRenderOption=SERIAL_NUMBER liefert die API Datumszellen als Zahl (Tage
+// seit 30.12.1899). Kommt doch ein String (Text-Spalte, oder anderes Rendering),
+// werden die häufigsten Formate noch erkannt (DD.MM.YYYY, MM/DD/YYYY).
+function normalizeKitchenDay(raw: unknown): string {
+  if (raw == null || raw === "") return "";
+  const num = Number(raw);
+  if (Number.isFinite(num) && num > 40000) {
+    // Google-Sheets-Seriennummer → UTC-Datum
+    const d = new Date(Math.round((num - 25569) * 86_400_000));
+    return d.toISOString().slice(0, 10);
+  }
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10); // schon ISO (YYYY-MM-DD)
+  const ymdSlash = s.match(/^(\d{4})\/(\d{2})\/(\d{2})/);
+  if (ymdSlash) return `${ymdSlash[1]}-${ymdSlash[2]}-${ymdSlash[3]}`; // YYYY/MM/DD
+  const de = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (de) return `${de[3]}-${de[2].padStart(2, "0")}-${de[1].padStart(2, "0")}`; // DD.MM.YYYY
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (us) return `${us[3]}-${us[1].padStart(2, "0")}-${us[2].padStart(2, "0")}`; // MM/DD/YYYY
+  return s; // unbekannt — unverändert zurück, parseDateShift fängt NaN ab
+}
+
 export async function readProductionPlan(spreadsheetId: string): Promise<ProductionPlan | undefined> {
   if (!spreadsheetId) return undefined;
   const client = await getAuthClient();
@@ -29,7 +52,16 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
 
   let rows: any[][];
   try {
-    const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `'${tabName}'!A1:N2000` });
+    // UNFORMATTED_VALUE + SERIAL_NUMBER: Datumszellen kommen als Seriennummer (Tage seit
+    // 30.12.1899), Text-Zellen als String. Das vermeidet Gebietsschema-Abhängigkeiten
+    // beim Datumsformat (z.B. "16.09.2026" vs. "09/16/2026"). normalizeKitchenDay()
+    // wandelt die Seriennummer dann in YYYY-MM-DD um.
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${tabName}'!A1:N2000`,
+      valueRenderOption: "UNFORMATTED_VALUE" as any,
+      dateTimeRenderOption: "SERIAL_NUMBER" as any,
+    });
     rows = res.data.values ?? [];
   } catch (e: any) {
     console.warn(`  Fertigstellung Lesen fehlgeschlagen: ${e?.message ?? e}`);
@@ -88,7 +120,7 @@ export async function readProductionPlan(spreadsheetId: string): Promise<Product
 
     entries.push({
       run:            runIdx >= 0 ? (parseInt(String(row[runIdx] ?? ""), 10) || 0) : 0,
-      kitchenDay:     dayIdx >= 0 ? String(row[dayIdx] ?? "").trim() : "",
+      kitchenDay:     dayIdx >= 0 ? normalizeKitchenDay(row[dayIdx]) : "",
       workOrder:      woCell,
       recipeId:       recipeIdIdx >= 0 ? String(row[recipeIdIdx] ?? "").trim() : "",
       recipeCode,

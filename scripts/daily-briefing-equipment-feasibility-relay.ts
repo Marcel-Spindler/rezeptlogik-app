@@ -349,13 +349,21 @@ async function main() {
     console.log("Kein WMS-Vollbestand verfügbar — Feasibility-Sektion wird ausgelassen.");
   }
 
+  // KET-Fortschritt je WO: welche WOs hat die Küche laut KET-Plan bereits
+  // angefangen (woCookedPortions > 0) — schickt die CF, damit sie nicht-
+  // gebuchte Postblast-WOs als kritisch flaggt, obwohl KET schon Portionen zeigt.
+  const ketWoProgress = rows
+    .filter(r => (r.woCookedPortions ?? 0) > 0)
+    .map(r => ({ workOrder: r.woNumber, cookedPortions: r.woCookedPortions ?? 0 }));
+  console.log(`KET WO-Fortschritt: ${ketWoProgress.length} WO(s) mit Portionen > 0.`);
+
   // ── Firestore-Snapshot schreiben ────────────────────────────────────────
   configureFirestoreWriterAuth();
   if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.applicationDefault() });
   const ref = admin.firestore().collection("apps").doc("rezeptlogik").collection("dailyBriefing").doc("relaySnapshot");
   await ref.set({
     updatedAt: Date.now(), updatedIso: now.toISOString(),
-    equipmentTomorrow, feasibility: feasibilityOut,
+    equipmentTomorrow, feasibility: feasibilityOut, ketWoProgress,
   });
   console.log("Firestore-Snapshot geschrieben: apps/rezeptlogik/dailyBriefing/relaySnapshot");
 }

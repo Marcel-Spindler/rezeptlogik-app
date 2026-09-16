@@ -191,6 +191,14 @@ function hfWeekToWmsCode(hfWeek: string): string {
   const [, y, w] = hfWeek.match(/^(\d{4})-W(\d{2})$/) ?? [];
   return `${y}${w}`;
 }
+function shiftHfWeek(hfWeek: string, delta: number): string {
+  const [, y, w] = hfWeek.match(/^(\d{4})-W(\d{2})$/) ?? [];
+  let week = Number(w) + delta;
+  let year = Number(y);
+  if (week < 1) { year -= 1; week += 52; }
+  else if (week > 52) { year += 1; week -= 52; }
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
 
 // ── Snowflake SSO Connect ───────────────────────────────────────────────────
 
@@ -236,7 +244,14 @@ async function main() {
   // Mischung quer durch die Historie (last_updated ist ein Batch-Timestamp,
   // fuer ALLE Zeilen identisch -- ORDER BY danach ist wirkungslos).
   const hfWeek = currentHfWeek();
-  const weekWindow = [hfWeekToWmsCode(hfWeek)];
+  // letzte KW (nachlaufende Küchen-Updates) + aktuelle + KW+1 + KW+2 —
+  // muss exakt 4 Elemente haben, passend zu den 4 IN-Platzhaltern im SQL.
+  const weekWindow = [
+    hfWeekToWmsCode(shiftHfWeek(hfWeek, -1)),
+    hfWeekToWmsCode(hfWeek),
+    hfWeekToWmsCode(shiftHfWeek(hfWeek, 1)),
+    hfWeekToWmsCode(shiftHfWeek(hfWeek, 2)),
+  ];
   console.log(`Work-Orders Wochenfenster: ${weekWindow.join(", ")} (aktuelle hfWeek: ${hfWeek})\n`);
 
   const jobs: Job[] = [
