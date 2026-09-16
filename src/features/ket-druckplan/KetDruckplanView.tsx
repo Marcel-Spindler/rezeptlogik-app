@@ -1,4 +1,4 @@
-import { Fragment, useState, useCallback, useMemo } from "react";
+import { Fragment, useState, useCallback, useMemo, useEffect } from "react";
 
 // ── CSV parsing ──────────────────────────────────────────────────────────────
 
@@ -279,52 +279,105 @@ export function KetDruckplanView() {
     setParseError(null);
     setDriveStatus(null);
     setCheckedWos(new Set());
+    setGroups([]);
+    setFileName(null);
+    setSelectedCookDay(null);
+
     const reader = new FileReader();
+    reader.onerror = () => setParseError(`Datei konnte nicht gelesen werden: ${file.name}`);
     reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const parsed = parseCsv(text);
-      if (!parsed.length || !("Date Needed" in parsed[0])) {
-        setParseError('Keine gültige KET-Plan CSV — erwartet wird eine Spalte „Date Needed".');
-        return;
-      }
-      const rows: KetRow[] = parsed
-        .filter(r => r["Staging Status"] !== "Staged")
-        .map(r => ({
-          dateNeeded:    r["Date Needed"],
-          workOrder:     r["Work Order Number"],
-          recipeName:    r["Recipe Name"] ?? "",
-          subRecipeName: r["Sub Recipe Name"],
-          stagingStatus: r["Staging Status"],
-        }));
-      const newGroups = buildGroups(rows);
-      setGroups(newGroups);
-      setFileName(file.name);
-      setSelectedCookDay(newGroups[0]?.cookDate ?? null);
-      // Alle Tage sofort in GDrive sichern — läuft im Hintergrund
-      const errors: string[] = [];
-      setDriveStatus(null);
-      setAllDaysProgress({ done: 0, total: newGroups.length });
-      (async () => {
-        for (let i = 0; i < newGroups.length; i++) {
-          const g = newGroups[i];
-          try {
-            const [y, m, d] = g.cookDate.split("-");
-            await saveToDrive(g, `KET-Druckplan-Kochtag-${d}.${m}.${y}.html`, new Set());
-          } catch {
-            errors.push(fmtDateLong(g.cookDate));
-          }
-          setAllDaysProgress({ done: i + 1, total: newGroups.length });
+      try {
+        let text = e.target?.result as string;
+        if (!text) { setParseError("Datei ist leer."); return; }
+        // BOM entfernen
+        if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+
+        const parsed = parseCsv(text);
+        if (!parsed.length) { setParseError("CSV hat keine Datenzeilen."); return; }
+
+        const headers = Object.keys(parsed[0]);
+        console.log("[KET Druckplan] Spalten gefunden:", headers);
+
+        // Tolerant suchen — ignoriert führende/nachfolgende Leerzeichen
+        const dateCol   = headers.find(h => h.trim() === "Date Needed");
+        const statusCol = headers.find(h => h.trim() === "Staging Status");
+
+        if (!dateCol || !statusCol) {
+          setParseError(
+            `Spalten nicht gefunden. Erwartet: "Date Needed", "Staging Status". ` +
+            `Gefunden: ${headers.slice(0, 8).join(", ")}`,
+          );
+          return;
         }
+
+        const woCol      = headers.find(h => h.trim() === "Work Order Number") ?? "";
+        const recipeCol  = headers.find(h => h.trim() === "Recipe Name") ?? "";
+        const subCol     = headers.find(h => h.trim() === "Sub Recipe Name") ?? "";
+
+        const rows: KetRow[] = parsed
+          .filter(r => (r[statusCol] ?? "").trim() !== "Staged")
+          .map(r => ({
+            dateNeeded:    (r[dateCol] ?? "").trim(),
+            workOrder:     (r[woCol] ?? "").trim(),
+            recipeName:    (r[recipeCol] ?? "").trim(),
+            subRecipeName: (r[subCol] ?? "").trim(),
+            stagingStatus: (r[statusCol] ?? "").trim(),
+          }))
+          .filter(r => r.dateNeeded);
+
+        console.log("[KET Druckplan] Offene WOs:", rows.length);
+
+        if (!rows.length) {
+          setParseError(
+            `Alle ${parsed.length} Work Orders sind bereits gestaged — nichts offen.`,
+          );
+          return;
+        }
+
+        const newGroups = buildGroups(rows);
+        setGroups(newGroups);
+        setFileName(file.name);
+        setSelectedCookDay(newGroups[0]?.cookDate ?? null);
+      } catch (err) {
+        console.error("[KET Druckplan] Parsing-Fehler:", err);
+        setParseError(`Parsing-Fehler: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    // Erst UTF-8, bei Fehler nochmal als latin-1
+    reader.readAsText(file, "utf-8");
+  }, []);
+
+  // GDrive-Auto-Upload immer wenn eine neue CSV geladen wird
+  useEffect(() => {
+    if (!groups.length) return;
+    let cancelled = false;
+    const errors: string[] = [];
+    setAllDaysProgress({ done: 0, total: groups.length });
+    setDriveStatus(null);
+    (async () => {
+      for (let i = 0; i < groups.length; i++) {
+        if (cancelled) break;
+        const g = groups[i];
+        try {
+          const [y, m, d] = g.cookDate.split("-");
+          await saveToDrive(g, `KET-Druckplan-Kochtag-${d}.${m}.${y}.html`, new Set());
+        } catch {
+          errors.push(fmtDateLong(g.cookDate));
+        }
+        if (!cancelled) setAllDaysProgress({ done: i + 1, total: groups.length });
+      }
+      if (!cancelled) {
         setAllDaysProgress(null);
         setDriveStatus(
           errors.length
             ? { ok: false, msg: `GDrive: Fehler bei ${errors.join(", ")}` }
-            : { ok: true, msg: `GDrive: alle ${newGroups.length} Tage gespeichert.` },
+            : { ok: true, msg: `GDrive: alle ${groups.length} Tage gespeichert.` },
         );
-      })();
-    };
-    reader.readAsText(file, "utf-8");
-  }, []);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -396,7 +449,7 @@ export function KetDruckplanView() {
         >
           <span>↑</span>
           <span>KET Plan CSV hochladen</span>
-          <input type="file" accept=".csv" className="hidden" onChange={onInput} />
+          <input type="file" accept=".csv,.CSV,text/csv,text/plain,application/vnd.ms-excel" className="hidden" onChange={onInput} />
         </label>
 
         {groups.length > 0 && (
