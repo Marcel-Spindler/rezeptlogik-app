@@ -137,15 +137,17 @@ function stationFolder(calc: BatchCalc): "Protein" | "Veggie" {
   return classifyDeboxDepartment(calc) === "protein" ? "Protein" : "Veggie";
 }
 
-function woFileName(row: KetRow): string {
-  const parts = [`WO_${row.woNumber}`];
+function woFileName(row: KetRow, sortIdx?: number): string {
+  const parts: string[] = [];
+  if (sortIdx != null) parts.push(String(sortIdx).padStart(2, "0"));
+  parts.push(`WO_${row.woNumber}`);
   if (row.recipeCode) parts.push(row.recipeCode);
   parts.push(row.subRecipeName || row.recipeName);
   return `${sanitizeSegment(parts.join("_"))}.pdf`;
 }
 
 const relKey = (root: string, abs: string) => relative(root, abs).split(sep).join("/");
-const IS_WO_PDF = /^WO_.*\.pdf$/i;
+const IS_WO_PDF = /^(\d+_)?WO_.*\.pdf$/i;
 
 // Entfernt in einem "W<nn>-Gemini"-Ordner alle WO_*.pdf, die dieser Lauf nicht
 // geschrieben hat, und danach leere Unterordner. Nur Dateien mit WO_-Präfix —
@@ -475,20 +477,54 @@ async function main() {
   }
 
   // PDFs rendern + ablegen
+  // Sortierung: innerhalb jedes Tagesordners nach Allergenanzahl ASC — WOs mit
+  // den wenigsten Allergenen zuerst, damit die Debox-Reinigung optimal läuft
+  // (weniger Allergene = weniger Kreuzkontaminationsrisiko). Dateiname erhält
+  // eine laufende Nummer (01_, 02_, …) als Präfix, damit die Reihenfolge im
+  // Dateisystem / Google Drive sichtbar ist.
+  type SortedEntry = { row: KetRow; calc: BatchCalc; segs: string[]; allergenCount: number };
+  const sortedEntries: SortedEntry[] = rows.map((row) => {
+    const calc = calcMap.get(row.key)!;
+    return {
+      row,
+      calc,
+      segs: [weekFolder(row), stationFolder(calc), dayFolder(row)],
+      allergenCount: calc.allergensContains.length,
+    };
+  });
+  sortedEntries.sort((a, b) => {
+    // Primär: Tagesordner-Pfad (Woche → Station → Tag) stabil halten
+    for (let i = 0; i < 3; i++) {
+      const cmp = a.segs[i].localeCompare(b.segs[i]);
+      if (cmp !== 0) return cmp;
+    }
+    // Sekundär: Allergenanzahl aufsteigend (wenigste zuerst für Debox-Reinigung)
+    return a.allergenCount - b.allergenCount;
+  });
+  // Laufende Nummer je Tagesordner vergeben
+  const sortIdxMap = new Map<string, number>();
+  const dayKey = (e: SortedEntry) => e.segs.join("/");
+  for (const entry of sortedEntries) {
+    const k = dayKey(entry);
+    const idx = (sortIdxMap.get(k) ?? 0) + 1;
+    sortIdxMap.set(k, idx);
+    (entry as SortedEntry & { sortIdx: number }).sortIdx = idx;
+  }
+
   const drive = driveApi ? makeDrive() : null;
   const folderCache = new Map<string, string>(); // API: Pfad → folderId
   const browser = await chromium.launch({ headless: true });
   const perFolder = new Map<string, number>();
-  const writtenRel = new Set<string>();       // "W37-Gemini/Veggie/Mo 31.08/WO_….pdf"
+  const writtenRel = new Set<string>();       // "W37-Gemini/Veggie/Mo 31.08/01_WO_….pdf"
   const touchedWeeks = new Set<string>();      // "W37-Gemini"
   const weeksWithErr = new Set<string>();
   let written = 0, errors = 0;
 
   try {
-    for (const row of rows) {
-      const calc = calcMap.get(row.key)!;
-      const segs = [weekFolder(row), stationFolder(calc), dayFolder(row)];
-      const fileName = woFileName(row);
+    for (const entry of sortedEntries) {
+      const { row, calc, segs } = entry;
+      const sortIdx = (entry as SortedEntry & { sortIdx: number }).sortIdx;
+      const fileName = woFileName(row, sortIdx);
       touchedWeeks.add(segs[0]);
       try {
         const pdf = await renderWoPdf(browser, row, calcMap, woInstructions);
@@ -516,7 +552,7 @@ async function main() {
         writtenRel.add(`${key}/${fileName}`);
         perFolder.set(key, (perFolder.get(key) ?? 0) + 1);
         written++;
-        process.stdout.write(`\r  ${written}/${rows.length} PDFs …   `);
+        process.stdout.write(`\r  ${written}/${sortedEntries.length} PDFs …   `);
       } catch (e) {
         errors++;
         weeksWithErr.add(segs[0]);

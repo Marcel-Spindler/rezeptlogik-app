@@ -170,7 +170,10 @@ async function fetchShortsTrackerRows(): Promise<string[][]> {
 // Titel fest, deshalb wie bei Production Plan zuerst per Metadaten-Aufruf
 // aufgelöst statt hart codiert.
 const STAFFING_PLAN_SHEET_ID = "1qHOGFAbUmAa4nxqBF9LcAT3trl0inDoupZflQhqb8wU";
-const STAFFING_PLAN_GID = "630874084";
+// Tab "Financial" — NICHT der Tab, den die ursprünglich geteilte URL zeigte
+// ("Calculation", gid=630874084): die Headcount-Zeilen liegen tatsächlich auf
+// "Financial", live gegen alle 27 Tabs des Sheets verifiziert (2026-09-16).
+const STAFFING_PLAN_GID = "308443134";
 
 async function fetchStaffingPlanRows(): Promise<string[][]> {
   const client = await getSheetsClient();

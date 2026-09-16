@@ -932,6 +932,7 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
       body: JSON.stringify({
         html,
         filename: `${woFilename(row)}.pdf`,
+        woNumber: row.woNumber,
         segments: [ketDriveWeekFolder(row), ketDriveStationFolder(calc), ketDriveDayFolder(row)],
       }),
     });
@@ -1113,6 +1114,12 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
     if (scope === "ready") rows = rows.filter(rowReady);
     void saveRowsAsIndividualPdfs(rows);
   }, [ketRows, selectedWoKeys, rowReady, saveRowsAsIndividualPdfs]);
+
+  const publishSelectedWosToKetDrive = useCallback((scope: "ready" | "all") => {
+    let rows = ketRows.filter((row) => selectedWoKeys.has(row.key));
+    if (scope === "ready") rows = rows.filter(rowReady);
+    void publishRowsToKetDrive(rows);
+  }, [ketRows, selectedWoKeys, rowReady, publishRowsToKetDrive]);
 
   // Kochanweisungen für einen beliebigen Satz WOs erzeugen (Einzel-WO im
   // Seiten-Footer, oder alle noch unvollständigen WOs eines Massendrucks) —
@@ -1772,6 +1779,22 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                   : <BiLabel de="Speichern" en="Save" />}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => publishSelectedWosToKetDrive("ready")}
+              disabled={selectionInstruction.ready === 0 || bulkDlBusy}
+              title="Ausgewählte WOs (mit Kochanweisung) direkt in Google Drive laden — überschreibt bestehende Dateien"
+              className="w-full flex items-center justify-center gap-1.5 text-[10px] font-bold bg-[#1a73e8] hover:bg-[#1558b0] disabled:opacity-30 disabled:cursor-not-allowed text-white py-1.5 rounded-lg transition-colors"
+            >
+              {bulkDlBusy ? (
+                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+              ) : (
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+              )}
+              {selectionInstruction.missing.length > 0
+                ? <BiLabel de={`${selectionInstruction.ready} → GDrive`} en={`${selectionInstruction.ready} → GDrive`} />
+                : <BiLabel de="→ GDrive" en="→ GDrive" />}
+            </button>
             {selectionInstruction.missingTargets > 0 && (
               <button
                 type="button"
@@ -1899,6 +1922,22 @@ export function KetBreakdownView({ data, selectedWeek }: { data: DataBundle; sel
                       : <BiLabel de="Speichern" en="Save" />}
                   </button>
                 </div>
+                <button
+                  type="button"
+                  disabled={readyBulk.length === 0 || bulkDlBusy}
+                  title="Alle sichtbaren WOs mit Kochanweisung in Google Drive laden — überschreibt bestehende Dateien, löscht Duplikate"
+                  onClick={() => void publishRowsToKetDrive(readyBulk)}
+                  className="w-full flex items-center justify-center gap-1.5 text-[10px] font-bold bg-[#1a73e8] hover:bg-[#1558b0] disabled:opacity-30 disabled:cursor-not-allowed text-white py-1.5 rounded-xl transition-colors"
+                >
+                  {bulkDlBusy ? (
+                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
+                  ) : (
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>
+                  )}
+                  {blockedBulk.length > 0
+                    ? <BiLabel de={`${readyBulk.length} → GDrive`} en={`${readyBulk.length} → GDrive`} />
+                    : <BiLabel de="→ GDrive" en="→ GDrive" />}
+                </button>
                 <div className="text-[8px] text-slate-400 text-center -mt-0.5">
                   {alreadyPrintedCount > 0
                     ? `${newBulkRows.length} neue WOs${includeAlreadyPrinted ? ` + ${alreadyPrintedCount} bereits gedruckte` : ""}`

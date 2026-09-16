@@ -481,7 +481,7 @@ function sanitizeDriveSegment(value) {
     .replace(/[. ]+$/g, "");
 }
 
-function savePdfToKetDrive(pdf, segments, filename) {
+function savePdfToKetDrive(pdf, segments, filename, woNumber) {
   if (!ketDriveRoot) throw new Error("KET_DRIVE_ROOT fehlt im lokalen Server (.env.local).");
   if (!fs.existsSync(ketDriveRoot)) throw new Error(`KET_DRIVE_ROOT existiert nicht: ${ketDriveRoot}`);
   const safeSegments = Array.isArray(segments) ? segments.map(sanitizeDriveSegment).filter(Boolean) : [];
@@ -492,6 +492,19 @@ function savePdfToKetDrive(pdf, segments, filename) {
   for (const segment of safeSegments) {
     dir = path.join(dir, segment);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+  }
+  // Dedup: alle vorhandenen WO_<woNumber>*.pdf im Zielordner entfernen, bevor
+  // die neue Datei geschrieben wird — verhindert Duplikate wenn ket-publish.ts
+  // (sort-Index-Präfix "01_WO_...") und UI (kein Präfix) abwechselnd benutzt werden.
+  if (woNumber && typeof woNumber === "string") {
+    const pat = new RegExp("WO_" + woNumber.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (pat.test(f) && f.toLowerCase().endsWith(".pdf") && f !== finalFilename) {
+          try { fs.rmSync(path.join(dir, f), { force: true }); } catch { /* Drive-FUSE ignorieren */ }
+        }
+      }
+    } catch { /* Ordner noch nicht lesbar — kein Problem, writeFileSync legt ihn gleich an */ }
   }
   const outPath = path.join(dir, finalFilename);
   fs.writeFileSync(outPath, Buffer.from(pdf));
@@ -601,7 +614,7 @@ const server = http.createServer((req, res) => {
       .then(async (body) => {
         if (!body.html) throw new Error("html fehlt im Request-Body");
         const pdf = await htmlToPdf(body.html);
-        const relPath = savePdfToKetDrive(pdf, body.segments, body.filename);
+        const relPath = savePdfToKetDrive(pdf, body.segments, body.filename, body.woNumber);
         sendJson(res, 200, { ok: true, path: relPath });
       })
       .catch((error) => sendJson(res, 502, { error: error instanceof Error ? error.message : String(error) }));

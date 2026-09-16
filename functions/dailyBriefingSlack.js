@@ -31,7 +31,7 @@ const DAILY_BRIEFING_SCHEDULE = process.env.DAILY_BRIEFING_SCHEDULE || "0 15 * *
 // Staffing-Plan-Sheet (Hiring/Kosten-BP-Modell, "Headcount - Required" je
 // Abteilung/KW) — mit dem Service-Account ("PDL fast reader") geteilt.
 const STAFFING_PLAN_SHEET_ID = process.env.STAFFING_PLAN_SHEET_ID || "1qHOGFAbUmAa4nxqBF9LcAT3trl0inDoupZflQhqb8wU";
-const STAFFING_PLAN_GID = process.env.STAFFING_PLAN_GID || "630874084";
+const STAFFING_PLAN_GID = process.env.STAFFING_PLAN_GID || "308443134"; // Tab "Financial"
 
 // ── Slack ────────────────────────────────────────────────────────────────
 async function postToSlack(text) {

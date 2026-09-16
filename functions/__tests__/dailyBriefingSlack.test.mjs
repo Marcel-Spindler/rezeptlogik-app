@@ -23,7 +23,7 @@ test("hfWeekLabel rolls over into the next year past week 52", () => {
   assert.match(label, /^2027-W01$/);
 });
 
-// Nachgebaut aus dem echten Sheet-Dump (Tab hinter gid=630874084).
+// Nachgebaut aus dem echten Sheet-Dump (Tab "Financial", gid=308443134).
 function realisticRows() {
   const header = ["", "", "", "", "2026", "2026-W01", "2026-W02", "2026-W38", "2026-W39"];
   const kitchen = ["Input", "Staffing", "Headcount - Required", "Kitchen", "", "0", "0", "32", "36"];

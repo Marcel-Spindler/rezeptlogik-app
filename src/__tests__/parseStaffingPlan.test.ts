@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseStaffingPlan } from "../features/gsheet-monitor/parsers/parseStaffingPlan";
 
-// Nachgebaut aus dem echten Sheet-Dump (Tab hinter gid=630874084): eine
+// Nachgebaut aus dem echten Sheet-Dump (Tab "Financial", gid=308443134): eine
 // Blindzeile ("2026" = Jahres-Spalte) zwischen Zeilenlabel und den KW-Werten,
 // mehrere Headcount-Zeilen für verschiedene Rollen/Abteilungen.
 function realisticRows(): string[][] {
