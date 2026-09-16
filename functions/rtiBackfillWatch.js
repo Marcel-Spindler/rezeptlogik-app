@@ -90,6 +90,35 @@ function withinPlatingHours(now) {
   const h = berlinHour(now);
   return h >= PLATING_START_HOUR && h < PLATING_END_HOUR;
 }
+// Europe/Berlin Kalendertag als "YYYY-MM-DD" — für den KET-Plan-Tagesabgleich
+// (kitchenDay). Naives toISOString().slice(0,10) wäre an manchen Abenden
+// (UTC schon "morgen" lokal noch nicht bzw. umgekehrt) falsch.
+function berlinIsoDate(now) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(now || new Date());
+  const get = t => parts.find(p => p.type === t)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+// 1:1 Duplikat von hfWeekLabel in dailyBriefingSlack.js (das wiederum
+// src/lib/hfWeek.ts dupliziert, Functions haben keinen Zugriff auf src/) —
+// Doc-ID für apps/rezeptlogik/productionPlan/{week}. ACHTUNG: KetPlanImport.tsx
+// (einziger Schreiber dieser Collection) hardcoded das Jahr "2026" statt es zu
+// berechnen — läuft aktuell (2026, KW<=52) synchron mit dieser Funktion, könnte
+// zum Jahreswechsel auseinanderlaufen (bestehendes, unverändertes Risiko von
+// dailyBriefingSlack.js — nicht neu eingeführt hier).
+function productionPlanWeekLabel(now) {
+  const n = now || new Date();
+  const d = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const isoYear = d.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const isoWeek = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  const week = isoWeek + 1;
+  return week <= 52 ? `${isoYear}-W${String(week).padStart(2, "0")}` : `${isoYear + 1}-W01`;
+}
 
 function stateDoc() {
   return admin.firestore().collection("apps").doc("rezeptlogik").collection("backfillWatch").doc("state");
@@ -208,6 +237,9 @@ function classify(sub, gap, plannedTarget) {
     workOrder: sub.workOrder, subRecipeName: sub.subRecipeName,
     minimumNeed, bufferedNeed: Math.max(minimumNeed, bufferedNeed),
     basis, status: sub.status, vetoed: sub.status === "not-needed",
+    // Portionen-Äquivalent aus (platingHoldingKg+weighedKg) — für die
+    // Rückwiegung-nach-"done"-Erkennung (detectDoneReweigh) gebraucht.
+    derivedAvail: Math.round(derivedAvail),
   };
 }
 
@@ -452,6 +484,98 @@ async function readRelayActuals(now) {
   }
 }
 
+// ── Produktionsplan (KET-Import) ────────────────────────────────────────────
+// apps/rezeptlogik/productionPlan/{week}, befüllt von KetPlanImport.tsx beim
+// manuellen KET-Plan-CSV-Import. Geteilt für zwei Zwecke:
+//  • Fold-in-Empfehlung: läuft für dasselbe Meal/Sub-Rezept heute noch eine
+//    andere, nicht fertig gekochte WO → Backfill kann dort mit eingerechnet
+//    werden (findFoldInWorkOrder).
+//  • Rückwiegung-nach-"done": wird ein Sub-Rezept nach "done" nachgewogen und
+//    wächst spürbar, prüfen ob dasselbe Sub-Rezept diese Woche auch in einem
+//    ANDEREN Meal gebraucht wird (buildSubRecipeUsageIndex/redistributionCandidates).
+// Still-fail wie fetchRedzoneActuals/readRelayActuals — fehlt das Doc/die
+// Woche, bleiben beide Features stumm (kein Crash, kein Slack-Lärm).
+async function fetchProductionPlanRows(weekLabel) {
+  if (!weekLabel) return null;
+  try {
+    const snap = await admin.firestore()
+      .collection("apps").doc("rezeptlogik").collection("productionPlan").doc(weekLabel).get();
+    if (!snap.exists) return null;
+    const rows = Array.isArray(snap.data()?.rows) ? snap.data().rows : [];
+    return rows.length ? rows : null;
+  } catch (e) {
+    logger.warn("productionPlan lesen fehlgeschlagen", { week: weekLabel, error: String(e).slice(0, 160) });
+    return null;
+  }
+}
+
+function normalizeSubRecipeName(s) {
+  return String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// "Cooked Portions Excess" < 0 ⇔ woCookedPortions < targetPortions — die WO
+// ist noch nicht fertig gekocht, könnte also noch einen Backfill aufnehmen.
+function stillCookingToday(row) {
+  return (Number(row.woCookedPortions) || 0) < (Number(row.targetPortions) || 0);
+}
+
+// Exakter Match (Meal-Code-Ziffern + normalisierter Sub-Name) — bewusst KEIN
+// schwächerer Meal-Only-Fallback, sonst würde eine WO für ein ANDERES
+// Sub-Rezept desselben Meals fälschlich als Fold-in-Ziel vorgeschlagen. Erste
+// passende Zeile gewinnt (keine "beste Auswahl"-Logik).
+function findFoldInWorkOrder(rows, { mealCode, subRecipeName, excludeWorkOrder, todayIso }) {
+  const wantMeal = codeDigits(mealCode);
+  const wantSub = normalizeSubRecipeName(subRecipeName);
+  for (const row of rows || []) {
+    if (String(row.workOrder || "").trim() === String(excludeWorkOrder || "").trim()) continue;
+    if (codeDigits(row.recipeCode) !== wantMeal) continue;
+    if (normalizeSubRecipeName(row.subRecipe) !== wantSub) continue;
+    if (String(row.kitchenDay || "").slice(0, 10) !== todayIso) continue;
+    if (!stillCookingToday(row)) continue;
+    return row;
+  }
+  return null;
+}
+
+function foldInNote(row) {
+  const remain = (Number(row.targetPortions) || 0) - (Number(row.woCookedPortions) || 0);
+  const remainTxt = remain > 0 ? `, ${nf(remain)} davon noch offen` : "";
+  return `↳ kann in WO *${row.workOrder}* eingearbeitet werden (läuft heute noch${remainTxt})`;
+}
+
+// normalizedSubName -> Map<mealCodeDigits, {recipeCode, recipeName}>, über
+// ALLE Zeilen der Woche (nicht nur heute) — ein geteiltes Sub-Rezept kann an
+// einem anderen Tag dieser Woche laufen.
+function buildSubRecipeUsageIndex(rows) {
+  const index = new Map();
+  for (const row of rows || []) {
+    const subName = normalizeSubRecipeName(row.subRecipe);
+    const digits = codeDigits(row.recipeCode);
+    if (!subName || !digits) continue;
+    let byMeal = index.get(subName);
+    if (!byMeal) { byMeal = new Map(); index.set(subName, byMeal); }
+    if (!byMeal.has(digits)) byMeal.set(digits, { recipeCode: String(row.recipeCode || ""), recipeName: String(row.recipeName || "") });
+  }
+  return index;
+}
+
+function redistributionCandidates(index, subRecipeName, ownMealCode) {
+  const byMeal = index.get(normalizeSubRecipeName(subRecipeName));
+  if (!byMeal) return [];
+  const ownDigits = codeDigits(ownMealCode);
+  return [...byMeal.entries()].filter(([d]) => d !== ownDigits).map(([, info]) => info);
+}
+
+// Baseline-Vergleich für "nachgewogen, obwohl schon done": erste Beobachtung
+// (keine Baseline) → kein Event, nur merken (analog newOpen). Danach:
+// Wachstum >= MIN_SUB_SHORTFALL → Event; Schrumpfen (Korrektur) nie ein Event.
+function detectDoneReweigh(prevBaseline, currentAvail) {
+  const prevAvail = prevBaseline && typeof prevBaseline.avail === "number" ? prevBaseline.avail : null;
+  if (prevAvail == null) return { isEvent: false, delta: 0 };
+  const delta = currentAvail - prevAvail;
+  return { isEvent: delta >= MIN_SUB_SHORTFALL, delta };
+}
+
 // Portionen ganzzahlig; "," / "." vor genau 3 Ziffern = Tausender-Trenner
 // (1:1 mit parseWholeNumber aus src/.../parsers/parseLinePlaiting.ts).
 function parseWholeNumber(raw) {
@@ -666,9 +790,10 @@ function mealBlock(meal, subLines) {
   return head + gap + subs;
 }
 
-function subNeed(s) {
+function subNeed(s, foldInText) {
   const tail = s.basis === "gap-only" ? "  _(im Sheet noch nicht pro Sub erfasst)_" : "";
-  return `• *${s.subRecipeName}*  →  ${nf(s.minimumNeed)}  (mit Puffer ${nf(s.bufferedNeed)})${tail}`;
+  const base = `• *${s.subRecipeName}*  →  ${nf(s.minimumNeed)}  (mit Puffer ${nf(s.bufferedNeed)})${tail}`;
+  return foldInText ? `${base}\n${IND}${IND}${foldInText}` : base;
 }
 
 // Einzelzeile „Code · Detail" mit optionaler eingerückter zweiter Zeile.
@@ -716,7 +841,19 @@ exports.rtiBackfillWatch = onSchedule(
     const parsed = parseRti(rows);
     const meals = computeRtiBackfills(parsed, externalTargets, nowDate);
 
-    const prevSnap = await stateDoc().get();
+    // Produktionsplan (KET-Import) — für Fold-in-Empfehlung + Rückwiegung-nach-
+    // "done", läuft rund um die Uhr (unabhängig vom Wiege-Fenster, genau wie die
+    // anderen Änderungs-Meldungen laut Kommentar oben). Still-fail: fehlt das
+    // Doc/die Woche, bleiben beide Features einfach stumm.
+    const productionPlanWeek = productionPlanWeekLabel(nowDate);
+    const [prevSnap, planRowsRaw] = await Promise.all([
+      stateDoc().get(),
+      fetchProductionPlanRows(productionPlanWeek).catch(() => null),
+    ]);
+    const planRows = planRowsRaw || [];
+    const todayIso = berlinIsoDate(nowDate);
+    const subUsageIndex = buildSubRecipeUsageIndex(planRows);
+
     const seeding = !prevSnap.exists; // erster Lauf → Ist-Zustand merken, nichts posten
     const prev = prevSnap.exists ? (prevSnap.data() || {}) : {};
     const prevSubs = prev.subs || {};       // key -> { min, since }
@@ -725,17 +862,23 @@ exports.rtiBackfillWatch = onSchedule(
     const prevHeaderFilled = prev.headerFilled || {}; // mealCode -> { planned, actuals, at } (von uns eingetragen)
     // "wo|sub" -> ts: vom Wächter (rtiMarkDone) gesetzt, wenn "done" aus der App kam
     const appMarks = prev.appMarks || {};
+    // "wo|sub" -> { avail, at, meal }: letzter derivedAvail-Stand während "done"
+    // (für die Rückwiegung-Erkennung) — eigenes Feld, NICHT mit prevSubs mischen,
+    // sonst bricht die wasOpen/newOpen-Wiedereröffnungs-Erkennung.
+    const prevEnteredBaselines = prev.enteredBaselines || {};
 
     const nextSubs = {};
     const nextStaleWarn = {};
     const nextHeaderWarn = {};
     const nextHeaderFilled = { ...prevHeaderFilled };
+    const nextEnteredBaselines = { ...prevEnteredBaselines };
     const newOpen = [];
     const nowEntered = [];
     const staleAlerts = [];
     const grownSubs = [];
     const headerAlerts = [];
     const headerFilledAlerts = [];
+    const doneReweighs = [];
 
     // ── Planned Target / Actuals selbst in den Sheet-Kopf schreiben ──────────
     // Kandidaten: Meal-Block hat eine echte Zurückwiegung + wir haben eine
@@ -797,12 +940,16 @@ exports.rtiBackfillWatch = onSchedule(
         const key = `${s.workOrder}|${s.subRecipeName}`;
         const wasOpen = prevSubs[key];
         nextSubs[key] = { min: s.minimumNeed, since: wasOpen?.since || now, meal: meal.mealCode };
+        const foldIn = findFoldInWorkOrder(planRows, {
+          mealCode: meal.mealCode, subRecipeName: s.subRecipeName,
+          excludeWorkOrder: s.workOrder, todayIso,
+        });
         if (!wasOpen) {
-          newOpen.push({ meal, s });
+          newOpen.push({ meal, s, foldIn });
         } else if (s.minimumNeed >= (wasOpen.min || 0) + 100 && s.minimumNeed >= (wasOpen.min || 0) * 1.5) {
           // schon offen, aber die Menge ist deutlich gestiegen (z.B. Rack kam
           // jetzt ganz leer zurück) → erneut melden.
-          grownSubs.push({ meal, s, prevMin: wasOpen.min || 0 });
+          grownSubs.push({ meal, s, prevMin: wasOpen.min || 0, foldIn });
         }
       }
       for (const s of meal.enteredSubs) {
@@ -811,6 +958,16 @@ exports.rtiBackfillWatch = onSchedule(
           // war offen, jetzt "done" — kam es über den Wächter (< 25 min)?
           const viaApp = appMarks[key] && now - appMarks[key] < 25 * 60 * 1000;
           nowEntered.push({ meal, s, viaApp });
+        }
+        // Rückwiegung nach "done": erste Beobachtung als "done" setzt nur die
+        // Baseline (kein Alarm), danach löst spürbares Wachstum einen Alarm aus.
+        const det = detectDoneReweigh(prevEnteredBaselines[key], s.derivedAvail);
+        nextEnteredBaselines[key] = { avail: s.derivedAvail, at: now, meal: meal.mealCode };
+        if (det.isEvent) {
+          doneReweighs.push({
+            meal, s, delta: det.delta,
+            candidates: redistributionCandidates(subUsageIndex, s.subRecipeName, meal.mealCode),
+          });
         }
       }
       // Wiegung läuft, aber Subs ohne Status offen und schon > STALE_MIN alt
@@ -834,17 +991,30 @@ exports.rtiBackfillWatch = onSchedule(
     if (!seeding) {
       // 🔴 NEU: Backfill nötig — je Meal ein Rahmen, Engpass-Subs eingerückt.
       const byMeal = new Map();
-      for (const { meal, s } of newOpen) {
-        if (!byMeal.has(meal.mealCode)) byMeal.set(meal.mealCode, { meal, subs: [] });
-        byMeal.get(meal.mealCode).subs.push(s);
+      for (const { meal, s, foldIn } of newOpen) {
+        if (!byMeal.has(meal.mealCode)) byMeal.set(meal.mealCode, { meal, items: [] });
+        byMeal.get(meal.mealCode).items.push({ s, foldIn });
       }
       await postGroup("🔴  BACKFILL NÖTIG", `${byMeal.size} Meal${byMeal.size === 1 ? "" : "s"}`,
-        [...byMeal.values()].map(({ meal, subs }) => mealBlock(meal, subs.map(subNeed))));
+        [...byMeal.values()].map(({ meal, items }) =>
+          mealBlock(meal, items.map(({ s, foldIn }) => subNeed(s, foldIn ? foldInNote(foldIn) : undefined)))));
 
       // 📈 Menge gestiegen.
       await postGroup("📈  BACKFILL-MENGE GESTIEGEN", "",
-        grownSubs.map(({ meal, s, prevMin }) =>
-          itemLine(meal.mealCode, s.subRecipeName, `jetzt ${nf(s.minimumNeed)}   _(vorher ${nf(prevMin)})_`)));
+        grownSubs.map(({ meal, s, prevMin, foldIn }) => {
+          const base = `jetzt ${nf(s.minimumNeed)}   _(vorher ${nf(prevMin)})_`;
+          return itemLine(meal.mealCode, s.subRecipeName, foldIn ? `${base}\n${IND}${foldInNote(foldIn)}` : base);
+        }));
+
+      // ♻️ Rückwiegung nach "done" — evtl. für ein anderes Meal diese Woche nutzbar.
+      await postGroup("♻️  RÜCKWIEGUNG NACH DONE", "",
+        doneReweighs.map(({ meal, s, delta, candidates }) => {
+          const line1 = `+${nf(delta)} zurückgewogen  ·  jetzt ${nf(s.derivedAvail)}`;
+          const line2 = candidates.length
+            ? `→ ggf. für ${candidates.map(c => c.recipeName ? `${c.recipeCode} (${c.recipeName})` : c.recipeCode).join(", ")} nutzen`
+            : "_(keine andere Verwendung diese Woche bekannt)_";
+          return itemLine(meal.mealCode, s.subRecipeName, `${line1}\n${IND}${line2}`);
+        }));
 
       // ⏰ Wiegung hängt.
       await postGroup("⏰  WIEGUNG HÄNGT", `seit > ${STALE_MIN} min offen`,
@@ -895,11 +1065,20 @@ exports.rtiBackfillWatch = onSchedule(
       if (now - at < 5 * 24 * 3600 * 1000) prunedHeaderFilled[k] = v;
     }
 
+    // enteredBaselines: dieselbe 5-Tage-Regel wie headerFilled (KW-Wechsel →
+    // nächste Woche darf mit einer frischen Baseline neu beobachtet werden).
+    const prunedEnteredBaselines = {};
+    for (const [k, v] of Object.entries(nextEnteredBaselines)) {
+      const at = (v && v.at) || 0;
+      if (now - at < 5 * 24 * 3600 * 1000) prunedEnteredBaselines[k] = v;
+    }
+
     await stateDoc().set({
       subs: nextSubs,
       staleWarned: nextStaleWarn,
       headerWarn: nextHeaderWarn,
       headerFilled: prunedHeaderFilled,
+      enteredBaselines: prunedEnteredBaselines,
       flash,
       appMarks: nextAppMarks,
       updatedAt: new Date().toISOString(),
@@ -911,6 +1090,9 @@ exports.rtiBackfillWatch = onSchedule(
       redzoneOk: sourcesOk.redzoneOk, relayOk: sourcesOk.relayOk, lpOk: sourcesOk.lpOk,
       externalTargets: externalTargets.size, headerFilled: headerFilledAlerts.length,
       newOpen: newOpen.length, grown: grownSubs.length, entered: nowEntered.length, stale: staleAlerts.length, header: headerAlerts.length,
+      planRows: planRows.length, planOk: planRows.length > 0,
+      foldInSuggested: newOpen.filter(x => x.foldIn).length + grownSubs.filter(x => x.foldIn).length,
+      doneReweigh: doneReweighs.length,
       slackConfigured: !!process.env.SLACK_WEBHOOK_URL, slackPosts: _slackDebug,
     });
   },
@@ -978,7 +1160,11 @@ module.exports._internal = {
   parseRti, computeRtiBackfills, summarizeRtiProgress, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow, fetchLinePlaitingFirstRun, deriveHeaderTargets,
+  fetchRedzoneActuals, readRelayActuals,
   mealBlock, subNeed, itemLine, RULE, IND, withLatestSubData,
   workOrderWeek, currentWorkOrderWeek, sheetsClient,
   RTI_SHEET_ID, RTI_SHEET_TAB,
+  berlinIsoDate, productionPlanWeekLabel, fetchProductionPlanRows, normalizeSubRecipeName,
+  stillCookingToday, findFoldInWorkOrder, foldInNote,
+  buildSubRecipeUsageIndex, redistributionCandidates, detectDoneReweigh,
 };

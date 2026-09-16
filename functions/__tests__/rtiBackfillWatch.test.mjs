@@ -12,6 +12,9 @@ const {
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow,
   mealBlock, subNeed, itemLine, IND, RULE,
+  berlinIsoDate, productionPlanWeekLabel, normalizeSubRecipeName, stillCookingToday,
+  findFoldInWorkOrder, foldInNote, buildSubRecipeUsageIndex, redistributionCandidates,
+  detectDoneReweigh,
 } = require("../rtiBackfillWatch.js")._internal;
 
 // Alle Fixtures dieser Datei nutzen "38-xxx"-WOs (KW38) — fixer Referenz-
@@ -268,4 +271,132 @@ test("plannedActualFromRow — Tripel p,a,d mit d=a−p, Run-Zähler weg", () =>
   // Überproduktion: delta positiv
   const row2 = ["FV0780A", "Penne", "5510", "", "", "5.0", "5600", "90"];
   assert.deepEqual(plannedActualFromRow(row2, 2), { planned: 5510, actual: 5600 });
+});
+
+// ── Fold-in-Empfehlung + Rückwiegung-nach-"done" (KET-Produktionsplan) ──────
+
+test("productionPlanWeekLabel — Jahr + gepolsterte KW, 1:1 mit currentWorkOrderWeek", () => {
+  assert.equal(productionPlanWeekLabel(new Date("2026-09-09T10:00:00Z")), "2026-W38"); // REF_NOW dieser Datei
+  assert.equal(productionPlanWeekLabel(new Date("2026-09-16T10:00:00Z")), "2026-W39");
+});
+
+test("berlinIsoDate — Europe/Berlin-Kalendertag, nicht naives UTC-Datum", () => {
+  assert.equal(berlinIsoDate(new Date("2026-09-09T23:30:00Z")), "2026-09-10"); // CEST (+2) → lokal schon der nächste Tag
+  assert.equal(berlinIsoDate(new Date("2026-01-15T22:30:00Z")), "2026-01-15"); // CET (+1) → lokal noch derselbe Tag
+});
+
+test("normalizeSubRecipeName — Whitespace/Case", () => {
+  assert.equal(normalizeSubRecipeName("  Green   Beans \n"), "green beans");
+  assert.equal(normalizeSubRecipeName(null), "");
+  assert.equal(normalizeSubRecipeName(undefined), "");
+});
+
+test("stillCookingToday — Cooked Portions Excess < 0 heißt noch nicht fertig", () => {
+  assert.equal(stillCookingToday({ woCookedPortions: 400, targetPortions: 1000 }), true);
+  assert.equal(stillCookingToday({ woCookedPortions: 1000, targetPortions: 1000 }), false);
+  assert.equal(stillCookingToday({ woCookedPortions: 1200, targetPortions: 1000 }), false);
+  assert.equal(stillCookingToday({}), false, "fehlende Felder -> kein falsches Fold-in-Ziel");
+});
+
+const planRow = (o = {}) => ({
+  workOrder: "39-101", recipeCode: "FV4064A", recipeName: "Ginger Chicken",
+  subRecipe: "Mash", kitchenDay: "2026-09-16", targetPortions: 1958, woCookedPortions: 0,
+  ...o,
+});
+
+test("findFoldInWorkOrder — exakter Match (Meal-Code + normalisierter Sub-Name)", () => {
+  const opts = { mealCode: "FV4064A", subRecipeName: "mash", excludeWorkOrder: "39-050", todayIso: "2026-09-16" };
+  // Case-Unterschied zwischen RTI-Sheet ("mash") und KET-CSV ("Mash") wird toleriert.
+  assert.equal(findFoldInWorkOrder([planRow()], opts).workOrder, "39-101");
+});
+
+test("findFoldInWorkOrder — anderes Sub-Rezept am selben Meal heute -> null (nur exakter Match, kein Fallback)", () => {
+  const opts = { mealCode: "FV4064A", subRecipeName: "mash", excludeWorkOrder: "39-050", todayIso: "2026-09-16" };
+  assert.equal(findFoldInWorkOrder([planRow({ subRecipe: "Sauce" })], opts), null);
+});
+
+test("findFoldInWorkOrder — schließt die eigene WO aus", () => {
+  const opts = { mealCode: "FV4064A", subRecipeName: "mash", excludeWorkOrder: "39-101", todayIso: "2026-09-16" };
+  assert.equal(findFoldInWorkOrder([planRow({ workOrder: "39-101" })], opts), null);
+});
+
+test("findFoldInWorkOrder — falscher Tag -> null", () => {
+  const opts = { mealCode: "FV4064A", subRecipeName: "mash", excludeWorkOrder: "39-050", todayIso: "2026-09-16" };
+  assert.equal(findFoldInWorkOrder([planRow({ kitchenDay: "2026-09-15" })], opts), null);
+});
+
+test("findFoldInWorkOrder — bereits fertig gekocht -> null", () => {
+  const opts = { mealCode: "FV4064A", subRecipeName: "mash", excludeWorkOrder: "39-050", todayIso: "2026-09-16" };
+  assert.equal(findFoldInWorkOrder([planRow({ woCookedPortions: 1958 })], opts), null);
+});
+
+test("findFoldInWorkOrder — mehrere Treffer: der erste gewinnt; leere Liste -> null", () => {
+  const opts = { mealCode: "FV4064A", subRecipeName: "mash", excludeWorkOrder: "39-050", todayIso: "2026-09-16" };
+  const rows = [planRow({ workOrder: "39-101" }), planRow({ workOrder: "39-102" })];
+  assert.equal(findFoldInWorkOrder(rows, opts).workOrder, "39-101");
+  assert.equal(findFoldInWorkOrder([], opts), null);
+});
+
+test("foldInNote — mit/ohne Restmenge", () => {
+  const withRemainder = foldInNote(planRow({ targetPortions: 1958, woCookedPortions: 0 }));
+  assert.match(withRemainder, /WO \*39-101\*/);
+  assert.match(withRemainder, /1\.958 davon noch offen/);
+  const noRemainder = foldInNote(planRow({ targetPortions: 1000, woCookedPortions: 1200 }));
+  assert.doesNotMatch(noRemainder, /davon noch offen/);
+  assert.match(noRemainder, /WO \*39-101\*/);
+});
+
+test("buildSubRecipeUsageIndex — gruppiert case/whitespace-normalisiert über alle Zeilen der Woche", () => {
+  const index = buildSubRecipeUsageIndex([
+    planRow({ recipeCode: "FV4064A", subRecipe: " Mash " }),
+    planRow({ workOrder: "39-200", recipeCode: "FV5000B", subRecipe: "mash" }),
+    planRow({ workOrder: "39-201", recipeCode: "FV4064A", subRecipe: "mash" }), // dedup: gleiches (Sub, Meal)
+    planRow({ workOrder: "39-300", recipeCode: "", subRecipe: "Ohne Code" }),   // fehlender recipeCode -> skip
+    planRow({ workOrder: "39-301", recipeCode: "FV9000A", subRecipe: "" }),     // fehlender Sub-Name -> skip
+  ]);
+  const byMeal = index.get("mash");
+  assert.equal(byMeal.size, 2);
+  assert.deepEqual([...byMeal.keys()].sort(), ["4064", "5000"]);
+});
+
+test("redistributionCandidates — andere Meals ohne das eigene", () => {
+  const index = buildSubRecipeUsageIndex([
+    planRow({ recipeCode: "FV4064A", subRecipe: "Mash" }),
+    planRow({ workOrder: "39-200", recipeCode: "FV5000B", recipeName: "Other Meal", subRecipe: "mash" }),
+  ]);
+  const candidates = redistributionCandidates(index, "Mash", "FV4064A");
+  assert.deepEqual(candidates, [{ recipeCode: "FV5000B", recipeName: "Other Meal" }]);
+  assert.deepEqual(redistributionCandidates(index, "Mash", "FV5000B").map(c => c.recipeCode), ["FV4064A"]);
+  assert.deepEqual(redistributionCandidates(buildSubRecipeUsageIndex([planRow()]), "Mash", "FV4064A"), [], "nur eigenes Meal -> keine Kandidaten");
+  assert.deepEqual(redistributionCandidates(index, "Unbekannt", "FV4064A"), []);
+});
+
+test("detectDoneReweigh — Baseline-Wachstum ab MIN_SUB_SHORTFALL, Schrumpfen nie ein Event", () => {
+  assert.deepEqual(detectDoneReweigh(undefined, 100), { isEvent: false, delta: 0 }, "erste Beobachtung -> nur merken");
+  assert.deepEqual(detectDoneReweigh({ avail: 100 }, 135), { isEvent: true, delta: 35 });
+  assert.deepEqual(detectDoneReweigh({ avail: 100 }, 120), { isEvent: false, delta: 20 });
+  assert.deepEqual(detectDoneReweigh({ avail: 100 }, 80), { isEvent: false, delta: -20 });
+});
+
+test("classify (via computeRtiBackfills) — derivedAvail: Portionen-Äquivalent aus (platingHoldingKg+weighedKg)/gramPerMeal", () => {
+  const meals = [{
+    mealCode: "FV5001A", mealName: "Test", plannedTarget: 2000, actuals: 1000, headerRow: 3,
+    subRecipes: [sub({
+      workOrder: "38-700", subRecipeName: "Sauce", status: "done",
+      platingHoldingKg: 5, weighedKg: 5, gramPerMeal: 100,
+      minimumNeed: -900, backfillMeals: -1000, shortagePct: -30,
+    })],
+  }];
+  const [r] = computeRtiBackfills(meals);
+  assert.equal(r.enteredSubs.length, 1);
+  assert.equal(r.enteredSubs[0].derivedAvail, 100);
+});
+
+test("Slack-Format — subNeed: optionale Fold-in-Empfehlung doppelt eingerückt", () => {
+  const s = { subRecipeName: "Mash", minimumNeed: 500, bufferedNeed: 600, basis: "sheet" };
+  assert.equal(subNeed(s), subNeed(s, undefined), "ohne foldInText unverändert");
+  const withNote = subNeed(s, "↳ kann in WO *39-101* eingearbeitet werden (läuft heute noch)");
+  const lines = withNote.split("\n");
+  assert.equal(lines.length, 2);
+  assert.ok(lines[1].startsWith(IND + IND + "↳"), "zweite Zeile doppelt eingerückt");
 });
