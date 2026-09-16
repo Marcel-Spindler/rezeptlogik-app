@@ -299,50 +299,30 @@ async function fetchTotalOverviewRows(sheets) {
 // Browser-Detailansicht füllen). 1:1 halten mit der Spalten-Erkennungslogik
 // (Header per Namen suchen, nicht per festem Index — das Sheet hat schon
 // mehrfach Spalten verschoben, siehe Kommentar in parseProductionPlan.ts).
+// Live-Probe (2026-09-16, KW39) zeigte: die Spalten-NAMEN-Suche von
+// scripts/read-production-plan.ts (Header per Text wie "Work Order"/"Recipe
+// Name" suchen) griff auf diesem Tab nicht — die echte Kopfzeile hat andere
+// Bezeichner. transparency.parseTotalOverview (transparencyLite.js) liest
+// denselben Tab aber schon zuverlässig über FESTE Spalten-Indizes (verifiziert
+// per computeTransparencyProducibility, das damit produktiv läuft) — hier
+// dieselben geparsten Zeilen wiederverwenden statt eine zweite, abweichende
+// Spalten-Erkennung zu pflegen. Nur die Feldnamen auf das mappen, was
+// buildMealProgress unten braucht.
 function parseWoOverviewRows(rows) {
-  let headerIdx = -1;
-  for (let i = 0; i < Math.min(rows.length, 5); i++) {
-    const r = (rows[i] || []).map(c => String(c ?? "").trim().toLowerCase());
-    const hasRecipe = r.some(c => c === "recipe" || c.includes("recipe name"));
-    if (r.some(c => c.includes("work order")) && hasRecipe) { headerIdx = i; break; }
-  }
-  if (headerIdx < 0) return [];
-
-  const header = (rows[headerIdx] || []).map(c => String(c ?? "").trim().toLowerCase());
-  const idx = {
-    day: header.findIndex(c => c.includes("kitchen day") || c.includes("planned kitchen")),
-    wo: header.findIndex(c => c === "work order" || c.includes("work order number")),
-    recipe: header.findIndex(c => c === "recipe" || c.includes("recipe name")),
-    sub: header.findIndex(c => c.includes("sub recipe")),
-    meals: header.findIndex(c => c.includes("planned meals")),
-    staging: header.findIndex(c => c.includes("staging") && c.includes("kg")),
-    kitchen: header.findIndex(c => c.includes("kitchen") && c.includes("kg")),
-    post: header.findIndex(c => c.includes("post") && c.includes("kg")),
-  };
-
-  const num = v => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return Number.isFinite(n) ? n : 0; };
-  const entries = [];
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row?.length) continue;
-    const woCell = idx.wo >= 0 ? String(row[idx.wo] ?? "").trim() : "";
-    if (!woCell || !/^\d{2}-\d{1,4}$/.test(woCell)) continue;
-
-    const fullRecipe = idx.recipe >= 0 ? String(row[idx.recipe] ?? "").trim() : "";
-    const codeMatch = /^([A-Z]{1,3}\d{3,5}[A-Z0-9]*)/.exec(fullRecipe);
-    entries.push({
-      workOrder: woCell,
-      recipeCode: codeMatch ? codeMatch[1] : "",
-      recipeName: fullRecipe,
-      subRecipe: idx.sub >= 0 ? String(row[idx.sub] ?? "").trim() : "",
-      plannedMeals: idx.meals >= 0 ? num(row[idx.meals]) : 0,
-      stagingKg: idx.staging >= 0 ? num(row[idx.staging]) : 0,
-      kitchenKg: idx.kitchen >= 0 ? num(row[idx.kitchen]) : 0,
-      postKg: idx.post >= 0 ? num(row[idx.post]) : 0,
-      kitchenDay: idx.day >= 0 ? String(row[idx.day] ?? "").trim() : "",
-    });
-  }
-  return entries;
+  const { rows: flowRows } = transparency.parseTotalOverview(rows);
+  return flowRows
+    .filter(r => r.workOrder && r.recipeCode)
+    .map(r => ({
+      workOrder: r.workOrder,
+      recipeCode: r.recipeCode,
+      recipeName: r.recipeName || r.recipeCode,
+      subRecipe: r.subRecipeName,
+      plannedMeals: r.plannedMeals ?? 0,
+      stagingKg: r.plannedStagingKg ?? 0,
+      kitchenKg: r.kitchenKg ?? 0,
+      postKg: r.plannedPostKg ?? 0,
+      kitchenDay: r.plannedKitchenDay,
+    }));
 }
 
 // Produktionsplan-Quelle, Priorität: 1) live GSheet ("Transperancy Total

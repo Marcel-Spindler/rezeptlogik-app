@@ -279,18 +279,22 @@ test("buildMessage: keine kritischen Küchen-WOs -> positive Meldung statt leere
   assert.match(text, /Keine kritischen Küchen-WOs/);
 });
 
-// ── parseWoOverviewRows (Portierung von scripts/read-production-plan.ts) ───
+// ── parseWoOverviewRows (dünner Adapter über transparency.parseTotalOverview
+//    — dieselbe Spalten-Erkennung wie Producibility, siehe Kommentar in
+//    dailyBriefingSlack.js: eine textbasierte Header-Suche griff live auf dem
+//    echten Sheet nicht, die feste Spaltenzuordnung von parseTotalOverview
+//    dagegen schon) ────────────────────────────────────────────────────────
 
 function overviewRows() {
-  const header = ["Run", "Kitchen Day", "Work Order", "Recipe", "Sub Recipe Name", "Planned Meals", "Staging kg", "Kitchen kg", "Post kg"];
-  const row1 = ["1", "2026-09-10 - 1", "38-101", "FV0001A - Testmeal [DE]", "Sauce", "1000", "50", "80", "100"];
-  const badWo = ["1", "2026-09-10 - 1", "not-a-wo", "FV0002A - X [DE]", "Sauce", "500", "10", "10", "10"];
-  return [header, row1, badWo];
+  const header = ["Run", "", "", "Planned Kitchen day", "WO", "Comment", "Recipe", "Sub recipe", "Planned Meals", "Planned Staging kg", "Kitchen kg", "Planned Post kg", "Yield"];
+  const row1 = ["Run1", "", "", "2026-09-10 - 1", "38-101", "", "FV0001A - Testmeal [DE]", "Sauce", "1000", "50", "80", "100", "0.9"];
+  const rowNoWo = ["Run1", "", "", "2026-09-10 - 1", "", "", "FV0002A - X [DE]", "Sauce", "500", "10", "10", "10", "0.9"];
+  return [header, row1, rowNoWo];
 }
 
-test("parseWoOverviewRows: findet den Header per Spaltenname, nicht per festem Index", () => {
+test("parseWoOverviewRows: mapt parseTotalOverview-Zeilen auf die von buildMealProgress gebrauchten Felder", () => {
   const rows = parseWoOverviewRows(overviewRows());
-  assert.equal(rows.length, 1); // die Zeile mit ungültiger WO-Nummer fällt raus
+  assert.equal(rows.length, 1); // die Zeile ohne WO fällt raus (kein recipeCode/workOrder)
   assert.equal(rows[0].workOrder, "38-101");
   assert.equal(rows[0].recipeCode, "FV0001A");
   assert.equal(rows[0].subRecipe, "Sauce");
