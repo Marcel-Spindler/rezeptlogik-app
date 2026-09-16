@@ -160,6 +160,35 @@ async function fetchShortsTrackerRows(): Promise<string[][]> {
   return (valuesRes.data.values ?? []) as string[][];
 }
 
+// ─── Staffing-Plan (Hiring/Headcount-BP-Modell, Google Sheets, Service Account) ──
+// Separates Sheet ("Hiring"-Tab, mit dem Service-Account "PDL fast reader"
+// geteilt): wöchentliches Business-Plan-Kostenmodell mit "Headcount - Required"
+// je Abteilung (u.a. Kitchen, Plating) über alle KWs. Fürs Tagesbriefing wird
+// NUR die Küchen-Zahl der laufenden KW gebraucht (Marcel: Plating wird bewusst
+// separat aus den tatsächlich zu plaitierenden Meals berechnet, nicht aus
+// diesem BP-Modell — siehe dailyBriefingLogic.ts). Gid steht nicht als Tab-
+// Titel fest, deshalb wie bei Production Plan zuerst per Metadaten-Aufruf
+// aufgelöst statt hart codiert.
+const STAFFING_PLAN_SHEET_ID = "1qHOGFAbUmAa4nxqBF9LcAT3trl0inDoupZflQhqb8wU";
+const STAFFING_PLAN_GID = "630874084";
+
+async function fetchStaffingPlanRows(): Promise<string[][]> {
+  const client = await getSheetsClient();
+  const meta = await client.spreadsheets.get({
+    spreadsheetId: STAFFING_PLAN_SHEET_ID,
+    fields: "sheets(properties(title,sheetId))",
+  });
+  const tab = (meta.data.sheets ?? []).find(s => String(s.properties?.sheetId ?? "") === STAFFING_PLAN_GID);
+  if (!tab) throw new Error(`Kein Tab mit gid=${STAFFING_PLAN_GID} im Staffing-Plan-Sheet gefunden`);
+  const title = tab.properties?.title ?? "";
+  const valuesRes = await client.spreadsheets.values.get({
+    spreadsheetId: STAFFING_PLAN_SHEET_ID,
+    range: `'${title.replace(/'/g, "''")}'!A1:BE400`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  return (valuesRes.data.values ?? []) as string[][];
+}
+
 // ─── Transparency Plan (Google Sheets, Service Account) ────────────────────
 // Separates Sheet ("F_VE Transparency Plan"), unabhaengig vom Production-Plan-
 // Sheet oben: Live-Wiegungen (Raw/Pre-/Post-Blast) je Work Order/Subrezept,
@@ -1721,6 +1750,16 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return;
   }
 
+  if (url.pathname === "/staffing-plan" && req.method === "GET") {
+    try {
+      const rows = await fetchStaffingPlanRows();
+      sendJson(res, 200, { ok: true, generatedAt: new Date().toISOString(), rows });
+    } catch (error) {
+      sendJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
+
   // ─── Ingredient Stock (Lagerplatz + MHD für Staging-Dashboard) ──────────────
   // Sucht nach Lagerbestand für eine kommagetrennte Liste von Zutaten-Namen.
   // Jeder Name wird als ILIKE '%name%' gegen T_ITEM_MASTER.DESCRIPTION gesucht.
@@ -1797,13 +1836,13 @@ LIMIT 5000`;
   sendJson(res, 404, {
     ok: false,
     error: "query-not-configured",
-    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /wms-full-inventory, /wms-ingredient-stock, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=..., /shorts-tracker",
+    detail: "Verfuegbar: GET /health, GET /connect, GET /wms-plating, /wms-staging, /wms-debox, /wms-postblast, /wms-sleeving, /wms-inbound, /wms-workorders, /wms-wo-detail, /wms-plating-history, /wms-full-inventory, /wms-ingredient-stock, /redzone-plating-status, /production-plan, /production-plan-weeks, /forecast, /recipe-profil, /transparency-sheet?tab=..., /shorts-tracker, /staffing-plan",
   });
 });
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Snowflake Local Server laeuft auf http://127.0.0.1:${PORT}`);
-  console.log("Endpoints: GET /health, GET /connect, GET /wms-plating?week=YYYY-Www&whId=VF&limit=25000, GET /wms-plating-history?week=YYYY-Www&whId=VF&limit=25000&lookbackDays=28, GET /wms-sleeving?week=YYYY-Www&whId=VF&limit=25000, GET /wms-inbound?week=YYYY-Www&whId=VF&limit=25000, GET /wms-staging?week=YYYY-Www&whId=VF&limit=25000, GET /wms-debox?week=YYYY-Www&whId=VF&limit=25000, GET /wms-postblast?week=YYYY-Www&whId=VF&limit=25000, GET /production-plan?gid=..., GET /production-plan-weeks, GET /forecast?week=YYYY-Www..., GET /recipe-profil, GET /transparency-sheet?tab=planning-check|total-overview|importrange-weights|rtem|forecast|...");
+  console.log("Endpoints: GET /health, GET /connect, GET /wms-plating?week=YYYY-Www&whId=VF&limit=25000, GET /wms-plating-history?week=YYYY-Www&whId=VF&limit=25000&lookbackDays=28, GET /wms-sleeving?week=YYYY-Www&whId=VF&limit=25000, GET /wms-inbound?week=YYYY-Www&whId=VF&limit=25000, GET /wms-staging?week=YYYY-Www&whId=VF&limit=25000, GET /wms-debox?week=YYYY-Www&whId=VF&limit=25000, GET /wms-postblast?week=YYYY-Www&whId=VF&limit=25000, GET /production-plan?gid=..., GET /production-plan-weeks, GET /forecast?week=YYYY-Www..., GET /recipe-profil, GET /transparency-sheet?tab=planning-check|total-overview|importrange-weights|rtem|forecast|..., GET /shorts-tracker, GET /staffing-plan");
 });
 
 server.on("error", (err) => {

@@ -13,6 +13,7 @@ import { parseVolumeOverview, type VolumeOverviewData } from "./parsers/parseVol
 import { parseForecast } from "./parsers/parseForecast";
 import { parseRecipeProfil } from "./parsers/parseRecipeProfil";
 import { parseShortsTracker } from "./parsers/parseShortsTracker";
+import { parseStaffingPlan, type StaffingPlanResult } from "./parsers/parseStaffingPlan";
 
 type ParserFn = (rows: string[][]) => unknown;
 
@@ -514,6 +515,51 @@ export function useShortsTrackerMonitor(): GSheetMonitorState<ShortsTrackerData>
 
     void poll();
     const timer = setInterval(poll, SHORTS_TRACKER_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      setIsPolling(false);
+    };
+  }, [fetchOnce]);
+
+  const forceRefresh = useCallback(async () => {
+    try { await fetchOnce(); }
+    catch (err) { setError((err as Error).message); }
+  }, [fetchOnce]);
+
+  return { data, lastUpdate, changes: [], isPolling, error, forceRefresh };
+}
+
+// Wöchentliches BP-Kostenmodell (siehe parseStaffingPlan.ts) — ändert sich
+// höchstens ein paar Mal pro Woche, deshalb langer Poll wie Recipe Profil.
+const STAFFING_PLAN_POLL_MS = 300_000;
+
+export function useStaffingPlanMonitor(weekLabel: string): GSheetMonitorState<StaffingPlanResult> {
+  const [data, setData] = useState<StaffingPlanResult | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchOnce = useCallback(async (signal?: AbortSignal) => {
+    const res = await fetch(`/api/staffing-plan`, { signal, cache: "no-store" });
+    const body = await res.json().catch(() => null) as { ok?: boolean; error?: string; rows?: string[][] } | null;
+    if (!res.ok || !body?.ok) throw new Error(body?.error || `Staffing-Plan-Server antwortete mit ${res.status}`);
+    setData(parseStaffingPlan(body.rows ?? [], weekLabel));
+    setLastUpdate(Date.now());
+    setError(null);
+  }, [weekLabel]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setIsPolling(true);
+
+    async function poll() {
+      try { await fetchOnce(controller.signal); }
+      catch (err) { if ((err as Error).name !== "AbortError") setError((err as Error).message); }
+    }
+
+    void poll();
+    const timer = setInterval(poll, STAFFING_PLAN_POLL_MS);
     return () => {
       controller.abort();
       clearInterval(timer);

@@ -4066,6 +4066,16 @@ exports.generatePdf = onGuardedRequest(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Tagesbriefing 15:00 — Slack-Post (MVP: Backfill + Küchen-Besetzung). Eigene
+// Datei, siehe dailyBriefingSlack.js. Braucht DAILY_BRIEFING_SLACK_WEBHOOK_URL
+// — Setup: TAGESBRIEFING_SLACK_SETUP.md (Repo-Wurzel).
+// ═══════════════════════════════════════════════════════════════════════════════
+{
+  const dailyBriefing = require("./dailyBriefingSlack");
+  exports.dailyBriefingSlack = dailyBriefing.dailyBriefingSlack;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Shorts Tracker — OOS-Meldung aus dem Staging-Dashboard ins GSheet schreiben.
 // POST /api/shorts-tracker-append  { woNumber, stagingDate, ingredient, sku, shortKg, reason }
 // ═══════════════════════════════════════════════════════════════════════════════

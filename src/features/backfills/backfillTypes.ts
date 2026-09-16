@@ -139,6 +139,7 @@ export interface BackfillFeasibilityIngredient {
   notInWms: boolean;         // SKU taucht im Vollbestand gar nicht auf (ID-/Namens-Mismatch möglich)
   maxPortions: number;       // floor(availableQty / grossPerPortion)
   isBottleneck: boolean;
+  nearestExpiry: string | null; // frühestes MHD unter den verfügbaren (nicht abgelaufenen) Chargen
 }
 
 export interface BackfillFeasibility {

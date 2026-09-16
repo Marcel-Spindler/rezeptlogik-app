@@ -46,6 +46,7 @@ const PlatingDayView      = lazyWithRetry(() => import("../features/plating-plan
 const KitchenPlanView     = lazyWithRetry(() => import("../features/kitchen-plan/KitchenPlanView").then(m => ({ default: m.KitchenPlanView })), "kitchen-plan");
 const RedzoneLiveView     = lazyWithRetry(() => import("../features/redzone-live/RedzoneLiveView").then(m => ({ default: m.RedzoneLiveView })), "redzone-live");
 const PlatingDashboardView = lazyWithRetry(() => import("../features/plating-dashboard/PlatingDashboardView").then(m => ({ default: m.PlatingDashboardView })), "plating-dashboard");
+const DailyBriefingView   = lazyWithRetry(() => import("../features/daily-briefing/DailyBriefingView").then(m => ({ default: m.DailyBriefingView })), "daily-briefing");
 
 function ViewLoading() {
   return <div className="card p-8 text-center text-slate-400 text-sm">Lade Ansicht …</div>;
@@ -176,10 +177,13 @@ function MainPaneSwitch({ view }: { view: AppView }) {
 
     case "plating-dashboard":
       return <PlatingDashboardView data={data} />;
+
+    case "daily-briefing":
+      return <DailyBriefingView data={data} />;
   }
 }
 
-const BOT_VIEWS = new Set<AppView>(["blast-chiller", "allergen-plating", "plating-line-bot"]);
+const BOT_VIEWS = new Set<AppView>(["blast-chiller", "allergen-plating", "plating-line-bot", "daily-briefing"]);
 
 function FullApp() {
   const state = useAppState();

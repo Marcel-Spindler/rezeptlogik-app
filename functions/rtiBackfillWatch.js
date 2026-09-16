@@ -929,11 +929,15 @@ exports.rtiMarkDone = onRequest({ region: REGION, timeoutSeconds: 30 }, async (r
   }
 });
 
-// für lokale Tests (nicht als Function deployen — siehe index.js-Einbindung)
+// für lokale Tests (nicht als Function deployen — siehe index.js-Einbindung).
+// sheetsClient/RTI_SHEET_ID/RTI_SHEET_TAB zusätzlich exportiert, damit
+// dailyBriefingSlack.js dieselbe RTI-Rechenlogik wiederverwenden kann, statt
+// sie ein zweites Mal zu pflegen (siehe dort).
 module.exports._internal = {
   parseRti, computeRtiBackfills, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow, fetchLinePlaitingFirstRun, deriveHeaderTargets,
   mealBlock, subNeed, itemLine, RULE, IND, withLatestSubData,
-  workOrderWeek, currentWorkOrderWeek,
+  workOrderWeek, currentWorkOrderWeek, sheetsClient,
+  RTI_SHEET_ID, RTI_SHEET_TAB,
 };

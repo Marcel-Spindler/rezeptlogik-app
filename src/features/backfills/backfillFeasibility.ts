@@ -29,6 +29,11 @@ import type {
 interface InvEntry {
   availableQty: number;
   expiredQty: number;
+  // Frühestes MHD unter den NOCH VERFÜGBAREN (nicht abgelaufenen) Chargen —
+  // "diese Zutat ist zwar da, aber nur noch bis X haltbar" ist für die Küche
+  // etwas anderes als "beliebig lange verfügbar". Marcel: bei gefährdeten WOs
+  // soll das Briefing das MHD explizit nennen, nicht nur die Menge.
+  soonestExpiry: string | null;
 }
 
 // SKU → verfügbare / abgelaufene Menge aus dem WMS-Vollbestand. Nur Status "A"
@@ -44,14 +49,21 @@ function buildInventoryIndex(rows: FullInventoryRow[]): Map<string, InvEntry> {
     if (!key) continue;
     let e = map.get(key);
     if (!e) {
-      e = { availableQty: 0, expiredQty: 0 };
+      e = { availableQty: 0, expiredQty: 0, soonestExpiry: null };
       map.set(key, e);
     }
     const qty = row.actualQty ?? 0;
     if (qty <= 0 || row.status !== "A") continue;
-    const expired = row.expirationDate != null && new Date(row.expirationDate).getTime() < now;
-    if (expired) e.expiredQty += qty;
-    else e.availableQty += qty;
+    const expiryTime = row.expirationDate != null ? new Date(row.expirationDate).getTime() : NaN;
+    const expired = !Number.isNaN(expiryTime) && expiryTime < now;
+    if (expired) {
+      e.expiredQty += qty;
+    } else {
+      e.availableQty += qty;
+      if (!Number.isNaN(expiryTime) && (e.soonestExpiry == null || expiryTime < new Date(e.soonestExpiry).getTime())) {
+        e.soonestExpiry = row.expirationDate;
+      }
+    }
   }
   return map;
 }
@@ -241,6 +253,7 @@ function computeOne(
       notInWms: !inv,
       maxPortions: Math.floor(availableQty / h.grossQty),
       isBottleneck: false,
+      nearestExpiry: inv?.soonestExpiry ?? null,
     });
   }
 
