@@ -31,23 +31,75 @@ function realisticRows() {
   return [header, kitchen, plating];
 }
 
-test("parseStaffingPlan reads the Kitchen row for the requested week, not Plating", () => {
+test("parseStaffingPlan reads Kitchen AND Plating for the requested week, not mixed up", () => {
   const result = parseStaffingPlan(realisticRows(), "2026-W39");
-  assert.deepEqual(result, { kitchenHeadcount: 36, weekLabel: "2026-W39" });
+  assert.deepEqual(result, { kitchenHeadcount: 36, platingHeadcount: 44, weekLabel: "2026-W39" });
 });
 
-test("parseStaffingPlan returns null when the week isn't in the sheet", () => {
+test("parseStaffingPlan returns null for both when the week isn't in the sheet", () => {
   const result = parseStaffingPlan(realisticRows(), "2030-W01");
   assert.equal(result.kitchenHeadcount, null);
+  assert.equal(result.platingHeadcount, null);
 });
 
 test("buildMessage reports 'kein offener Backfill-Bedarf' when nothing is open", () => {
-  const text = buildMessage({ now: REF_NOW, openMeals: [], kitchenHeadcount: 36, weekLabel: "2026-W38" });
+  const text = buildMessage({
+    now: REF_NOW, openMeals: [], platingProgress: [], rtiError: false,
+    kitchenHeadcount: 36, platingHeadcount: 44, weekLabel: "2026-W38",
+  });
   assert.match(text, /Kein offener Backfill-Bedarf/);
   assert.match(text, /36 MA/);
+  assert.match(text, /44 MA/);
 });
 
 test("buildMessage reports the Staffing-Plan-unreachable state honestly instead of a fake number", () => {
-  const text = buildMessage({ now: REF_NOW, openMeals: [], kitchenHeadcount: null, weekLabel: "2026-W38" });
-  assert.match(text, /Staffing-Plan nicht erreichbar/);
+  const text = buildMessage({
+    now: REF_NOW, openMeals: [], platingProgress: [], rtiError: false,
+    kitchenHeadcount: null, platingHeadcount: null, weekLabel: "2026-W38",
+  });
+  assert.match(text, /Besetzung Küche: _Staffing-Plan nicht erreichbar_/);
+  assert.match(text, /Besetzung Plating: _Staffing-Plan nicht erreichbar_/);
+});
+
+test("buildMessage reports the RTI-unreachable state honestly instead of a fake 'alles gut'", () => {
+  const text = buildMessage({
+    now: REF_NOW, openMeals: [], platingProgress: [], rtiError: true,
+    kitchenHeadcount: 36, platingHeadcount: 44, weekLabel: "2026-W38",
+  });
+  assert.match(text, /RTI-Sheet gerade nicht erreichbar/);
+  assert.doesNotMatch(text, /Kein offener Backfill-Bedarf/);
+});
+
+test("buildMessage shows plating progress, sorted worst-first, done count excludes the open ones", () => {
+  const platingProgress = [
+    { mealCode: "FV1111A", mealName: "Fertig", plannedTarget: 1000, actuals: 1000, pct: 100, targetEstimated: false },
+    { mealCode: "FV2222A", mealName: "Halb fertig", plannedTarget: 1000, actuals: 400, pct: 40, targetEstimated: false },
+  ];
+  const text = buildMessage({
+    now: REF_NOW, openMeals: [], platingProgress, rtiError: false,
+    kitchenHeadcount: 36, platingHeadcount: 44, weekLabel: "2026-W38",
+  });
+  assert.match(text, /1 von 2 Meals ≥95 % fertig/);
+  assert.match(text, /FV2222A/);
+  assert.match(text, /40 %/);
+  assert.doesNotMatch(text, /FV1111A/); // fertige Meals werden nicht einzeln aufgelistet
+});
+
+test("buildMessage caps the open-plating list and notes the remainder", () => {
+  const platingProgress = Array.from({ length: 10 }, (_, i) => ({
+    mealCode: `FV${1000 + i}A`, mealName: `Meal ${i}`, plannedTarget: 1000, actuals: 100, pct: 10, targetEstimated: false,
+  }));
+  const text = buildMessage({
+    now: REF_NOW, openMeals: [], platingProgress, rtiError: false,
+    kitchenHeadcount: 36, platingHeadcount: 44, weekLabel: "2026-W38",
+  });
+  assert.match(text, /\+2 weitere < 95 %/);
+});
+
+test("buildMessage is honest when no plating weighings exist yet today", () => {
+  const text = buildMessage({
+    now: REF_NOW, openMeals: [], platingProgress: [], rtiError: false,
+    kitchenHeadcount: 36, platingHeadcount: 44, weekLabel: "2026-W38",
+  });
+  assert.match(text, /noch keine Wiegedaten für heute/);
 });

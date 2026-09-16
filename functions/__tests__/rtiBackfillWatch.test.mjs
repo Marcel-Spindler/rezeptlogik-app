@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
-  computeRtiBackfills: computeRtiBackfillsAt, detectWeek, codeDigits,
+  computeRtiBackfills: computeRtiBackfillsAt, summarizeRtiProgress, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow,
   mealBlock, subNeed, itemLine, IND, RULE,
@@ -100,6 +100,58 @@ test("computeRtiBackfills — Kopf leer, aber noch NICHTS gewogen → keine Subs
   }];
   const tgt = new Map([["0780", { plannedTarget: 6918, actuals: 5539, source: "x" }]]);
   assert.equal(computeRtiBackfills(meals, tgt).length, 0);
+});
+
+test("summarizeRtiProgress — liefert Fortschritt für ALLE Meals, nicht nur die mit Backfill-Bedarf", () => {
+  const meals = [
+    {
+      mealCode: "FV4048A", mealName: "Creamy Leek", plannedTarget: 3763, actuals: 2848, headerRow: 5,
+      subRecipes: [sub({ workOrder: "38-161", subRecipeName: "Creamy Leek", weighedKg: 97.31 })],
+    },
+    {
+      // Komplett fertig, hätte in computeRtiBackfills gar keinen Eintrag (gap < MIN_SUB_SHORTFALL).
+      mealCode: "FV9999A", mealName: "Fertig", plannedTarget: 1000, actuals: 1000, headerRow: 9,
+      subRecipes: [sub({ workOrder: "38-900", subRecipeName: "Alles", weighedKg: 50 })],
+    },
+  ];
+  const out = summarizeRtiProgress(meals);
+  assert.equal(out.length, 2);
+  // aufsteigend sortiert (schlechtester Fortschritt zuerst)
+  assert.equal(out[0].mealCode, "FV4048A");
+  assert.ok(Math.abs(out[0].pct - (2848 / 3763) * 100) < 0.01);
+  assert.equal(out[1].mealCode, "FV9999A");
+  assert.equal(out[1].pct, 100);
+});
+
+test("summarizeRtiProgress — mehrere Blöcke desselben Codes: der mit dem größten Planned Target gewinnt", () => {
+  const meals = [
+    { mealCode: "FV1234A", mealName: "X", plannedTarget: 0, actuals: 0, headerRow: 1,
+      subRecipes: [sub({ workOrder: "38-1", subRecipeName: "A", weighedKg: 10 })] },
+    { mealCode: "FV1234A", mealName: "X", plannedTarget: 2000, actuals: 500, headerRow: 20,
+      subRecipes: [sub({ workOrder: "38-1", subRecipeName: "A", weighedKg: 10 })] },
+  ];
+  const [r] = summarizeRtiProgress(meals);
+  assert.equal(r.plannedTarget, 2000);
+  assert.equal(r.actuals, 500);
+});
+
+test("summarizeRtiProgress — ohne belastbares Planned Target (und ohne externalTargets) wird das Meal ausgelassen", () => {
+  const meals = [{
+    mealCode: "FV0001A", mealName: "Unbekannt", plannedTarget: 0, actuals: 0, headerRow: 1,
+    subRecipes: [sub({ workOrder: "38-1", subRecipeName: "A", weighedKg: 0 })],
+  }];
+  assert.equal(summarizeRtiProgress(meals).length, 0);
+});
+
+test("summarizeRtiProgress — externalTargets füllt eine fehlende Kopfzahl, sobald schon gewogen wird", () => {
+  const meals = [{
+    mealCode: "FV0780A", mealName: "Penne", plannedTarget: 0, actuals: 0, headerRow: 12,
+    subRecipes: [sub({ subRecipeName: "Bolo", weighedKg: 40 })],
+  }];
+  const tgt = new Map([["0780", { plannedTarget: 6918, actuals: 5539, source: "Forecast + Redzone" }]]);
+  const [r] = summarizeRtiProgress(meals, tgt);
+  assert.equal(r.targetEstimated, true);
+  assert.ok(Math.abs(r.pct - (5539 / 6918) * 100) < 0.01);
 });
 
 test("usableExternalTarget — Plausibilität", () => {

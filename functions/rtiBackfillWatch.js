@@ -324,6 +324,47 @@ function computeRtiBackfills(meals, externalTargets, now) {
   return out;
 }
 
+// ── Plating-Fortschritt für ALLE Meals (nicht nur die mit Backfill-Bedarf) ──
+// Fürs Tagesbriefing ("was ist schon fertig plaitiert"): dieselbe Kopfzahl-
+// Auswahl (bestByKey) und Schätz-Fallback (externalTargets) wie
+// computeRtiBackfills, aber OHNE die Gap-Filterung — jedes Meal mit einer
+// brauchbaren Planned/Actuals-Zahl liefert seinen Fortschritt, nicht nur die
+// im Rückstand. 1:1-Zwilling von computeRtiBackfills halten, wenn sich dort
+// die Kopfzahl-Logik ändert.
+function summarizeRtiProgress(meals, externalTargets) {
+  const bestByKey = new Map();
+  for (const meal of meals) {
+    const key = String(meal.mealCode).replace(/\D/g, "");
+    const cur = bestByKey.get(key);
+    if (!cur || meal.plannedTarget > cur.plannedTarget) bestByKey.set(key, meal);
+  }
+  const out = [];
+  for (const meal of bestByKey.values()) {
+    const realSubs = meal.subRecipes.filter(s => !s.isBackfillCandidate);
+    if (realSubs.length === 0) continue;
+    const someWeighed = realSubs.some(s => num(s.weighedKg) > 0);
+
+    let plannedTarget = num(meal.plannedTarget);
+    let actuals = num(meal.actuals);
+    let targetEstimated = false;
+    if ((plannedTarget <= 0 || actuals <= 0) && someWeighed) {
+      const ext = externalTargets && externalTargets.get(codeDigits(meal.mealCode));
+      if (usableExternalTarget(ext)) {
+        if (plannedTarget <= 0) plannedTarget = ext.plannedTarget;
+        if (actuals <= 0) actuals = ext.actuals;
+        targetEstimated = true;
+      }
+    }
+    if (plannedTarget <= 0) continue; // keine belastbare Zielgröße -> kein Fortschritt ausweisbar
+
+    const clampedActuals = Math.max(0, actuals);
+    const pct = Math.max(0, Math.min(100, (clampedActuals / plannedTarget) * 100));
+    out.push({ mealCode: meal.mealCode, mealName: meal.mealName, plannedTarget, actuals: clampedActuals, pct, targetEstimated });
+  }
+  out.sort((a, b) => a.pct - b.pct);
+  return out;
+}
+
 // ── Ersatz-Kopfzahlen (Planned Target / Actuals aus App-Daten) ──────────────
 // Ziel  = Forecast der KW (apps/rezeptlogik/weekRecipes, totalVerdenVolume) —
 //         dieselbe Quelle wie das „Wochen-Kontingent" in der Redzone-Live-View.
@@ -934,7 +975,7 @@ exports.rtiMarkDone = onRequest({ region: REGION, timeoutSeconds: 30 }, async (r
 // dailyBriefingSlack.js dieselbe RTI-Rechenlogik wiederverwenden kann, statt
 // sie ein zweites Mal zu pflegen (siehe dort).
 module.exports._internal = {
-  parseRti, computeRtiBackfills, detectWeek, codeDigits,
+  parseRti, computeRtiBackfills, summarizeRtiProgress, detectWeek, codeDigits,
   usableExternalTarget, lookbackHoursSinceMonday, withinPlatingHours, fillRtiHeader,
   parseCsv, parseWholeNumber, plannedActualFromRow, fetchLinePlaitingFirstRun, deriveHeaderTargets,
   mealBlock, subNeed, itemLine, RULE, IND, withLatestSubData,
