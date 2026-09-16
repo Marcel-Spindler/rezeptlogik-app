@@ -260,6 +260,7 @@ export function KetDruckplanView() {
   const [selectedCookDay, setSelectedCookDay] = useState<string | null>(null);
   const [driveStatus, setDriveStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [driveBusy, setDriveBusy] = useState(false);
+  const [allDaysProgress, setAllDaysProgress] = useState<{ done: number; total: number } | null>(null);
   const [checkedWos, setCheckedWos] = useState<Set<string>>(new Set());
 
   const toggleWo = useCallback((wo: string) => {
@@ -295,6 +296,28 @@ export function KetDruckplanView() {
       setGroups(newGroups);
       setFileName(file.name);
       setSelectedCookDay(newGroups[0]?.cookDate ?? null);
+      // Alle Tage sofort in GDrive sichern — läuft im Hintergrund
+      const errors: string[] = [];
+      setDriveStatus(null);
+      setAllDaysProgress({ done: 0, total: newGroups.length });
+      (async () => {
+        for (let i = 0; i < newGroups.length; i++) {
+          const g = newGroups[i];
+          try {
+            const [y, m, d] = g.cookDate.split("-");
+            await saveToDrive(g, `KET-Druckplan-Kochtag-${d}.${m}.${y}.html`, new Set());
+          } catch {
+            errors.push(fmtDateLong(g.cookDate));
+          }
+          setAllDaysProgress({ done: i + 1, total: newGroups.length });
+        }
+        setAllDaysProgress(null);
+        setDriveStatus(
+          errors.length
+            ? { ok: false, msg: `GDrive: Fehler bei ${errors.join(", ")}` }
+            : { ok: true, msg: `GDrive: alle ${newGroups.length} Tage gespeichert.` },
+        );
+      })();
     };
     reader.readAsText(file, "utf-8");
   }, []);
@@ -331,6 +354,32 @@ export function KetDruckplanView() {
       setDriveBusy(false);
     }
   }, [selectedGroup, checkedWos]);
+
+  // Alle Tage auf einmal in GDrive — wird nach CSV-Upload angeboten
+  const handleAllDaysDriveSave = useCallback(async () => {
+    if (!groups.length) return;
+    setDriveBusy(true);
+    setDriveStatus(null);
+    setAllDaysProgress({ done: 0, total: groups.length });
+    const errors: string[] = [];
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      try {
+        const [y, m, d] = g.cookDate.split("-");
+        await saveToDrive(g, `KET-Druckplan-Kochtag-${d}.${m}.${y}.html`, new Set());
+      } catch (err) {
+        errors.push(fmtDateLong(g.cookDate));
+      }
+      setAllDaysProgress({ done: i + 1, total: groups.length });
+    }
+    setDriveBusy(false);
+    setAllDaysProgress(null);
+    setDriveStatus(
+      errors.length
+        ? { ok: false, msg: `Fehler bei: ${errors.join(", ")}` }
+        : { ok: true, msg: `Alle ${groups.length} Tage in GDrive gespeichert.` },
+    );
+  }, [groups]);
 
   return (
     <div>
@@ -374,6 +423,16 @@ export function KetDruckplanView() {
               </span>
             )}
 
+            <button
+              onClick={handleAllDaysDriveSave}
+              disabled={driveBusy || !!allDaysProgress}
+              title="Alle Tage aus der CSV in GDrive aktualisieren"
+              className="px-3 py-1.5 rounded-lg bg-sky-100 text-sky-700 text-xs font-medium hover:bg-sky-200 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              <span>{allDaysProgress ? "⟳" : "☁"}</span>
+              <span>Alle {groups.length} Tage → GDrive</span>
+            </button>
+
             <div className="ml-auto flex items-center gap-2">
               <button
                 onClick={handleDriveSave}
@@ -405,6 +464,22 @@ export function KetDruckplanView() {
           </>
         )}
       </div>
+
+      {/* GDrive Upload-Fortschritt */}
+      {allDaysProgress && (
+        <div className="mb-4 px-4 py-2 rounded-lg bg-sky-50 text-sky-700 text-sm font-medium print:hidden flex items-center gap-3">
+          <span className="animate-spin inline-block">⟳</span>
+          <span>
+            GDrive Upload: {allDaysProgress.done} / {allDaysProgress.total} Tage …
+          </span>
+          <div className="flex-1 bg-sky-200 rounded-full h-1.5">
+            <div
+              className="bg-sky-600 h-1.5 rounded-full transition-all"
+              style={{ width: `${Math.round((allDaysProgress.done / allDaysProgress.total) * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* GDrive Feedback */}
       {driveStatus && (
