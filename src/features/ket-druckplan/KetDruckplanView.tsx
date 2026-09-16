@@ -218,12 +218,16 @@ function generatePrintHtml(group: DateGroup, checkedWos: Set<string>): string {
   .status { width: 160px; }
   .badge { display: inline-block; padding: 1px 6px; border-radius: 3px;
     font-size: 10px; font-weight: 700; }
+  .footer-note { margin-top: 24px; padding: 10px 14px; background: #fef9c3;
+    border: 1px solid #fde047; border-radius: 6px; font-weight: 700;
+    font-size: 13px; color: #713f12; }
   @media print { body { margin: 8mm; } }
 </style>
 </head><body>
 <h1>Stagientag: ${fmtDateLong(group.stagDate)}</h1>
 <div class="sub">Kochtag: ${fmtDateLong(group.cookDate)} · ${group.totalRows} offene WOs · Staged ausgeblendet</div>
 ${shiftsHtml}
+<div class="footer-note">&#9888; Wenn alle abgearbeitet &mdash; bitte melden, um den Fortschritt zu dokumentieren!</div>
 </body></html>`;
 }
 
@@ -521,6 +525,11 @@ export function KetDruckplanView() {
             <span className="ml-2 text-sm text-slate-400">
               {selectedGroup.totalRows} offene WOs · Staged ausgeblendet
             </span>
+          </div>
+
+          {/* Abschluss-Hinweis — auf jedem Zettel */}
+          <div className="mb-5 px-4 py-3 rounded-lg bg-yellow-50 border border-yellow-300 text-yellow-900 font-bold text-sm print:block">
+            ⚠ Wenn alle abgearbeitet — bitte melden, um den Fortschritt zu dokumentieren!
           </div>
 
           {/* Shifts */}
