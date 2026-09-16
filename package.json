@@ -39,6 +39,8 @@
     "import:recipe-profiles": "tsx scripts/import-recipe-profiles.ts",
     "import:weight-tracking": "tsx scripts/import-weight-tracking.ts",
     "wms:server": "tsx scripts/wms-local-server.ts",
+    "rti:relay": "tsx scripts/rti-redzone-relay.ts",
+    "daily-briefing:relay": "tsx scripts/daily-briefing-equipment-feasibility-relay.ts",
     "wms:sync-cache": "tsx scripts/sync-wms-cache.ts",
     "rack:bilanz": "tsx scripts/rack-bilanz-heute.ts",
     "dump:kpl": "tsx scripts/dump-gsheet.ts 13lZfV1HAcVuOAxd9-xHCEsxO0wHmPnJNl9NuoURpM6U",
