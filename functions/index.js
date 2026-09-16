@@ -2596,6 +2596,8 @@ exports.refreshWmsCache = onSchedule("every 60 minutes", async () => {
       { cacheKey: "wms-staging-latest", sql: WMS_STAGING_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsPlatingRow },
       { cacheKey: "wms-debox-latest", sql: WMS_DEBOX_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsPlatingRow },
       { cacheKey: "wms-postblast-latest", sql: WMS_POSTBLAST_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsPlatingRow },
+      { cacheKey: "wms-plating-history-latest", sql: WMS_PLATING_HISTORY_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsSleevingRow },
+      { cacheKey: "wms-plating-holding-latest", sql: WMS_PLATING_HOLDING_SQL, binds: ["VF", rangeStart, rangeEnd, 25000], mapper: mapWmsPlatingRow },
     ];
 
     const workorders = buildWorkorderQueryForWeek("VF", baseWeek, 25000);
@@ -2716,7 +2718,14 @@ exports.wmsWoDetail = onGuardedRequest({ region: "europe-west3", timeoutSeconds:
       if (cacheDoc.exists) {
         const cached = cacheDoc.data() || {};
         const cachedRows = Array.isArray(cached.rows) ? cached.rows : [];
-        const rows = cachedRows.map(mapCachedWorkorderRowToWoDetailRow).slice(0, params.limit);
+        // Apply woFilter so the caller gets only the requested WO, not all WOs.
+        const filteredRows = woFilter
+          ? cachedRows.filter(r => {
+              const woNum = r.woNumber ?? r.wo_number ?? "";
+              return woFilter.endsWith("%") ? woNum.startsWith(woFilter.slice(0, -1)) : woNum === woFilter;
+            })
+          : cachedRows;
+        const rows = filteredRows.map(mapCachedWorkorderRowToWoDetailRow).slice(0, params.limit);
         return res.json({
           ok: true,
           whId: params.whId,
@@ -4100,8 +4109,14 @@ exports.ketDruckplanSave = onGuardedRequest(
     const { stagingDay, cookDay, html, fileName } = req.body || {};
     if (!stagingDay || !html) { res.status(400).json({ error: "stagingDay und html erforderlich" }); return; }
     try {
+      // GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 ist in functions/.env (base64-kodiertes SA-JSON)
+      const rawB64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64;
+      const credentials = rawB64
+        ? JSON.parse(Buffer.from(rawB64, "base64").toString("utf8"))
+        : undefined;
+      if (!credentials) { res.status(500).json({ ok: false, error: "SA-Credentials nicht konfiguriert (GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 fehlt)" }); return; }
       const auth = new google.auth.GoogleAuth({
-        credentials: JSON.parse(process.env.GOOGLE_SA_JSON || "{}"),
+        credentials,
         scopes: ["https://www.googleapis.com/auth/drive"],
       });
       const drive = google.drive({ version: "v3", auth });
