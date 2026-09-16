@@ -48,6 +48,9 @@
       { "source": "/api/local-db/generate-pdf", "function": "generatePdf", "region": "europe-west3" },
       { "source": "/api/local-db/ket-druckplan-save", "function": "ketDruckplanSave", "region": "europe-west3" },
       { "source": "/api/shorts-tracker-append", "function": "shortsTrackerAppend", "region": "europe-west3" },
+      { "source": "/api/transparency-sheet", "function": "transparencySheet", "region": "europe-west3" },
+      { "source": "/api/wms-full-inventory", "function": "wmsFullInventory", "region": "europe-west3" },
+      { "source": "/api/shorts-tracker", "function": "shortsTracker", "region": "europe-west3" },
       { "source": "**", "destination": "/index.html" }
     ]
   }

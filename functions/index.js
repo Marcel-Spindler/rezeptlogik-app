@@ -4205,3 +4205,75 @@ exports.shortsTrackerAppend = onRequest(
     }
   },
 );
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FIRESTORE-CACHE RELAY FUNCTIONS — serve data that the local relay scripts
+// push to Firestore, so the online app can read them via the same /api/* paths
+// it uses locally. No Snowflake/GSheet credentials needed — pure Firestore read.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Transparency Sheet tabs — local relay writes rowsJson (JSON string) to
+// transparencyCache/<tab> every 10 min.
+exports.transparencySheet = onRequest(
+  { region: "europe-west3", cors: true, maxInstances: 5 },
+  async (req, res) => {
+    try {
+      const tab = String(req.query.tab || "").trim();
+      if (!tab) return res.status(400).json({ ok: false, error: "?tab= parameter required" });
+
+      const doc = await db.collection("transparencyCache").doc(tab).get();
+      if (!doc.exists) return res.status(404).json({ ok: false, error: `Tab "${tab}" nicht im Cache. Lokaler Transparency-Relay laeuft?` });
+
+      const data = doc.data();
+      const rows = data.rowsJson ? JSON.parse(data.rowsJson) : (data.rows || []);
+
+      res.json({ ok: true, tab, rows, pushedAt: data.pushedAt, source: "firestore-cache" });
+    } catch (err) {
+      logger.error("transparencySheet failed", { error: err?.message });
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  },
+);
+
+// WMS Full Inventory — local relay writes to wmsCache/wms-full-inventory-latest.
+exports.wmsFullInventory = onRequest(
+  { region: "europe-west3", cors: true, maxInstances: 5 },
+  async (req, res) => {
+    try {
+      const doc = await db.collection("wmsCache").doc("wms-full-inventory-latest").get();
+      if (!doc.exists) return res.status(404).json({ ok: false, error: "Kein Full-Inventory-Cache. Lokaler WMS-Cache-Relay laeuft?" });
+
+      const data = doc.data();
+      res.json({
+        ok: true,
+        whId: data.whId || "VF",
+        generatedAt: data.generatedAt || data.pushedAt,
+        source: "firestore-cache",
+        cachedAt: data.pushedAt,
+        rows: data.rows || [],
+      });
+    } catch (err) {
+      logger.error("wmsFullInventory failed", { error: err?.message });
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  },
+);
+
+// Shorts Tracker (read) — local relay writes to transparencyCache/shorts-tracker
+// or the local server serves live. This provides a cached fallback.
+exports.shortsTracker = onRequest(
+  { region: "europe-west3", cors: true, maxInstances: 5 },
+  async (req, res) => {
+    try {
+      const doc = await db.collection("transparencyCache").doc("shorts-tracker").get();
+      if (!doc.exists) return res.status(404).json({ ok: false, error: "Kein Shorts-Tracker-Cache." });
+
+      const data = doc.data();
+      const rows = data.rowsJson ? JSON.parse(data.rowsJson) : (data.rows || []);
+      res.json({ ok: true, rows, pushedAt: data.pushedAt, source: "firestore-cache" });
+    } catch (err) {
+      logger.error("shortsTracker read failed", { error: err?.message });
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  },
+);
