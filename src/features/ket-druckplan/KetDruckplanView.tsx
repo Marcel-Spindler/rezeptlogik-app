@@ -6,55 +6,62 @@ import { Fragment, useState, useCallback, useMemo, useEffect } from "react";
 // ─────────────────────────────────────────────────────────────────────────────
 const PRINT_CSS = `
 @media print {
-  body * { visibility: hidden; }
-  #ket-print-area, #ket-print-area * { visibility: visible; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  /* Alles ausblenden außer dem Druckbereich */
+  #ket-noprint { display: none !important; }
+
+  /* Druckbereich: normaler Dokumentfluss, kein fixed/absolute → kein Clipping */
   #ket-print-area {
-    position: fixed; inset: 0;
-    padding: 12mm 14mm;
+    display: block !important;
     font-family: Arial, sans-serif;
-    font-size: 11pt;
+    font-size: 10.5pt;
     color: #000;
-    background: #fff;
+    margin: 0;
+    padding: 0;
   }
-  #ket-print-area .print-header { margin-bottom: 8pt; }
-  #ket-print-area .print-header h1 { font-size: 15pt; margin: 0 0 2pt; color: #000; }
-  #ket-print-area .print-header .sub { font-size: 10pt; color: #555; margin: 0; }
+
   #ket-print-area .print-warning {
-    margin: 8pt 0 12pt;
-    padding: 6pt 10pt;
-    border: 1.5pt solid #ca8a04;
+    border: 1.5pt solid #ca8a04 !important;
     background: #fef9c3 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
     border-radius: 4pt;
     font-weight: 700;
     font-size: 10pt;
     color: #713f12;
   }
-  #ket-print-area .shift-block { margin-bottom: 14pt; break-inside: avoid; }
-  #ket-print-area .shift-block-header {
+
+  /* Shift-Karte: keine harte page-break-Regel, damit langer Inhalt fließt */
+  #ket-print-area .shift-card {
+    border: 0.5pt solid #dde3ee;
+    border-radius: 6pt;
+    margin-bottom: 12pt;
+    padding: 0;
+    overflow: hidden;
+    break-before: auto;
+  }
+
+  #ket-print-area .shift-card-header {
     background: #1F3864 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
     color: #fff !important;
-    padding: 4pt 8pt;
-    border-radius: 4pt;
-    font-size: 10pt;
+    padding: 5pt 10pt;
     font-weight: 700;
-    margin-bottom: 4pt;
+    font-size: 10pt;
   }
+
   #ket-print-area table {
-    width: 100%; border-collapse: collapse; font-size: 9.5pt;
-  }
-  #ket-print-area thead tr {
-    background: #f1f5f9 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
   }
   #ket-print-area thead th {
-    padding: 4pt 7pt; text-align: left;
-    font-size: 7.5pt; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .04em; color: #64748b;
+    background: #f1f5f9 !important;
+    padding: 4pt 7pt;
+    text-align: left;
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #64748b;
     border-bottom: 1pt solid #cbd5e1;
   }
   #ket-print-area tbody td {
@@ -64,22 +71,21 @@ const PRINT_CSS = `
   }
   #ket-print-area .row-recipe td {
     background: #dbeafe !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
     color: #1e3a8a !important;
     font-weight: 700;
     font-size: 9pt;
     padding: 4pt 8pt;
     border-top: 1pt solid #93c5fd;
   }
-  #ket-print-area .row-data-even td { background: #fff !important; print-color-adjust: exact; }
-  #ket-print-area .row-data-odd  td { background: #f8fafc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  #ket-print-area .row-data-even td { background: #fff !important; }
+  #ket-print-area .row-data-odd  td { background: #f8fafc !important; }
   #ket-print-area .row-done td { opacity: .4; text-decoration: line-through; }
-  #ket-print-area .wo-num { font-family: "Courier New", monospace; font-size: 9pt; color: #475569; }
   #ket-print-area .badge {
-    display: inline-block; padding: 1pt 5pt; border-radius: 3pt;
-    font-size: 8pt; font-weight: 700;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    display: inline-block;
+    padding: 1pt 5pt;
+    border-radius: 3pt;
+    font-size: 8pt;
+    font-weight: 700;
   }
 }
 `;
@@ -234,7 +240,7 @@ function generatePrintHtml(group: DateGroup, checkedWos: Set<string>): string {
 
     return `<div style="margin-bottom:14px;page-break-inside:avoid;">
       <div style="background:#1F3864;color:#fff;padding:5px 10px;border-radius:5px;font-weight:700;font-size:11px;margin-bottom:5px;">
-        Shift ${shift} &mdash; ${totalRows} Work Order${totalRows !== 1 ? "s" : ""}
+        ${shift === 1 ? "Frühschicht (Shift 1)" : shift === 2 ? "Spätschicht (Shift 2)" : `Shift ${shift}`} &mdash; ${totalRows} Work Order${totalRows !== 1 ? "s" : ""}
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:10.5px;">
         <thead>
@@ -496,11 +502,16 @@ export function KetDruckplanView() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  const shiftName = (shift: number) =>
+    shift === 1 ? "Frühschicht (Shift 1)" : shift === 2 ? "Spätschicht (Shift 2)" : `Shift ${shift}`;
+
   return (
     <div style={{ fontFamily: "Arial, sans-serif", fontSize: 13, color: "#222" }}>
+      {/* ═══ NICHT-DRUCK: im Print via CSS ausgeblendet ═══ */}
+      <div id="ket-noprint">
 
-      {/* ── Header (kein Druck) ── */}
-      <div id="ket-ui" style={{ background: "#1F3864", color: "#fff", padding: "13px 20px", display: "flex", alignItems: "center", gap: 11, borderRadius: "10px 10px 0 0" }}>
+      {/* ── Header ── */}
+      <div style={{ background: "#1F3864", color: "#fff", padding: "13px 20px", display: "flex", alignItems: "center", gap: 11, borderRadius: "10px 10px 0 0" }}>
         <div style={{ width: 32, height: 32, background: "rgba(255,255,255,.15)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>📋</div>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>
@@ -611,9 +622,12 @@ export function KetDruckplanView() {
           </div>
         )}
 
-        {/* ── Druckinhalt ── */}
-        {selectedGroup && (
-          <div id="ket-print-area">
+      </div>{/* end ket-ui-body */}
+      </div>{/* end ket-noprint */}
+
+      {/* ═══ DRUCKINHALT: nur dieser Block im Print sichtbar ═══ */}
+      {selectedGroup && (
+        <div id="ket-print-area">
 
             {/* Datums-Header */}
             <div className="print-header" style={{ ...S.card, marginBottom: 12, borderLeft: "4px solid #1F3864", display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 10 }}>
@@ -637,12 +651,13 @@ export function KetDruckplanView() {
 
             {/* Shifts */}
             {selectedGroup.shifts.map(({ shift, recipeGroups, totalRows }) => (
-              <div key={shift} className="shift-block" style={{ ...S.card, marginBottom: 14 }}>
-                <div className="shift-block-header" style={{ background: "#1F3864", color: "#fff", padding: "6px 12px", borderRadius: 7, marginBottom: 8, display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 12 }}>
-                  Shift {shift}
-                  <span style={{ color: "rgba(255,255,255,.5)", fontWeight: 400 }}>—</span>
-                  <span style={{ color: "rgba(255,255,255,.8)", fontWeight: 400 }}>{totalRows} Work Order{totalRows !== 1 ? "s" : ""}</span>
+              <div key={shift} className="shift-card" style={{ ...S.card, marginBottom: 14, padding: 0, overflow: "hidden" }}>
+                <div className="shift-card-header" style={{ background: "#1F3864", color: "#fff", padding: "7px 14px", display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 12 }}>
+                  {shiftName(shift)}
+                  <span style={{ color: "rgba(255,255,255,.4)", fontWeight: 400 }}>—</span>
+                  <span style={{ color: "rgba(255,255,255,.75)", fontWeight: 400 }}>{totalRows} Work Order{totalRows !== 1 ? "s" : ""}</span>
                 </div>
+                <div style={{ padding: "8px 0 0" }}>
 
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead>
@@ -691,11 +706,11 @@ export function KetDruckplanView() {
                     ))}
                   </tbody>
                 </table>
+                </div>{/* end padding wrapper */}
               </div>
             ))}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
