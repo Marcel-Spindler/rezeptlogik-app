@@ -16,30 +16,37 @@ interface ParsedDate {
 }
 
 function parseDateNeeded(raw: string): ParsedDate {
-  const m = raw.match(/^(\d{4}-\d{2}-\d{2})\s*-\s*(\d+)$/);
-  if (!m) return { date: raw, shift: 1 };
-  return { date: m[1], shift: parseInt(m[2], 10) };
+  // Robust: nimm einfach alles vor dem ersten Leerzeichen als Datum
+  const date = raw.split(" ")[0].trim();
+  const shiftMatch = raw.match(/-\s*(\d+)\s*$/);
+  const shift = shiftMatch ? parseInt(shiftMatch[1], 10) : 1;
+  return { date, shift };
 }
 
 function stagingDay(cookDate: string): string {
   const d = new Date(cookDate + "T12:00:00");
+  if (isNaN(d.getTime())) return cookDate;
   d.setDate(d.getDate() - 1);
   return d.toISOString().slice(0, 10);
 }
 
 function fmtDateLong(iso: string): string {
-  return new Date(iso + "T12:00:00").toLocaleDateString("de-DE", {
+  const d = new Date(iso + "T12:00:00");
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("de-DE", {
     weekday: "long", day: "2-digit", month: "2-digit", year: "numeric",
   });
 }
 
 function fmtDateShort(iso: string): string {
-  return new Date(iso + "T12:00:00").toLocaleDateString("de-DE", {
+  const d = new Date(iso + "T12:00:00");
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("de-DE", {
     weekday: "short", day: "2-digit", month: "2-digit",
   });
 }
 
-function splitCsvLine(line: string): string[] {
+function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
   let i = 0;
   while (i < line.length) {
@@ -65,33 +72,13 @@ function splitCsvLine(line: string): string[] {
 function parseCsv(text: string): Record<string, string>[] {
   const lines = text.split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
-  const headers = splitCsvLine(lines[0]);
+  const headers = parseCsvLine(lines[0]);
   return lines.slice(1).map(l => {
-    const vals = splitCsvLine(l);
+    const vals = parseCsvLine(l);
     const obj: Record<string, string> = {};
     headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
     return obj;
   });
-}
-
-// ── Status-Badge ─────────────────────────────────────────────────────────────
-
-const STATUS_STYLE: Record<string, string> = {
-  "Open":                "bg-slate-100 text-slate-700",
-  "Released":            "bg-sky-100 text-sky-700",
-  "Picking":             "bg-indigo-100 text-indigo-700",
-  "Allocation Pending":  "bg-amber-100 text-amber-700",
-  "Partially Allocated": "bg-amber-100 text-amber-700",
-  "Partially Staged":    "bg-orange-100 text-orange-700",
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const cls = STATUS_STYLE[status] ?? "bg-slate-100 text-slate-500";
-  return (
-    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${cls}`}>
-      {status}
-    </span>
-  );
 }
 
 // ── Gruppierung ───────────────────────────────────────────────────────────────
@@ -115,10 +102,10 @@ interface DateGroup {
 }
 
 function buildGroups(rows: KetRow[]): DateGroup[] {
-  // byDate → byShift → byRecipe
   const byDate = new Map<string, Map<number, Map<string, KetRow[]>>>();
   for (const row of rows) {
     const { date, shift } = parseDateNeeded(row.dateNeeded);
+    if (!date || date.length < 8) continue;
     if (!byDate.has(date)) byDate.set(date, new Map());
     const byShift = byDate.get(date)!;
     if (!byShift.has(shift)) byShift.set(shift, new Map());
@@ -135,7 +122,7 @@ function buildGroups(rows: KetRow[]): DateGroup[] {
         .sort(([a], [b]) => a - b)
         .map(([shift, recipeMap]) => {
           const recipeGroups: RecipeGroup[] = Array.from(recipeMap.entries())
-            .map(([recipeName, rows]) => ({ recipeName, rows }));
+            .map(([recipeName, r]) => ({ recipeName, rows: r }));
           return {
             shift,
             recipeGroups,
@@ -202,7 +189,7 @@ function generatePrintHtml(group: DateGroup, checkedWos: Set<string>): string {
   h1 { font-size: 16px; margin-bottom: 2px; }
   .sub { font-size: 13px; color: #64748b; margin-bottom: 16px; }
   .shift-header { font-weight: 600; margin: 16px 0 4px; padding: 5px 10px;
-    background: #334155; color: #f8fafc; border-radius: 5px; }
+    background: #1F3864; color: #f8fafc; border-radius: 5px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
   th { background: #f1f5f9; text-align: left; padding: 5px 8px;
     font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #475569; }
@@ -210,8 +197,8 @@ function generatePrintHtml(group: DateGroup, checkedWos: Set<string>): string {
   tr.even td { background: #fff; }
   tr.odd td { background: #f8fafc; }
   tr.done td { opacity: .45; text-decoration: line-through; }
-  tr.recipe-header td { background: #f0f9ff; color: #0369a1; font-weight: 600;
-    font-size: 11px; padding: 6px 8px; border-top: 1px solid #bae6fd; }
+  tr.recipe-header td { background: #EDF4FF; color: #1F3864; font-weight: 600;
+    font-size: 11px; padding: 6px 8px; border-top: 1px solid #BDD5FF; }
   .mono { font-family: monospace; color: #475569; }
   .cb { width: 28px; text-align: center; }
   .wo { width: 100px; }
@@ -255,6 +242,22 @@ async function saveToDrive(
   return { ok: true, msg: `Gespeichert in „${data.folder}"${stub}` };
 }
 
+// ── Styles (wie Blast Chiller) ────────────────────────────────────────────────
+
+const S = {
+  card:  { background: "#fff", borderRadius: 10, border: "0.5px solid #dde3ee", padding: 14 } as React.CSSProperties,
+  btnSm: (bg: string, color = "#fff") => ({ padding: "5px 12px", border: "none", borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: "pointer", background: bg, color } as React.CSSProperties),
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  "Open":                "#e2e8f0",
+  "Released":            "#bae6fd",
+  "Picking":             "#c7d2fe",
+  "Allocation Pending":  "#fde68a",
+  "Partially Allocated": "#fde68a",
+  "Partially Staged":    "#fed7aa",
+};
+
 // ── View ─────────────────────────────────────────────────────────────────────
 
 export function KetDruckplanView() {
@@ -266,6 +269,7 @@ export function KetDruckplanView() {
   const [driveBusy, setDriveBusy] = useState(false);
   const [allDaysProgress, setAllDaysProgress] = useState<{ done: number; total: number } | null>(null);
   const [checkedWos, setCheckedWos] = useState<Set<string>>(new Set());
+  const [drag, setDrag] = useState(false);
 
   const toggleWo = useCallback((wo: string) => {
     setCheckedWos(prev => {
@@ -289,16 +293,14 @@ export function KetDruckplanView() {
       try {
         let text = e.target?.result as string;
         if (!text) { setParseError("Datei ist leer."); return; }
-        // BOM entfernen
         if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
 
         const parsed = parseCsv(text);
         if (!parsed.length) { setParseError("CSV hat keine Datenzeilen."); return; }
 
         const headers = Object.keys(parsed[0]);
-        console.log("[KET Druckplan] Spalten gefunden:", headers);
+        console.log("[KET Druckplan] Spalten:", headers);
 
-        // Tolerant suchen — ignoriert führende/nachfolgende Leerzeichen
         const dateCol   = headers.find(h => h.trim() === "Date Needed");
         const statusCol = headers.find(h => h.trim() === "Staging Status");
 
@@ -310,9 +312,9 @@ export function KetDruckplanView() {
           return;
         }
 
-        const woCol      = headers.find(h => h.trim() === "Work Order Number") ?? "";
-        const recipeCol  = headers.find(h => h.trim() === "Recipe Name") ?? "";
-        const subCol     = headers.find(h => h.trim() === "Sub Recipe Name") ?? "";
+        const woCol     = headers.find(h => h.trim() === "Work Order Number") ?? "";
+        const recipeCol = headers.find(h => h.trim() === "Recipe Name") ?? "";
+        const subCol    = headers.find(h => h.trim() === "Sub Recipe Name") ?? "";
 
         const rows: KetRow[] = parsed
           .filter(r => (r[statusCol] ?? "").trim() !== "Staged")
@@ -328,26 +330,28 @@ export function KetDruckplanView() {
         console.log("[KET Druckplan] Offene WOs:", rows.length);
 
         if (!rows.length) {
-          setParseError(
-            `Alle ${parsed.length} Work Orders sind bereits gestaged — nichts offen.`,
-          );
+          setParseError(`Alle ${parsed.length} Work Orders sind bereits gestaged — nichts offen.`);
           return;
         }
 
         const newGroups = buildGroups(rows);
+        if (!newGroups.length) {
+          setParseError("Keine gültigen Datumsangaben gefunden. Erwartet: YYYY-MM-DD oder YYYY-MM-DD - Shift.");
+          return;
+        }
+
         setGroups(newGroups);
         setFileName(file.name);
         setSelectedCookDay(newGroups[0]?.cookDate ?? null);
       } catch (err) {
-        console.error("[KET Druckplan] Parsing-Fehler:", err);
-        setParseError(`Parsing-Fehler: ${err instanceof Error ? err.message : String(err)}`);
+        console.error("[KET Druckplan] Fehler:", err);
+        setParseError(`Fehler: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
-    // Erst UTF-8, bei Fehler nochmal als latin-1
     reader.readAsText(file, "utf-8");
   }, []);
 
-  // GDrive-Auto-Upload immer wenn eine neue CSV geladen wird
+  // Auto-GDrive-Upload aller Tage sobald CSV geladen
   useEffect(() => {
     if (!groups.length) return;
     let cancelled = false;
@@ -380,15 +384,9 @@ export function KetDruckplanView() {
   }, [groups]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
+    e.preventDefault(); setDrag(false);
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
-  }, [handleFile]);
-
-  const onInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-    e.target.value = "";
   }, [handleFile]);
 
   const selectedGroup = useMemo(
@@ -402,8 +400,7 @@ export function KetDruckplanView() {
     setDriveStatus(null);
     try {
       const [y, m, d] = selectedGroup.cookDate.split("-");
-      const driveFileName = `KET-Druckplan-Kochtag-${d}.${m}.${y}.html`;
-      const result = await saveToDrive(selectedGroup, driveFileName, checkedWos);
+      const result = await saveToDrive(selectedGroup, `KET-Druckplan-Kochtag-${d}.${m}.${y}.html`, checkedWos);
       setDriveStatus(result);
     } catch (err) {
       setDriveStatus({ ok: false, msg: err instanceof Error ? err.message : String(err) });
@@ -412,7 +409,6 @@ export function KetDruckplanView() {
     }
   }, [selectedGroup, checkedWos]);
 
-  // Alle Tage auf einmal in GDrive — wird nach CSV-Upload angeboten
   const handleAllDaysDriveSave = useCallback(async () => {
     if (!groups.length) return;
     setDriveBusy(true);
@@ -424,7 +420,7 @@ export function KetDruckplanView() {
       try {
         const [y, m, d] = g.cookDate.split("-");
         await saveToDrive(g, `KET-Druckplan-Kochtag-${d}.${m}.${y}.html`, new Set());
-      } catch (err) {
+      } catch {
         errors.push(fmtDateLong(g.cookDate));
       }
       setAllDaysProgress({ done: i + 1, total: groups.length });
@@ -438,216 +434,225 @@ export function KetDruckplanView() {
     );
   }, [groups]);
 
+  const weekLabel = useMemo(() => {
+    if (!fileName) return "";
+    const m = fileName.match(/[Ww](\d{2,})/);
+    return m ? `KW ${m[1]}` : "";
+  }, [fileName]);
+
   return (
-    <div>
-      {/* Toolbar — beim Drucken ausblenden */}
-      <div className="flex flex-wrap items-center gap-3 mb-6 print:hidden">
-        <label
-          className="cursor-pointer flex items-center gap-2 px-4 py-2 rounded-lg bg-verden-600 text-white text-sm font-medium hover:bg-verden-700 transition-colors"
-          onDrop={onDrop}
-          onDragOver={e => e.preventDefault()}
-        >
-          <span>↑</span>
-          <span>KET Plan CSV hochladen</span>
-          <input type="file" accept=".csv,.CSV,text/csv,text/plain,application/vnd.ms-excel" className="hidden" onChange={onInput} />
-        </label>
+    <div style={{ fontFamily: "Arial, sans-serif", fontSize: 13, color: "#222" }}>
 
-        {groups.length > 0 && (
-          <>
-            {/* Kochtag-Selektor */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-500">Kochtag:</span>
-              <select
-                value={selectedCookDay ?? ""}
-                onChange={e => {
-                  setSelectedCookDay(e.target.value);
-                  setDriveStatus(null);
-                  setCheckedWos(new Set());
-                }}
-                className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-verden-500"
-              >
-                {groups.map(g => (
-                  <option key={g.cookDate} value={g.cookDate}>
-                    {fmtDateLong(g.cookDate)} ({g.totalRows} WOs)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedGroup && (
-              <span className="text-xs text-slate-400">
-                Stagientag: <strong className="text-slate-600">{fmtDateShort(selectedGroup.stagDate)}</strong>
-              </span>
+      {/* Header */}
+      <div style={{ background: "#1F3864", color: "#fff", padding: "13px 20px", display: "flex", alignItems: "center", gap: 11, borderRadius: "10px 10px 0 0" }}>
+        <div style={{ width: 32, height: 32, background: "rgba(255,255,255,.15)", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>📋</div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>
+            KET Druckplan
+            {weekLabel && (
+              <span style={{ background: "rgba(255,255,255,.18)", borderRadius: 4, padding: "1px 7px", fontSize: 10, marginLeft: 8 }}>{weekLabel}</span>
             )}
-
-            <button
-              onClick={handleAllDaysDriveSave}
-              disabled={driveBusy || !!allDaysProgress}
-              title="Alle Tage aus der CSV in GDrive aktualisieren"
-              className="px-3 py-1.5 rounded-lg bg-sky-100 text-sky-700 text-xs font-medium hover:bg-sky-200 disabled:opacity-50 transition-colors flex items-center gap-1.5"
-            >
-              <span>{allDaysProgress ? "⟳" : "☁"}</span>
-              <span>Alle {groups.length} Tage → GDrive</span>
-            </button>
-
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                onClick={handleDriveSave}
-                disabled={driveBusy || !selectedGroup}
-                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-              >
-                <span>{driveBusy ? "⟳" : "☁"}</span>
-                <span>In GDrive speichern</span>
-              </button>
-              <button
-                onClick={async () => {
-                  // Erst in GDrive speichern, dann Drucken — damit beides garantiert gesichert ist
-                  if (selectedGroup && !driveBusy) {
-                    try {
-                      await handleDriveSave();
-                    } catch {
-                      // Drucken trotzdem ausführen
-                    }
-                  }
-                  window.print();
-                }}
-                disabled={driveBusy}
-                className="px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors flex items-center gap-2"
-              >
-                <span>🖨</span>
-                <span>Drucken + GDrive</span>
-              </button>
-            </div>
-          </>
-        )}
+          </div>
+          <div style={{ fontSize: 11, opacity: .7, marginTop: 1 }}>KET-CSV hochladen → Druckzettel je Stagientag, geordnet nach Shift &amp; Rezept</div>
+        </div>
       </div>
 
-      {/* GDrive Upload-Fortschritt */}
-      {allDaysProgress && (
-        <div className="mb-4 px-4 py-2 rounded-lg bg-sky-50 text-sky-700 text-sm font-medium print:hidden flex items-center gap-3">
-          <span className="animate-spin inline-block">⟳</span>
-          <span>
-            GDrive Upload: {allDaysProgress.done} / {allDaysProgress.total} Tage …
-          </span>
-          <div className="flex-1 bg-sky-200 rounded-full h-1.5">
-            <div
-              className="bg-sky-600 h-1.5 rounded-full transition-all"
-              style={{ width: `${Math.round((allDaysProgress.done / allDaysProgress.total) * 100)}%` }}
+      <div style={{ padding: "14px 4px" }}>
+
+        {/* CSV Upload Card */}
+        <div style={{ ...S.card, marginBottom: 12 }} className="print:hidden">
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#1F3864", marginBottom: 9 }}>📊 KET Plan CSV hochladen</div>
+          <div
+            onDragOver={e => { e.preventDefault(); setDrag(true); }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={onDrop}
+            style={{
+              border: `2px ${groups.length ? "solid" : "dashed"} ${groups.length ? "#4CAF50" : drag ? "#1F3864" : "#BDD5FF"}`,
+              borderRadius: 9, padding: "20px 14px", textAlign: "center", cursor: "pointer",
+              position: "relative", background: groups.length ? "#E8F5E9" : drag ? "#EDF4FF" : "#F7FAFF",
+            }}
+          >
+            <input
+              type="file"
+              accept=".csv,.CSV,text/csv,text/plain,application/vnd.ms-excel"
+              style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer", width: "100%", height: "100%" }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
             />
-          </div>
-        </div>
-      )}
-
-      {/* GDrive Feedback */}
-      {driveStatus && (
-        <div className={`mb-4 px-4 py-2 rounded-lg text-sm font-medium print:hidden ${
-          driveStatus.ok ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
-        }`}>
-          {driveStatus.ok ? "✓" : "✗"} {driveStatus.msg}
-        </div>
-      )}
-
-      {parseError && (
-        <div className="card p-4 text-rose-700 bg-rose-50 text-sm mb-4 print:hidden">{parseError}</div>
-      )}
-
-      {!fileName && !parseError && (
-        <div
-          className="card p-16 text-center text-slate-400 print:hidden border-2 border-dashed border-slate-200"
-          onDrop={onDrop}
-          onDragOver={e => e.preventDefault()}
-        >
-          <div className="text-5xl mb-4">📋</div>
-          <div className="text-base font-semibold text-slate-600">KET Plan CSV hochladen</div>
-          <div className="text-sm mt-2 max-w-sm mx-auto">
-            Datei auswählen oder hierher ziehen. Staged WOs werden automatisch ausgeblendet.
-          </div>
-        </div>
-      )}
-
-      {/* Druckinhalt — nur der gewählte Kochtag */}
-      {selectedGroup && (
-        <div>
-          {/* Datums-Header */}
-          <div className="flex flex-wrap items-baseline gap-2 mb-5 pb-3 border-b-2 border-slate-300">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Stagientag</span>
-            <span className="text-xl font-bold text-slate-500">{fmtDateLong(selectedGroup.stagDate)}</span>
-            <span className="text-slate-300 text-2xl mx-1">→</span>
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Kochtag</span>
-            <span className="text-xl font-bold text-slate-900">{fmtDateLong(selectedGroup.cookDate)}</span>
-            <span className="ml-2 text-sm text-slate-400">
-              {selectedGroup.totalRows} offene WOs · Staged ausgeblendet
-            </span>
-          </div>
-
-          {/* Abschluss-Hinweis — auf jedem Zettel */}
-          <div className="mb-5 px-4 py-3 rounded-lg bg-yellow-50 border border-yellow-300 text-yellow-900 font-bold text-sm print:block">
-            ⚠ Wenn alle abgearbeitet — bitte melden, um den Fortschritt zu dokumentieren!
-          </div>
-
-          {/* Shifts */}
-          {selectedGroup.shifts.map(({ shift, recipeGroups, totalRows }) => (
-            <div key={shift} className="mb-8">
-              {/* Shift-Header (dunkel) */}
-              <div className="flex items-center gap-2 mb-3 px-4 py-2 bg-slate-700 text-white rounded-lg">
-                <span className="font-bold text-sm">Shift {shift}</span>
-                <span className="text-slate-400 text-xs">—</span>
-                <span className="text-slate-300 text-xs">{totalRows} Work Order{totalRows !== 1 ? "s" : ""}</span>
-              </div>
-
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-slate-100 text-left">
-                    <th className="px-2 py-2 w-8"></th>
-                    <th className="px-3 py-2 font-semibold text-slate-600 w-28 text-xs uppercase tracking-wide">Work Order</th>
-                    <th className="px-3 py-2 font-semibold text-slate-600 text-xs uppercase tracking-wide">Sub Meal</th>
-                    <th className="px-3 py-2 font-semibold text-slate-600 w-48 text-xs uppercase tracking-wide">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recipeGroups.map(({ recipeName, rows }) => (
-                    <Fragment key={recipeName}>
-                      {/* Kommentarzeile / Rezept-Trenner */}
-                      <tr className="bg-sky-50 border-t border-sky-200">
-                        <td colSpan={4} className="px-3 py-1.5 text-xs font-semibold text-sky-700">
-                          📋 {recipeName}
-                        </td>
-                      </tr>
-                      {rows.map((row, i) => {
-                        const done = checkedWos.has(row.workOrder);
-                        return (
-                          <tr
-                            key={row.workOrder}
-                            className={`border-b border-slate-100 cursor-pointer select-none ${
-                              done
-                                ? "opacity-40 line-through bg-slate-50"
-                                : i % 2 === 0 ? "bg-white hover:bg-slate-50" : "bg-slate-50 hover:bg-slate-100"
-                            }`}
-                            onClick={() => toggleWo(row.workOrder)}
-                          >
-                            <td className="px-2 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={done}
-                                onChange={() => toggleWo(row.workOrder)}
-                                onClick={e => e.stopPropagation()}
-                                className="w-4 h-4 accent-verden-600 cursor-pointer"
-                              />
-                            </td>
-                            <td className="px-3 py-2 font-mono text-slate-600 text-xs">{row.workOrder}</td>
-                            <td className="px-3 py-2 text-slate-800">{row.subRecipeName}</td>
-                            <td className="px-3 py-2"><StatusBadge status={row.stagingStatus} /></td>
-                          </tr>
-                        );
-                      })}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ fontSize: 22, marginBottom: 4 }}>{groups.length ? "✅" : "📋"}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: groups.length ? "#2E7D32" : "#1F3864" }}>
+              {groups.length
+                ? `${groups.reduce((n, g) => n + g.totalRows, 0)} offene WOs · ${groups.length} Kochtag${groups.length !== 1 ? "e" : ""} — ${fileName}`
+                : "KET Plan CSV hier ablegen oder klicken"}
             </div>
-          ))}
+            <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+              Spalten: Work Order Number · Sub Recipe Name · Date Needed · Recipe Name · Staging Status
+            </div>
+          </div>
+
+          {/* Vorschau der Kochtage */}
+          {groups.length > 0 && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
+              {groups.map(g => (
+                <div key={g.cookDate} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 6, fontSize: 11,
+                  background: g.cookDate === selectedCookDay ? "#EDF4FF" : "#f7f9fc",
+                  border: `1px solid ${g.cookDate === selectedCookDay ? "#BDD5FF" : "#eef1f6"}`,
+                  cursor: "pointer" }}
+                  onClick={() => { setSelectedCookDay(g.cookDate); setCheckedWos(new Set()); setDriveStatus(null); }}
+                >
+                  <span style={{ fontWeight: 700, color: "#1F3864", minWidth: 200 }}>
+                    📅 Kochtag: {fmtDateShort(g.cookDate)}
+                  </span>
+                  <span style={{ color: "#666" }}>Stagientag: {fmtDateShort(g.stagDate)}</span>
+                  <span style={{ marginLeft: "auto", color: "#888", fontSize: 10 }}>{g.totalRows} WOs · {g.shifts.length} Shift{g.shifts.length !== 1 ? "s" : ""}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Fehlermeldung */}
+        {parseError && (
+          <div style={{ ...S.card, marginBottom: 12, background: "#FFF5F5", border: "1px solid #FCA5A5", color: "#991B1B", fontSize: 12 }} className="print:hidden">
+            ✗ {parseError}
+          </div>
+        )}
+
+        {/* GDrive-Fortschritt */}
+        {allDaysProgress && (
+          <div style={{ ...S.card, marginBottom: 12, background: "#EDF4FF", border: "1px solid #BDD5FF", color: "#1F3864", fontSize: 12, display: "flex", alignItems: "center", gap: 10 }} className="print:hidden">
+            <span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⟳</span>
+            <span>GDrive Upload: {allDaysProgress.done} / {allDaysProgress.total} Tage …</span>
+            <div style={{ flex: 1, background: "#BDD5FF", borderRadius: 99, height: 5 }}>
+              <div style={{ background: "#1F3864", height: 5, borderRadius: 99, transition: "width .3s", width: `${Math.round((allDaysProgress.done / allDaysProgress.total) * 100)}%` }} />
+            </div>
+          </div>
+        )}
+
+        {/* GDrive Feedback */}
+        {driveStatus && (
+          <div style={{ ...S.card, marginBottom: 12, fontSize: 12,
+            background: driveStatus.ok ? "#E8F5E9" : "#FFF5F5",
+            border: `1px solid ${driveStatus.ok ? "#A5D6A7" : "#FCA5A5"}`,
+            color: driveStatus.ok ? "#1B5E20" : "#991B1B" }} className="print:hidden">
+            {driveStatus.ok ? "✓" : "✗"} {driveStatus.msg}
+          </div>
+        )}
+
+        {/* Aktions-Leiste — nur wenn CSV geladen */}
+        {selectedGroup && (
+          <div style={{ ...S.card, marginBottom: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }} className="print:hidden">
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#1F3864" }}>Aktionen:</span>
+            <button style={S.btnSm("#1F3864")} disabled={driveBusy || !!allDaysProgress} onClick={handleAllDaysDriveSave}>
+              {allDaysProgress ? "⟳" : "☁"} Alle {groups.length} Tage → GDrive
+            </button>
+            <button style={S.btnSm("#2E7D32")} disabled={driveBusy} onClick={handleDriveSave}>
+              {driveBusy ? "⟳" : "☁"} Dieser Tag → GDrive
+            </button>
+            <button
+              style={S.btnSm("#37474F")}
+              disabled={driveBusy}
+              onClick={async () => {
+                if (!driveBusy) { try { await handleDriveSave(); } catch { /* drucken trotzdem */ } }
+                window.print();
+              }}
+            >
+              🖨 Drucken + GDrive
+            </button>
+          </div>
+        )}
+
+        {/* Druckinhalt */}
+        {selectedGroup && (
+          <div>
+            {/* Datums-Header */}
+            <div style={{ ...S.card, marginBottom: 12, display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 8, borderLeft: "4px solid #1F3864" }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: ".05em" }}>Stagientag</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: "#64748b" }}>{fmtDateLong(selectedGroup.stagDate)}</span>
+              <span style={{ color: "#ccc", fontSize: 22 }}>→</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: ".05em" }}>Kochtag</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: "#1F3864" }}>{fmtDateLong(selectedGroup.cookDate)}</span>
+              <span style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>{selectedGroup.totalRows} offene WOs</span>
+            </div>
+
+            {/* Abschluss-Hinweis */}
+            <div style={{ marginBottom: 12, padding: "10px 14px", background: "#FEF9C3", border: "1px solid #FDE047", borderRadius: 8, fontWeight: 700, fontSize: 13, color: "#713f12" }}>
+              ⚠ Wenn alle abgearbeitet — bitte melden, um den Fortschritt zu dokumentieren!
+            </div>
+
+            {/* Shifts */}
+            {selectedGroup.shifts.map(({ shift, recipeGroups, totalRows }) => (
+              <div key={shift} style={{ ...S.card, marginBottom: 16 }}>
+                {/* Shift-Header */}
+                <div style={{ background: "#1F3864", color: "#fff", padding: "7px 12px", borderRadius: 7, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>Shift {shift}</span>
+                  <span style={{ color: "rgba(255,255,255,.5)" }}>—</span>
+                  <span style={{ fontSize: 12, color: "rgba(255,255,255,.75)" }}>{totalRows} Work Order{totalRows !== 1 ? "s" : ""}</span>
+                </div>
+
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: "#f1f5f9" }}>
+                      <th style={{ padding: "5px 8px", width: 32, textAlign: "center" }}></th>
+                      <th style={{ padding: "5px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", width: 110 }}>Work Order</th>
+                      <th style={{ padding: "5px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b" }}>Sub Meal</th>
+                      <th style={{ padding: "5px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "#64748b", width: 160 }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recipeGroups.map(({ recipeName, rows }) => (
+                      <Fragment key={recipeName}>
+                        {/* Kommentarzeile / Rezept-Trenner */}
+                        <tr style={{ background: "#EDF4FF", borderTop: "1px solid #BDD5FF" }}>
+                          <td colSpan={4} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, color: "#1F3864" }}>
+                            📋 {recipeName}
+                          </td>
+                        </tr>
+                        {rows.map((row, i) => {
+                          const done = checkedWos.has(row.workOrder);
+                          return (
+                            <tr
+                              key={row.workOrder}
+                              style={{
+                                background: done ? "#f8fafc" : i % 2 === 0 ? "#fff" : "#f8fafc",
+                                opacity: done ? .45 : 1,
+                                cursor: "pointer",
+                                borderBottom: "1px solid #f1f5f9",
+                              }}
+                              onClick={() => toggleWo(row.workOrder)}
+                            >
+                              <td style={{ padding: "5px 8px", textAlign: "center" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={done}
+                                  onChange={() => toggleWo(row.workOrder)}
+                                  onClick={e => e.stopPropagation()}
+                                  style={{ width: 14, height: 14, cursor: "pointer" }}
+                                />
+                              </td>
+                              <td style={{ padding: "5px 10px", fontFamily: "monospace", fontSize: 11, color: "#64748b", textDecoration: done ? "line-through" : "none" }}>{row.workOrder}</td>
+                              <td style={{ padding: "5px 10px", color: "#1e293b", textDecoration: done ? "line-through" : "none" }}>{row.subRecipeName}</td>
+                              <td style={{ padding: "5px 10px" }}>
+                                <span style={{
+                                  display: "inline-block", padding: "2px 7px", borderRadius: 4,
+                                  fontSize: 10, fontWeight: 700,
+                                  background: STATUS_COLOR[row.stagingStatus] ?? "#e2e8f0",
+                                  color: "#334155",
+                                }}>
+                                  {row.stagingStatus}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
